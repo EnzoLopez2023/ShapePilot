@@ -26,7 +26,7 @@ const designPayload = (over: Record<string, unknown> = {}) => ({
   pocketDepthMm: 10,
   engraveDepthMm: 0.4,
   pockets: [
-    { id: 'a', units: 1, x: 114, y: 14, isThrough: true, label: '1u' },
+    { id: 'a', units: 1, x: 114, y: 14, isThrough: true, shape: 'iso-enter', label: '1u' },
     { id: 'b', units: 4, x: 87, y: 124, label: '4u' },
   ],
   ...over,
@@ -52,6 +52,7 @@ interface Design {
     y: number
     rotationDeg: number
     isThrough: boolean
+    shape?: 'rect' | 'iso-enter'
     label?: string
     labelMode: string
     depthMm?: number
@@ -111,6 +112,7 @@ describe('keycap tray routes', () => {
     assert.equal(first.y, 14)
     assert.equal(first.rotationDeg, 0)
     assert.equal(first.isThrough, true)
+    assert.equal(first.shape, 'iso-enter')
     assert.equal(first.label, '1u')
     assert.equal(first.labelMode, 'guide')
     // Nullable columns come back as undefined, not null.
@@ -199,6 +201,7 @@ describe('keycap tray routes', () => {
       `/api/keycap-trays/${cloned.body.id}`, { token: OWNER_TOKEN })
     assert.equal(copy.body.name, 'Source (copy)')
     assert.equal(copy.body.pockets.length, 2)
+    assert.equal(copy.body.pockets[0].shape, 'iso-enter')
 
     await server.fetchJson(`/api/keycap-trays/${cloned.body.id}`, {
       method: 'PUT', token: OWNER_TOKEN,

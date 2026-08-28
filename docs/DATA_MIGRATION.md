@@ -158,8 +158,10 @@ Pockets inherit ownership through `design_id`; they have no owner columns, which
 is why reconciliation checks them through a join.
 
 The assignment is recorded in `legacy_import_runs` alongside the bundle hash,
-source commit, source SHA-256 and the dry-run report hash, so who was given
-which rows, from which artifact, is auditable afterwards.
+source commit, source SHA-256 and the dry-run report hash. That hash also binds
+the target database's durable `authority_id`, so approval for one initialized
+authority cannot authorize another. Who was given which rows, from which
+artifact and into which authority is therefore auditable.
 
 ## Procedure
 

@@ -224,5 +224,5 @@ decision and this wave is a port.
 | `engrave_mm` / `engraveDepthMm` | Stored and round-trips. Nothing reads it. |
 | Pocket `depth_mm` | Stored and round-trips. Every pocket uses the design depth. |
 | Pocket `label_mode` | Stored and round-trips, always `guide`. |
-| Pocket `shape` and `mirror_x` | Columns exist and legacy values import byte-for-byte, but the API contract does not carry them — exactly as in the pinned route. `shape` is *accepted and validated* on the wire (`rect` or `iso-enter`) and still not written, so an ISO Enter pocket reloads as a rectangle. Confirmed against production data: all 11 rows have `shape = NULL`, including the one labelled "ISO Enter". Asserted by `test/parity/keycapTrayValidation.test.ts`. |
+| Pocket `shape` and `mirror_x` | Both legacy columns import byte-for-byte. ShapePilot additionally persists and hydrates validated `shape` values (`rect` or `iso-enter`) so ISO Enter geometry survives save/open and clone; `mirror_x` remains legacy-only because the editor exposes no mirror behavior. Production's 11 source rows remain unchanged, including their `shape = NULL` values. Asserted by route and validation parity tests. |
 | Custom profile rings | Load, render and export. There is no UI to author one. |

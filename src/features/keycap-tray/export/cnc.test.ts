@@ -56,6 +56,21 @@ test('SVG flips y so the model origin lands at the bottom-left', () => {
   assert.ok(Math.min(...ys) > 127 && Math.max(...ys) < 146.01, `y range ${Math.min(...ys)}..${Math.max(...ys)}`)
 })
 
+test('SVG normalizes an offset custom profile and its geometry into the viewBox', () => {
+  const svg = writeShaperSvg(design(
+    [{ id: 'a', units: 1, x: 0, y: 30 }],
+    { profile: { kind: 'custom', rings: [[[[-10, 20], [90, 20], [90, 70], [-10, 70]]]] } },
+  ))
+  assert.match(svg, /width="100mm" height="50mm" viewBox="0 0 100 50"/)
+  const paths = [...svg.matchAll(/[ML] ([\d.-]+),([\d.-]+)/g)]
+    .map((match) => [Number(match[1]), Number(match[2])])
+  assert.ok(paths.length > 0)
+  for (const [x, y] of paths) {
+    assert.ok(x >= 0 && x <= 100, `x ${x} is outside the viewBox`)
+    assert.ok(y >= 0 && y <= 50, `y ${y} is outside the viewBox`)
+  }
+})
+
 test('DXF declares millimetres and only LWPOLYLINE on the reference layers', () => {
   const dxf = writeDxf(sample)
   assert.match(dxf, /\$INSUNITS\n\s*70\n4\n/)

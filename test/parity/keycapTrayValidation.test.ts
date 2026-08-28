@@ -423,7 +423,7 @@ describe('valid keycap tray behaviour is unchanged', () => {
       method: 'POST', token: TOKEN, body: JSON.stringify(body),
     })
 
-  test('a full valid design round-trips, and the dead fields stay dead', async () => {
+  test('a full valid design round-trips, including ISO Enter geometry', async () => {
     const created = await create(design({
       name: 'Everything',
       notes: 'a note',
@@ -436,19 +436,25 @@ describe('valid keycap tray behaviour is unchanged', () => {
     assert.equal(created.status, 201)
 
     const loaded = await server.fetchJson<{
-      pockets: { rotationDeg: number; isThrough: boolean; labelMode: string; heightUnits: number }[]
+      pockets: {
+        rotationDeg: number
+        isThrough: boolean
+        shape?: 'rect' | 'iso-enter'
+        labelMode: string
+        heightUnits: number
+      }[]
     }>(`/api/keycap-trays/${created.body.id}`, { token: TOKEN })
     assert.equal(loaded.body.pockets[0].rotationDeg, 90)
     assert.equal(loaded.body.pockets[0].isThrough, true)
+    assert.equal(loaded.body.pockets[0].shape, 'iso-enter')
     assert.equal(loaded.body.pockets[0].labelMode, 'engrave')
     assert.equal(loaded.body.pockets[0].heightUnits, 2)
 
-    // `shape` was accepted on the wire and, exactly as in the pinned route, not
-    // written; `mirror_x` keeps its column default.
+    // ShapePilot persists the geometry discriminant; mirror_x remains legacy-only.
     const row = server.database.handle.prepare<[string], { shape: string | null; mirror_x: number }>(
       'SELECT shape, mirror_x FROM keycap_tray_pockets WHERE design_id = ?',
     ).get(created.body.id)
-    assert.equal(row?.shape, null)
+    assert.equal(row?.shape, 'iso-enter')
     assert.equal(Number(row?.mirror_x), 0)
   })
 

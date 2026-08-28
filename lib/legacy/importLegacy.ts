@@ -14,6 +14,7 @@ import { OWNED_LEGACY_TABLES } from '../db/schema.ts'
 import type { OwnedLegacyTable } from '../db/schema.ts'
 import type { Owner } from '../db/repositories/contracts.ts'
 import { createImportLedger } from '../db/repositories/imports.ts'
+import { readAuthorityId } from '../db/identity.ts'
 import type { CanonicalRow, SqlValue } from './canonical.ts'
 import {
   LEGACY_COLUMNS, canonicalRow, rowHash, rowId, rowValue, rowsHash,
@@ -61,6 +62,8 @@ export interface ImportReport {
   source: SourceEvidence
   /** Recomputed from the exported rows and the approved column metadata. */
   approval: ApprovalResult
+  /** Durable identity of the exact target authority approved by this report. */
+  targetAuthorityId: string
   owner: { tenantId: string; oid: string }
   tables: TableDisposition[]
   sequences: SequencePlan[]
@@ -351,6 +354,7 @@ export function planImport(options: PlanOptions): ImportPlan {
     bundleHash: bundleHash(bundle),
     source: bundle.source,
     approval,
+    targetAuthorityId: readAuthorityId(options.db),
     owner,
     tables: dispositions,
     sequences,
@@ -434,6 +438,12 @@ export function applyImport(options: ApplyOptions): ApplyResult {
   let runId: number | null = null
 
   const run = options.db.transaction(() => {
+    if (readAuthorityId(options.db) !== plan.report.targetAuthorityId) {
+      throw new LegacyError(
+        'TARGET_AUTHORITY_CHANGED',
+        'the target database authority changed after approval; re-run --dry-run',
+      )
+    }
     if (plan.writes.length > 0) {
       runId = ledger.recordRunSync({
         sourceManifestHash: plan.report.bundleHash,

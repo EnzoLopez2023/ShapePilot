@@ -12,8 +12,8 @@
 //   * update replaces the whole pocket set atomically
 //   * delete cascades through the foreign key
 //   * `revision` is runtime-only and always leaves the server as 0
-//   * `mirror_x` and `shape` are not read or written by this contract, exactly
-//     as in the pinned route (see docs/PARITY_CHECKLIST.md)
+//   * `mirror_x` remains legacy-only; `shape` is persisted because ShapePilot's
+//     ISO Enter editor depends on it surviving save/open and clone
 import type { SqliteDatabase } from '../connection.ts'
 import type {
   KeycapTrayRepository,
@@ -31,7 +31,7 @@ import { DuplicateLibraryPocketError, InvalidProfileError } from './contracts.ts
 
 const POCKET_COLUMNS = `
   units, height_units, x_mm, y_mm, rotation_deg, is_through,
-  label, label_mode, depth_mm, width_mm, height_mm, corner_mm, sort_order`
+  label, label_mode, depth_mm, width_mm, height_mm, corner_mm, sort_order, shape`
 
 interface DesignRow {
   id: number | bigint
@@ -59,6 +59,7 @@ interface PocketRow {
   y_mm: number
   rotation_deg: number
   is_through: number
+  shape: 'rect' | 'iso-enter' | null
   label: string | null
   label_mode: string
   depth_mm: number | null
@@ -85,6 +86,7 @@ const rowToPocket = (r: PocketRow): PocketRecord => ({
   y: r.y_mm,
   rotationDeg: r.rotation_deg,
   isThrough: !!r.is_through,
+  shape: r.shape ?? undefined,
   label: r.label ?? undefined,
   labelMode: r.label_mode,
   depthMm: r.depth_mm ?? undefined,
@@ -136,6 +138,7 @@ interface PocketParams {
   height_mm: number | null
   corner_mm: number | null
   sort_order: number
+  shape: 'rect' | 'iso-enter' | null
 }
 
 const pocketParams = (designId: number | bigint, p: PocketInput, i: number): PocketParams => ({
@@ -153,13 +156,15 @@ const pocketParams = (designId: number | bigint, p: PocketInput, i: number): Poc
   height_mm: p.heightMm ?? null,
   corner_mm: p.cornerRadiusMm ?? null,
   sort_order: i,
+  shape: p.shape ?? null,
 })
 
 export function createKeycapTrayRepository(db: SqliteDatabase): KeycapTrayRepository {
   const insertPocket = db.prepare<[PocketParams]>(`
     INSERT INTO keycap_tray_pockets (design_id, ${POCKET_COLUMNS})
     VALUES (@design_id, @units, @height_units, @x_mm, @y_mm, @rotation_deg, @is_through,
-            @label, @label_mode, @depth_mm, @width_mm, @height_mm, @corner_mm, @sort_order)`)
+            @label, @label_mode, @depth_mm, @width_mm, @height_mm, @corner_mm, @sort_order,
+            @shape)`)
 
   const selectOwnedDesign = db.prepare<[string, string, string], DesignRow>(`
     SELECT id, name, notes, profile_kind, profile_json, sizing_json,

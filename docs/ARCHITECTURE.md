@@ -128,8 +128,9 @@ including known preset ids and finite, bounded, non-degenerate custom rings),
 sizing, dimensions, the bounded pocket list and every pocket field. Unknown keys,
 unknown enum values, numeric strings, `NaN`, `Infinity` and out-of-range
 magnitudes are stable typed 400s carrying the offending field. Valid pinned
-behaviour — including the defaults and the persisted dead fields `mirror_x` and
-`shape` — is unchanged; see `docs/PARITY_CHECKLIST.md`.
+defaults are unchanged. ShapePilot persists the validated `shape` discriminant
+so ISO Enter geometry survives save/open and clone; `mirror_x` remains a
+legacy-import-only field. See `docs/PARITY_CHECKLIST.md`.
 
 There is no integrity scan, backup, repair or unbounded work on the startup or
 request path. That is a deliberate departure from the pinned Hearth behaviour;

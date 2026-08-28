@@ -270,6 +270,32 @@ describe('legacy import dry run', () => {
     })
   })
 
+  test('a different target authority produces a different report hash', async () => {
+      await withFixture('valid', (bundle, approved) => {
+        const first = openEphemeralDatabase()
+        const second = openEphemeralDatabase()
+        try {
+          const firstPlan = planImport({ db: first.handle, bundle, owner, approvedSource: approved })
+          const secondPlan = planImport({ db: second.handle, bundle, owner, approvedSource: approved })
+          assert.notEqual(firstPlan.report.targetAuthorityId, secondPlan.report.targetAuthorityId)
+          assert.notEqual(firstPlan.reportHash, secondPlan.reportHash)
+          assert.throws(
+            () => applyImport({
+              db: second.handle,
+              bundle,
+              owner,
+              approvedSource: approved,
+              expectedReportHash: firstPlan.reportHash,
+            }),
+            (error: unknown) => error instanceof LegacyError && error.code === 'REPORT_HASH_MISMATCH',
+          )
+        } finally {
+          first.close()
+          second.close()
+        }
+    })
+  })
+
   test('an implicit or malformed owner is refused', async () => {
     await withFixture('valid', (bundle, approved) => {
       const db = openEphemeralDatabase()
@@ -628,10 +654,12 @@ describe('reconciliation', () => {
           expectedReportHash: planImport({ db: db.handle, bundle, owner, approvedSource: approved }).reportHash,
         })
         const report = reconcile({
-          db: db.handle, bundle, owner, signedOffUtc: '2026-08-28T12:00:00.000Z',
+          db: db.handle, bundle, owner, approvedSource: approved,
+          signedOffUtc: '2026-08-28T12:00:00.000Z',
         })
         assert.deepEqual(report.differences, [])
         assert.equal(report.ok, true)
+        assert.equal(report.approval.productCanonicalSha256, approved.canonical.productCanonicalSha256)
         assert.deepEqual(report.tables.map(t => t.sourceRowCount), [2, 4, 1])
         assert.deepEqual(report.tables.map(t => t.targetRowCount), [2, 4, 1])
         for (const table of report.tables) {
@@ -647,10 +675,10 @@ describe('reconciliation', () => {
   })
 
   test('reconciliation fails when the target is empty', async () => {
-    await withFixture('valid', (bundle) => {
+    await withFixture('valid', (bundle, approved) => {
       const db = openEphemeralDatabase()
       try {
-        const report = reconcile({ db: db.handle, bundle, owner })
+        const report = reconcile({ db: db.handle, bundle, owner, approvedSource: approved })
         assert.equal(report.ok, false)
         assert.ok(report.differences.some(d => d.check === 'rowCount'))
       } finally {
@@ -668,7 +696,7 @@ describe('reconciliation', () => {
           expectedReportHash: planImport({ db: db.handle, bundle, owner, approvedSource: approved }).reportHash,
         })
         db.handle.prepare('UPDATE keycap_tray_pockets SET x_mm = 999 WHERE id = 8').run()
-        const report = reconcile({ db: db.handle, bundle, owner })
+        const report = reconcile({ db: db.handle, bundle, owner, approvedSource: approved })
         assert.equal(report.ok, false)
         assert.ok(report.differences.some(
           d => d.table === 'keycap_tray_pockets' && d.check === 'fieldHash' && d.detail.includes('8')))
@@ -693,7 +721,7 @@ describe('reconciliation', () => {
           VALUES (900, ?, ?, 'extra', 1, '2026-08-28 00:00:00')`)
           .run(owner.tenantId, owner.oid)
 
-        const report = reconcile({ db: db.handle, bundle, owner })
+        const report = reconcile({ db: db.handle, bundle, owner, approvedSource: approved })
         assert.equal(report.ok, false)
         const keys = report.differences.filter(d => d.check === 'primaryKeys')
         assert.ok(keys.some(d => d.table === 'keycap_tray_pockets' && d.detail.includes('17')))
@@ -714,7 +742,7 @@ describe('reconciliation', () => {
         })
         db.handle.prepare('UPDATE keycap_tray_designs SET owner_oid = ? WHERE id = 1')
           .run(OTHER_OID)
-        const report = reconcile({ db: db.handle, bundle, owner })
+        const report = reconcile({ db: db.handle, bundle, owner, approvedSource: approved })
         assert.equal(report.ok, false)
         assert.ok(report.differences.some(d => d.check === 'ownerAssignment'))
       } finally {
@@ -733,12 +761,33 @@ describe('reconciliation', () => {
         })
         db.handle.prepare("UPDATE sqlite_sequence SET seq = 1 WHERE name = 'keycap_tray_pockets'")
           .run()
-        const report = reconcile({ db: db.handle, bundle, owner })
+        const report = reconcile({ db: db.handle, bundle, owner, approvedSource: approved })
         assert.equal(report.ok, false)
         assert.ok(report.differences.some(d => d.check === 'sequence'))
       } finally {
         db.close()
       }
+    })
+  })
+
+  test('reconciliation refuses a bundle outside the approved source contract', async () => {
+      await withFixture('valid', (bundle, approved) => {
+        const db = openEphemeralDatabase()
+        try {
+          const plan = planImport({ db: db.handle, bundle, owner, approvedSource: approved })
+          applyImport({
+            db: db.handle, bundle, owner, approvedSource: approved,
+            expectedReportHash: plan.reportHash,
+          })
+          const unapproved = clone(bundle)
+          unapproved.source.commit = 'f'.repeat(40)
+          assert.throws(
+            () => reconcile({ db: db.handle, bundle: unapproved, owner, approvedSource: approved }),
+            (error: unknown) => error instanceof LegacyError && error.code === 'SOURCE_NOT_APPROVED',
+          )
+        } finally {
+          db.close()
+        }
     })
   })
 })

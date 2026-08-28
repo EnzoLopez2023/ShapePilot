@@ -103,6 +103,7 @@ export interface PocketRecord {
   y: number
   rotationDeg: number
   isThrough: boolean
+  shape?: 'rect' | 'iso-enter'
   label?: string
   labelMode: string
   depthMm?: number
@@ -155,6 +156,7 @@ export interface PocketInput {
   y: number
   rotationDeg?: number
   isThrough?: boolean
+  shape?: 'rect' | 'iso-enter' | null
   label?: string | null
   labelMode?: string
   depthMm?: number | null

@@ -14,6 +14,10 @@ import { LEGACY_COLUMNS, canonicalRow, rowHash, rowId, rowsHash, serializeCanoni
 import type { ExportBundle } from './manifest.ts'
 import { RECONCILE_CONTRACT, RECONCILE_CONTRACT_VERSION, bundleHash, validateExportBundle } from './manifest.ts'
 import { requireOwner } from './importLegacy.ts'
+import type { ApprovedSource } from './approvedSource.ts'
+import { APPROVED_SOURCE } from './approvedSource.ts'
+import type { ApprovalResult } from './approvalGate.ts'
+import { assertApprovedSource } from './approvalGate.ts'
 
 export interface Difference {
   table: string
@@ -37,6 +41,7 @@ export interface ReconcileReport {
   contractVersion: number
   app: 'shapepilot'
   bundleHash: string
+  approval: ApprovalResult
   owner: { tenantId: string; oid: string }
   tables: TableReconciliation[]
   relationships: { name: string; ok: boolean; sourcePairs: number; targetPairs: number }[]
@@ -80,10 +85,12 @@ export interface ReconcileOptions {
   bundle: unknown
   owner: unknown
   signedOffUtc?: string
+  approvedSource?: ApprovedSource
 }
 
 export function reconcile(options: ReconcileOptions): ReconcileReport {
   const bundle: ExportBundle = validateExportBundle(options.bundle)
+  const approval = assertApprovedSource(bundle, options.approvedSource ?? APPROVED_SOURCE)
   const owner = requireOwner(options.owner)
   const differences: Difference[] = []
   const tables: TableReconciliation[] = []
@@ -245,6 +252,7 @@ export function reconcile(options: ReconcileOptions): ReconcileReport {
     contractVersion: RECONCILE_CONTRACT_VERSION,
     app: 'shapepilot',
     bundleHash: bundleHash(bundle),
+    approval,
     owner,
     tables,
     relationships: [{
