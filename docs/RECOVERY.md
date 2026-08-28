@@ -51,12 +51,14 @@ The native filesystem guard opens the root once and traverses every key with
 descriptor-relative `openat` plus no-follow semantics, so a raced symlink or
 renamed parent cannot redirect reads or writes. Database artifacts are copied
 and hashed through bounded descriptor I/O instead of being loaded into process
-memory. A store-wide descriptor lock serializes helpers. Writes are staged under
-the held root, length-checked, synced, and atomically renamed without replacement
-only after source revalidation; parent directories are synced before success is
-reported. The next operation removes any unpublished staging file left by a
-forced helper termination, while final keys remain absent and immediately
-retryable.
+memory. A store-wide descriptor lock serializes helpers. A backup's database and
+manifest are staged as one private directory, checked against their approved
+lengths and SHA-256 values, synced, and exposed together by one no-replace
+directory rename. The native guard revalidates the exact directory membership
+and descriptor-derived inode identities before and after publication. Handled
+failures remove only tracked staged objects; crash remnants stay under the
+reserved staging prefix for the next locked operation to scavenge. Parent
+directories are synced before success is reported.
 
 ## Commands
 

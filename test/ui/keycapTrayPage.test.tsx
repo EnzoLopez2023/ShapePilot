@@ -19,6 +19,8 @@ interface StubState {
   library: { id: string; name: string; units: number }[]
   calls: { method: string; path: string; body?: unknown }[]
   failListWith?: number
+  createGate?: Promise<void>
+  loadGate?: Promise<void>
 }
 
 let state: StubState
@@ -45,6 +47,7 @@ function installFetchStub() {
       return json(200, state.designs)
     }
     if (path === '/api/keycap-trays' && method === 'POST') {
+      await state.createGate
       const id = String(state.designs.length + 1)
       const created = body as { name: string; pockets?: unknown[] }
       state.designs = [...state.designs, {
@@ -60,6 +63,7 @@ function installFetchStub() {
       return json(200, { ok: true })
     }
     if (/^\/api\/keycap-trays\/\d+$/.test(path) && method === 'GET') {
+      await state.loadGate
       const id = path.split('/').pop() as string
       return json(200, {
         id, name: state.designs.find(d => d.id === id)?.name ?? 'Loaded',
@@ -269,6 +273,29 @@ describe('designer page', () => {
       state.calls.some(c => c.method === 'PUT' && c.path.startsWith('/api/keycap-trays/'))).toBe(true))
   })
 
+  test('document-switching actions stay disabled while a create is in flight', async () => {
+    let releaseCreate: () => void = () => {}
+    state.createGate = new Promise<void>((resolveCreate) => { releaseCreate = resolveCreate })
+    const user = userEvent.setup()
+    renderPage()
+    await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
+
+    await user.click(screen.getByRole('button', { name: /^Save/ }))
+    await waitFor(() => expect(
+      state.calls.some(c => c.method === 'POST' && c.path === '/api/keycap-trays')).toBe(true))
+    for (const name of ['New', 'Open', 'Clone']) {
+      assert.equal((screen.getByRole('button', { name }) as HTMLButtonElement).disabled, true)
+    }
+
+    releaseCreate()
+    await waitFor(() => expect(
+      (screen.getByRole('button', { name: 'New' }) as HTMLButtonElement).disabled).toBe(false))
+    assert.equal(
+      (screen.getByRole('button', { name: 'Clone' }) as HTMLButtonElement).disabled,
+      false,
+    )
+  })
+
   test('the open dialog shows an empty state when nothing is saved', async () => {
     const user = userEvent.setup()
     renderPage()
@@ -294,6 +321,44 @@ describe('designer page', () => {
     await user.click(await within(dialog).findByRole('button', { name: 'Open' }))
 
     await waitFor(() => expect(screen.getByText(/^1 pockets/)).toBeTruthy())
+  })
+
+  test('saved-tray actions stay disabled while a load is in flight', async () => {
+    let releaseLoad: () => void = () => {}
+    state.loadGate = new Promise<void>((resolveLoad) => { releaseLoad = resolveLoad })
+    state.designs = [
+      {
+        id: '1', name: 'First tray', pocketCount: 1, updatedAt: '2026-08-28 12:00:00',
+        profileKind: 'preset',
+      },
+      {
+        id: '2', name: 'Second tray', pocketCount: 1, updatedAt: '2026-08-28 12:00:00',
+        profileKind: 'preset',
+      },
+    ]
+    const user = userEvent.setup()
+    renderPage()
+    await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
+    await user.click(screen.getByRole('button', { name: 'Open' }))
+    const dialog = await screen.findByRole('dialog')
+    const openButtons = await within(dialog).findAllByRole('button', { name: 'Open' })
+    await user.click(openButtons[0])
+    await waitFor(() => expect(
+      state.calls.some(call => call.path === '/api/keycap-trays/1')).toBe(true))
+    for (const button of within(dialog).getAllByRole('button', { name: 'Open' })) {
+      assert.equal((button as HTMLButtonElement).disabled, true)
+    }
+    assert.equal(
+      (within(dialog).getByRole('button', { name: 'Delete Second tray' }) as HTMLButtonElement)
+        .disabled,
+      true,
+    )
+    releaseLoad()
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    assert.equal(
+      state.calls.some(call => call.path === '/api/keycap-trays/2'),
+      false,
+    )
   })
 
   test('deleting a saved tray asks for confirmation first', async () => {

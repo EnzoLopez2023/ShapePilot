@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'vitest'
 import { buildTrayMesh } from '../geometry/layers.ts'
 import { LIBRARY_SIZING, PYTHON_SIZING } from '../geometry/shapes.ts'
-import { issuesFor, validateDesign } from '../geometry/validate.ts'
+import { checkWallThickness, issuesFor, validateDesign } from '../geometry/validate.ts'
 import { DEFAULT_FABRICATION } from '../model/defaults.ts'
 import type { Pocket, TrayDesign } from '../model/types.ts'
 import { writeShaperSvg } from './svg.ts'
@@ -102,6 +102,53 @@ test('the 2.00 mm library radius passes CNC', () => {
   const d = design([{ id: 'a', units: 1, x: 10, y: 10 }], { sizing: { ...LIBRARY_SIZING } })
   const issues = validateDesign(d, DEFAULT_FABRICATION, buildTrayMesh(d))
   assert.equal(issuesFor(issues, 'cnc').filter(i => i.code === 'corner-radius-below-tool').length, 0)
+})
+
+test('CNC validation uses the radius geometry can actually generate', () => {
+  const d = design([{
+    id: 'narrow',
+    units: 1,
+    x: 10,
+    y: 10,
+    widthMm: 2,
+    heightMm: 10,
+    cornerRadiusMm: 2,
+  }])
+  const issues = validateDesign(d, DEFAULT_FABRICATION, buildTrayMesh(d))
+  const radius = issues.find(i => i.code === 'corner-radius-below-tool')
+  assert.ok(radius)
+  assert.deepEqual(radius.pocketIds, ['narrow'])
+  assert.match(radius.message, /1 mm corner radius/)
+})
+
+test('minimum wall validation includes clearance from the tray rim', () => {
+  const d = design([{ id: 'edge', units: 1, x: 0.1, y: 20 }], {
+    profile: { kind: 'rect', widthMm: 100, heightMm: 60 },
+    sizing: { ...LIBRARY_SIZING },
+  })
+  const issues = validateDesign(d, DEFAULT_FABRICATION, buildTrayMesh(d))
+  const rim = issues.find(i => i.code === 'rim-too-thin')
+  assert.ok(rim)
+  assert.deepEqual(rim.pocketIds, ['edge'])
+  assert.equal(issues.some(i => i.code === 'pocket-outside-profile'), false)
+})
+
+test('rim validation stays bounded at accepted profile and pocket limits', () => {
+  const boundary = Array.from({ length: 4_000 }, (_, index) => {
+    const angle = index / 4_000 * Math.PI * 2
+    return [10_000 * Math.cos(angle), 10_000 * Math.sin(angle)] as [number, number]
+  })
+  const pockets = Array.from({ length: 512 }, (_, index): Pocket => ({
+    id: `pocket-${index}`,
+    units: 1,
+    x: 100,
+    y: 100,
+  }))
+  const d = design(pockets, {
+    profile: { kind: 'custom', rings: [[boundary]] },
+    sizing: { ...LIBRARY_SIZING },
+  })
+  assert.deepEqual(checkWallThickness(d, DEFAULT_FABRICATION), [])
 })
 
 test('a pocket past the outline is an error', () => {

@@ -6,7 +6,7 @@
 // the live authority, and never on a startup or request path.
 import { createHash } from 'node:crypto'
 import { closeSync, createReadStream, fstatSync, openSync, statSync } from 'node:fs'
-import { mkdir, mkdtemp, rm, stat } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import Database from 'better-sqlite3'
 import type DatabaseConstructor from 'better-sqlite3'
@@ -296,15 +296,24 @@ export async function createBackup(options: CreateBackupOptions): Promise<Backup
     const artifactId = artifactIdFor(sourceCreatedUtc, manifest)
     const databaseKey = `${artifactId}/${BACKUP_DATABASE_FILE}`
     const manifestKey = `${artifactId}/${BACKUP_MANIFEST_FILE}`
+    const manifestPath = join(work, BACKUP_MANIFEST_FILE)
+    const manifestBytes = Buffer.from(serializeManifest(manifest))
+    await writeFile(manifestPath, manifestBytes, { mode: 0o600 })
 
-    const stored = await options.store.putFile(databaseKey, snapshotPath)
-    if (stored.sha256 !== sha256 || stored.bytes !== details.size) {
-      throw new RecoveryError(
-        'BACKUP_UPLOAD_MISMATCH',
-        'the stored snapshot does not match the bytes that were produced',
-      )
-    }
-    await options.store.put(manifestKey, Buffer.from(serializeManifest(manifest), 'utf8'))
+    await options.store.putBundle(artifactId, [
+      {
+        name: BACKUP_DATABASE_FILE,
+        sourcePath: snapshotPath,
+        bytes: details.size,
+        sha256,
+      },
+      {
+        name: BACKUP_MANIFEST_FILE,
+        sourcePath: manifestPath,
+        bytes: manifestBytes.byteLength,
+        sha256: createHash('sha256').update(manifestBytes).digest('hex'),
+      },
+    ])
 
     // Read the manifest back out of the external store and re-derive the
     // identity from it. A backup that cannot be read back is not a backup.

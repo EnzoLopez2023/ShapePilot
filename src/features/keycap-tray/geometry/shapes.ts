@@ -83,12 +83,25 @@ export interface PocketLike {
   shape?: 'rect' | 'iso-enter'
 }
 
+export function effectivePocketCornerRadius(p: PocketLike, s: PocketSizing): number {
+  const requested = p.cornerRadiusMm ?? s.cornerRadius
+  if (p.shape === 'iso-enter') {
+    const bottomW = p.widthMm ?? pocketWidth(1.5, s)
+    const topW = pocketWidth(1.25, s)
+    const rowH = p.heightMm ?? pocketHeight(1, s)
+    return Math.max(0, Math.min(requested, topW / 2, rowH / 2, bottomW - topW))
+  }
+  const width = p.widthMm ?? pocketWidth(p.units, s)
+  const height = p.heightMm ?? pocketHeight(p.heightUnits ?? 1, s)
+  return Math.max(0, Math.min(requested, width / 2, height / 2))
+}
+
 export function pocketRing(p: PocketLike, s: PocketSizing): Polygon {
   if (p.shape === 'iso-enter') return [isoEnterRing(p, s)]
   let w = p.widthMm ?? pocketWidth(p.units, s)
   let h = p.heightMm ?? pocketHeight(p.heightUnits ?? 1, s)
   if (p.rotationDeg === 90) [w, h] = [h, w]
-  const r = p.cornerRadiusMm ?? s.cornerRadius
+  const r = effectivePocketCornerRadius(p, s)
   return [translateRing(unitRing(w, h, r, s.cornerSegments), p.x, p.y)]
 }
 
@@ -114,7 +127,7 @@ export function isoEnterRing(p: PocketLike, s: PocketSizing): Ring {
   const topW = pocketWidth(1.25, s)
   const rowH = p.heightMm ?? pocketHeight(1, s)
   const notchX = bottomW - topW
-  const r = Math.max(0, Math.min(p.cornerRadiusMm ?? s.cornerRadius, topW / 2, rowH / 2, notchX))
+  const r = effectivePocketCornerRadius(p, s)
   const segs = s.cornerSegments
 
   const arc = (cx: number, cy: number, start: number): Vec2[] => {

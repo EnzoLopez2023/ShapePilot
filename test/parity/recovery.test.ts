@@ -54,6 +54,23 @@ const guardExit = (child: ReturnType<typeof spawn>): Promise<number | null> =>
     child.once('close', resolveExit)
   })
 
+const guardExitBounded = async (child: ReturnType<typeof spawn>): Promise<number | null> => {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      guardExit(child),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          child.kill('SIGKILL')
+          reject(new Error('artifact guard did not terminate after a bounded-source failure'))
+        }, 2_000)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
+}
+
 const startGuardPut = (root: string, key: string, expectedBytes: number) => {
   const rootFd = openSync(root, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
   const child = spawn(artifactGuard, ['put', key, String(expectedBytes)], {
@@ -337,6 +354,203 @@ describe('artifact store', () => {
     assert.equal(await guardExit(child), 0)
     assert.deepEqual(readFileSync(join(held, 'copy.bin')), payload)
     assert.equal(existsSync(join(outside, 'copy.bin')), false)
+  })
+
+  test('a handled multi-file bundle failure removes all staged bytes', async () => {
+    const root = scratchDir('store-bundle-failure')
+    const source = join(root, '..', `bundle-source-${randomUUID()}.bin`)
+    scratch.push(source)
+    writeFileSync(source, 'database bytes')
+    const rootFd = openSync(root, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
+    const sourceFd = openSync(source, constants.O_RDONLY | constants.O_NOFOLLOW)
+    const invalidSourceFd = openSync('/dev/null', constants.O_RDONLY)
+    const child = spawn(
+      artifactGuard,
+      ['bundle', 'artifact-id', 'shapepilot.sqlite3', '14', 'manifest.json', '0'],
+      { stdio: ['ignore', 'pipe', 'pipe', rootFd, 'pipe', sourceFd, invalidSourceFd] },
+    )
+    closeSync(rootFd)
+    closeSync(sourceFd)
+    closeSync(invalidSourceFd)
+    child.stdout?.resume()
+
+    assert.notEqual(await guardExit(child), 0)
+    assert.equal(existsSync(join(root, 'artifact-id')), false)
+    assert.equal(
+      readdirSync(root).some((name) => name.startsWith('.shapepilot-bundle-')),
+      false,
+    )
+  })
+
+  test('a replaced bundle staging pathname cannot publish unapproved contents', async () => {
+    const root = scratchDir('store-bundle-path-race')
+    const source = join(root, '..', `bundle-race-source-${randomUUID()}.bin`)
+    scratch.push(source)
+    const data = Buffer.from('approved database bytes')
+    writeFileSync(source, data)
+    const rootFd = openSync(root, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
+    const sourceFd = openSync(source, constants.O_RDONLY | constants.O_NOFOLLOW)
+    const child = spawn(
+      artifactGuard,
+      ['bundle', 'artifact-id', 'shapepilot.sqlite3', String(data.byteLength)],
+      { stdio: ['ignore', 'pipe', 'pipe', rootFd, 'pipe', sourceFd] },
+    )
+    closeSync(rootFd)
+    closeSync(sourceFd)
+    const control = child.stdio[4]
+    if (!child.stdout || !control || !('end' in control)) {
+      throw new Error('artifact guard did not expose its bundle verification pipes')
+    }
+    let received = 0
+    const copied = new Promise<void>((resolveCopied) => {
+      child.stdout?.on('data', (chunk: Buffer) => {
+        received += chunk.byteLength
+        if (received === data.byteLength) resolveCopied()
+      })
+    })
+    await copied
+    const staging = await waitForEntry(root, '.shapepilot-bundle-')
+    const displaced = join(root, 'displaced-owned-bundle')
+    renameSync(join(root, staging), displaced)
+    mkdirSync(join(root, staging))
+    writeFileSync(join(root, staging, 'malicious.bin'), 'unapproved')
+    control.end('C')
+
+    assert.notEqual(await guardExitBounded(child), 0)
+    assert.equal(existsSync(join(root, 'artifact-id')), false)
+    assert.equal(readFileSync(join(root, staging, 'malicious.bin'), 'utf8'), 'unapproved')
+  })
+
+  test('a replaced staged bundle file cannot become the approved identity', async () => {
+    const root = scratchDir('store-bundle-file-race')
+    const source = join(root, '..', `bundle-file-source-${randomUUID()}.bin`)
+    scratch.push(source)
+    const data = Buffer.from('approved database bytes')
+    writeFileSync(source, data)
+    const rootFd = openSync(root, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
+    const sourceFd = openSync(source, constants.O_RDONLY | constants.O_NOFOLLOW)
+    const child = spawn(
+      artifactGuard,
+      ['bundle', 'artifact-id', 'shapepilot.sqlite3', String(data.byteLength)],
+      { stdio: ['ignore', 'pipe', 'pipe', rootFd, 'pipe', sourceFd] },
+    )
+    closeSync(rootFd)
+    closeSync(sourceFd)
+    const control = child.stdio[4]
+    if (!child.stdout || !control || !('end' in control)) {
+      throw new Error('artifact guard did not expose its bundle verification pipes')
+    }
+    const copied = new Promise<void>((resolveCopied) => {
+      let received = 0
+      child.stdout?.on('data', (chunk: Buffer) => {
+        received += chunk.byteLength
+        if (received === data.byteLength) resolveCopied()
+      })
+    })
+    await copied
+    const staging = await waitForEntry(root, '.shapepilot-bundle-')
+    const stagedFile = join(root, staging, 'shapepilot.sqlite3')
+    await waitForPath(stagedFile)
+    renameSync(stagedFile, join(root, staging, 'displaced-approved.sqlite3'))
+    writeFileSync(stagedFile, 'unapproved replacement')
+    control.end('C')
+
+    assert.notEqual(await guardExitBounded(child), 0)
+    assert.equal(existsSync(join(root, 'artifact-id')), false)
+    assert.equal(readFileSync(stagedFile, 'utf8'), 'unapproved replacement')
+  })
+
+  test('an injected bundle entry cannot be published', async () => {
+    const root = scratchDir('store-bundle-entry-race')
+    const source = join(root, '..', `bundle-entry-source-${randomUUID()}.bin`)
+    scratch.push(source)
+    const data = Buffer.from('approved database bytes')
+    writeFileSync(source, data)
+    const rootFd = openSync(root, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
+    const sourceFd = openSync(source, constants.O_RDONLY | constants.O_NOFOLLOW)
+    const child = spawn(
+      artifactGuard,
+      ['bundle', 'artifact-id', 'shapepilot.sqlite3', String(data.byteLength)],
+      { stdio: ['ignore', 'pipe', 'pipe', rootFd, 'pipe', sourceFd] },
+    )
+    closeSync(rootFd)
+    closeSync(sourceFd)
+    const control = child.stdio[4]
+    if (!child.stdout || !control || !('end' in control)) {
+      throw new Error('artifact guard did not expose its bundle verification pipes')
+    }
+    const copied = new Promise<void>((resolveCopied) => {
+      let received = 0
+      child.stdout?.on('data', (chunk: Buffer) => {
+        received += chunk.byteLength
+        if (received === data.byteLength) resolveCopied()
+      })
+    })
+    await copied
+    const staging = await waitForEntry(root, '.shapepilot-bundle-')
+    writeFileSync(join(root, staging, 'injected.bin'), 'unapproved')
+    control.end('C')
+
+    assert.notEqual(await guardExitBounded(child), 0)
+    assert.equal(existsSync(join(root, 'artifact-id')), false)
+    assert.equal(readFileSync(join(root, staging, 'injected.bin'), 'utf8'), 'unapproved')
+  })
+
+  test('a bundle with unapproved staged bytes is never published', async () => {
+    const root = scratchDir('store-bundle-hash')
+    const source = join(root, '..', `bundle-hash-source-${randomUUID()}.bin`)
+    scratch.push(source)
+    const data = Buffer.from('database bytes')
+    writeFileSync(source, data)
+    const store = createFilesystemArtifactStore(root)
+    await assert.rejects(
+      () => store.putBundle('artifact-id', [{
+        name: 'shapepilot.sqlite3',
+        sourcePath: source,
+        bytes: data.byteLength,
+        sha256: '0'.repeat(64),
+      }]),
+      (error: unknown) =>
+        error instanceof ArtifactStoreError && error.code === 'ARTIFACT_BUNDLE_MISMATCH',
+    )
+    assert.equal(existsSync(join(root, 'artifact-id')), false)
+  })
+
+  test.each([
+    { label: 'shrinks', contents: 'short', approvedBytes: 6 },
+    { label: 'grows', contents: 'longer', approvedBytes: 5 },
+  ])('a bundle source that $label cannot deadlock or publish', async ({
+    contents, approvedBytes,
+  }) => {
+    const root = scratchDir(`store-bundle-${contents}`)
+    const source = join(root, '..', `bundle-length-source-${randomUUID()}.bin`)
+    scratch.push(source)
+    writeFileSync(source, contents)
+    const rootFd = openSync(root, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
+    const sourceFd = openSync(source, constants.O_RDONLY | constants.O_NOFOLLOW)
+    const child = spawn(
+      artifactGuard,
+      ['bundle', 'artifact-id', 'shapepilot.sqlite3', String(approvedBytes)],
+      { stdio: ['ignore', 'pipe', 'pipe', rootFd, 'pipe', sourceFd] },
+    )
+    closeSync(rootFd)
+    closeSync(sourceFd)
+    const control = child.stdio[4]
+    if (!child.stdout || !control || !('end' in control)) {
+      throw new Error('artifact guard did not expose its bundle verification pipes')
+    }
+    let received = 0
+    child.stdout.on('data', (chunk: Buffer) => {
+      received += chunk.byteLength
+      if (received >= approvedBytes) control.end('C')
+    })
+
+    assert.notEqual(await guardExitBounded(child), 0)
+    assert.equal(existsSync(join(root, 'artifact-id')), false)
+    assert.equal(
+      readdirSync(root).some((name) => name.startsWith('.shapepilot-bundle-')),
+      false,
+    )
   })
 })
 

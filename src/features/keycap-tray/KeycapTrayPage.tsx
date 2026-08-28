@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent,
   DialogTitle, IconButton, MenuItem, Paper, Snackbar, Stack, TextField, ToggleButton,
@@ -57,6 +57,7 @@ export default function KeycapTrayPage() {
   const [error, setError] = useState<string | null>(null)
   const [openDialog, setOpenDialog] = useState(false)
   const [fitToken, setFitToken] = useState(0)
+  const loadGeneration = useRef(0)
 
   // Rebuilt only when the design actually changes -- a full 75-pocket tray takes
   // ~55 ms, which is fine on commit but would stutter if it ran during a drag.
@@ -90,14 +91,20 @@ export default function KeycapTrayPage() {
   }, [savedId, design, refresh])
 
   const load = useCallback(async (id: string) => {
+    const generation = ++loadGeneration.current
     setBusy(true)
     try {
       const loaded = await api.getDesign(id)
+      if (generation !== loadGeneration.current) return
       d.setDesign(loaded)
       setSavedId(id)
       setOpenDialog(false)
       setFitToken(t => t + 1)
-    } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
+    } catch (e) {
+      if (generation === loadGeneration.current) setError((e as Error).message)
+    } finally {
+      if (generation === loadGeneration.current) setBusy(false)
+    }
   }, [d])
 
   const clone = useCallback(async () => {
@@ -265,13 +272,24 @@ export default function KeycapTrayPage() {
           <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', rowGap: 1 }}>
             <Button
               size="small" startIcon={<AddIcon />}
-              onClick={() => { d.setDesign(emptyDesign()); setSavedId(null) }}
+              disabled={busy}
+              onClick={() => {
+                loadGeneration.current += 1
+                d.setDesign(emptyDesign())
+                setSavedId(null)
+              }}
             >
               New
             </Button>
-            <Button size="small" onClick={() => { setOpenDialog(true); void refresh() }}>Open</Button>
             <Button
-              size="small" startIcon={<ContentCopyIcon />} disabled={!savedId}
+              size="small"
+              disabled={busy}
+              onClick={() => { setOpenDialog(true); void refresh() }}
+            >
+              Open
+            </Button>
+            <Button
+              size="small" startIcon={<ContentCopyIcon />} disabled={!savedId || busy}
               onClick={() => void clone()}
             >
               Clone
@@ -378,9 +396,10 @@ export default function KeycapTrayPage() {
                   {s.pocketCount} pockets · updated {s.updatedAt}
                 </Typography>
               </Box>
-              <Button size="small" onClick={() => void load(s.id)}>Open</Button>
+              <Button size="small" disabled={busy} onClick={() => void load(s.id)}>Open</Button>
               <IconButton
                 size="small" aria-label={`Delete ${s.name}`}
+                disabled={busy}
                 onClick={() => void remove(s.id, s.name)}
               >
                 <DeleteIcon fontSize="small" />

@@ -29,6 +29,16 @@ export interface ArtifactStore {
   readonly description: string
   put(key: string, data: Uint8Array): Promise<StoredObject>
   putFile(key: string, sourcePath: string): Promise<StoredObject>
+  /** Publish a complete multi-file artifact under one atomic top-level key. */
+  putBundle(
+    key: string,
+    files: readonly {
+      name: string
+      sourcePath: string
+      bytes: number
+      sha256: string
+    }[],
+  ): Promise<void>
   get(key: string): Promise<Uint8Array>
   /**
    * Materialize into an exclusive invocation-owned temporary path. The caller
@@ -59,7 +69,9 @@ export function assertSafeKey(key: string): string {
     if (!KEY_SEGMENT.test(segment)) {
       throw new ArtifactStoreError('ARTIFACT_KEY_INVALID', `invalid artifact key segment "${segment}"`)
     }
-    if (segment === '.shapepilot-staging' || segment.startsWith('.shapepilot-tmp-')) {
+    if (segment === '.shapepilot-staging'
+      || segment.startsWith('.shapepilot-tmp-')
+      || segment.startsWith('.shapepilot-bundle-')) {
       throw new ArtifactStoreError('ARTIFACT_KEY_INVALID', 'artifact key uses a reserved segment')
     }
   }
@@ -252,6 +264,174 @@ export function createFilesystemArtifactStore(root: string): ArtifactStore {
         }
       } finally {
         await source.close()
+      }
+    },
+
+    async putBundle(key, files) {
+      const safeKey = assertSafeKey(key)
+      if (safeKey.includes('/') || files.length === 0) {
+        throw new ArtifactStoreError(
+          'ARTIFACT_BUNDLE_INVALID',
+          'artifact bundles require one top-level key and at least one file',
+        )
+      }
+      const names = files.map((file) => {
+        const name = assertSafeKey(file.name)
+        if (name.includes('/')) {
+          throw new ArtifactStoreError(
+            'ARTIFACT_BUNDLE_INVALID',
+            'artifact bundle file names must be single segments',
+          )
+        }
+        return name
+      })
+      if (new Set(names).size !== names.length) {
+        throw new ArtifactStoreError(
+          'ARTIFACT_BUNDLE_INVALID',
+          'artifact bundle file names must be unique',
+        )
+      }
+      for (const file of files) {
+        if (!Number.isSafeInteger(file.bytes) || file.bytes < 0
+          || !/^[a-f0-9]{64}$/.test(file.sha256)) {
+          throw new ArtifactStoreError(
+            'ARTIFACT_BUNDLE_INVALID',
+            'artifact bundle files require a safe byte length and lowercase SHA-256',
+          )
+        }
+      }
+      const sources: Awaited<ReturnType<typeof open>>[] = []
+      try {
+        for (let index = 0; index < files.length; index++) {
+          const file = files[index]
+          const source = await open(
+            file.sourcePath,
+            constants.O_RDONLY | constants.O_NOFOLLOW,
+          )
+          sources.push(source)
+          const details = await source.stat({ bigint: true })
+          if (!details.isFile() || details.size !== BigInt(file.bytes)) {
+            throw new ArtifactStoreError(
+              'ARTIFACT_SOURCE_INVALID',
+              `artifact bundle source "${names[index]}" is not the expected regular file`,
+            )
+          }
+        }
+        const stdio: StdioOptions = [
+          'ignore', 'pipe', 'pipe', rootFd, 'pipe', ...sources.map((source) => source.fd),
+        ]
+        const child: ChildProcess = spawn(
+          guardPath,
+          [
+            'bundle',
+            safeKey,
+            ...files.flatMap((file, index) => [names[index], String(file.bytes)]),
+          ],
+          { stdio },
+        )
+        const output = child.stdout
+        const control = child.stdio[4]
+        if (!output || !child.stderr || !control || !('end' in control)) {
+          child.kill()
+          throw new ArtifactStoreError(
+            'ARTIFACT_GUARD_UNAVAILABLE',
+            'artifact-store guard did not expose its bundle verification pipes',
+          )
+        }
+        const stderr: Buffer[] = []
+        child.stderr.on('data', (chunk: Buffer) => {
+          if (stderr.reduce((total, part) => total + part.byteLength, 0) < 64 * 1024) {
+            stderr.push(chunk)
+          }
+        })
+        const completion = new Promise<void>((resolveCompletion, rejectCompletion) => {
+          child.once('error', (cause) => rejectCompletion(new ArtifactStoreError(
+            'ARTIFACT_GUARD_UNAVAILABLE',
+            `could not start the artifact-store guard: ${cause.message}`,
+          )))
+          child.once('close', (code) => {
+            if (code === 0) resolveCompletion()
+            else rejectCompletion(new ArtifactStoreError(
+              'ARTIFACT_OPERATION_FAILED',
+              Buffer.concat(stderr).toString('utf8').trim()
+                || `artifact-store guard exited ${code}`,
+            ))
+          })
+        })
+        const hashes = files.map(() => createHash('sha256'))
+        let fileIndex = 0
+        let remaining = files[0].bytes
+        let committed = false
+        const finishEmptyFiles = () => {
+          while (fileIndex < files.length && remaining === 0) {
+            const actual = hashes[fileIndex].digest('hex')
+            if (actual !== files[fileIndex].sha256) {
+              throw new ArtifactStoreError(
+                'ARTIFACT_BUNDLE_MISMATCH',
+                `staged artifact bundle file "${names[fileIndex]}" has an unexpected SHA-256`,
+              )
+            }
+            fileIndex += 1
+            remaining = fileIndex < files.length ? files[fileIndex].bytes : 0
+          }
+        }
+        try {
+          finishEmptyFiles()
+          if (fileIndex === files.length) {
+            control.end('C')
+            committed = true
+          }
+          for await (const raw of output) {
+            const chunk = Buffer.from(raw)
+            let offset = 0
+            while (offset < chunk.byteLength) {
+              if (fileIndex >= files.length) {
+                throw new ArtifactStoreError(
+                  'ARTIFACT_BUNDLE_MISMATCH',
+                  'artifact bundle guard emitted more bytes than approved',
+                )
+              }
+              const count = Math.min(remaining, chunk.byteLength - offset)
+              hashes[fileIndex].update(chunk.subarray(offset, offset + count))
+              remaining -= count
+              offset += count
+              if (remaining === 0) {
+                const actual = hashes[fileIndex].digest('hex')
+                if (actual !== files[fileIndex].sha256) {
+                  throw new ArtifactStoreError(
+                    'ARTIFACT_BUNDLE_MISMATCH',
+                    `staged artifact bundle file "${names[fileIndex]}" has an unexpected SHA-256`,
+                  )
+                }
+                fileIndex += 1
+                remaining = fileIndex < files.length ? files[fileIndex].bytes : 0
+                finishEmptyFiles()
+              }
+            }
+            if (fileIndex === files.length && !committed) {
+              control.end('C')
+              committed = true
+            }
+          }
+          if (fileIndex !== files.length) {
+            throw new ArtifactStoreError(
+              'ARTIFACT_BUNDLE_MISMATCH',
+              'artifact bundle guard emitted fewer bytes than approved',
+            )
+          }
+          if (!committed) {
+            control.end('C')
+            committed = true
+          }
+          await completion
+        } catch (cause) {
+          if (!committed) control.end('A')
+          output.destroy()
+          await completion.catch(() => undefined)
+          throw cause
+        }
+      } finally {
+        await Promise.all(sources.map((source) => source.close()))
       }
     },
 
