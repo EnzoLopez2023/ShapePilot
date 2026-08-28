@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Node 24 / Ubuntu
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck -- --pretty false
+      - run: npm run lint -- --quiet
+      - run: npm test -- --reporter=dot
+      - run: npm run build
+      - run: npm audit --audit-level=high
+      - run: npm audit --omit=dev --audit-level=high
+      - name: Reject tracked runtime artifacts
+        run: |
+          if git ls-files | grep -E '\.(sqlite|sqlite3|db)(-|$)|-(journal|wal|shm)$|(^|/)(dist|coverage|native/build|\.recovery-work|artifacts?)(/|$)'; then
+            echo "Tracked runtime artifact detected."
+            exit 1
+          fi
