@@ -302,6 +302,18 @@ function validateMultiPolygon(value: unknown): void {
     bad(RING_FIELD, `${RING_FIELD} must contain at most ${LIMITS.maxPolygons} polygons`)
   }
 
+  let pointBudget = 0
+  for (const polygon of polygons) {
+    if (!Array.isArray(polygon)) continue
+    for (const ring of polygon) {
+      if (!Array.isArray(ring)) continue
+      pointBudget += ring.length
+      if (pointBudget > LIMITS.maxTotalPoints) {
+        bad(RING_FIELD, `${RING_FIELD} must contain at most ${LIMITS.maxTotalPoints} points in total`)
+      }
+    }
+  }
+
   let totalPoints = 0
   const validatedPolygons = polygons.map((polygon, polygonIndex) => {
     const field = `${RING_FIELD}[${polygonIndex}]`

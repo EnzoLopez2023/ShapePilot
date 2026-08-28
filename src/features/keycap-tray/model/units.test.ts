@@ -19,6 +19,12 @@ test('parseLength reads whole-and-fraction, bare fraction, and decimal-as-inches
   assert.ok(Math.abs((parseLength('1.25', true) ?? NaN) - 31.75) < 1e-6)
 })
 
+test('parseLength preserves the sign of bare negative fractions', () => {
+  assert.ok(Math.abs((parseLength('-1/32', true) ?? NaN) + 0.79375) < 1e-6)
+  assert.ok(Math.abs((parseLength('-1/2"', true) ?? NaN) + 12.7) < 1e-6)
+  assert.ok(Math.abs((parseLength('-3/8', true) ?? NaN) + 9.525) < 1e-6)
+})
+
 test('parseLength in mm mode reads a plain decimal as millimetres', () => {
   assert.equal(parseLength('12.5', false), 12.5)
 })

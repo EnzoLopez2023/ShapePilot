@@ -572,6 +572,20 @@ describe('validation the wire cannot express', () => {
     assert.ok(owner.tenantId)
   })
 
+  test('the cumulative profile point budget is enforced before quadratic topology checks', () => {
+    const ring = Array.from({ length: 2_000 }, (_, index) => {
+      const angle = index / 2_000 * Math.PI * 2
+      return [100 * Math.cos(angle), 100 * Math.sin(angle)]
+    })
+    assert.throws(
+      () => validateTrayDesignInput(design({
+        profile: { kind: 'custom', rings: [[ring, ring, ring]] },
+      })),
+      (error: unknown) => error instanceof ApiError && error.status === 400
+        && (error.details as { field?: string }).field === 'profile.rings',
+    )
+  })
+
   test('undefined and empty clone names fall back to the pinned default', () => {
     assert.deepEqual(validateCloneRequest({}), {})
     assert.deepEqual(validateCloneRequest({ name: '' }), {})

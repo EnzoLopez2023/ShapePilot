@@ -51,6 +51,7 @@ export default function KeycapTrayPage() {
   const [imperial, setImperial] = useState(false)
   const [designs, setDesigns] = useState<api.DesignSummary[]>([])
   const [savedId, setSavedId] = useState<string | null>(null)
+  const [savedRevision, setSavedRevision] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
   const [listLoading, setListLoading] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
@@ -58,6 +59,9 @@ export default function KeycapTrayPage() {
   const [openDialog, setOpenDialog] = useState(false)
   const [fitToken, setFitToken] = useState(0)
   const loadGeneration = useRef(0)
+  const designRevision = useRef(design.revision)
+  designRevision.current = design.revision
+  const hasUnsavedChanges = savedId !== null && savedRevision !== design.revision
 
   // Rebuilt only when the design actually changes -- a full 75-pocket tray takes
   // ~55 ms, which is fine on commit but would stutter if it ran during a drag.
@@ -76,16 +80,21 @@ export default function KeycapTrayPage() {
     () => design.pockets.filter(p => selection.has(p.id)), [design.pockets, selection])
 
   const save = useCallback(async () => {
+    const submittedRevision = design.revision
     setBusy(true)
     try {
       if (savedId) {
         await api.updateDesign(savedId, design)
-        setToast('Saved')
       } else {
         const { id } = await api.createDesign(design)
         setSavedId(id)
-        setToast('Saved as a new design')
       }
+      setSavedRevision(submittedRevision)
+      setToast(
+        designRevision.current === submittedRevision
+          ? (savedId ? 'Saved' : 'Saved as a new design')
+          : 'Saved earlier changes — newer edits are still unsaved',
+      )
       await refresh()
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }, [savedId, design, refresh])
@@ -98,6 +107,7 @@ export default function KeycapTrayPage() {
       if (generation !== loadGeneration.current) return
       d.setDesign(loaded)
       setSavedId(id)
+      setSavedRevision(0)
       setOpenDialog(false)
       setFitToken(t => t + 1)
     } catch (e) {
@@ -128,7 +138,11 @@ export default function KeycapTrayPage() {
     setBusy(true)
     try {
       await api.deleteDesign(id)
-      if (id === savedId) { d.setDesign(emptyDesign()); setSavedId(null) }
+      if (id === savedId) {
+        d.setDesign(emptyDesign())
+        setSavedId(null)
+        setSavedRevision(null)
+      }
       await refresh()
       setToast('Deleted')
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
@@ -277,6 +291,7 @@ export default function KeycapTrayPage() {
                 loadGeneration.current += 1
                 d.setDesign(emptyDesign())
                 setSavedId(null)
+                setSavedRevision(null)
               }}
             >
               New
@@ -298,7 +313,7 @@ export default function KeycapTrayPage() {
               size="small" variant="contained" onClick={() => void save()} disabled={busy}
               startIcon={busy ? <CircularProgress size={14} color="inherit" /> : <SaveIcon />}
             >
-              Save
+              {hasUnsavedChanges ? 'Save changes' : 'Save'}
             </Button>
           </Stack>
         </Stack>

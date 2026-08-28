@@ -296,6 +296,40 @@ describe('designer page', () => {
     )
   })
 
+  test('edits made during save remain explicitly unsaved', async () => {
+    let releaseCreate: () => void = () => {}
+    state.createGate = new Promise<void>((resolveCreate) => { releaseCreate = resolveCreate })
+    const user = userEvent.setup()
+    renderPage()
+    await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
+
+    await user.click(screen.getByRole('button', { name: /^Save/ }))
+    await waitFor(() => expect(
+      state.calls.some(c => c.method === 'POST' && c.path === '/api/keycap-trays')).toBe(true))
+    await user.click(await screen.findByRole('button', { name: 'Add a 1u pocket' }))
+    releaseCreate()
+
+    assert.ok(await screen.findByText('Saved earlier changes — newer edits are still unsaved'))
+    assert.ok(screen.getByRole('button', { name: 'Save changes' }))
+    assert.ok(screen.getByText(/^1 pockets/))
+  })
+
+  test('tabbing through rounded imperial values does not rewrite millimetres', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
+    await user.click(screen.getByRole('button', { name: 'in' }))
+    const floor = screen.getByRole('textbox', { name: 'Floor' }) as HTMLInputElement
+    assert.equal(floor.value, '3/32"')
+    await user.click(floor)
+    await user.tab()
+    await user.click(screen.getByRole('button', { name: /^Save/ }))
+    await waitFor(() => expect(
+      state.calls.some(c => c.method === 'POST' && c.path === '/api/keycap-trays')).toBe(true))
+    const create = state.calls.find(c => c.method === 'POST' && c.path === '/api/keycap-trays')
+    assert.equal((create?.body as { floorThicknessMm?: number }).floorThicknessMm, 2.4)
+  })
+
   test('the open dialog shows an empty state when nothing is saved', async () => {
     const user = userEvent.setup()
     renderPage()

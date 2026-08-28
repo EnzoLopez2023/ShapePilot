@@ -338,6 +338,11 @@ export function createFilesystemArtifactStore(root: string): ArtifactStore {
             'artifact-store guard did not expose its bundle verification pipes',
           )
         }
+        const controlPipe = control as Writable
+        controlPipe.on('error', () => undefined)
+        const decide = (decision: 'A' | 'C') => {
+          if (!controlPipe.destroyed && !controlPipe.writableEnded) controlPipe.end(decision)
+        }
         const stderr: Buffer[] = []
         child.stderr.on('data', (chunk: Buffer) => {
           if (stderr.reduce((total, part) => total + part.byteLength, 0) < 64 * 1024) {
@@ -378,7 +383,7 @@ export function createFilesystemArtifactStore(root: string): ArtifactStore {
         try {
           finishEmptyFiles()
           if (fileIndex === files.length) {
-            control.end('C')
+            decide('C')
             committed = true
           }
           for await (const raw of output) {
@@ -409,7 +414,7 @@ export function createFilesystemArtifactStore(root: string): ArtifactStore {
               }
             }
             if (fileIndex === files.length && !committed) {
-              control.end('C')
+              decide('C')
               committed = true
             }
           }
@@ -420,12 +425,12 @@ export function createFilesystemArtifactStore(root: string): ArtifactStore {
             )
           }
           if (!committed) {
-            control.end('C')
+            decide('C')
             committed = true
           }
           await completion
         } catch (cause) {
-          if (!committed) control.end('A')
+          if (!committed) decide('A')
           output.destroy()
           await completion.catch(() => undefined)
           throw cause

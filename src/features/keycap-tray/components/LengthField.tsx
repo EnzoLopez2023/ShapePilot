@@ -20,22 +20,28 @@ export interface LengthFieldProps {
  */
 export default function LengthField({ label, valueMm, onChangeMm, imperial, hint, sx }: LengthFieldProps) {
   const [text, setText] = useState(() => formatLength(valueMm, imperial))
+  const [edited, setEdited] = useState(false)
 
   // Re-sync when the value changes elsewhere (undo, another field, the unit
   // toggle) -- but not while the user is actively typing this field.
-  useEffect(() => { setText(formatLength(valueMm, imperial)) }, [valueMm, imperial])
+  useEffect(() => {
+    setText(formatLength(valueMm, imperial))
+    setEdited(false)
+  }, [valueMm, imperial])
 
   const commit = () => {
+    if (!edited) return
     const parsed = parseLength(text, imperial)
     if (parsed != null) onChangeMm(parsed)
     else setText(formatLength(valueMm, imperial))
+    setEdited(false)
   }
 
   const input = (
     <TextField
       size="small" label={label} sx={sx}
       value={text}
-      onChange={e => setText(e.target.value)}
+      onChange={e => { setText(e.target.value); setEdited(true) }}
       onBlur={commit}
       onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
       placeholder={imperial ? 'e.g. 1-3/8"' : undefined}

@@ -39,20 +39,20 @@ export function parseLength(raw: string, imperial: boolean): number | null {
     const n = parseFloat(s)
     return Number.isFinite(n) ? n : null
   }
-  const m = s.match(/^(-)?(\d+(?:\.\d+)?)?(?:[\s-](\d+)\/(\d+))?$/) ??
-    s.match(/^(-)?(\d+)\/(\d+)$/)
-  if (m && m.length === 5) {
-    const [, neg, whole, num, den] = m
+  const fraction = s.match(/^(-)?(\d+)\/(\d+)$/)
+  if (fraction) {
+    const [, neg, num, den] = fraction
+    const f = parseFloat(num) / parseFloat(den)
+    if (!Number.isFinite(f)) return null
+    return inchesToMm((neg ? -1 : 1) * f)
+  }
+  const mixed = s.match(/^(-)?(\d+(?:\.\d+)?)(?:[\s-](\d+)\/(\d+))?$/)
+  if (mixed) {
+    const [, neg, whole, num, den] = mixed
     const w = whole ? parseFloat(whole) : 0
     const f = num && den ? parseFloat(num) / parseFloat(den) : 0
     if (!Number.isFinite(w + f)) return null
     return inchesToMm((neg ? -1 : 1) * (w + f))
-  }
-  if (m && m.length === 4) {
-    const [, neg, num, den] = m
-    const f = parseFloat(num) / parseFloat(den)
-    if (!Number.isFinite(f)) return null
-    return inchesToMm((neg ? -1 : 1) * f)
   }
   // Bare decimal read as inches, e.g. "1.25".
   const n = parseFloat(s)

@@ -7,8 +7,8 @@
 // path.
 import assert from 'node:assert/strict'
 import {
-  closeSync, constants, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync,
-  rmSync, symlinkSync, writeFileSync, writeSync,
+  chmodSync, closeSync, constants, existsSync, mkdirSync, openSync, readFileSync, readdirSync,
+  renameSync, rmSync, symlinkSync, writeFileSync, writeSync,
 } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
@@ -514,6 +514,31 @@ describe('artifact store', () => {
         error instanceof ArtifactStoreError && error.code === 'ARTIFACT_BUNDLE_MISMATCH',
     )
     assert.equal(existsSync(join(root, 'artifact-id')), false)
+  })
+
+  test('an early bundle-guard exit is reported without a control-pipe crash', async () => {
+    const root = scratchDir('store-bundle-early-exit')
+    const source = join(root, '..', `bundle-exit-source-${randomUUID()}.bin`)
+    scratch.push(source)
+    const data = Buffer.from('database bytes')
+    writeFileSync(source, data)
+    const store = createFilesystemArtifactStore(root)
+    const sha256 = await sha256File(source)
+    chmodSync(root, 0o500)
+    try {
+      await assert.rejects(
+        () => store.putBundle('artifact-id', [{
+          name: 'shapepilot.sqlite3',
+          sourcePath: source,
+          bytes: data.byteLength,
+          sha256,
+        }]),
+        (error: unknown) =>
+          error instanceof ArtifactStoreError && error.code === 'ARTIFACT_BUNDLE_MISMATCH',
+      )
+    } finally {
+      chmodSync(root, 0o700)
+    }
   })
 
   test.each([
