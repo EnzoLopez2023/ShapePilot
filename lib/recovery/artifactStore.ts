@@ -167,6 +167,7 @@ export function createFilesystemArtifactStore(root: string): ArtifactStore {
       })
     })
     input.on('error', () => undefined)
+    output.on('error', () => undefined)
     if (control && 'on' in control) control.on('error', () => undefined)
     return { child, input, output, control: control as Writable | undefined, completion }
   }

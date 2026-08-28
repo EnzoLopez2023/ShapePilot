@@ -48,11 +48,13 @@ const waitForEntry = async (directory: string, prefix: string): Promise<string> 
   throw new Error(`timed out waiting for ${prefix} in ${directory}`)
 }
 
-const guardExit = (child: ReturnType<typeof spawn>): Promise<number | null> =>
-  new Promise((resolveExit, rejectExit) => {
+const guardExit = (child: ReturnType<typeof spawn>): Promise<number | null> => {
+  for (const stream of child.stdio) stream?.on('error', () => undefined)
+  return new Promise((resolveExit, rejectExit) => {
     child.once('error', rejectExit)
     child.once('close', resolveExit)
   })
+}
 
 const guardExitBounded = async (child: ReturnType<typeof spawn>): Promise<number | null> => {
   let timer: ReturnType<typeof setTimeout> | undefined
