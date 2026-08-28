@@ -13,7 +13,6 @@ import {
 } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import type { ChildProcess, StdioOptions } from 'node:child_process'
-import { createReadStream } from 'node:fs'
 import { basename, dirname, isAbsolute, normalize, resolve } from 'node:path'
 import { Readable, Transform } from 'node:stream'
 import type { Writable } from 'node:stream'
@@ -81,6 +80,26 @@ export function assertSafeKey(key: string): string {
 const sha256Of = (data: Uint8Array): string => createHash('sha256').update(data).digest('hex')
 const guardPath = resolve(import.meta.dirname, '../../native/build/artifact-store-guard')
 const MAX_BUFFERED_OBJECT_BYTES = 1024 * 1024
+const FILE_CHUNK_BYTES = 1024 * 1024
+
+const readFileHandle = async function* (
+  source: Awaited<ReturnType<typeof open>>,
+  bytes: number,
+): AsyncGenerator<Buffer> {
+  let offset = 0
+  while (offset < bytes) {
+    const chunk = Buffer.allocUnsafe(Math.min(FILE_CHUNK_BYTES, bytes - offset))
+    const result = await source.read(chunk, 0, chunk.byteLength, offset)
+    if (result.bytesRead === 0) {
+      throw new ArtifactStoreError(
+        'ARTIFACT_SOURCE_CHANGED',
+        'artifact source ended before its approved byte length',
+      )
+    }
+    offset += result.bytesRead
+    yield chunk.subarray(0, result.bytesRead)
+  }
+}
 
 interface GuardProcess {
   child: ChildProcess
@@ -166,6 +185,7 @@ export function createFilesystemArtifactStore(root: string): ArtifactStore {
         ))
       })
     })
+    void completion.catch(() => undefined)
     input.on('error', () => undefined)
     output.on('error', () => undefined)
     if (control && 'on' in control) control.on('error', () => undefined)
@@ -215,12 +235,7 @@ export function createFilesystemArtifactStore(root: string): ArtifactStore {
         const transfer = pipeline(
           before.size === 0n
             ? Readable.from([])
-            : createReadStream(sourcePath, {
-                fd: source.fd,
-                autoClose: false,
-                start: 0,
-                end: Number(before.size - 1n),
-              }),
+            : Readable.from(readFileHandle(source, Number(before.size))),
           hashing,
           guard.input,
         )
@@ -364,6 +379,7 @@ export function createFilesystemArtifactStore(root: string): ArtifactStore {
             ))
           })
         })
+        void completion.catch(() => undefined)
         const hashes = files.map(() => createHash('sha256'))
         let fileIndex = 0
         let remaining = files[0].bytes
