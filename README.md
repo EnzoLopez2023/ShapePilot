@@ -47,7 +47,7 @@ set the `VITE_*` values in `.env.example`.
 |---|---|
 | `npm run dev` | Vite dev server for the SPA |
 | `npm run dev:server` | API with file watching |
-| `npm start` | API, production mode |
+| `npm start` | API with `NODE_ENV=production` enforced by the production launcher |
 | `npm run build:native` | Build the pinned SQLite descriptor-identity guard |
 | `npm run build` | Native guard plus production SPA build into `dist/client` |
 | `npm run typecheck` | `tsc -b --noEmit` across both projects |
@@ -66,7 +66,7 @@ client secret and uses managed identity in production.
 
 | Variable | Required | Meaning |
 |---|---|---|
-| `NODE_ENV` | yes | `development`, `test` or `production` |
+| `NODE_ENV` | yes outside `npm start` | `development`, `test` or `production`; never inferred |
 | `PORT` | no | API port, default `8080` |
 | `SHAPEPILOT_ENTRA_TENANT_ID` | yes | Tenant whose tokens are accepted |
 | `SHAPEPILOT_API_AUDIENCE` | yes | ShapePilot's own API audience |

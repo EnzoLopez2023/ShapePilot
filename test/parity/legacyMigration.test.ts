@@ -549,6 +549,8 @@ describe('legacy import apply', () => {
           db: db.handle, bundle, owner, approvedSource: approved,
           expectedReportHash: planImport({ db: db.handle, bundle, owner, approvedSource: approved }).reportHash,
         })
+        db.handle.prepare(
+          "UPDATE sqlite_sequence SET seq = 1 WHERE name = 'keycap_tray_pockets'").run()
         const replayPlan = planImport({ db: db.handle, bundle, owner, approvedSource: approved })
         assert.equal(replayPlan.report.totals.insert, 0)
         assert.equal(replayPlan.report.totals.noop, 7)
@@ -560,6 +562,13 @@ describe('legacy import apply', () => {
         })
         assert.equal(replay.inserted, 0)
         assert.equal(replay.noop, 7)
+        assert.equal(
+          db.handle.prepare<[string], { seq: number }>(
+            'SELECT seq FROM sqlite_sequence WHERE name = ?',
+          ).get('keycap_tray_pockets')?.seq,
+          17,
+          'a no-op row replay must still repair the approved source sequence',
+        )
 
         const designs = db.handle.prepare<[], { count: number }>(
           'SELECT COUNT(*) AS count FROM keycap_tray_designs').get()

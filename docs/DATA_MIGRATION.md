@@ -56,6 +56,11 @@ and against the bundle's own declarations. A single differing byte, row, column
 type, count or evidence field fails with `SOURCE_NOT_APPROVED` before the
 importer plans anything, so an unapproved bundle cannot write.
 
+The gate also recomputes every pocket-to-design relationship pair from the
+canonical pocket rows and requires the bundle relationship block to match
+exactly. Apply reconciles approved `sqlite_sequence` values even when every data
+row is already an idempotent no-op.
+
 The coordinator's `hash-sqlite-tables.mjs` is deliberately **not** vendored: it
 stays outside this repository as an independent oracle, and
 `test/parity/approvedSource.test.ts` asserts that ShapePilot's implementation

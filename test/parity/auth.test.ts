@@ -314,6 +314,12 @@ describe('HTTP gate', () => {
 })
 
 describe('development bypass', () => {
+  test('configuration refuses to infer an environment when NODE_ENV is absent', () => {
+    assert.throws(
+      () => loadConfig({}),
+      (error: unknown) => error instanceof ConfigError && error.code === 'CONFIG_MISSING')
+  })
+
   test('it is refused outright when NODE_ENV=production', () => {
     assert.throws(
       () => loadConfig({

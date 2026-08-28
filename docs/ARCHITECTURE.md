@@ -96,6 +96,11 @@ through a racy pathname ownership check. After that proof, every writable open a
 `foreign_keys=ON` (the pocket cascade is load-bearing), and a bounded
 `busy_timeout` so a stuck writer fails instead of hanging a request.
 
+`NODE_ENV` is never inferred by configuration. The production launcher used by
+`npm start` sets it to `production`; direct development and test entry points
+must state their environment explicitly. Missing mode is a startup failure, not
+a path to development authentication or a newly created local authority.
+
 Migrations are append-only and identified by a checksum over their exact
 statements. Each ledger row stores its ordinal, id, name and checksum, and the
 schema marker is a checksum over that ordered ledger — so a database with the

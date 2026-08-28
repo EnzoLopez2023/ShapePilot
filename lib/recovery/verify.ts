@@ -20,7 +20,9 @@ import type { FileHandle } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import Database from 'better-sqlite3'
 import type { DatabaseIdentity } from '../db/identity.ts'
-import { identityDifferences, readDatabaseIdentity } from '../db/identity.ts'
+import {
+  identityDifferences, readAuthorityId, readDatabaseIdentity,
+} from '../db/identity.ts'
 import type { ArtifactStore } from './artifactStore.ts'
 import { sha256File, runSnapshotChecks } from './backup.ts'
 import type { BackupManifest } from './manifest.ts'
@@ -29,12 +31,16 @@ import {
   artifactIdFor, validateBackupManifest,
 } from './manifest.ts'
 
+interface AuthorityIdentity extends DatabaseIdentity {
+  authorityId: string
+}
+
 /** Re-derive the identity of a database file on disk. */
-function identityOf(path: string): DatabaseIdentity {
+function identityOf(path: string): AuthorityIdentity {
   const db = new Database(path, { readonly: true, fileMustExist: true })
   try {
     db.pragma('query_only = ON')
-    return readDatabaseIdentity(db)
+    return { ...readDatabaseIdentity(db), authorityId: readAuthorityId(db) }
   } finally {
     db.close()
   }
@@ -54,9 +60,9 @@ export interface VerifyReport {
   sha256: string
   manifestSha256: string
   /** Identity re-derived from the bytes fetched back out of the store. */
-  readBackIdentity: DatabaseIdentity
+  readBackIdentity: AuthorityIdentity
   /** Identity re-derived from the disposable restore. */
-  restoredIdentity: DatabaseIdentity
+  restoredIdentity: AuthorityIdentity
   tables: { name: string; manifestRowCount: number; restoredRowCount: number; ok: boolean }[]
   checks: ReturnType<typeof runSnapshotChecks>
   differences: string[]
@@ -117,11 +123,17 @@ export async function verifyBackup(options: VerifyOptions): Promise<VerifyReport
     for (const difference of identityDifferences(expectedIdentity, readBackIdentity)) {
       differences.push(`read-back identity: ${difference}`)
     }
+    if (readBackIdentity.authorityId !== manifest.database.authorityId) {
+      differences.push('read-back identity: authority id does not match the manifest')
+    }
 
     await copyFile(readBack, restored)
     const restoredIdentity = identityOf(restored)
     for (const difference of identityDifferences(expectedIdentity, restoredIdentity)) {
       differences.push(`disposable restore identity: ${difference}`)
+    }
+    if (restoredIdentity.authorityId !== manifest.database.authorityId) {
+      differences.push('disposable restore identity: authority id does not match the manifest')
     }
 
     const db = new Database(restored, { fileMustExist: true, readonly: true })
@@ -186,7 +198,7 @@ export interface RestoreResult {
   bytes: number
   sha256: string
   /** Re-derived from the restored file, before anything may promote it. */
-  identity: DatabaseIdentity
+  identity: AuthorityIdentity
   checks: ReturnType<typeof runSnapshotChecks>
 }
 
@@ -302,7 +314,7 @@ export async function restoreBackup(options: RestoreOptions): Promise<RestoreRes
 
     // Identity is proved before an operator can promote anything. A file with
     // the same head migration but a different history is refused here.
-    let identity: DatabaseIdentity
+    let identity: AuthorityIdentity
     try {
       identity = identityOf(materialized)
     } catch (cause) {
@@ -313,6 +325,9 @@ export async function restoreBackup(options: RestoreOptions): Promise<RestoreRes
       )
     }
     const identityProblems = identityDifferences(manifestIdentity(manifest), identity)
+    if (identity.authorityId !== manifest.database.authorityId) {
+      identityProblems.push('authority id does not match the manifest')
+    }
     if (identityProblems.length > 0) {
       throw new RecoveryError(
         'RESTORE_IDENTITY_MISMATCH',

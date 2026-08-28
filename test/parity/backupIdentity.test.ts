@@ -17,6 +17,7 @@ import { join } from 'node:path'
 import Database from 'better-sqlite3'
 import { afterEach, describe, test } from 'vitest'
 import { openDatabase } from '../../lib/db/connection.ts'
+import { NativeIdentityError } from '../../lib/db/nativeIdentity.ts'
 import { IdentityError, schemaMarkerOf } from '../../lib/db/identity.ts'
 import { MIGRATIONS, migrationChecksum } from '../../lib/db/migrate.ts'
 import { createFilesystemArtifactStore } from '../../lib/recovery/artifactStore.ts'
@@ -143,6 +144,26 @@ describe('a backup refuses a database this build did not produce', () => {
       () => createBackup(backupOptions(target)),
       (error: unknown) => error instanceof IdentityError && error.code === 'APP_MARKER_MISSING')
   })
+
+  test('a raced source path cannot back up another valid ShapePilot authority', async () => {
+    const target = fixture('source-race')
+    const replacement = fixture('source-race-replacement')
+    const displaced = join(target.root, 'displaced.db')
+    const replacementHash = await sha256File(replacement.dbPath)
+
+    await assert.rejects(
+      () => createBackup({
+        ...backupOptions(target),
+        afterSourcePreflight: () => {
+          renameSync(target.dbPath, displaced)
+          renameSync(replacement.dbPath, target.dbPath)
+        },
+      }),
+      (error: unknown) => error instanceof NativeIdentityError
+        && error.code === 'NATIVE_IDENTITY_MISMATCH',
+    )
+    assert.equal(await sha256File(target.dbPath), replacementHash)
+  })
 })
 
 describe('the manifest identity block is self-proving', () => {
@@ -208,7 +229,20 @@ describe('the manifest identity block is self-proving', () => {
       result.manifest.database.schemaMarker,
       schemaMarkerOf(result.manifest.database.migrationLedger))
     assert.match(result.manifest.database.schemaObjectsSha256, /^[0-9a-f]{64}$/)
+    assert.match(result.manifest.database.authorityId, /^[0-9a-f]{32}$/)
     assert.equal(result.manifest.database.migrationLedger[0].id, FIRST.id)
+  })
+
+  test('a missing or malformed authority id is refused', async () => {
+    const target = fixture('manifest-authority')
+    const result = await createBackup(backupOptions(target))
+    for (const authorityId of ['', 'z'.repeat(32), 'a'.repeat(31)]) {
+      const manifest = JSON.parse(JSON.stringify(result.manifest)) as BackupManifest
+      manifest.database.authorityId = authorityId
+      assert.throws(
+        () => validateBackupManifest(manifest),
+        (error: unknown) => error instanceof RecoveryError && error.code === 'MANIFEST_INVALID')
+    }
   })
 })
 
@@ -279,6 +313,31 @@ describe('read-back, disposable restore and promotion all re-derive identity', (
     // Nothing may be left behind for an operator to promote by accident.
     const { existsSync } = await import('node:fs')
     assert.equal(existsSync(destination), false)
+  })
+
+  test('verify and restore reject a snapshot with another authority id', async () => {
+    const target = fixture('authority-divergence')
+    const result = await createBackup(backupOptions(target))
+    const tamperedId = await swapArtifact(target, result.artifactId, [
+      `UPDATE app_identity SET value = '${'a'.repeat(32)}' WHERE key = 'authority_id'`,
+    ])
+
+    const report = await verifyBackup({
+      store: target.store,
+      artifactId: tamperedId,
+      workRoot: join(target.root, 'verify-work'),
+    })
+    assert.equal(report.ok, false)
+    assert.ok(report.differences.some((difference) => difference.includes('authority id')))
+    await assert.rejects(
+      () => restoreBackup({
+        store: target.store,
+        artifactId: tamperedId,
+        destinationPath: join(target.root, 'authority-divergent.db'),
+        activePath: target.dbPath,
+      }),
+      (error: unknown) => error instanceof RecoveryError
+        && error.code === 'RESTORE_IDENTITY_MISMATCH')
   })
 
   test('a good artifact restores and reports the identity it was taken with', async () => {

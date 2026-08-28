@@ -21,6 +21,7 @@
 import { OWNED_LEGACY_TABLES } from '../db/schema.ts'
 import type { ApprovedSource, ApprovedTable } from './approvedSource.ts'
 import { APPROVED_SOURCE, approvedTable } from './approvedSource.ts'
+import { rowValue } from './canonical.ts'
 import { canonicalTableHashFromRows, productCanonicalHash } from './canonicalTable.ts'
 import type { CanonicalColumn } from './canonicalTable.ts'
 import type { ExportBundle, ExportedTable } from './manifest.ts'
@@ -84,6 +85,28 @@ function assertTableSchema(table: ExportedTable, approved: ApprovedTable, bundle
   }
 }
 
+function assertRelationships(bundle: ExportBundle): void {
+  const pockets = bundle.tables.find((table) => table.name === 'keycap_tray_pockets')
+  if (!pockets) reject('keycap_tray_pockets is missing from the bundle')
+  const safeInteger = (value: ReturnType<typeof rowValue>, label: string): number => {
+    if (typeof value === 'number' && Number.isSafeInteger(value)) return value
+    return reject(`keycap tray relationship ${label} keys must be safe integers`)
+  }
+  const expectedPairs = (pockets as ExportedTable).rows.map((row): [number, number] => {
+    const child = safeInteger(rowValue(row, 'keycap_tray_pockets', 'id'), 'child')
+    const parent = safeInteger(rowValue(row, 'keycap_tray_pockets', 'design_id'), 'parent')
+    return [child, parent]
+  })
+  const relationship = bundle.relationships[0]
+  if (bundle.relationships.length !== 1
+    || relationship?.child !== 'keycap_tray_pockets'
+    || relationship.parent !== 'keycap_tray_designs'
+    || relationship.column !== 'design_id'
+    || JSON.stringify(relationship.pairs) !== JSON.stringify(expectedPairs)) {
+    reject('declared pocket/design relationships do not match the approved exported rows')
+  }
+}
+
 export interface ApprovalResult {
   product: string
   productCanonicalSha256: string
@@ -112,6 +135,7 @@ export function assertApprovedSource(
   }
 
   assertSourceIdentity(bundle, approved)
+  assertRelationships(bundle)
 
   for (const [index, expected] of approved.sqliteSequence.entries()) {
     const actual = bundle.sqliteSequence[index]

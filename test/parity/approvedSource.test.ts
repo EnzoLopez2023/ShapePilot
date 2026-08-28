@@ -339,6 +339,7 @@ describe('the approval gate refuses anything but the approved source', () => {
         }],
         ['declared primary key', (draft) => { draft.tables[2].schema.primaryKey = ['name'] }],
         ['sqlite sequence', (draft) => { draft.sqliteSequence[1].seq += 1 }],
+        ['relationship pair', (draft) => { draft.relationships[0].pairs[0][1] += 1 }],
       ]
 
       for (const [label, mutate] of cases) {
@@ -364,6 +365,25 @@ describe('the approval gate refuses anything but the approved source', () => {
         mutate(draft)
         assert.doesNotThrow(
           () => refused(draft, approved, 'EXPORT_SEQUENCE_INVALID'))
+      }
+    })
+  })
+
+  test('malformed relationship metadata is rejected before planning', async () => {
+    await withApprovedFixture((bundle, approved) => {
+      const cases: [(draft: ExportBundle) => void, string][] = [
+        [(draft) => { draft.relationships = [] }, 'SOURCE_NOT_APPROVED'],
+        [(draft) => {
+          draft.relationships[0].pairs[0] = [1, Number.MAX_SAFE_INTEGER + 1]
+        }, 'EXPORT_RELATIONSHIPS_INVALID'],
+        [(draft) => {
+          draft.relationships[0].pairs[0] = null as unknown as [number, number]
+        }, 'EXPORT_RELATIONSHIPS_INVALID'],
+      ]
+      for (const [mutate, code] of cases) {
+        const draft = clone(bundle)
+        mutate(draft)
+        assert.doesNotThrow(() => refused(draft, approved, code))
       }
     })
   })

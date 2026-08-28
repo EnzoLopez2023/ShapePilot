@@ -16,7 +16,7 @@ const extensionPath = resolve(
 export interface ExpectedNativeFileIdentity {
   dev: bigint
   ino: bigint
-  size: bigint
+  size: bigint | null
 }
 
 export class NativeIdentityError extends Error {
@@ -31,7 +31,12 @@ export class NativeIdentityError extends Error {
 export const serializeNativeFileIdentity = (identity: ExpectedNativeFileIdentity): string =>
   `${BigInt.asUintN(64, identity.dev)}:`
   + `${BigInt.asUintN(64, identity.ino)}:`
-  + `${BigInt.asUintN(64, identity.size)}`
+  + `${identity.size === null ? '*' : BigInt.asUintN(64, identity.size)}`
+
+export interface NativeIdentityOptions {
+  allowSidecars?: boolean
+  databasePath?: string
+}
 
 /**
  * Verify the exact descriptor SQLite opened. The extension performs file-control
@@ -41,6 +46,7 @@ export const serializeNativeFileIdentity = (identity: ExpectedNativeFileIdentity
 export function verifyNativeFileIdentity(
   handle: SqliteDatabase,
   expected: ExpectedNativeFileIdentity,
+  options: NativeIdentityOptions = {},
 ): void {
   if (!existsSync(extensionPath)) {
     throw new NativeIdentityError(
@@ -50,10 +56,13 @@ export function verifyNativeFileIdentity(
   }
   const identityKey = 'SHAPEPILOT_EXPECTED_SQLITE_FILE_IDENTITY'
   const pathKey = 'SHAPEPILOT_SQLITE_DATABASE_PATH'
+  const sidecarKey = 'SHAPEPILOT_SQLITE_SIDECAR_POLICY'
   const previousIdentity = process.env[identityKey]
   const previousPath = process.env[pathKey]
+  const previousSidecarPolicy = process.env[sidecarKey]
   process.env[identityKey] = serializeNativeFileIdentity(expected)
-  process.env[pathKey] = handle.name
+  process.env[pathKey] = options.databasePath ?? handle.name
+  process.env[sidecarKey] = options.allowSidecars ? 'allow' : 'refuse'
   try {
     handle.loadExtension(extensionPath)
   } catch (cause) {
@@ -68,5 +77,7 @@ export function verifyNativeFileIdentity(
     else process.env[identityKey] = previousIdentity
     if (previousPath === undefined) delete process.env[pathKey]
     else process.env[pathKey] = previousPath
+    if (previousSidecarPolicy === undefined) delete process.env[sidecarKey]
+    else process.env[sidecarKey] = previousSidecarPolicy
   }
 }

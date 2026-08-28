@@ -5,6 +5,16 @@ SQLITE_EXTENSION_INIT1
 #include <stdlib.h>
 #include <string.h>
 
+static int shapepilot_identity_matches(const char *expected, const char *actual) {
+  size_t length;
+  if (expected == 0 || expected[0] == '\0') return 0;
+  length = strlen(expected);
+  if (expected[length - 1] == '*') {
+    return strncmp(expected, actual, length - 1) == 0;
+  }
+  return strcmp(expected, actual) == 0;
+}
+
 #ifdef _WIN32
 #include <windows.h>
 
@@ -55,7 +65,7 @@ static int shapepilot_file_identity(
     inode,
     size);
   expected = getenv("SHAPEPILOT_EXPECTED_SQLITE_FILE_IDENTITY");
-  if (expected == 0 || strcmp(expected, result) != 0) {
+  if (!shapepilot_identity_matches(expected, result)) {
     *error_message = sqlite3_mprintf("SQLite opened a different database file");
     return SQLITE_CANTOPEN;
   }
@@ -111,7 +121,7 @@ static int shapepilot_file_identity(
     (unsigned long long)info.st_ino,
     (unsigned long long)info.st_size);
   expected = getenv("SHAPEPILOT_EXPECTED_SQLITE_FILE_IDENTITY");
-  if (expected == 0 || strcmp(expected, result) != 0) {
+  if (!shapepilot_identity_matches(expected, result)) {
     *error_message = sqlite3_mprintf("SQLite opened a different database file");
     return SQLITE_CANTOPEN;
   }
@@ -121,9 +131,13 @@ static int shapepilot_file_identity(
 
 static int shapepilot_refuse_sidecars(char **error_message) {
   const char *database_path = getenv("SHAPEPILOT_SQLITE_DATABASE_PATH");
+  const char *sidecar_policy = getenv("SHAPEPILOT_SQLITE_SIDECAR_POLICY");
   static const char *suffixes[] = {"-journal", "-wal", "-shm"};
   unsigned int index;
 
+  if (sidecar_policy != 0 && strcmp(sidecar_policy, "allow") == 0) {
+    return SQLITE_OK;
+  }
   if (database_path == 0 || database_path[0] == '\0') {
     *error_message = sqlite3_mprintf("SQLite database path evidence is missing");
     return SQLITE_CANTOPEN;

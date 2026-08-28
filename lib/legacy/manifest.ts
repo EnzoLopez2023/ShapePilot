@@ -227,6 +227,20 @@ export function validateExportBundle(value: unknown): ExportBundle {
   if (!Array.isArray(raw.relationships)) {
     throw new LegacyError('EXPORT_RELATIONSHIPS_INVALID', 'relationships must be an array')
   }
+  for (const relationship of raw.relationships as Relationship[]) {
+    if (!relationship || !OWNED_LEGACY_TABLES.includes(relationship.child)
+      || !OWNED_LEGACY_TABLES.includes(relationship.parent)
+      || typeof relationship.column !== 'string'
+      || !Array.isArray(relationship.pairs)
+      || relationship.pairs.some((pair) =>
+        !Array.isArray(pair) || pair.length !== 2
+        || !pair.every((value) => Number.isSafeInteger(value)))) {
+      throw new LegacyError(
+        'EXPORT_RELATIONSHIPS_INVALID',
+        'relationships must contain owned tables, a column, and safe-integer key pairs',
+      )
+    }
+  }
   if (!Array.isArray(raw.sqliteSequence)) {
     throw new LegacyError('EXPORT_SEQUENCE_INVALID', 'sqliteSequence must be an array')
   }

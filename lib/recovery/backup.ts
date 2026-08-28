@@ -5,13 +5,16 @@
 // integrity_check and foreign_key_check run against the *copy*, never against
 // the live authority, and never on a startup or request path.
 import { createHash } from 'node:crypto'
-import { createReadStream } from 'node:fs'
+import { closeSync, createReadStream, fstatSync, openSync, statSync } from 'node:fs'
 import { mkdir, mkdtemp, rm, stat } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import Database from 'better-sqlite3'
 import type DatabaseConstructor from 'better-sqlite3'
 import { codeIdentity } from '../db/migrate.ts'
-import { assertIdentityMatches, readDatabaseIdentity } from '../db/identity.ts'
+import {
+  assertIdentityMatches, readAuthorityId, readDatabaseIdentity,
+} from '../db/identity.ts'
+import { verifyNativeFileIdentity } from '../db/nativeIdentity.ts'
 import type { ArtifactStore } from './artifactStore.ts'
 import type {
   BackupDatabase, BackupManifest, CheckResult, ForeignKeyCheck, TableSnapshot,
@@ -131,6 +134,7 @@ export function inspectSnapshot(
   // Identity comes out of the snapshot: the app marker it stores and the
   // ledger it carries, not the ledger this build happens to ship.
   const identity = readDatabaseIdentity(db)
+  const authorityId = readAuthorityId(db)
 
   return {
     format: BACKUP_FORMAT,
@@ -139,6 +143,7 @@ export function inspectSnapshot(
     sha256: input.sha256,
     bytes: input.bytes,
     appMarker: identity.app,
+    authorityId,
     schemaFormat: identity.schemaFormat,
     schemaMarker: identity.schemaMarker,
     schemaObjectsSha256: identity.schemaObjectsSha256,
@@ -166,6 +171,8 @@ export interface CreateBackupOptions {
    * on App Service is small and not on the persistent volume.
    */
   workRoot?: string
+  /** Deterministic test seam after descriptor preflight and before SQLite open. */
+  afterSourcePreflight?: () => void
 }
 
 export interface BackupResult {
@@ -189,12 +196,54 @@ export async function createBackup(options: CreateBackupOptions): Promise<Backup
   const snapshotPath = join(work, BACKUP_DATABASE_FILE)
 
   try {
-    const source = new Database(options.sourcePath, { fileMustExist: true, readonly: true })
+    const sourcePath = resolve(options.sourcePath)
+    const descriptor = openSync(sourcePath, 'r')
+    let sourceAuthorityId = ''
     try {
-      // SQLite's own backup API: a consistent copy of a live database.
-      await source.backup(snapshotPath)
+      const preflight = fstatSync(descriptor, { bigint: true })
+      const pathBefore = statSync(sourcePath, { bigint: true })
+      if (preflight.dev !== pathBefore.dev || preflight.ino !== pathBefore.ino) {
+        throw new RecoveryError(
+          'BACKUP_SOURCE_RACED',
+          'the backup source changed during descriptor preflight',
+        )
+      }
+      options.afterSourcePreflight?.()
+
+      const source = new Database(sourcePath, { fileMustExist: true, readonly: true })
+      try {
+        verifyNativeFileIdentity(source, {
+          dev: preflight.dev,
+          ino: preflight.ino,
+          size: null,
+        }, {
+          allowSidecars: true,
+          databasePath: sourcePath,
+        })
+        source.pragma('query_only = ON')
+        const sourceIdentity = readDatabaseIdentity(source)
+        sourceAuthorityId = readAuthorityId(source)
+        assertIdentityMatches(
+          codeIdentity(),
+          sourceIdentity,
+          'the backup source is not a database this build produced',
+        )
+        // SQLite's own backup API: a consistent copy of a live database.
+        await source.backup(snapshotPath)
+      } finally {
+        source.close()
+      }
+      const descriptorAfter = fstatSync(descriptor, { bigint: true })
+      const pathAfter = statSync(sourcePath, { bigint: true })
+      if (descriptorAfter.dev !== preflight.dev || descriptorAfter.ino !== preflight.ino
+        || pathAfter.dev !== preflight.dev || pathAfter.ino !== preflight.ino) {
+        throw new RecoveryError(
+          'BACKUP_SOURCE_RACED',
+          'the backup source path stopped referring to the preflighted authority',
+        )
+      }
     } finally {
-      source.close()
+      closeSync(descriptor)
     }
 
     const details = await stat(snapshotPath)
@@ -210,6 +259,12 @@ export async function createBackup(options: CreateBackupOptions): Promise<Backup
       })
     } finally {
       snapshot.close()
+    }
+    if (database.authorityId !== sourceAuthorityId) {
+      throw new RecoveryError(
+        'BACKUP_AUTHORITY_MISMATCH',
+        'the snapshot authority does not match the preflighted backup source',
+      )
     }
 
     // The snapshot must be an authority this build produced: same app marker,
@@ -262,6 +317,12 @@ export async function createBackup(options: CreateBackupOptions): Promise<Backup
     assertIdentityMatches(
       manifestIdentity(manifest), manifestIdentity(readBack),
       'the manifest read back from the artifact store has a different identity')
+    if (readBack.database.authorityId !== manifest.database.authorityId) {
+      throw new RecoveryError(
+        'BACKUP_READ_BACK_MISMATCH',
+        'the manifest read back from the artifact store has a different authority id',
+      )
+    }
 
     return {
       artifactId,

@@ -14,7 +14,7 @@
     "build:native": "node scripts/build-native.ts",
     "postinstall": "npm run build:native",
     "preview": "vite preview",
-    "start": "node server/index.ts",
+    "start": "node scripts/start-production.ts",
     "db:init": "node scripts/init-db.ts",
     "typecheck": "tsc -b --noEmit",
     "lint": "eslint .",

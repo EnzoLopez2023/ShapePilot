@@ -2,6 +2,11 @@
 
 Backup, verification and restore for the ShapePilot SQLite authority.
 
+The online backup source is bound to the preflighted SQLite descriptor before
+the backup API reads it. The manifest records the snapshot's durable authority
+ID in addition to app markers, ordered migration ledger, and schema catalog;
+read-back, disposable verification, and restore require that exact authority.
+
 ## Prohibitions
 
 These are enforced in code and covered by `test/parity/recovery.test.ts`.
@@ -27,9 +32,9 @@ These are enforced in code and covered by `test/parity/recovery.test.ts`.
   another process.
 - **Never enable WAL.** Azure Files (SMB) cannot provide the shared memory WAL
   needs. The connection asserts `journal_mode=DELETE` on every open.
-- **Never take identity from the running build.** The manifest's app marker,
-  schema marker and migration ledger are read out of the snapshot, and every
-  later stage re-derives them from the bytes in front of it.
+- **Never take identity from the running build.** The manifest's authority ID,
+  app marker, schema marker and migration ledger are read out of the snapshot,
+  and every later stage re-derives them from the bytes in front of it.
 
 ## Where artifacts go
 

@@ -81,7 +81,13 @@ const intInRange = (
 }
 
 const normalizeEnv = (raw: string | undefined): NodeEnvironment => {
-  const value = (raw ?? 'development').trim().toLowerCase()
+  if (raw == null || raw.trim() === '') {
+    throw new ConfigError(
+      'CONFIG_MISSING',
+      'NODE_ENV is required; use npm start for production or set development/test explicitly',
+    )
+  }
+  const value = raw.trim().toLowerCase()
   if (value === 'production' || value === 'test' || value === 'development') return value
   throw new ConfigError('CONFIG_INVALID', `NODE_ENV must be development, test or production`)
 }

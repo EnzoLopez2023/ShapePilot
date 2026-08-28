@@ -434,26 +434,26 @@ export function applyImport(options: ApplyOptions): ApplyResult {
   let runId: number | null = null
 
   const run = options.db.transaction(() => {
-    if (plan.writes.length === 0 && plan.report.totals.noop > 0) return
+    if (plan.writes.length > 0) {
+      runId = ledger.recordRunSync({
+        sourceManifestHash: plan.report.bundleHash,
+        sourceCommit: plan.report.source.commit,
+        sourceSha256: plan.report.source.sha256,
+        sourceBytes: plan.report.source.bytes,
+        owner,
+        reportHash: plan.reportHash,
+      })
 
-    runId = ledger.recordRunSync({
-      sourceManifestHash: plan.report.bundleHash,
-      sourceCommit: plan.report.source.commit,
-      sourceSha256: plan.report.source.sha256,
-      sourceBytes: plan.report.source.bytes,
-      owner,
-      reportHash: plan.reportHash,
-    })
-
-    for (const table of OWNED_LEGACY_TABLES) {
-      for (const write of plan.writes.filter((w) => w.table === table)) {
-        statements[table].run(bindValues(table, write.row, owner) as never)
-        ledger.recordRowSync(runId, {
-          sourceTable: table,
-          sourceId: write.id,
-          targetId: write.id,
-          rowHash: write.hash,
-        })
+      for (const table of OWNED_LEGACY_TABLES) {
+        for (const write of plan.writes.filter((w) => w.table === table)) {
+          statements[table].run(bindValues(table, write.row, owner) as never)
+          ledger.recordRowSync(runId, {
+            sourceTable: table,
+            sourceId: write.id,
+            targetId: write.id,
+            rowHash: write.hash,
+          })
+        }
       }
     }
 
@@ -472,7 +472,7 @@ export function applyImport(options: ApplyOptions): ApplyResult {
       }
     }
 
-    ledger.completeRunSync(runId)
+    if (runId !== null) ledger.completeRunSync(runId)
   })
 
   run()

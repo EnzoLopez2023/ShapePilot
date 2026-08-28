@@ -39,8 +39,9 @@ export interface BackupDatabase {
   sourcePath: string
   sha256: string
   bytes: number
-  /** All four fields below are read out of the snapshot, never from code. */
+  /** All five fields below are read out of the snapshot, never from code. */
   appMarker: string
+  authorityId: string
   schemaFormat: string
   schemaMarker: string
   schemaObjectsSha256: string
@@ -90,6 +91,7 @@ export const manifestHash = (manifest: BackupManifest): string =>
   createHash('sha256').update(serializeManifest(manifest)).digest('hex')
 
 const HEX64 = /^[0-9a-f]{64}$/
+const HEX32 = /^[0-9a-f]{32}$/
 
 export function assertIsoUtc(value: unknown, label: string): string {
   const parsed = typeof value === 'string' ? Date.parse(value) : Number.NaN
@@ -117,6 +119,10 @@ export const manifestIdentity = (manifest: BackupManifest): DatabaseIdentity => 
 function validateIdentity(database: BackupDatabase): void {
   if (typeof database.appMarker !== 'string' || database.appMarker.trim() === '') {
     throw new RecoveryError('MANIFEST_INVALID', 'database.appMarker is required')
+  }
+  if (!HEX32.test(String(database.authorityId))) {
+    throw new RecoveryError(
+      'MANIFEST_INVALID', 'database.authorityId must be 32 lowercase hex characters')
   }
   if (typeof database.schemaFormat !== 'string' || database.schemaFormat.trim() === '') {
     throw new RecoveryError('MANIFEST_INVALID', 'database.schemaFormat is required')
