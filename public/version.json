@@ -1,0 +1,15 @@
+{
+  "app": "shapepilot",
+  "version": "0.1.0",
+  "build": "0",
+  "commit": "development",
+  "builtAt": "1970-01-01T00:00:00.000Z",
+  "sourceLineage": {
+    "repository": "EnzoLopez2023/Hearth",
+    "commit": "f0b05fc1dbf53e8aa26c215d8e858894a2793871",
+    "tree": "62cbd35861c511f7c17187c875d19ee6e353b80d",
+    "version": "2.13.2",
+    "build": 172,
+    "imageDigest": "sha256:dc4df7e0f966be5b0608e71643d316cc5eba7590b8e56cec482583ab69443140"
+  }
+}
