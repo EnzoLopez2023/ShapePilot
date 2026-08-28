@@ -7,10 +7,12 @@
 // path.
 import assert from 'node:assert/strict'
 import {
-  existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync,
+  closeSync, constants, existsSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync,
+  rmSync, symlinkSync, writeFileSync, writeSync,
 } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import { join } from 'node:path'
+import { spawn } from 'node:child_process'
+import { join, resolve } from 'node:path'
 import { afterEach, describe, test } from 'vitest'
 import { openDatabase } from '../../lib/db/connection.ts'
 import { MIGRATIONS, headMigrationId, schemaIdentity } from '../../lib/db/migrate.ts'
@@ -25,6 +27,45 @@ import { restoreBackup, verifyBackup } from '../../lib/recovery/verify.ts'
 import { TEST_ROOT, startTestServer, stubVerifier } from '../helpers/server.ts'
 
 const scratch: string[] = []
+const artifactGuard = resolve(import.meta.dirname, '../../native/build/artifact-store-guard')
+
+const waitForPath = async (path: string): Promise<void> => {
+  for (let attempt = 0; attempt < 200; attempt++) {
+    if (existsSync(path)) return
+    await new Promise((resolveWait) => setTimeout(resolveWait, 5))
+  }
+  throw new Error(`timed out waiting for ${path}`)
+}
+
+const waitForEntry = async (directory: string, prefix: string): Promise<string> => {
+  for (let attempt = 0; attempt < 200; attempt++) {
+    if (existsSync(directory)) {
+      const entry = readdirSync(directory).find((name) => name.startsWith(prefix))
+      if (entry) return entry
+    }
+    await new Promise((resolveWait) => setTimeout(resolveWait, 5))
+  }
+  throw new Error(`timed out waiting for ${prefix} in ${directory}`)
+}
+
+const guardExit = (child: ReturnType<typeof spawn>): Promise<number | null> =>
+  new Promise((resolveExit, rejectExit) => {
+    child.once('error', rejectExit)
+    child.once('close', resolveExit)
+  })
+
+const startGuardPut = (root: string, key: string, expectedBytes: number) => {
+  const rootFd = openSync(root, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
+  const child = spawn(artifactGuard, ['put', key, String(expectedBytes)], {
+    stdio: ['pipe', 'ignore', 'pipe', rootFd, 'pipe'],
+  })
+  closeSync(rootFd)
+  const control = child.stdio[4]
+  if (!child.stdin || !control || !('end' in control)) {
+    throw new Error('artifact guard did not expose its input pipes')
+  }
+  return { child, input: child.stdin, control }
+}
 
 const scratchDir = (label: string): string => {
   const path = join(TEST_ROOT, `${label}-${randomUUID()}`)
@@ -94,6 +135,208 @@ describe('artifact store', () => {
     assert.equal(stored.bytes, payload.byteLength)
     assert.deepEqual(Buffer.from(await store.get('bundle/data.bin')), payload)
     assert.deepEqual(await store.list('bundle'), ['bundle/data.bin'])
+    assert.deepEqual(await store.list(''), ['bundle'])
+    assert.deepEqual(await store.list(''), ['bundle'])
+  })
+
+  test('file copies are hashed with bounded I/O and materialize exact bytes', async () => {
+    const root = scratchDir('store-file-copy')
+    const source = join(root, '..', `source-${randomUUID()}.bin`)
+    const destination = join(root, '..', `destination-${randomUUID()}.bin`)
+    scratch.push(source, destination)
+    const payload = Buffer.alloc(3 * 1024 * 1024 + 17, 0x5a)
+    writeFileSync(source, payload)
+    const store = createFilesystemArtifactStore(root)
+
+    const stored = await store.putFile('bundle/large.bin', source)
+    const fetched = await store.fetchToFile('bundle/large.bin', destination)
+
+    assert.equal(stored.bytes, payload.byteLength)
+    assert.equal(fetched.bytes, payload.byteLength)
+    assert.equal(fetched.sha256, stored.sha256)
+    assert.deepEqual(readFileSync(destination), payload)
+  })
+
+  test('a same-size source rewrite aborts before publishing the final key', async () => {
+    const root = scratchDir('store-source-race')
+    const source = join(root, '..', `changing-source-${randomUUID()}.bin`)
+    scratch.push(source)
+    writeFileSync(source, Buffer.alloc(16 * 1024 * 1024, 0x41))
+    const sourceFd = openSync(source, 'r+')
+    let mutations = 0
+    const timer = setInterval(() => {
+      const byte = Buffer.from([mutations++ % 256])
+      writeSync(sourceFd, byte, 0, 1, mutations % (16 * 1024 * 1024))
+    }, 1)
+    const store = createFilesystemArtifactStore(root)
+
+    try {
+      await assert.rejects(
+        () => store.putFile('bundle/changing.bin', source),
+        (error: unknown) =>
+          error instanceof ArtifactStoreError && error.code === 'ARTIFACT_SOURCE_CHANGED',
+      )
+    } finally {
+      clearInterval(timer)
+      closeSync(sourceFd)
+    }
+    assert.ok(mutations > 0)
+    await assert.rejects(() => store.get('bundle/changing.bin'))
+  })
+
+  test('a growing source is bounded to its approved size and cannot hang publication', async () => {
+    const root = scratchDir('store-growing-source')
+    const source = join(root, '..', `growing-source-${randomUUID()}.bin`)
+    scratch.push(source)
+    writeFileSync(source, Buffer.alloc(8 * 1024 * 1024, 0x42))
+    const sourceFd = openSync(source, 'a')
+    const timer = setInterval(() => writeSync(sourceFd, Buffer.from('growth')), 1)
+    const store = createFilesystemArtifactStore(root)
+
+    try {
+      await assert.rejects(
+        Promise.race([
+          store.putFile('bundle/growing.bin', source),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('growing source copy hung')), 5_000)),
+        ]),
+        (error: unknown) =>
+          error instanceof ArtifactStoreError && error.code === 'ARTIFACT_SOURCE_CHANGED',
+      )
+    } finally {
+      clearInterval(timer)
+      closeSync(sourceFd)
+    }
+    await assert.rejects(() => store.get('bundle/growing.bin'))
+  })
+
+  test('symlink components cannot redirect store reads or writes', async () => {
+    const root = scratchDir('store-symlink')
+    const outside = scratchDir('store-outside')
+    writeFileSync(join(outside, 'secret.bin'), 'outside')
+    symlinkSync(outside, join(root, 'redirect'), 'dir')
+    const store = createFilesystemArtifactStore(root)
+
+    for (const operation of [
+      () => store.get('redirect/secret.bin'),
+      () => store.put('redirect/new.bin', Buffer.from('escape')),
+      () => store.putFile('redirect/copied.bin', join(outside, 'secret.bin')),
+      () => store.list('redirect'),
+    ]) {
+      await assert.rejects(
+        operation,
+        (error: unknown) =>
+          error instanceof ArtifactStoreError && error.code === 'ARTIFACT_OPERATION_FAILED',
+      )
+    }
+    assert.equal(existsSync(join(outside, 'new.bin')), false)
+    assert.equal(existsSync(join(outside, 'copied.bin')), false)
+  })
+
+  test('a raced root replacement cannot redirect a descriptor-anchored put', async () => {
+    const parent = scratchDir('store-root-race')
+    const root = join(parent, 'store')
+    const held = join(parent, 'held')
+    mkdirSync(root)
+    const store = createFilesystemArtifactStore(root)
+    renameSync(root, held)
+    mkdirSync(root)
+
+    await store.put('bundle/data.bin', Buffer.from('payload'))
+
+    assert.equal(readFileSync(join(held, 'bundle', 'data.bin'), 'utf8'), 'payload')
+    assert.equal(existsSync(join(root, 'bundle', 'data.bin')), false)
+  })
+
+  test('a raced final key is preserved and the unpublished temporary is removed', async () => {
+    const root = scratchDir('store-cleanup-race')
+    const direct = startGuardPut(root, 'bundle/data.bin', 5)
+    const target = join(root, 'bundle', 'data.bin')
+    direct.input.end('owned')
+    await waitForPath(join(root, 'bundle'))
+    writeFileSync(target, 'replacement')
+    direct.control.end('C')
+
+    assert.notEqual(await guardExit(direct.child), 0)
+    assert.equal(readFileSync(target, 'utf8'), 'replacement')
+    assert.deepEqual(
+      readdirSync(join(root, 'bundle')).filter((name) => name.startsWith('.shapepilot-tmp-')),
+      [],
+    )
+  })
+
+  test('a failed put leaves no partial object to poison a retry', async () => {
+    const root = scratchDir('store-failed-put')
+    const target = join(root, 'bundle', 'data.bin')
+    const direct = startGuardPut(root, 'bundle/data.bin', 10)
+    direct.input.end('short')
+    direct.control.end('C')
+
+    assert.notEqual(await guardExit(direct.child), 0)
+    assert.equal(existsSync(target), false)
+    const store = createFilesystemArtifactStore(root)
+    assert.equal((await store.put('bundle/data.bin', Buffer.from('complete'))).bytes, 8)
+  })
+
+  test('the next operation scavenges a temporary left by forced helper termination', async () => {
+    const root = scratchDir('store-crash-temp')
+    const direct = startGuardPut(root, 'bundle/data.bin', 10)
+    const staging = join(root, '.shapepilot-staging')
+    await waitForEntry(staging, '.shapepilot-tmp-')
+    direct.child.kill('SIGKILL')
+    assert.notEqual(await guardExit(direct.child), 0)
+    assert.ok(readdirSync(staging).some((name) => name.startsWith('.shapepilot-tmp-')))
+
+    const store = createFilesystemArtifactStore(root)
+    assert.deepEqual(await store.list(''), ['bundle'])
+    assert.deepEqual(readdirSync(staging), [])
+    assert.equal(existsSync(join(root, 'bundle', 'data.bin')), false)
+  })
+
+  test('independent helpers serialize on the store root lock', async () => {
+    const root = scratchDir('store-lock')
+    const direct = startGuardPut(root, 'bundle/data.bin', 7)
+    direct.input.end('payload')
+    await waitForEntry(join(root, '.shapepilot-staging'), '.shapepilot-tmp-')
+    const secondStore = createFilesystemArtifactStore(root)
+    let listed = false
+    const listing = secondStore.list('').then((entries) => {
+      listed = true
+      return entries
+    })
+    await new Promise((resolveWait) => setTimeout(resolveWait, 50))
+    assert.equal(listed, false)
+
+    direct.control.end('C')
+    assert.equal(await guardExit(direct.child), 0)
+    assert.deepEqual(await listing, ['bundle'])
+  })
+
+  test('a raced destination-parent replacement cannot redirect fetched bytes', async () => {
+    const root = scratchDir('store-fetch-parent-race')
+    const store = createFilesystemArtifactStore(root)
+    const payload = Buffer.alloc(3 * 1024 * 1024, 0x51)
+    await store.put('bundle/data.bin', payload)
+    const parent = join(root, '..', `fetch-parent-${randomUUID()}`)
+    const held = `${parent}-held`
+    const outside = scratchDir('store-fetch-parent-outside')
+    scratch.push(parent, held)
+    mkdirSync(parent)
+    const rootFd = openSync(root, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
+    const parentFd = openSync(parent, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
+    const child = spawn(artifactGuard, ['fetch', 'bundle/data.bin', 'copy.bin'], {
+      stdio: ['ignore', 'pipe', 'pipe', rootFd, parentFd],
+    })
+    closeSync(rootFd)
+    closeSync(parentFd)
+    await waitForPath(join(parent, 'copy.bin'))
+    renameSync(parent, held)
+    symlinkSync(outside, parent, 'dir')
+    child.stdout?.resume()
+
+    assert.equal(await guardExit(child), 0)
+    assert.deepEqual(readFileSync(join(held, 'copy.bin')), payload)
+    assert.equal(existsSync(join(outside, 'copy.bin')), false)
   })
 })
 

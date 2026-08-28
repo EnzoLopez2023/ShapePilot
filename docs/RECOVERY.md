@@ -47,6 +47,16 @@ shaped interface (`put`, `putFile`, `get`, `fetchToFile`, `list`, `remove`).
 Wave 1 ships the filesystem adapter. An app-owned Blob adapter can be added
 behind the same interface without the database or any feature module learning
 about Azure. Keys are validated segment by segment and cannot escape the root.
+The native filesystem guard opens the root once and traverses every key with
+descriptor-relative `openat` plus no-follow semantics, so a raced symlink or
+renamed parent cannot redirect reads or writes. Database artifacts are copied
+and hashed through bounded descriptor I/O instead of being loaded into process
+memory. A store-wide descriptor lock serializes helpers. Writes are staged under
+the held root, length-checked, synced, and atomically renamed without replacement
+only after source revalidation; parent directories are synced before success is
+reported. The next operation removes any unpublished staging file left by a
+forced helper termination, while final keys remain absent and immediately
+retryable.
 
 ## Commands
 

@@ -11,7 +11,7 @@
 // must stop a backup, a verification and, above all, a restore, before anything
 // can be promoted.
 import assert from 'node:assert/strict'
-import { mkdirSync, renameSync, rmSync } from 'node:fs'
+import { mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
@@ -262,7 +262,10 @@ async function swapArtifact(
     Buffer.from(await target.store.get(manifestKey)).toString('utf8')) as BackupManifest
   manifest.database.sha256 = await sha256File(stored)
   manifest.database.bytes = (await import('node:fs')).statSync(stored).size
-  await target.store.put(manifestKey, Buffer.from(serializeManifest(manifest), 'utf8'))
+  writeFileSync(
+    join(target.root, 'store', manifestKey),
+    Buffer.from(serializeManifest(manifest), 'utf8'),
+  )
   const tamperedId = artifactIdFor(manifest.sourceCreatedUtc, manifest)
   renameSync(
     join(target.root, 'store', artifactId),
@@ -399,7 +402,10 @@ describe('read-back, disposable restore and promotion all re-derive identity', (
     const manifest = JSON.parse(
       Buffer.from(await target.store.get(manifestKey)).toString('utf8')) as BackupManifest
     manifest.buildId = 'substituted'
-    await target.store.put(manifestKey, Buffer.from(serializeManifest(manifest), 'utf8'))
+    writeFileSync(
+      join(target.root, 'store', manifestKey),
+      Buffer.from(serializeManifest(manifest), 'utf8'),
+    )
 
     await assert.rejects(
       () => verifyBackup({

@@ -49,3 +49,18 @@ if (result.status !== 0) {
     + `${result.stdout}${result.stderr}`,
   )
 }
+
+if (process.platform !== 'linux' && process.platform !== 'darwin') {
+  throw new Error('the filesystem artifact guard requires the supported Linux or macOS runtime')
+}
+const artifactGuardSource = join(root, 'native', 'artifact-store-guard.c')
+const artifactGuardOutput = join(root, 'native', 'build', 'artifact-store-guard')
+const artifactGuard = spawnSync(command, [
+  '-std=c11', '-O2', artifactGuardSource, '-o', artifactGuardOutput,
+], { cwd: root, encoding: 'utf8' })
+if (artifactGuard.status !== 0) {
+  throw new Error(
+    `could not build the artifact-store guard with ${command}:\n`
+    + `${artifactGuard.stdout}${artifactGuard.stderr}`,
+  )
+}
