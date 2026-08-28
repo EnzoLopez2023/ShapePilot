@@ -248,6 +248,13 @@ describe('artifact store', () => {
           error instanceof ArtifactStoreError && error.code === 'ARTIFACT_OPERATION_FAILED',
       )
     }
+    for (let attempt = 0; attempt < 32; attempt += 1) {
+      await assert.rejects(
+        () => store.putFile(`redirect/copied-${attempt}.bin`, join(outside, 'secret.bin')),
+        (error: unknown) =>
+          error instanceof ArtifactStoreError && error.code === 'ARTIFACT_OPERATION_FAILED',
+      )
+    }
     assert.equal(existsSync(join(outside, 'new.bin')), false)
     assert.equal(existsSync(join(outside, 'copied.bin')), false)
   })

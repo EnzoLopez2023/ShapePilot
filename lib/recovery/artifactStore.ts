@@ -243,6 +243,11 @@ export function createFilesystemArtifactStore(root: string): ArtifactStore {
           try {
             await transfer
           } catch (cause) {
+            const guardOutcome = await guard.completion.then(
+              () => ({ ok: true as const }),
+              (error: unknown) => ({ ok: false as const, error }),
+            )
+            if (!guardOutcome.ok) throw guardOutcome.error
             throw new ArtifactStoreError(
               'ARTIFACT_SOURCE_UNREADABLE',
               `could not stream the artifact source: ${
