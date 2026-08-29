@@ -35,6 +35,14 @@ interface ExpectedOwner {
   gid: number
 }
 
+interface FileMetadata {
+  uid: number
+  gid: number
+  mode: number
+  isFile(): boolean
+  isSymbolicLink(): boolean
+}
+
 interface EmptySeedMarker {
   format: 'shapepilot-empty-seed-v1'
   databasePath: string
@@ -66,20 +74,45 @@ const sha256File = (path: string): string => {
   return createHash('sha256').update(readFileSync(path)).digest('hex')
 }
 
+export const isAzureAppServicePersistentPath = (
+  path: string,
+  env: NodeJS.ProcessEnv = process.env,
+): boolean =>
+  Boolean(env.WEBSITE_INSTANCE_ID?.trim())
+  && env.WEBSITES_ENABLE_APP_SERVICE_STORAGE?.trim().toLowerCase() === 'true'
+  && path.startsWith('/home/')
+
+export const isAcceptedEmptySeedFileMetadata = (
+  stats: FileMetadata,
+  owner: ExpectedOwner,
+  allowAzureAppServiceMapping: boolean,
+): boolean =>
+  stats.isFile()
+  && !stats.isSymbolicLink()
+  && (
+    (stats.uid === owner.uid
+      && stats.gid === owner.gid
+      && (stats.mode & 0o777) === 0o600)
+    || (allowAzureAppServiceMapping
+      && stats.uid === 65534
+      && stats.gid === 65534
+      && (stats.mode & 0o777) === 0o777)
+  )
+
 const assertOwnedPrivateFile = (
   path: string,
   owner: ExpectedOwner,
   description: string,
 ): void => {
   const stats = lstatSync(path)
-  if (!stats.isFile()
-    || stats.isSymbolicLink()
-    || stats.uid !== owner.uid
-    || stats.gid !== owner.gid
-    || (stats.mode & 0o777) !== 0o600) {
+  const allowAzureAppServiceMapping = isAzureAppServicePersistentPath(path)
+  if (!isAcceptedEmptySeedFileMetadata(stats, owner, allowAzureAppServiceMapping)) {
+    const expected = allowAzureAppServiceMapping
+      ? `UID/GID ${owner.uid}:${owner.gid} mode 0600 or Azure Files UID/GID 65534:65534 mode 0777`
+      : `UID/GID ${owner.uid}:${owner.gid} mode 0600`
     throw new EmptySeedError(
       'EMPTY_SEED_PERMISSIONS',
-      `${description} must be a UID/GID ${owner.uid}:${owner.gid} mode 0600 regular file`,
+      `${description} must be a ${expected} regular file`,
     )
   }
 }

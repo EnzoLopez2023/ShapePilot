@@ -18,6 +18,8 @@ import { loadConfig } from '../../server/config.ts'
 import {
   EmptySeedError,
   ensureProductionEmptySeed,
+  isAcceptedEmptySeedFileMetadata,
+  isAzureAppServicePersistentPath,
 } from '../../server/emptySeed.ts'
 import { validateProductionStorage } from '../../server/storage.ts'
 import { TEST_AUDIENCE, TEST_TENANT } from '../helpers/server.ts'
@@ -71,6 +73,45 @@ const sha256 = (path: string): string =>
   createHash('sha256').update(readFileSync(path)).digest('hex')
 
 describe('one-time production empty seed', () => {
+  test('accepts only the exact Azure Files metadata mapping under App Service persistent home', () => {
+    const azureEnv = {
+      WEBSITE_INSTANCE_ID: 'instance-1',
+      WEBSITES_ENABLE_APP_SERVICE_STORAGE: 'true',
+    }
+    assert.equal(isAzureAppServicePersistentPath('/home/data/shapepilot.db', azureEnv), true)
+    assert.equal(isAzureAppServicePersistentPath('/tmp/shapepilot.db', azureEnv), false)
+    assert.equal(isAzureAppServicePersistentPath('/home/data/shapepilot.db', {}), false)
+
+    const metadata = (uid: number, gid: number, mode: number, file = true) => ({
+      uid,
+      gid,
+      mode,
+      isFile: () => file,
+      isSymbolicLink: () => false,
+    })
+    const owner = { uid: 1000, gid: 1000 }
+    assert.equal(
+      isAcceptedEmptySeedFileMetadata(metadata(65534, 65534, 0o100777), owner, true),
+      true,
+    )
+    assert.equal(
+      isAcceptedEmptySeedFileMetadata(metadata(65534, 65534, 0o100777), owner, false),
+      false,
+    )
+    for (const invalid of [
+      metadata(1000, 1000, 0o100777),
+      metadata(65534, 65534, 0o100600),
+      metadata(65534, 1000, 0o100777),
+      metadata(65534, 65534, 0o040777, false),
+    ]) {
+      assert.equal(isAcceptedEmptySeedFileMetadata(invalid, owner, true), false)
+    }
+    assert.equal(
+      isAcceptedEmptySeedFileMetadata(metadata(1000, 1000, 0o100600), owner, false),
+      true,
+    )
+  })
+
   test('publishes a private zero-domain-row database and hash-pinned marker once', () => {
     const { config, owner } = fixture()
     ensureProductionEmptySeed(config, identity, owner)

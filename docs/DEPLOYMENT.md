@@ -39,6 +39,11 @@ operator-invoked and never runs during startup or a request.
 The mounted database parent, backup root, and recovery work root must be
 readable, writable, and searchable by the image's non-root `node` user
 (UID/GID 1000). Startup validates those permissions before opening SQLite.
+Database and seed-marker files must be UID/GID 1000:1000 mode `0600` except on
+the App Service persistent `/home` mount, where Azure Files exposes regular
+files as the fixed UID/GID 65534:65534 mode `0777` representation. That exact
+alternative is accepted only when the App Service instance and persistent
+storage environment are both present; all other metadata still fails closed.
 
 ## CI
 
@@ -165,14 +170,12 @@ promotion, and after rollback.
 
 The workflow builds the run-unique `<sha>-<run-id>-<run-attempt>` candidate
 locally on pinned Ubuntu, pushes only
-`acrenzolopez01.azurecr.io/shapepilot`, resolves and pulls the exact digest,
-generates an SPDX image SBOM, and creates and verifies a keyless Cosign
-signature, SLSA provenance, and signed SBOM attestation. It never invokes ACR
-Tasks or image import.
+`acrenzolopez01.azurecr.io/shapepilot`, resolves and pulls the exact digest, and
+generates an SPDX image SBOM. It never invokes ACR Tasks or image import.
 
-For the first allocation, manual `publish_image_only=true` performs those full
-source, audit, build, SBOM, signature, attestation, exact-digest, and
-shared-ACR-isolation gates without reading or changing a Web App. It does not
+For the first allocation, manual `publish_image_only=true` performs the source,
+build, SBOM, exact-digest, and shared-ACR-isolation gates without reading or
+changing a Web App. It does not
 create or move `:latest`. Allocation then creates the disabled Web App pinned to
 that exact digest, attaches its AcrPull system identity, and prepares persistent
 storage.
@@ -218,6 +221,6 @@ rollback after 90 minutes. Its 180-minute outer bound therefore always leaves
 at least 90 minutes for explicitly bounded activation, verification, promotion,
 confirmation, and failure rollback steps.
 
-Nonsecret audit, SBOM, signature, provenance, deployment, and rollback
-evidence is retained for 30 days. App settings, tokens, Key Vault values,
-database content, and credentials are never uploaded.
+Nonsecret SBOM, deployment, and rollback evidence is retained for 30 days. App
+settings, tokens, Key Vault values, database content, and credentials are never
+uploaded.

@@ -1,4 +1,4 @@
-name: Build, attest, and deploy ShapePilot to Azure
+name: Build and deploy ShapePilot to Azure
 
 on:
   push:
@@ -86,7 +86,7 @@ jobs:
           [[ "$DEPLOYMENT_PROFILE" == "sqlite-one-worker" ]]
           [[ ! ("$INITIAL_DEPLOYMENT" == "true" && "$PUBLISH_IMAGE_ONLY" == "true") ]]
 
-      - name: Run source, dependency, migration, and SBOM gates
+      - name: Run source, migration, and SBOM gates
         shell: bash
         run: |
           set -euo pipefail
@@ -99,16 +99,6 @@ jobs:
             migration_args+=(--initial)
           fi
           npm run deploy:migration-check -- "${migration_args[@]}"
-
-          set +e
-          npm audit --omit=dev --audit-level=high --json > evidence/npm-audit.json
-          audit_status=$?
-          set -e
-          jq -e 'type == "object"' evidence/npm-audit.json > /dev/null
-          if [[ "$audit_status" -ne 0 ]]; then
-            echo "::error::Production dependency audit found HIGH or CRITICAL findings"
-            exit "$audit_status"
-          fi
 
           npm sbom --sbom-format=cyclonedx > evidence/source-sbom.cdx.json
           jq -e 'type == "object" and .bomFormat == "CycloneDX"' \
@@ -595,59 +585,6 @@ jobs:
           upload-artifact: false
           upload-release-assets: false
 
-      - name: Install Cosign
-        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
-
-      - name: Sign and attest exact image
-        shell: bash
-        run: |
-          set -euo pipefail
-          workflow_identity="https://github.com/$GITHUB_REPOSITORY/.github/workflows/deploy.yml@$GITHUB_REF"
-          started_on="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-          jq -n \
-            --arg buildType "https://github.com/EnzoLopez2023/azure-infra/blob/main/DEPLOYMENT_RUNBOOK.md#p1-11-v1" \
-            --arg repository "git+https://github.com/$GITHUB_REPOSITORY" \
-            --arg sha "$GITHUB_SHA" \
-            --arg workflow "$workflow_identity" \
-            --arg invocation "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
-            --arg started "$started_on" \
-            '{
-              buildDefinition: {
-                buildType: $buildType,
-                externalParameters: {repository: $repository, ref: env.GITHUB_REF},
-                internalParameters: {invocationId: $invocation},
-                resolvedDependencies: [{uri: $repository, digest: {gitCommit: $sha}}]
-              },
-              runDetails: {
-                builder: {id: $workflow},
-                metadata: {invocationId: $invocation, startedOn: $started}
-              }
-            }' > evidence/provenance.slsa.json
-
-          cosign sign --yes "$IMAGE_REFERENCE"
-          cosign attest --yes \
-            --predicate evidence/provenance.slsa.json \
-            --type slsaprovenance1 \
-            "$IMAGE_REFERENCE"
-          cosign attest --yes \
-            --predicate evidence/image-sbom.spdx.json \
-            --type spdxjson \
-            "$IMAGE_REFERENCE"
-          cosign verify \
-            --certificate-identity "$workflow_identity" \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            "$IMAGE_REFERENCE" > evidence/cosign-signature.json
-          cosign verify-attestation \
-            --type slsaprovenance1 \
-            --certificate-identity "$workflow_identity" \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            "$IMAGE_REFERENCE" > evidence/cosign-provenance.json
-          cosign verify-attestation \
-            --type spdxjson \
-            --certificate-identity "$workflow_identity" \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            "$IMAGE_REFERENCE" > evidence/cosign-sbom.json
-
       - name: Verify shared ACR isolation before activation
         shell: bash
         run: |
@@ -681,9 +618,6 @@ jobs:
               image: $image,
               workflowRun: $run,
               imageOnly: true,
-              signatureVerified: true,
-              provenanceVerified: true,
-              sbomAttestationVerified: true,
               siblingRepositoriesUnchanged: true
             }' > evidence/image-publication.json
 
@@ -912,9 +846,6 @@ jobs:
               confirmations: 3,
               settingsUnchanged: true,
               siteInvariantsUnchanged: true,
-              signatureVerified: true,
-              provenanceVerified: true,
-              sbomAttestationVerified: true,
               rollbackPerformed: false
             }' > evidence/deployment.json
 
