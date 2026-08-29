@@ -27,7 +27,9 @@ function SignInPanel() {
         {authConfigured ? (
           <Button
             variant="contained"
-            onClick={() => { void instance.loginRedirect(loginRequest) }}
+            onClick={() => {
+              void instance.clearCache().then(() => instance.loginRedirect(loginRequest))
+            }}
             sx={{ alignSelf: 'flex-start' }}
           >
             Sign in
