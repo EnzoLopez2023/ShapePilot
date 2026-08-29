@@ -12,6 +12,9 @@ export type Lifecycle = 'starting' | 'ready' | 'draining' | 'stopped'
 export interface LivenessReport {
   status: 'ok'
   app: string
+  sha: string
+  buildId: string
+  instanceId: string
   lifecycle: Lifecycle
   uptimeSeconds: number
   pid: number
@@ -20,6 +23,9 @@ export interface LivenessReport {
 export interface ReadinessReport {
   status: 'ready' | 'not-ready'
   app: string
+  sha: string
+  buildId: string
+  instanceId: string
   lifecycle: Lifecycle
   build: { version: string; build: string; commit: string; builtAt: string }
   database: {
@@ -41,9 +47,13 @@ export const liveness = (
   identity: BuildIdentity,
   lifecycle: Lifecycle,
   startedAtMs: number,
+  instanceId: string,
 ): LivenessReport => ({
   status: 'ok',
   app: identity.app,
+  sha: identity.commit,
+  buildId: identity.build,
+  instanceId,
   lifecycle,
   uptimeSeconds: Math.max(0, Math.round((Date.now() - startedAtMs) / 1000)),
   pid: process.pid,
@@ -53,6 +63,7 @@ export function readiness(
   identity: BuildIdentity,
   lifecycle: Lifecycle,
   database: AppDatabase | null,
+  instanceId: string,
 ): ReadinessReport {
   const startedAt = Date.now()
   const expectedSchemaIdentity = schemaIdentity()
@@ -61,6 +72,9 @@ export function readiness(
   const base: ReadinessReport = {
     status: 'not-ready',
     app: identity.app,
+    sha: identity.commit,
+    buildId: identity.build,
+    instanceId,
     lifecycle,
     build: {
       version: identity.version,
@@ -95,10 +109,13 @@ export function readiness(
     const head = applied.at(-1)?.id ?? null
     const identityMatches = database.schemaIdentity === expectedSchemaIdentity
       && head === expectedHeadMigration
+    const storageInvariantsHold = journalMode.toLowerCase() === 'delete' && foreignKeys
 
     const report: ReadinessReport = {
       ...base,
-      status: identityMatches && lifecycle === 'ready' ? 'ready' : 'not-ready',
+      status: identityMatches && storageInvariantsHold && lifecycle === 'ready'
+        ? 'ready'
+        : 'not-ready',
       database: {
         ...base.database,
         reachable: true,
@@ -110,6 +127,7 @@ export function readiness(
       durationMs: Date.now() - startedAt,
     }
     if (!identityMatches) return { ...report, reason: 'schema identity mismatch' }
+    if (!storageInvariantsHold) return { ...report, reason: 'database invariant mismatch' }
     if (lifecycle !== 'ready') return { ...report, reason: `lifecycle is ${lifecycle}` }
     return report
   } catch {

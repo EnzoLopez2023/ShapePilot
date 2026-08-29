@@ -1,0 +1,226 @@
+# Production deployment
+
+ShapePilot follows the `p1-11-v1` `sqlite-one-worker` contract from
+`EnzoLopez2023/azure-infra`. This repository never provisions or reconciles
+Azure resources; it only validates the declared resources and deploys an
+immutable ShapePilot image.
+
+## Runtime image
+
+`Dockerfile` is a reproducible multi-stage Linux build pinned to Node 24.17.0 by
+manifest digest. Both dependency stages run `npm ci` with lifecycle scripts and
+a C/Python toolchain, so `better-sqlite3` and the pinned native filesystem
+guards are built for the runtime ABI. The final image contains production
+dependencies only, runs as the non-root `node` user, declares no `/home` volume,
+and exposes port 3000.
+
+The build requires a full Git SHA, a `<run-id>-<run-attempt>` build ID, a
+canonical UTC commit timestamp, and complete Entra SPA settings. Those values
+are stamped into `version.json` before the client build and copied into OCI
+labels. Runtime environment variables cannot override that identity.
+
+## Persistent data
+
+Production is exactly one App Service worker, one Node process, one
+`better-sqlite3` connection, and one authority at
+`/home/data/shapepilot.db`. The process requires `journal_mode=DELETE`,
+foreign keys, and a bounded busy timeout. It never enables WAL and never uses
+PostgreSQL or an ORM.
+
+The production authority must exist before normal startup. A missing file is
+treated as a missing or incorrect volume, not as an empty installation. The
+only exception is the temporary, exact
+`SHAPEPILOT_INITIALIZE_EMPTY_DB=1` first-allocation flag described below; it
+creates a schema-only authority and never imports Hearth data.
+Backups go to `/home/data/backups/shapepilot`; bounded recovery scratch goes to
+`/home/data/recovery/shapepilot`. Backup, integrity, and restore work remains
+operator-invoked and never runs during startup or a request.
+
+The mounted database parent, backup root, and recovery work root must be
+readable, writable, and searchable by the image's non-root `node` user
+(UID/GID 1000). Startup validates those permissions before opening SQLite.
+Database and seed-marker files must be UID/GID 1000:1000 mode `0600` except on
+the App Service persistent `/home` mount, where Azure Files exposes regular
+files as the fixed UID/GID 65534:65534 mode `0777` representation. That exact
+alternative is accepted only when the App Service instance and persistent
+storage environment are both present; all other metadata still fails closed.
+
+## CI
+
+`.github/workflows/ci.yml` runs on pinned Ubuntu 24.04 and Node 24.17.0. It
+installs with lifecycle scripts, then gates architecture invariants, strict
+TypeScript, ESLint, all Vitest suites, the native guard and client build, a
+HIGH/CRITICAL full and production dependency audit, and a CycloneDX source SBOM.
+
+The container job builds the pinned image, verifies its non-root user, labels,
+and `/home` volume prohibition, initializes a disposable production-shaped
+SQLite volume, then uses `docker exec` to prove three consecutive agreeing
+static-version/version/liveness/readiness rounds and the native
+`better-sqlite3` DELETE-journal authority.
+
+## Production workflow
+
+`.github/workflows/deploy.yml` uses Azure federated OIDC only. It requires the
+nonsecret `AZURE_CLIENT_ID` and `VITE_AZURE_CLIENT_ID` Actions variables and
+fails before Azure mutation unless the latter is exactly
+`60b0b8cf-f1e2-4ba4-b89b-7d6dc3358251`. The workflow
+targets only:
+
+- resource group `rg-personal-apps-prod`;
+- shared ACR `acrenzolopez01` (`acrenzolopez01.azurecr.io`);
+- repository `shapepilot`;
+- Web App `app-shapepilot-prod-lwxhu7jxlrbtu`.
+
+The ACR is an existing shared Basic registry. ShapePilot never provisions it,
+changes its properties or permission mode, or writes outside the collision-free
+`shapepilot` repository. Deployment preflight requires the exact subscription
+and resource group, admin disabled, public access enabled, and
+`LegacyRegistryPermissions`.
+
+The deployment principal is `github-shapepilot-ci`. Its federated subject must
+be exactly
+`repo:EnzoLopez2023/ShapePilot:ref:refs/heads/main`. It has Website Contributor
+(`de139f84-1756-47ae-9be6-808fbbe84772`) scoped only to that Web App; Reader
+(`acdd72a7-3385-48ef-bd42-f606fba81ae7`) scoped to the production resource group
+for resource preflight and zero-alert enumeration; plus AcrPush
+(`8311e382-0749-4cb8-b61a-304f252e45ec`) and AcrDelete
+(`c2f4ef07-c644-48eb-af81-4b1b4947fb11`) scoped only to the shared ACR. It has
+no Contributor, Monitoring Reader, Tasks Contributor, Data Importer, or
+subscription role. AcrDelete is retained only to remove a failed first
+release's `:latest` alias.
+
+Every workflow run enumerates the OIDC service principal's direct and inherited
+assignments from the exact resource-group and ACR scopes, plus the exact Web App
+scope for deployment, and rejects any observed assignment outside this set.
+Image-only publication requires the resource-group Reader and exact-ACR
+AcrPush/AcrDelete assignments without requiring the Web App to exist;
+deployment requires all four.
+
+The exact ACR scope is
+`/subscriptions/1cf02211-8d77-4658-bb6a-0f83ec831c3b/resourceGroups/rg-personal-apps-prod/providers/Microsoft.ContainerRegistry/registries/acrenzolopez01`;
+the Web App scope is the corresponding
+`Microsoft.Web/sites/app-shapepilot-prod-lwxhu7jxlrbtu` resource in that
+resource group.
+
+The Web App's system identity has AcrPull
+(`7f951dda-4ed3-4680-a7ca-43fe172d538d`) at the exact shared ACR scope. Legacy
+permissions make both deployment writes and runtime reads registry-wide rather
+than repository-scoped; that cross-repository blast radius is an explicit
+owner-accepted tradeoff of the shared-registry model. App Service container
+configuration must use that identity (`acrUseManagedIdentityCreds=true`); the
+workflow verifies both the identity and its direct AcrPull assignment.
+The compute tenant is `de625678-c55b-4494-9558-14946cbb6133`; the subscription
+is `1cf02211-8d77-4658-bb6a-0f83ec831c3b`. The user-facing Entra tenant is
+`52188f12-db6b-46c6-88ff-08c802f0ed3b`, and the API audience is
+`api://60b0b8cf-f1e2-4ba4-b89b-7d6dc3358251` with delegated scope
+`access_as_user`; the committed client build argument is the literal
+`VITE_API_SCOPE=api://60b0b8cf-f1e2-4ba4-b89b-7d6dc3358251/access_as_user`.
+No GitHub
+Environment or static Azure credential is part of this contract.
+
+The App Service configuration must provide these exact nonsecret values:
+
+| Setting | Value |
+|---|---|
+| `NODE_ENV` | `production` |
+| `PORT` / `WEBSITES_PORT` | `3000` |
+| `WEBSITES_ENABLE_APP_SERVICE_STORAGE` | `true` |
+| `WEBSITES_CONTAINER_STOP_TIME_LIMIT` | `60` |
+| `DOCKER_REGISTRY_SERVER_URL` | `https://acrenzolopez01.azurecr.io` |
+| `DB_PATH` | `/home/data/shapepilot.db` |
+| `SQLITE_JOURNAL_MODE` | `DELETE` |
+| `SHAPEPILOT_DB_BUSY_TIMEOUT_MS` | `5000` |
+| `SHAPEPILOT_DB_ALLOW_CREATE` | `0` |
+| `BACKUP_ROOT` | `/home/data/backups/shapepilot` |
+| `RECOVERY_WORK_ROOT` | `/home/data/recovery/shapepilot` |
+| `BACKUP_RETENTION_COUNT` / `BACKUP_INTERVAL_HOURS` | `14` / `24` |
+| `AAD_TENANT_ID` / `SHAPEPILOT_ENTRA_TENANT_ID` | `52188f12-db6b-46c6-88ff-08c802f0ed3b` |
+| `SHAPEPILOT_API_AUDIENCE` | `api://60b0b8cf-f1e2-4ba4-b89b-7d6dc3358251` |
+| `SHAPEPILOT_API_SCOPE` | `access_as_user` |
+| `VITE_AZURE_CLIENT_ID` | `60b0b8cf-f1e2-4ba4-b89b-7d6dc3358251` |
+| `OFFHOST_BACKUP_ENABLED` | `false` |
+
+`SHAPEPILOT_INITIALIZE_EMPTY_DB` is not a steady-state setting and must be
+absent before every normal or initial deployment workflow run.
+
+The disabled off-host declaration remains explicit:
+`OFFHOST_BACKUP_ACCOUNT=strecoverywkhiw2g4hwik4`,
+`OFFHOST_BACKUP_CONTAINER=shapepilot`,
+`OFFHOST_BACKUP_SCAN_INTERVAL_MINUTES=60`,
+`OFFHOST_BACKUP_STALE_HOURS=26`,
+`OFFHOST_BACKUP_HEALTH_LOOKBACK_HOURS=2`,
+`OFFHOST_BACKUP_DAILY_HEALTH_MAX_SOURCE_AGE_HOURS=23`,
+`OFFHOST_BACKUP_MONTHLY_STALE_DAYS=35`, and
+`OFFHOST_BACKUP_CLOCK_SKEW_MINUTES=5`. These settings do not enable background
+backup work in ShapePilot; recovery remains explicit and operator-invoked.
+
+`KEY_VAULT_URI` must be
+`https://kv-shapepilot-prod.vault.azure.net/`. The only declared secret setting
+is `AZURE_OPENAI_API_KEY`, and its App Service value must remain the versionless
+Key Vault reference to secret `AZURE-OPENAI-API-KEY`; the workflow never reads,
+prints, or uploads the secret value. The current ShapePilot runtime does not
+make an Azure OpenAI request.
+
+No App Insights component, availability test, alert, or action group is part of
+the deployment contract. Before building, the workflow proves the owner
+invariant that metric, scheduled-query, and smart-detector alert counts remain
+exactly `0/0/0`. It fingerprints every sibling ACR repository name and digest
+and proves that fingerprint remains unchanged before activation, after
+promotion, and after rollback.
+
+The workflow builds the run-unique `<sha>-<run-id>-<run-attempt>` candidate
+locally on pinned Ubuntu, pushes only
+`acrenzolopez01.azurecr.io/shapepilot`, resolves and pulls the exact digest, and
+generates an SPDX image SBOM. It never invokes ACR Tasks or image import.
+
+For the first allocation, manual `publish_image_only=true` performs the source,
+build, SBOM, exact-digest, and shared-ACR-isolation gates without reading or
+changing a Web App. It does not
+create or move `:latest`. Allocation then creates the disabled Web App pinned to
+that exact digest, attaches its AcrPull system identity, and prepares persistent
+storage.
+
+With the Web App still carrying no traffic, allocation temporarily sets
+`SHAPEPILOT_INITIALIZE_EMPTY_DB=1` and starts the same immutable image. The
+non-root process exclusively creates `/home/data/shapepilot.db` at mode `0600`,
+applies the checked-in migration ledger, proves every domain table has zero
+rows, hashes the bounded database, and exclusively writes
+`/home/data/.shapepilot-empty-seed.json` with that hash, authority identity,
+schema identity, and immutable build identity. Database and marker must either
+both be absent or both exist; either partial state fails closed. An existing
+database is never overwritten, and a repeated initialization verifies the
+same zero-row hash instead of recreating it. After three direct readiness
+confirmations, allocation removes the temporary flag and stops the Web App.
+The normal workflow then runs once with `initial_deployment=true`, requires that
+stopped exact-digest baseline and absent `:latest`, and performs the first
+traffic activation. Hearth import and legacy cutover are forbidden in this
+sequence.
+
+For activation, the workflow stops the Web App and requires both ARM `Stopped`
+and three failed liveness probes before changing the digest. It pins the exact
+candidate digest, starts the app, and requires three consecutive uncached
+direct-default-host TLS requests to `/version.json`, `/api/version`, `/api/live`,
+and `/api/ready` that agree on the full SHA and build ID; the dynamic endpoints
+also agree on process instance while readiness proves the SQLite authority.
+Only then does it locally tag the already-pulled digest as `:latest`, push that
+tag, and prove the destination resolves to the identical digest; no rebuild is
+allowed.
+
+Failures and cancellations after the rollback guard is armed stop the failed
+SQLite process, restore the previous App Service digest, restore the previous
+`:latest` digest, and require three confirmations of the prior release. The
+prior image is pulled before mutation. Failure rollback has a 20-minute bound
+and rechecks protected app-setting/site fingerprints and the safety contract;
+cancellation uses only the essential preloaded restore path with a four-minute
+internal budget so it completes before GitHub's five-minute cancellation kill.
+A failed first release instead stops the app, removes only the failed `:latest`
+alias, and restores the prepublished immutable allocation digest.
+
+The job records a mutation-start deadline at its first step and refuses to arm
+rollback after 90 minutes. Its 180-minute outer bound therefore always leaves
+at least 90 minutes for explicitly bounded activation, verification, promotion,
+confirmation, and failure rollback steps.
+
+Nonsecret SBOM, deployment, and rollback evidence is retained for 30 days. App
+settings, tokens, Key Vault values, database content, and credentials are never
+uploaded.

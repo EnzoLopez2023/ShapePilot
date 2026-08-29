@@ -671,11 +671,12 @@ describe('audit retention', () => {
 
 describe('health and version', () => {
   test('liveness never opens the database', () => {
-    const report = liveness(buildIdentity(), 'ready', Date.now() - 5_000)
+    const report = liveness(buildIdentity(), 'ready', Date.now() - 5_000, 'instance-test')
     assert.equal(report.status, 'ok')
     assert.equal(report.lifecycle, 'ready')
     assert.ok(report.uptimeSeconds >= 4)
     assert.equal(report.pid, process.pid)
+    assert.equal(report.instanceId, 'instance-test')
   })
 
   test('readiness reports the authority, schema identity and journal mode', () => {
@@ -683,7 +684,7 @@ describe('health and version', () => {
     const path = tempPath('readiness')
     const database = openDatabase({ path, busyTimeoutMs: 2_000, createIfMissing: true })
     try {
-      const report = readiness(buildIdentity(), 'ready', database)
+      const report = readiness(buildIdentity(), 'ready', database, 'instance-test')
       assert.equal(report.status, 'ready')
       assert.equal(report.database.reachable, true)
       assert.equal(report.database.journalMode?.toLowerCase(), 'delete')
@@ -704,9 +705,22 @@ describe('health and version', () => {
     try {
       const report = readiness(
         buildIdentity(), 'ready',
-        { ...database, schemaIdentity: 'a'.repeat(64) })
+        { ...database, schemaIdentity: 'a'.repeat(64) },
+        'instance-test')
       assert.equal(report.status, 'not-ready')
       assert.equal(report.reason, 'schema identity mismatch')
+    } finally {
+      database.close()
+    }
+  })
+
+  test('readiness is not-ready when a connection invariant drifts', () => {
+    const database = openEphemeralDatabase()
+    try {
+      database.handle.pragma('foreign_keys = OFF')
+      const report = readiness(buildIdentity(), 'ready', database, 'instance-test')
+      assert.equal(report.status, 'not-ready')
+      assert.equal(report.reason, 'database invariant mismatch')
     } finally {
       database.close()
     }
@@ -716,7 +730,7 @@ describe('health and version', () => {
     const database = openEphemeralDatabase()
     try {
       for (const lifecycle of ['starting', 'draining', 'stopped'] as const) {
-        const report = readiness(buildIdentity(), lifecycle, database)
+        const report = readiness(buildIdentity(), lifecycle, database, 'instance-test')
         assert.equal(report.status, 'not-ready')
       }
     } finally {
@@ -727,7 +741,7 @@ describe('health and version', () => {
   test('readiness never leaks the underlying failure', () => {
     const database = openEphemeralDatabase()
     database.close()
-    const report = readiness(buildIdentity(), 'ready', database)
+    const report = readiness(buildIdentity(), 'ready', database, 'instance-test')
     assert.equal(report.status, 'not-ready')
     assert.equal(report.reason, 'database probe failed')
   })
@@ -740,6 +754,7 @@ describe('health and version', () => {
       assert.equal(api.status, 200)
       assert.deepEqual(api.body, flat.body)
       assert.equal(api.body.app, 'shapepilot')
+      assert.equal(api.headers.get('cache-control'), 'no-store')
       const lineage = api.body.sourceLineage as { commit: string; tree: string }
       assert.equal(lineage.commit, 'f0b05fc1dbf53e8aa26c215d8e858894a2793871')
       assert.equal(lineage.tree, '62cbd35861c511f7c17187c875d19ee6e353b80d')
@@ -754,11 +769,13 @@ describe('health and version', () => {
       const live = await server.fetchJson<{ status: string }>('/api/live')
       assert.equal(live.status, 200)
       assert.equal(live.body.status, 'ok')
+      assert.equal(live.headers.get('cache-control'), 'no-store')
 
       const ready = await server.fetchJson<{ status: string; database: { authority: string } }>(
         '/api/ready')
       assert.equal(ready.status, 200)
       assert.equal(ready.body.status, 'ready')
+      assert.equal(ready.headers.get('cache-control'), 'no-store')
       assert.ok(ready.body.database.authority.endsWith('.db'))
     } finally {
       await server.close()

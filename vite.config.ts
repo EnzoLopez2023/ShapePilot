@@ -24,7 +24,7 @@ export default defineConfig({
       'src/**/*.test.{ts,tsx}',
       'server/**/*.test.ts',
       'lib/**/*.test.ts',
-      'test/**/*.test.{ts,tsx}',
+      'test/**/*.test.{ts,tsx,mjs}',
     ],
     exclude: ['node_modules/**', 'dist/**', '.porting-source/**'],
     setupFiles: ['./test/helpers/setup.ts'],

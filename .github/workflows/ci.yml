@@ -4,36 +4,199 @@ on:
   pull_request:
   push:
     branches: [main]
-
-permissions:
-  contents: read
+  workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-jobs:
-  validate:
-    name: Node 24 / Ubuntu
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+permissions:
+  contents: read
 
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout exact source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: 24
+          node-version: 24.17.0
           cache: npm
-      - run: npm ci
-      - run: npm run typecheck -- --pretty false
-      - run: npm run lint -- --quiet
-      - run: npm test -- --reporter=dot
-      - run: npm run build
-      - run: npm audit --audit-level=high
-      - run: npm audit --omit=dev --audit-level=high
+
+      - name: Install with lifecycle scripts
+        run: npm ci --no-audit --no-fund
+
+      - name: Run strict source gates
+        run: npm run ci
+
       - name: Reject tracked runtime artifacts
+        shell: bash
         run: |
+          set -euo pipefail
           if git ls-files | grep -E '\.(sqlite|sqlite3|db)(-|$)|-(journal|wal|shm)$|(^|/)(dist|coverage|native/build|\.recovery-work|artifacts?)(/|$)'; then
-            echo "Tracked runtime artifact detected."
+            echo "::error::Tracked runtime artifact detected"
             exit 1
           fi
+
+      - name: Audit dependency trees
+        run: |
+          npm audit --audit-level=high
+          npm audit --omit=dev --audit-level=high
+
+      - name: Generate source SBOM
+        run: |
+          mkdir -p evidence
+          npm sbom --sbom-format=cyclonedx > evidence/source-sbom.cdx.json
+          jq -e 'type == "object" and .bomFormat == "CycloneDX"' \
+            evidence/source-sbom.cdx.json > /dev/null
+
+  container:
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      IMAGE: shapepilot-ci:${{ github.sha }}
+      CONTAINER: shapepilot-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      VOLUME: shapepilot-ci-${{ github.run_id }}-${{ github.run_attempt }}
+      BUILD_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+      TEST_TENANT_ID: 52188f12-db6b-46c6-88ff-08c802f0ed3b
+      TEST_CLIENT_ID: 11112222-3333-4444-5555-666677778888
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Build pinned Linux image
+        shell: bash
+        run: |
+          set -euo pipefail
+          commit_timestamp="$(
+            git show -s --format=%cI "$GITHUB_SHA" |
+              xargs -I{} node -e 'console.log(new Date(process.argv[1]).toISOString())' '{}'
+          )"
+          docker build --pull \
+            --build-arg "BUILD_SHA=$GITHUB_SHA" \
+            --build-arg "BUILD_ID=$BUILD_ID" \
+            --build-arg "BUILD_TIMESTAMP=$commit_timestamp" \
+            --build-arg "VITE_AZURE_CLIENT_ID=$TEST_CLIENT_ID" \
+            --build-arg "VITE_AZURE_TENANT_ID=$TEST_TENANT_ID" \
+            --build-arg "VITE_API_SCOPE=api://$TEST_CLIENT_ID/access_as_user" \
+            --tag "$IMAGE" \
+            .
+
+          [[ "$(docker image inspect "$IMAGE" --format '{{.Config.User}}')" == "node" ]]
+          docker image inspect "$IMAGE" --format '{{json .Config.Volumes}}' |
+            jq -e '[((. // {}) | keys[]) |
+              select(. == "/home" or startswith("/home/"))] | length == 0'
+          [[ "$(docker image inspect "$IMAGE" \
+            --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" \
+            == "$GITHUB_SHA" ]]
+          [[ "$(docker image inspect "$IMAGE" \
+            --format '{{index .Config.Labels "org.opencontainers.image.version"}}')" \
+            == "$BUILD_ID" ]]
+
+      - name: Smoke native SQLite and production endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          cleanup() {
+            docker rm --force "$CONTAINER" >/dev/null 2>&1 || true
+            docker volume rm "$VOLUME" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          docker volume create "$VOLUME" > /dev/null
+
+          common_env=(
+            --env "AAD_TENANT_ID=$TEST_TENANT_ID"
+            --env "SHAPEPILOT_ENTRA_TENANT_ID=$TEST_TENANT_ID"
+            --env "SHAPEPILOT_API_AUDIENCE=api://$TEST_CLIENT_ID"
+            --env "SHAPEPILOT_API_SCOPE=access_as_user"
+          )
+          docker run --rm \
+            --user 0 \
+            --mount "type=volume,source=$VOLUME,target=/home/data" \
+            "$IMAGE" \
+            chown node:node /home/data
+
+          docker run --detach \
+            --name "$CONTAINER" \
+            --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+            --mount "type=volume,source=$VOLUME,target=/home/data" \
+            "${common_env[@]}" \
+            --env SHAPEPILOT_INITIALIZE_EMPTY_DB=1 \
+            "$IMAGE" > /dev/null
+
+          docker exec "$CONTAINER" node scripts/verify-deployment.mjs \
+            --base-url http://127.0.0.1:3000 \
+            --live-path /api/live \
+            --ready-path /api/ready \
+            --profile sqlite-one-worker \
+            --expected-sha "$GITHUB_SHA" \
+            --expected-build-id "$BUILD_ID" \
+            --attempts 30 \
+            --confirmations 3 \
+            --interval-ms 1000 \
+            --request-timeout-ms 3000 \
+            --run-token "ci-$BUILD_ID"
+
+          docker exec "$CONTAINER" node --input-type=module -e "
+            import { existsSync, readFileSync, statSync } from 'node:fs';
+            import Database from 'better-sqlite3';
+            import { EMPTY_SEED_DOMAIN_TABLES } from './server/emptySeed.ts';
+            const markerPath = '/home/data/.shapepilot-empty-seed.json';
+            for (const path of [process.env.DB_PATH, markerPath]) {
+              const stat = statSync(path);
+              if (stat.uid !== 1000 || stat.gid !== 1000 || (stat.mode & 0o777) !== 0o600) {
+                throw new Error('bootstrap authority ownership or mode is invalid');
+              }
+            }
+            const marker = JSON.parse(readFileSync(markerPath, 'utf8'));
+            if (marker.sourceSha !== '$GITHUB_SHA' || marker.buildId !== '$BUILD_ID') {
+              throw new Error('bootstrap marker build identity is invalid');
+            }
+            const db = new Database(process.env.DB_PATH, {
+              readonly: true,
+              fileMustExist: true,
+            });
+            db.pragma('query_only = ON');
+            if (String(db.pragma('journal_mode', { simple: true })).toLowerCase() !== 'delete') {
+              throw new Error('journal mode is not DELETE');
+            }
+            if (db.pragma('foreign_keys', { simple: true }) !== 1) {
+              throw new Error('foreign keys are not enabled');
+            }
+            if (existsSync(process.env.DB_PATH + '-wal') || existsSync(process.env.DB_PATH + '-shm')) {
+              throw new Error('WAL sidecars exist');
+            }
+            for (const table of EMPTY_SEED_DOMAIN_TABLES) {
+              if (db.prepare('SELECT COUNT(*) AS count FROM ' + table).get().count !== 0) {
+                throw new Error('bootstrap inserted a domain row into ' + table);
+              }
+            }
+            db.close();
+          "
+
+          docker rm --force "$CONTAINER" > /dev/null
+          docker run --detach \
+            --name "$CONTAINER" \
+            --read-only \
+            --tmpfs /tmp:rw,noexec,nosuid,size=16m \
+            --mount "type=volume,source=$VOLUME,target=/home/data" \
+            "${common_env[@]}" \
+            "$IMAGE" > /dev/null
+          docker exec "$CONTAINER" node scripts/verify-deployment.mjs \
+            --base-url http://127.0.0.1:3000 \
+            --live-path /api/live \
+            --ready-path /api/ready \
+            --profile sqlite-one-worker \
+            --expected-sha "$GITHUB_SHA" \
+            --expected-build-id "$BUILD_ID" \
+            --attempts 30 \
+            --confirmations 3 \
+            --interval-ms 1000 \
+            --request-timeout-ms 3000 \
+            --run-token "ci-restart-$BUILD_ID"
