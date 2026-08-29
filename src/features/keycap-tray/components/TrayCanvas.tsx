@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Box, useTheme } from '@mui/material'
+import { Box, IconButton, Stack, Tooltip, useTheme } from '@mui/material'
+import AddIcon from '@mui/icons-material/Add'
+import RemoveIcon from '@mui/icons-material/Remove'
 import type { Issue } from '../geometry/validate.ts'
 import type { Pocket, TrayDesign } from '../model/types.ts'
 import type { Ring } from '../geometry/vec.ts'
 import { pocketRing } from '../geometry/shapes.ts'
 import { profileToMulti } from '../model/presets.ts'
 import { multiBBox } from '../geometry/vec.ts'
+import { offsetRingInward } from '../geometry/offset.ts'
 import { pocketExtent } from '../state/useTrayDesign.ts'
 import type { PaletteItem } from '../model/defaults.ts'
 
@@ -166,6 +169,17 @@ export default function TrayCanvas(props: TrayCanvasProps) {
 
   const snap = useCallback((v: number) => (snapMm > 0 ? Math.round(v / snapMm) * snapMm : v), [snapMm])
 
+  // Same clamp as the wheel handler, but zooms on the view's own centre --
+  // for the toolbar buttons, where there's no cursor position to anchor on.
+  const zoomBy = useCallback((factor: number) => {
+    setView(v => {
+      const w = Math.min(2000, Math.max(20, v.w * factor))
+      const h = w * (v.h / v.w)
+      const cx = v.x + v.w / 2, cy = v.y + v.h / 2
+      return { x: cx - w / 2, y: cy - h / 2, w, h }
+    })
+  }, [])
+
   const onWheel = useCallback((e: React.WheelEvent) => {
     // preventDefault is handled by the non-passive native listener below;
     // calling it here too logs a passive-listener violation on every scroll.
@@ -286,14 +300,14 @@ export default function TrayCanvas(props: TrayCanvasProps) {
     return { vLines, hLines }
   }, [gridMm, view])
 
-  const bufferRect = useMemo(() => {
+  // Follows the tray's actual outline (notches and all) rather than insetting
+  // its bounding box, so the guide is accurate on a non-rectangular profile.
+  const bufferPath = useMemo(() => {
     if (!showBuffer || bufferMm <= 0) return null
-    const b = multiBBox(profileRings)
-    if (!Number.isFinite(b.minX)) return null
-    const w = (b.maxX - b.minX) - 2 * bufferMm
-    const h = (b.maxY - b.minY) - 2 * bufferMm
-    if (w <= 0 || h <= 0) return null
-    return { x: b.minX + bufferMm, y: b.minY + bufferMm, w, h }
+    const rings = profileRings
+      .map(poly => offsetRingInward(poly[0], bufferMm))
+      .filter((r): r is Ring => r !== null)
+    return rings.length ? rings.map(ringToPath).join(' ') : null
   }, [showBuffer, bufferMm, profileRings])
 
   return (
@@ -341,9 +355,9 @@ export default function TrayCanvas(props: TrayCanvasProps) {
             </g>
           )}
 
-          {bufferRect && (
-            <rect
-              x={bufferRect.x} y={bufferRect.y} width={bufferRect.w} height={bufferRect.h}
+          {bufferPath && (
+            <path
+              d={bufferPath}
               fill="none" stroke={bufferColor}
               strokeWidth={view.w / 700} strokeDasharray={`${view.w / 250} ${view.w / 250}`}
             />
@@ -383,6 +397,23 @@ export default function TrayCanvas(props: TrayCanvasProps) {
           })}
         </g>
       </svg>
+      <Stack
+        sx={{
+          position: 'absolute', bottom: 8, right: 8,
+          bgcolor: 'background.paper', borderRadius: 1, boxShadow: 1,
+        }}
+      >
+        <Tooltip title="Zoom in" placement="left">
+          <IconButton size="small" aria-label="Zoom in" onClick={() => zoomBy(1 / 1.2)}>
+            <AddIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title="Zoom out" placement="left">
+          <IconButton size="small" aria-label="Zoom out" onClick={() => zoomBy(1.2)}>
+            <RemoveIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      </Stack>
     </Box>
   )
 }

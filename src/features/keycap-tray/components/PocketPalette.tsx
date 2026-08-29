@@ -130,7 +130,10 @@ export default function PocketPalette({ sizing, onAdd }: PocketPaletteProps) {
         slotProps={{ htmlInput: { 'aria-label': 'Filter pockets' } }}
       />
 
-      <Stack direction="row" spacing={0.75} role="tablist" aria-label="Pocket source">
+      <Stack
+        direction="row" spacing={0.75} role="tablist" aria-label="Pocket source"
+        sx={{ flexWrap: 'wrap', rowGap: 0.75 }}
+      >
         <Chip
           size="small" label="Common" onClick={() => setTab('common')}
           role="tab" aria-selected={tab === 'common'}

@@ -45,7 +45,9 @@ export const unitItems = (units: number[]): PaletteItem[] =>
   }))
 
 export const COMMON_ITEMS: PaletteItem[] = [...unitItems(KEY_SIZES.map(k => k.units)), ISO_ENTER_ITEM]
-export const ALL_LIBRARY_ITEMS: PaletteItem[] = unitItems(LIBRARY_UNITS)
+// ISO Enter also lives here (not just Common) so unpinning it from Common
+// doesn't strand it -- it's a built-in shape, not a user-deletable custom one.
+export const ALL_LIBRARY_ITEMS: PaletteItem[] = [...unitItems(LIBRARY_UNITS), ISO_ENTER_ITEM]
 
 export const libraryPocketToItem = (p: LibraryPocket): PaletteItem => ({
   key: `custom:${p.id}`,

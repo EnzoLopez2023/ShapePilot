@@ -227,7 +227,7 @@ describe('designer page', () => {
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
     assert.ok(screen.getByRole('heading', { name: 'Pockets' }))
     assert.ok(screen.getByRole('heading', { name: 'Tray' }))
-    assert.ok(screen.getByRole('heading', { name: 'Export' }))
+    assert.ok(screen.getByRole('group', { name: 'Fabrication target' }))
     assert.ok(screen.getByRole('group', { name: 'Canvas mode' }))
   })
 
