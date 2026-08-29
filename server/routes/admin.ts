@@ -12,6 +12,7 @@ export interface AdminRouterOptions {
   identity: BuildIdentity
   database: () => AppDatabase | null
   lifecycle: () => Lifecycle
+  instanceId: string
 }
 
 const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -27,7 +28,7 @@ export function createAdminRouter(options: AdminRouterOptions): Router {
   router.get('/health', (_req, res) => {
     // The detailed report is the same bounded probe /api/ready runs; admins get
     // the schema and authority detail alongside it.
-    res.json(readiness(identity, options.lifecycle(), options.database()))
+    res.json(readiness(identity, options.lifecycle(), options.database(), options.instanceId))
   })
 
   router.get('/members', (_req, res, next) => {

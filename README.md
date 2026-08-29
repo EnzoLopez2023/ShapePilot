@@ -50,6 +50,7 @@ set the `VITE_*` values in `.env.example`.
 | `npm start` | API with `NODE_ENV=production` enforced by the production launcher |
 | `npm run build:native` | Build the pinned SQLite descriptor-identity guard |
 | `npm run build` | Native guard plus production SPA build into `dist/client` |
+| `npm run check:architecture` | Enforce Node/container/SQLite/workflow boundaries |
 | `npm run typecheck` | `tsc -b --noEmit` across both projects |
 | `npm run lint` | ESLint |
 | `npm test` | The complete Vitest suite |
@@ -58,6 +59,7 @@ set the `VITE_*` values in `.env.example`.
 | `npm run legacy:import` | Read-only dry run, then hash-gated apply |
 | `npm run legacy:reconcile` | Independent source/target proof |
 | `npm run recovery` | `backup` / `list` / `verify` / `restore` |
+| `npm run deploy:migration-check` | Prove the prior release remains compatible with the candidate schema |
 
 ## Environment
 
@@ -67,21 +69,25 @@ client secret and uses managed identity in production.
 | Variable | Required | Meaning |
 |---|---|---|
 | `NODE_ENV` | yes outside `npm start` | `development`, `test` or `production`; never inferred |
-| `PORT` | no | API port, default `8080` |
-| `SHAPEPILOT_ENTRA_TENANT_ID` | yes | Tenant whose tokens are accepted |
+| `PORT` | production | API port, default `8080` outside production; production requires `3000` |
+| `AAD_TENANT_ID` / `SHAPEPILOT_ENTRA_TENANT_ID` | yes | Tenant whose tokens are accepted; aliases must agree |
 | `SHAPEPILOT_API_AUDIENCE` | yes | ShapePilot's own API audience |
 | `SHAPEPILOT_API_SCOPE` | no | Required delegated scope, default `access_as_user` |
 | `SHAPEPILOT_JWKS_URI` | no | Override the tenant's JWKS endpoint |
 | `SHAPEPILOT_ADMIN_OIDS` | no | Comma-separated GUIDs granted `admin` on first sign-in |
-| `SHAPEPILOT_DB_PATH` | no | Default `/home/data/shapepilot.db` in production, `data/shapepilot.db` otherwise |
+| `DB_PATH` / `SHAPEPILOT_DB_PATH` | production / no | Production requires an absolute canonical path; development defaults to `data/shapepilot.db` |
+| `SQLITE_JOURNAL_MODE` | production | Must be exactly `DELETE` |
 | `SHAPEPILOT_DB_BUSY_TIMEOUT_MS` | no | 100–60000, default 5000 |
-| `SHAPEPILOT_DB_ALLOW_CREATE` | no | Allow production to create a missing database. Off by default: an absent file means the volume did not mount |
-| `SHAPEPILOT_ARTIFACT_STORE_DIR` | for recovery | External destination for backup bundles |
+| `SHAPEPILOT_DB_ALLOW_CREATE` | no | Development-only create mode; production rejects it |
+| `SHAPEPILOT_INITIALIZE_EMPTY_DB` | first allocation only | Exact value `1` enables one-time hash-pinned schema-only initialization; remove after readiness |
+| `BACKUP_ROOT` / `SHAPEPILOT_ARTIFACT_STORE_DIR` | production / recovery | External destination for backup bundles |
+| `RECOVERY_WORK_ROOT` / `SHAPEPILOT_RECOVERY_WORK_DIR` | no | Bounded recovery scratch path; production image pins `/home/data/recovery/shapepilot` |
 | `SHAPEPILOT_CLIENT_DIR` | no | Built SPA directory, default `dist/client` |
 | `SHAPEPILOT_DEV_AUTH` | no | Development bypass. **Refused when `NODE_ENV=production`** |
 | `SHAPEPILOT_DEV_AUTH_OID` / `_TENANT_ID` / `_NAME` / `_EMAIL` / `_ROLE` | no | Identity the bypass presents |
 | `VITE_AUTH_MODE` | no | `development` skips the sign-in gate in the SPA |
-| `VITE_ENTRA_CLIENT_ID` / `VITE_ENTRA_TENANT_ID` / `VITE_API_SCOPE` | for Entra | MSAL configuration |
+| `VITE_AZURE_CLIENT_ID` / `VITE_AZURE_TENANT_ID` / `VITE_API_SCOPE` | for production Entra | Canonical build-time MSAL configuration |
+| `VITE_ENTRA_CLIENT_ID` / `VITE_ENTRA_TENANT_ID` | no | Development compatibility aliases |
 
 ## Architecture in one screen
 
@@ -101,8 +107,10 @@ client secret and uses managed identity in production.
   `(tenant_id, oid)` is the only authorization key. Roles are app-local and
   re-read from the database on every admin call.
 - **Health.** `/api/live` never touches the database. `/api/ready` runs one
-  bounded probe plus a schema-identity check. `/api/version` and `/version.json`
-  serve the identical immutable build and source lineage.
+  bounded probe plus schema, DELETE-journal, and foreign-key checks. Both expose
+  the exact SHA, run-attempt build ID, and stable process instance ID with
+  `Cache-Control: no-store`. `/api/version` and `/version.json` serve the same
+  immutable build and source lineage.
 - **Geometry.** Layered 2D polygon extrusion with three watertightness repair
   passes. No 3D CSG, no server-side geometry.
 
@@ -121,7 +129,8 @@ What ShapePilot is for, and what is deliberately not built yet, is in
 | [`docs/DATA_MIGRATION.md`](docs/DATA_MIGRATION.md) | Immutable-source import, dispositions, cutover |
 | [`docs/RECOVERY.md`](docs/RECOVERY.md) | Backup, verify, restore, and the prohibitions |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Boundaries and extension points |
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Container, CI, release, rollback, and production data contract |
 
-Not in this wave: Azure provisioning, deployment, the production cutover, and
-anything that mutates Hearth or its data. No tool in this repository can write
-to a Hearth database.
+Azure resources remain owned by `EnzoLopez2023/azure-infra`; this repository
+builds and deploys only the ShapePilot image. No tool here can provision Azure
+or write to a Hearth database.

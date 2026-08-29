@@ -41,6 +41,10 @@ These are enforced in code and covered by `test/parity/recovery.test.ts`.
 `SHAPEPILOT_ARTIFACT_STORE_DIR` points at an external filesystem destination —
 a mounted volume or share, not the application's own disk and not this
 repository. The commands refuse to run without it.
+`BACKUP_ROOT` is the canonical production alias. Recovery scratch uses
+`RECOVERY_WORK_ROOT` (the image pins `/home/data/recovery/shapepilot`) so
+temporary verification and restore files also stay on explicitly writable
+persistent storage.
 
 The store is reached through `lib/recovery/artifactStore.ts`, an object-store
 shaped interface (`put`, `putFile`, `get`, `fetchToFile`, `list`, `remove`).
@@ -87,8 +91,12 @@ node scripts/recovery.ts verify --artifact 20260828T053625317Z-a879478aa7f6c0ff
 # Restore forward into a NEW path. Never promotes anything.
 node scripts/recovery.ts restore \
   --artifact 20260828T053625317Z-a879478aa7f6c0ff \
-  --to /home/data/shapepilot-restored-20260828.db
+  --to /home/data/recovery/shapepilot/shapepilot-restored-20260828.db
 ```
+
+In production, restore destinations must be direct children of
+`RECOVERY_WORK_ROOT`. This keeps the accepted descriptor-relative restore work
+and its forward-only result inside the explicit persistent recovery path.
 
 `backup` and `restore` accept `--database <path>`; all four accept
 `--store <path>` to override the configured destination.

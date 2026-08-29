@@ -100,6 +100,19 @@ through a racy pathname ownership check. After that proof, every writable open a
 `npm start` sets it to `production`; direct development and test entry points
 must state their environment explicitly. Missing mode is a startup failure, not
 a path to development authentication or a newly created local authority.
+Production additionally requires an absolute `DB_PATH`, an explicit
+`SQLITE_JOURNAL_MODE=DELETE`, a persistent `BACKUP_ROOT`, and a valid immutable
+build identity. Startup verifies the database parent and bounded recovery paths
+are writable before SQLite opens, while still refusing to create a missing
+production authority.
+The only exception is the first-allocation
+`SHAPEPILOT_INITIALIZE_EMPTY_DB=1` path: while running as UID/GID 1000 it
+exclusively creates the final database, proves a current schema with zero rows
+in every domain table, and writes a private durable marker binding its SHA-256,
+authority ID, schema identity, and immutable build. Database and marker partial
+states fail closed; an existing database is never replaced or recreated. The
+flag is removed after the first direct readiness proof and is not a legacy-data
+cutover path.
 
 Migrations are append-only and identified by a checksum over their exact
 statements. Each ledger row stores its ordinal, id, name and checksum, and the

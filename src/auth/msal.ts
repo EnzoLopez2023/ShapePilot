@@ -10,8 +10,8 @@ const env = import.meta.env
 
 export const AUTH_ENABLED = env.VITE_AUTH_MODE !== 'development'
 
-const clientId = env.VITE_ENTRA_CLIENT_ID ?? ''
-const tenantId = env.VITE_ENTRA_TENANT_ID ?? ''
+const clientId = env.VITE_AZURE_CLIENT_ID ?? env.VITE_ENTRA_CLIENT_ID ?? ''
+const tenantId = env.VITE_AZURE_TENANT_ID ?? env.VITE_ENTRA_TENANT_ID ?? ''
 const apiScope = env.VITE_API_SCOPE ?? ''
 
 export const msalConfig: Configuration = {
