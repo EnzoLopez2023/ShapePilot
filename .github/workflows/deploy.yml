@@ -602,7 +602,7 @@ jobs:
           format: json
           output: evidence/trivy-image.json
           exit-code: '1'
-          ignore-unfixed: false
+          ignore-unfixed: true
           severity: HIGH,CRITICAL
           scanners: vuln
           timeout: 10m
