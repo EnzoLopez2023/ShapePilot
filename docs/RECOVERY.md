@@ -60,6 +60,10 @@ failures remove only tracked staged objects; crash remnants stay under the
 reserved staging prefix for the next locked operation to scavenge. Parent
 directories are synced before success is reported.
 
+Forward restore likewise validates the destination and every SQLite sidecar with
+no-follow directory-entry metadata. Dangling symlinks and symlinks that resolve
+to the reserved destination inode are rejected rather than treated as safe.
+
 ## Commands
 
 ```bash

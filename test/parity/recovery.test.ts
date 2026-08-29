@@ -7,8 +7,8 @@
 // path.
 import assert from 'node:assert/strict'
 import {
-  chmodSync, closeSync, constants, existsSync, mkdirSync, openSync, readFileSync, readdirSync,
-  renameSync, rmSync, symlinkSync, writeFileSync, writeSync,
+  chmodSync, closeSync, constants, existsSync, linkSync, lstatSync, mkdirSync, openSync,
+  readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync, writeSync,
 } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
@@ -235,11 +235,18 @@ describe('artifact store', () => {
     writeFileSync(join(outside, 'secret.bin'), 'outside')
     symlinkSync(outside, join(root, 'redirect'), 'dir')
     const store = createFilesystemArtifactStore(root)
+    const sourceSha256 = await sha256File(join(outside, 'secret.bin'))
 
     for (const operation of [
       () => store.get('redirect/secret.bin'),
       () => store.put('redirect/new.bin', Buffer.from('escape')),
       () => store.putFile('redirect/copied.bin', join(outside, 'secret.bin')),
+      () => store.putBundle('redirect', [{
+        name: 'shapepilot.sqlite3',
+        sourcePath: join(outside, 'secret.bin'),
+        bytes: 7,
+        sha256: sourceSha256,
+      }]),
       () => store.list('redirect'),
     ]) {
       await assert.rejects(
@@ -251,6 +258,18 @@ describe('artifact store', () => {
     for (let attempt = 0; attempt < 32; attempt += 1) {
       await assert.rejects(
         () => store.putFile(`redirect/copied-${attempt}.bin`, join(outside, 'secret.bin')),
+        (error: unknown) =>
+          error instanceof ArtifactStoreError && error.code === 'ARTIFACT_OPERATION_FAILED',
+      )
+    }
+    for (let attempt = 0; attempt < 16; attempt += 1) {
+      await assert.rejects(
+        () => store.putBundle('redirect', [{
+          name: 'shapepilot.sqlite3',
+          sourcePath: join(outside, 'secret.bin'),
+          bytes: 7,
+          sha256: sourceSha256,
+        }]),
         (error: unknown) =>
           error instanceof ArtifactStoreError && error.code === 'ARTIFACT_OPERATION_FAILED',
       )
@@ -543,7 +562,7 @@ describe('artifact store', () => {
           sha256,
         }]),
         (error: unknown) =>
-          error instanceof ArtifactStoreError && error.code === 'ARTIFACT_BUNDLE_MISMATCH',
+          error instanceof ArtifactStoreError && error.code === 'ARTIFACT_OPERATION_FAILED',
       )
     } finally {
       chmodSync(root, 0o700)
@@ -824,6 +843,22 @@ describe('restore', () => {
         && error.code === 'RESTORE_DESTINATION_ACTIVE')
   })
 
+  test('restore refuses dangling sidecar symlinks', async () => {
+    const fixture = seededDatabase('restore-dangling-sidecar')
+    const result = await createBackup(backupOptions(fixture))
+    const destination = join(fixture.storeRoot, '..', 'dangling-sidecar.db')
+    const sidecar = `${destination}-journal`
+    symlinkSync('missing-sidecar-target', sidecar)
+
+    await assert.rejects(
+      () => restoreBackup({
+        store: fixture.store, artifactId: result.artifactId, destinationPath: destination,
+      }),
+      (error: unknown) => error instanceof RecoveryError
+        && error.code === 'RESTORE_DESTINATION_ACTIVE')
+    assert.equal(lstatSync(sidecar).isSymbolicLink(), true)
+  })
+
   for (const code of [
     'BACKUP_QUICK_CHECK_FAILED',
     'BACKUP_INTEGRITY_CHECK_FAILED',
@@ -954,6 +989,29 @@ describe('restore', () => {
       (error: unknown) => error instanceof RecoveryError
         && error.code === 'RESTORE_DESTINATION_RACED')
     assert.equal(readFileSync(destination, 'utf8'), 'replacement owned by another process')
+    assertNoRestoreTemps(join(destination, '..'))
+  })
+
+  test('a symlink to the reserved inode cannot become a promotable destination', async () => {
+    const fixture = seededDatabase('restore-symlink-reserved-inode')
+    const result = await createBackup(backupOptions(fixture))
+    const destination = join(fixture.storeRoot, '..', 'symlink-raced.db')
+    const retained = join(fixture.storeRoot, '..', 'retained-raced.db')
+
+    await assert.rejects(
+      () => restoreBackup({
+        store: fixture.store,
+        artifactId: result.artifactId,
+        destinationPath: destination,
+        afterDestinationReserved: () => {
+          linkSync(destination, retained)
+          rmSync(destination)
+          symlinkSync(retained, destination)
+        },
+      }),
+      (error: unknown) => error instanceof RecoveryError
+        && error.code === 'RESTORE_DESTINATION_RACED')
+    assert.equal(lstatSync(destination).isSymbolicLink(), true)
     assertNoRestoreTemps(join(destination, '..'))
   })
 })

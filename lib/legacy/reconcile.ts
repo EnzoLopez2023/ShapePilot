@@ -166,11 +166,16 @@ export function reconcile(options: ReconcileOptions): ReconcileReport {
 
   // Owner assignment: no imported row may be left unscoped or scoped elsewhere.
   for (const table of ['keycap_tray_designs', 'keycap_pocket_library'] as const) {
-    const stray = options.db.prepare<[string, string], { count: number }>(
+    const sourceTable = bundle.tables.find((candidate) => candidate.name === table)
+    const sourceIds = sourceTable?.rows.map((row) => rowId(row, table)) ?? []
+    if (sourceIds.length === 0) continue
+    const placeholders = sourceIds.map(() => '?').join(', ')
+    const stray = options.db.prepare<(number | string)[], { count: number }>(
       `SELECT COUNT(*) AS count FROM ${table}
-        WHERE owner_tenant_id IS NULL OR owner_oid IS NULL
-           OR owner_tenant_id != ? OR owner_oid != ?`,
-    ).get(owner.tenantId, owner.oid)
+        WHERE id IN (${placeholders})
+          AND (owner_tenant_id IS NULL OR owner_oid IS NULL
+            OR owner_tenant_id != ? OR owner_oid != ?)`,
+    ).get(...sourceIds, owner.tenantId, owner.oid)
     if (stray && Number(stray.count) > 0) {
       differences.push({
         table,

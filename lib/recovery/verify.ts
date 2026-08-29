@@ -13,9 +13,8 @@
 // `restore` is forward-only: it refuses to write over an active destination and
 // always materializes a new file, which is then verified before an operator
 // promotes it. Neither runs at startup or inside an HTTP request.
-import { existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { copyFile, mkdir, mkdtemp, open, rm, stat } from 'node:fs/promises'
+import { copyFile, lstat, mkdir, mkdtemp, open, rm, stat } from 'node:fs/promises'
 import type { FileHandle } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import Database from 'better-sqlite3'
@@ -238,29 +237,41 @@ async function hashHandle(handle: FileHandle): Promise<string> {
 }
 
 interface ReservedFileIdentity {
-  dev: number
-  ino: number
-  birthtimeMs: number
+  dev: bigint
+  ino: bigint
+  birthtimeNs: bigint
 }
 
 const fileIdentity = (
-  details: { dev: number; ino: number; birthtimeMs: number },
+  details: { dev: bigint; ino: bigint; birthtimeNs: bigint },
 ): ReservedFileIdentity => ({
   dev: details.dev,
   ino: details.ino,
-  birthtimeMs: details.birthtimeMs,
+  birthtimeNs: details.birthtimeNs,
 })
 
 async function pathIsReservedFile(
   path: string, expected: ReservedFileIdentity,
 ): Promise<boolean> {
   try {
-    const actual = fileIdentity(await stat(path))
-    return actual.dev === expected.dev
+    const details = await lstat(path, { bigint: true })
+    const actual = fileIdentity(details)
+    return details.isFile()
+      && actual.dev === expected.dev
       && actual.ino === expected.ino
-      && actual.birthtimeMs === expected.birthtimeMs
+      && actual.birthtimeNs === expected.birthtimeNs
   } catch {
     return false
+  }
+}
+
+async function pathEntryExists(path: string): Promise<boolean> {
+  try {
+    await lstat(path)
+    return true
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === 'ENOENT') return false
+    throw cause
   }
 }
 
@@ -273,7 +284,7 @@ export async function restoreBackup(options: RestoreOptions): Promise<RestoreRes
     `${destination}-shm`,
   ]
 
-  if (existsSync(destination)) {
+  if (await pathEntryExists(destination)) {
     throw new RecoveryError(
       'RESTORE_DESTINATION_EXISTS',
       `${destination} already exists; restore is forward-only and never overwrites`,
@@ -286,7 +297,7 @@ export async function restoreBackup(options: RestoreOptions): Promise<RestoreRes
     )
   }
   for (const sidecar of destinationSidecars) {
-    if (existsSync(sidecar)) {
+    if (await pathEntryExists(sidecar)) {
       throw new RecoveryError(
         'RESTORE_DESTINATION_ACTIVE',
         `${sidecar} exists, so the destination is in use`,
@@ -346,7 +357,7 @@ export async function restoreBackup(options: RestoreOptions): Promise<RestoreRes
 
     try {
       reservation = await open(destination, 'wx+')
-      reservedIdentity = fileIdentity(await reservation.stat())
+      reservedIdentity = fileIdentity(await reservation.stat({ bigint: true }))
       await options.afterDestinationReserved?.()
     } catch (cause) {
       if ((cause as NodeJS.ErrnoException).code === 'EEXIST') {
@@ -358,7 +369,13 @@ export async function restoreBackup(options: RestoreOptions): Promise<RestoreRes
       }
       throw cause
     }
-    const racedSidecar = destinationSidecars.find((sidecar) => existsSync(sidecar))
+    let racedSidecar: string | undefined
+    for (const sidecar of destinationSidecars) {
+      if (await pathEntryExists(sidecar)) {
+        racedSidecar = sidecar
+        break
+      }
+    }
     if (racedSidecar) {
       throw new RecoveryError(
         'RESTORE_DESTINATION_ACTIVE',
@@ -375,7 +392,13 @@ export async function restoreBackup(options: RestoreOptions): Promise<RestoreRes
         'the exclusively created destination does not match the verified artifact',
       )
     }
-    const lateSidecar = destinationSidecars.find((sidecar) => existsSync(sidecar))
+    let lateSidecar: string | undefined
+    for (const sidecar of destinationSidecars) {
+      if (await pathEntryExists(sidecar)) {
+        lateSidecar = sidecar
+        break
+      }
+    }
     if (lateSidecar) {
       throw new RecoveryError(
         'RESTORE_DESTINATION_ACTIVE',

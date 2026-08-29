@@ -653,6 +653,30 @@ describe('reconciliation', () => {
           db: db.handle, bundle, owner, approvedSource: approved,
           expectedReportHash: planImport({ db: db.handle, bundle, owner, approvedSource: approved }).reportHash,
         })
+        db.handle.prepare(`
+          INSERT INTO keycap_tray_designs (
+            id, owner_tenant_id, owner_oid, name, profile_kind, profile_json, sizing_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          999,
+          '33333333-3333-4333-8333-333333333333',
+          '44444444-4444-4444-8444-444444444444',
+          'Another owner design',
+          'preset',
+          '{}',
+          '{}',
+        )
+        db.handle.prepare(`
+          INSERT INTO keycap_pocket_library (
+            id, owner_tenant_id, owner_oid, name, units
+          ) VALUES (?, ?, ?, ?, ?)
+        `).run(
+          999,
+          '33333333-3333-4333-8333-333333333333',
+          '44444444-4444-4444-8444-444444444444',
+          'Another owner pocket',
+          1,
+        )
         const report = reconcile({
           db: db.handle, bundle, owner, approvedSource: approved,
           signedOffUtc: '2026-08-28T12:00:00.000Z',

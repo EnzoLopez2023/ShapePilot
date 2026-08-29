@@ -389,10 +389,12 @@ export function createFilesystemArtifactStore(root: string): ArtifactStore {
         let fileIndex = 0
         let remaining = files[0].bytes
         let committed = false
+        let parentRejectedBundle = false
         const finishEmptyFiles = () => {
           while (fileIndex < files.length && remaining === 0) {
             const actual = hashes[fileIndex].digest('hex')
             if (actual !== files[fileIndex].sha256) {
+              parentRejectedBundle = true
               throw new ArtifactStoreError(
                 'ARTIFACT_BUNDLE_MISMATCH',
                 `staged artifact bundle file "${names[fileIndex]}" has an unexpected SHA-256`,
@@ -413,6 +415,7 @@ export function createFilesystemArtifactStore(root: string): ArtifactStore {
             let offset = 0
             while (offset < chunk.byteLength) {
               if (fileIndex >= files.length) {
+                parentRejectedBundle = true
                 throw new ArtifactStoreError(
                   'ARTIFACT_BUNDLE_MISMATCH',
                   'artifact bundle guard emitted more bytes than approved',
@@ -425,6 +428,7 @@ export function createFilesystemArtifactStore(root: string): ArtifactStore {
               if (remaining === 0) {
                 const actual = hashes[fileIndex].digest('hex')
                 if (actual !== files[fileIndex].sha256) {
+                  parentRejectedBundle = true
                   throw new ArtifactStoreError(
                     'ARTIFACT_BUNDLE_MISMATCH',
                     `staged artifact bundle file "${names[fileIndex]}" has an unexpected SHA-256`,
@@ -454,7 +458,11 @@ export function createFilesystemArtifactStore(root: string): ArtifactStore {
         } catch (cause) {
           if (!committed) decide('A')
           output.destroy()
-          await completion.catch(() => undefined)
+          const guardOutcome = await completion.then(
+            () => ({ ok: true as const }),
+            (error: unknown) => ({ ok: false as const, error }),
+          )
+          if (!parentRejectedBundle && !guardOutcome.ok) throw guardOutcome.error
           throw cause
         }
       } finally {
