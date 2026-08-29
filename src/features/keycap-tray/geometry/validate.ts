@@ -1,0 +1,322 @@
+// Manufacturability checks, scoped per machine. A design can be perfectly valid
+// for the printer and impossible on the CNC, so nothing here is global and
+// nothing is auto-corrected -- the export dialog shows the warnings that apply
+// to the format being written.
+import type { FabricationSettings, Pocket, TrayDesign } from '../model/types.ts'
+import type { Polygon, Ring, Vec2 } from './vec.ts'
+import { bboxOverlaps, multiArea, ringBBox } from './vec.ts'
+import { difference, intersection } from './boolean.ts'
+import { effectivePocketCornerRadius, pocketRing } from './shapes.ts'
+import { buildRegions } from './layers.ts'
+import { profileToMulti } from '../model/presets.ts'
+import { checkManifold } from './mesh.ts'
+import type { Mesh } from './mesh.ts'
+
+export type Target = 'cnc' | 'print'
+export type Severity = 'error' | 'warning'
+
+export interface Issue {
+  code: string
+  severity: Severity
+  message: string
+  targets: Target[]
+  pocketIds?: string[]
+}
+
+const label = (p: Pocket): string => p.label ?? `${p.units}u`
+
+/** A router cannot cut an internal corner tighter than its own radius. */
+export function checkCornerRadius(d: TrayDesign, fab: FabricationSettings): Issue[] {
+  const minR = fab.toolDiameterMm / 2
+  const offenders = d.pockets.filter(
+    p => effectivePocketCornerRadius(p, d.sizing) < minR - 1e-9,
+  )
+  if (!offenders.length) return []
+  const r = effectivePocketCornerRadius(offenders[0], d.sizing)
+  return [{
+    code: 'corner-radius-below-tool',
+    severity: 'error',
+    targets: ['cnc'],
+    pocketIds: offenders.map(p => p.id),
+    message: `${offenders.length} pocket${offenders.length > 1 ? 's have' : ' has'} a ${r} mm corner radius, ` +
+      `below the ${minR.toFixed(3)} mm minimum for a ${fab.toolDiameterMm} mm bit. ` +
+      `The cutter will leave a larger radius than drawn. Raise the radius or fit a smaller bit.`,
+  }]
+}
+
+export function checkWallThickness(d: TrayDesign, fab: FabricationSettings): Issue[] {
+  const rings = d.pockets.map(p => ({ p, poly: pocketRing(p, d.sizing) }))
+  const thin: string[] = []
+  for (let i = 0; i < rings.length; i++) {
+    for (let j = i + 1; j < rings.length; j++) {
+      const a = ringBBox(rings[i].poly[0]), b = ringBBox(rings[j].poly[0])
+      if (!bboxOverlaps(a, b, fab.minWallMm)) continue
+      // Overlapping is caught separately; this is the "too close but apart" case.
+      if (bboxOverlaps(a, b, 0)) continue
+      thin.push(rings[i].p.id, rings[j].p.id)
+    }
+  }
+  const issues: Issue[] = []
+  if (thin.length) {
+    const ids = [...new Set(thin)]
+    issues.push({
+      code: 'wall-too-thin',
+      severity: 'warning',
+      targets: ['cnc', 'print'],
+      pocketIds: ids,
+      message: `${ids.length} pockets sit closer than the ${fab.minWallMm} mm minimum wall. ` +
+        `Thin walls tear out on the CNC and warp when printed.`,
+    })
+  }
+
+  const profile = profileToMulti(d.profile)
+  const boundaryIndex = buildBoundaryIndex(profile.flat())
+  const rim = rings
+    .filter(({ poly }) => boundaryWithin(poly[0], boundaryIndex, fab.minWallMm - 1e-9))
+    .map(({ p }) => p.id)
+  if (rim.length) {
+    issues.push({
+      code: 'rim-too-thin',
+      severity: 'warning',
+      targets: ['cnc', 'print'],
+      pocketIds: rim,
+      message: `${rim.length} pocket${rim.length === 1 ? ' is' : 's are'} closer than the ` +
+        `${fab.minWallMm} mm minimum wall to the tray rim.`,
+    })
+  }
+  return issues
+}
+
+const pointSegmentDistance = (point: Vec2, a: Vec2, b: Vec2): number => {
+  const dx = b[0] - a[0], dy = b[1] - a[1]
+  const lengthSquared = dx * dx + dy * dy
+  if (lengthSquared === 0) return Math.hypot(point[0] - a[0], point[1] - a[1])
+  const t = Math.max(0, Math.min(1,
+    ((point[0] - a[0]) * dx + (point[1] - a[1]) * dy) / lengthSquared))
+  return Math.hypot(point[0] - (a[0] + t * dx), point[1] - (a[1] + t * dy))
+}
+
+const segmentDistance = (a0: Vec2, a1: Vec2, b0: Vec2, b1: Vec2): number => {
+  const cross = (u: Vec2, v: Vec2, w: Vec2) =>
+    (v[0] - u[0]) * (w[1] - u[1]) - (v[1] - u[1]) * (w[0] - u[0])
+  const aSide0 = cross(a0, a1, b0), aSide1 = cross(a0, a1, b1)
+  const bSide0 = cross(b0, b1, a0), bSide1 = cross(b0, b1, a1)
+  const rangesOverlap = Math.max(Math.min(a0[0], a1[0]), Math.min(b0[0], b1[0]))
+    <= Math.min(Math.max(a0[0], a1[0]), Math.max(b0[0], b1[0])) + 1e-12
+    && Math.max(Math.min(a0[1], a1[1]), Math.min(b0[1], b1[1]))
+    <= Math.min(Math.max(a0[1], a1[1]), Math.max(b0[1], b1[1])) + 1e-12
+  const intersects = rangesOverlap && aSide0 * aSide1 <= 0 && bSide0 * bSide1 <= 0
+  if (intersects) return 0
+  return Math.min(
+    pointSegmentDistance(a0, b0, b1),
+    pointSegmentDistance(a1, b0, b1),
+    pointSegmentDistance(b0, a0, a1),
+    pointSegmentDistance(b1, a0, a1),
+  )
+}
+
+interface BoundarySegment {
+  a: Vec2
+  b: Vec2
+  minX: number
+  minY: number
+  maxX: number
+  maxY: number
+}
+
+interface BoundaryNode {
+  minX: number
+  minY: number
+  maxX: number
+  maxY: number
+  left?: BoundaryNode
+  right?: BoundaryNode
+  segments?: BoundarySegment[]
+}
+
+const segmentBounds = (a: Vec2, b: Vec2): BoundarySegment => ({
+  a,
+  b,
+  minX: Math.min(a[0], b[0]),
+  minY: Math.min(a[1], b[1]),
+  maxX: Math.max(a[0], b[0]),
+  maxY: Math.max(a[1], b[1]),
+})
+
+const buildBoundaryNode = (segments: BoundarySegment[]): BoundaryNode => {
+  const minX = Math.min(...segments.map(segment => segment.minX))
+  const minY = Math.min(...segments.map(segment => segment.minY))
+  const maxX = Math.max(...segments.map(segment => segment.maxX))
+  const maxY = Math.max(...segments.map(segment => segment.maxY))
+  const node: BoundaryNode = { minX, minY, maxX, maxY }
+  if (segments.length <= 16) {
+    node.segments = segments
+    return node
+  }
+  const axis = maxX - minX >= maxY - minY ? 'x' : 'y'
+  segments.sort((a, b) => axis === 'x'
+    ? (a.minX + a.maxX) - (b.minX + b.maxX)
+    : (a.minY + a.maxY) - (b.minY + b.maxY))
+  const middle = Math.floor(segments.length / 2)
+  node.left = buildBoundaryNode(segments.slice(0, middle))
+  node.right = buildBoundaryNode(segments.slice(middle))
+  return node
+}
+
+const buildBoundaryIndex = (boundaries: Ring[]): BoundaryNode | undefined => {
+  const segments = boundaries.flatMap(boundary =>
+    boundary.map((point, index) =>
+      segmentBounds(point, boundary[(index + 1) % boundary.length])))
+  return segments.length ? buildBoundaryNode(segments) : undefined
+}
+
+const boxesOverlap = (
+  a: Pick<BoundaryNode, 'minX' | 'minY' | 'maxX' | 'maxY'>,
+  b: Pick<BoundaryNode, 'minX' | 'minY' | 'maxX' | 'maxY'>,
+): boolean =>
+  a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY
+
+const boundaryWithin = (ring: Ring, root: BoundaryNode | undefined, limit: number): boolean => {
+  if (!root || limit <= 0) return false
+  for (let index = 0; index < ring.length; index++) {
+    const a = ring[index]
+    const b = ring[(index + 1) % ring.length]
+    const bounds = segmentBounds(a, b)
+    const query = {
+      minX: bounds.minX - limit,
+      minY: bounds.minY - limit,
+      maxX: bounds.maxX + limit,
+      maxY: bounds.maxY + limit,
+    }
+    const pending = [root]
+    while (pending.length) {
+      const node = pending.pop() as BoundaryNode
+      if (!boxesOverlap(node, query)) continue
+      if (node.segments) {
+        for (const segment of node.segments) {
+          if (boxesOverlap(segment, query)
+            && segmentDistance(a, b, segment.a, segment.b) < limit) return true
+        }
+      } else {
+        if (node.left) pending.push(node.left)
+        if (node.right) pending.push(node.right)
+      }
+    }
+  }
+  return false
+}
+
+export function checkDepth(d: TrayDesign, fab: FabricationSettings): Issue[] {
+  const issues: Issue[] = []
+  const total = d.floorThicknessMm + d.pocketDepthMm
+  if (d.pocketDepthMm >= fab.stockThicknessMm) {
+    issues.push({
+      code: 'depth-exceeds-stock',
+      severity: 'error',
+      targets: ['cnc'],
+      message: `A ${d.pocketDepthMm} mm pocket cannot be cut in ${fab.stockThicknessMm} mm stock.`,
+    })
+  } else {
+    const remaining = fab.stockThicknessMm - d.pocketDepthMm
+    if (remaining < 3) {
+      issues.push({
+        code: 'thin-floor',
+        severity: 'warning',
+        targets: ['cnc'],
+        message: `Only ${remaining.toFixed(1)} mm of stock remains below the pocket. ` +
+          `Under 3 mm the floor flexes and can blow through.`,
+      })
+    }
+  }
+  if (total <= 0) {
+    issues.push({ code: 'zero-height', severity: 'error', targets: ['print', 'cnc'], message: 'Tray has no height.' })
+  }
+  return issues
+}
+
+export function checkPlate(_d: TrayDesign, fab: FabricationSettings, mesh: Mesh): Issue[] {
+  const w = mesh.bbox[3] - mesh.bbox[0]
+  const h = mesh.bbox[4] - mesh.bbox[1]
+  const fits = (w <= fab.plateWidthMm && h <= fab.plateDepthMm) ||
+    (h <= fab.plateWidthMm && w <= fab.plateDepthMm)
+  if (fits) return []
+  return [{
+    code: 'exceeds-plate',
+    severity: 'warning',
+    targets: ['print'],
+    message: `The tray is ${w.toFixed(1)} x ${h.toFixed(1)} mm, larger than the ` +
+      `${fab.plateWidthMm} x ${fab.plateDepthMm} mm plate. Split it before printing.`,
+  }]
+}
+
+export function checkPlacement(d: TrayDesign): Issue[] {
+  const issues: Issue[] = []
+  const { profile } = buildRegions(d)
+  const entries = d.pockets.map(p => ({ p, poly: pocketRing(p, d.sizing) as Polygon }))
+
+  const outside: string[] = []
+  for (const { p, poly } of entries) {
+    const spill = difference([poly], profile)
+    if (multiArea(spill) > 1e-6) outside.push(p.id)
+  }
+  if (outside.length) {
+    issues.push({
+      code: 'pocket-outside-profile',
+      severity: 'error',
+      targets: ['cnc', 'print'],
+      pocketIds: outside,
+      message: `${outside.length} pocket${outside.length > 1 ? 's extend' : ' extends'} past the tray outline ` +
+        `and will be cut off, leaving an open-sided cavity.`,
+    })
+  }
+
+  const overlapping = new Set<string>()
+  for (let i = 0; i < entries.length; i++) {
+    for (let j = i + 1; j < entries.length; j++) {
+      const a = ringBBox(entries[i].poly[0]), b = ringBBox(entries[j].poly[0])
+      if (!bboxOverlaps(a, b)) continue
+      if (multiArea(intersection([entries[i].poly], [entries[j].poly])) > 1e-6) {
+        overlapping.add(entries[i].p.id)
+        overlapping.add(entries[j].p.id)
+      }
+    }
+  }
+  if (overlapping.size) {
+    issues.push({
+      code: 'pockets-overlap',
+      severity: 'warning',
+      targets: ['cnc', 'print'],
+      pocketIds: [...overlapping],
+      message: `${overlapping.size} pockets overlap and will merge into one cavity.`,
+    })
+  }
+  return issues
+}
+
+export function checkMesh(mesh: Mesh): Issue[] {
+  const r = checkManifold(mesh)
+  if (r.ok) return []
+  return [{
+    code: 'non-manifold',
+    severity: 'error',
+    targets: ['print'],
+    message: `The generated mesh is not watertight (${r.danglingEdges} unpaired edges). ` +
+      `Bambu Studio would silently repair it and distort the pockets. This is a bug -- please report it.`,
+  }]
+}
+
+export function validateDesign(d: TrayDesign, fab: FabricationSettings, mesh: Mesh): Issue[] {
+  return [
+    ...checkPlacement(d),
+    ...checkCornerRadius(d, fab),
+    ...checkWallThickness(d, fab),
+    ...checkDepth(d, fab),
+    ...checkPlate(d, fab, mesh),
+    ...checkMesh(mesh),
+  ]
+}
+
+export const issuesFor = (issues: Issue[], target: Target): Issue[] =>
+  issues.filter(i => i.targets.includes(target))
+
+export const describePocket = label

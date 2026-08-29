@@ -1,0 +1,166 @@
+{
+  "$schema": "https://impeccable.style/schemas/design.v1.json",
+  "project": "ShapePilot",
+  "mode": "operate",
+  "world": "restrained-workbench",
+  "source_of_truth": "src/theme/theme.ts",
+  "generated_from": "shipped-artifact",
+  "tokens": {
+    "palette": {
+      "light": {
+        "canvas": "#F2F1EE",
+        "surface": "#FFFFFF",
+        "surfaceSunken": "#E9E7E2",
+        "border": "#C4C0B8",
+        "borderStrong": "#8D887E",
+        "text": "#1B1A18",
+        "textMuted": "#565149",
+        "accent": "#1F5C8B",
+        "accentText": "#FFFFFF",
+        "danger": "#9B2C2C",
+        "warning": "#8A5A00",
+        "success": "#1F6B45",
+        "tooltipSurface": "#2C2A26"
+      },
+      "dark": {
+        "canvas": "#16171A",
+        "surface": "#1E2024",
+        "surfaceSunken": "#121316",
+        "border": "#3A3E45",
+        "borderStrong": "#5E646E",
+        "text": "#EDEDEC",
+        "textMuted": "#A9AEB6",
+        "accent": "#79B6E4",
+        "accentText": "#10161C",
+        "danger": "#F09393",
+        "warning": "#E3B457",
+        "success": "#7FCBA1",
+        "tooltipSurface": "#33383F"
+      }
+    },
+    "structure": {
+      "radius": 6,
+      "borderWidth": 1,
+      "elevation": 0
+    },
+    "typography": {
+      "family": "\"Inter\", system-ui, -apple-system, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, sans-serif",
+      "baseSizePx": 14,
+      "scale": {
+        "h1":    { "size": "1.5rem",    "weight": 600, "letterSpacing": "-0.01em" },
+        "h2":    { "size": "1.125rem",  "weight": 600, "letterSpacing": "-0.005em" },
+        "h3":    { "size": "0.9375rem", "weight": 600 },
+        "body1": { "size": "0.875rem",  "weight": 400, "lineHeight": 1.55 },
+        "body2": { "size": "0.8125rem", "weight": 400, "lineHeight": 1.5 },
+        "button":{ "weight": 550, "textTransform": "none" }
+      }
+    },
+    "spacing": {
+      "unitPx": 8,
+      "used": [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3]
+    },
+    "focus": {
+      "ring": "2px solid <accent>",
+      "offset": "2px",
+      "selector": ":focus-visible",
+      "scope": "global",
+      "measuredLight": "2px solid rgb(31,92,139)",
+      "measuredDark":  "2px solid rgb(121,182,228)"
+    },
+    "motion": {
+      "reducedMotionGlobal": true,
+      "userPreferenceRoute": "/settings",
+      "userPreferenceValues": ["system", "reduce", "no-preference"],
+      "bespokeKeyframes": []
+    }
+  },
+  "layout": {
+    "shell": {
+      "skipLink": true,
+      "landmarks": { "header": 1, "nav": 1, "main": 1 },
+      "mainPadding": { "xs": { "x": 1.5, "y": 1.5 }, "md": { "x": 2.5, "y": 2 } }
+    },
+    "workbench": {
+      "id": "keycap-tray-designer",
+      "grid": {
+        "rows": "auto minmax(0, 1fr)",
+        "columns": {
+          "xs": "1fr",
+          "md": "220px minmax(0, 1fr)",
+          "lg": "220px minmax(0, 1fr) 312px"
+        },
+        "gap": 1.5,
+        "xsRowHeights": "minmax(360px, 55vh) auto auto",
+        "xsOrder": ["canvas", "palette", "inspector"]
+      },
+      "panelPadding": 1.5
+    }
+  },
+  "rules": [
+    { "id": "one-hairline-one-radius-one-accent", "text": "BORDER=1, RADIUS=6, and a single accent are the only expressive channels." },
+    { "id": "elevation-zero", "text": "No boxShadow, no elevation>0, no drop-shadow filters. Depth is hairline plus surfaceSunken." },
+    { "id": "no-translucency-blur-gradient", "text": "No backdrop blur, no glass surfaces, no gradient fills or gradient text anywhere in the app." },
+    { "id": "accent-discipline", "text": "Accent is reserved for the primary action on a surface and for active-tool state, focus ring, and text selection. Not used for headings, links, dividers, or emphasis." },
+    { "id": "three-async-states", "text": "Every async surface composes LoadingState, EmptyState, and ErrorState from src/components/LoadingState.tsx. New states are not invented." },
+    { "id": "one-destructive-dialog", "text": "Every irreversible action routes through useConfirm() in ConfirmDialogProvider. Confirm button uses color='error' when destructive:true." },
+    { "id": "aria-pressed-on-toggles", "text": "Buttons acting as toggles carry aria-pressed. ToggleButton uses its native pressed state." },
+    { "id": "tooltip-describes", "text": "MuiTooltip.defaultProps.describeChild=true — the tooltip is aria-describedby content, not the accessible name (WCAG 2.5.3)." },
+    { "id": "icon-only-labelled", "text": "Every icon-only IconButton has an aria-label." },
+    { "id": "svg-canvas-application-role", "text": "TrayCanvas is role='application' with a label that names pocket count and the interaction model." },
+    { "id": "3d-viewer-image-role", "text": "TrayViewer3D is role='img' with an aria-label that includes the triangle count and is lazily loaded so three.js is not in the first paint." },
+    { "id": "one-main-one-h1", "text": "One <main> per document, one <h1> per route. Designer <h1> is the open tray's name." },
+    { "id": "real-urls", "text": "Routing is real URLs with lazy feature boundaries; there is no global conditional view switch." },
+    { "id": "error-boundary-recovery", "text": "AppErrorBoundary renders a recovery surface with a reload action; a render failure never leaves a blank page." }
+  ],
+  "prohibitions": [
+    "glass surfaces / translucency",
+    "backdrop blur",
+    "gradient fills",
+    "gradient text",
+    "decorative drop shadows",
+    "elevation > 0 on Paper, AppBar, or Button",
+    "card-grid scaffolding as decoration",
+    "decorative eyebrow labels above headings",
+    "removing :focus-visible or overriding it per component",
+    "uppercase button labels",
+    "a fourth async state outside LoadingState/EmptyState/ErrorState",
+    "a second destructive dialog outside ConfirmDialogProvider",
+    "using accent as heading, link, or divider colour"
+  ],
+  "prohibitions_rationale": "These are devices the inherited Hearth surface used and the restrained-workbench world rejects; each is verifiably absent from src/. src/KeycapTray/components/glass.ts exists only at Hearth commit f0b05fc1dbf53e8aa26c215d8e858894a2793871 and is not referenced by shipped code.",
+  "measured_quality_floor": {
+    "viewports": ["1280x800", "834x1112", "390x844"],
+    "colorSchemes": ["light", "dark"],
+    "horizontalOverflowPx": 0,
+    "textContrast": {
+      "light": { "min": "7.87:1", "max": "17.39:1", "level": "AAA" },
+      "dark":  { "min": "7.32:1", "max": "15.3:1",  "level": "AAA" }
+    },
+    "focusRingMeasured": {
+      "light": "2px solid rgb(31,92,139)",
+      "dark":  "2px solid rgb(121,182,228)"
+    },
+    "landmarks": { "main": 1, "h1PerPage": 1 },
+    "designerTabbableControls": 58,
+    "impeccableStaticFindings": 0
+  },
+  "component_defaults": {
+    "MuiPaper":       { "elevation": 0, "backgroundImage": "none", "border": "1px solid divider" },
+    "MuiAppBar":      { "elevation": 0, "color": "default", "borderBottom": "1px solid divider", "borderRadius": 0 },
+    "MuiButton":      { "disableElevation": true, "minHeight": 32, "borderRadius": 6, "outlinedBorder": "borderStrong" },
+    "MuiToggleButton":{ "textTransform": "none", "selectedBg": { "light": "#DCE7F0", "dark": "#2A3138" } },
+    "MuiOutlinedInput": { "borderRadius": 6, "background": "surface" },
+    "MuiChip":        { "borderRadius": 6 },
+    "MuiTooltip":     { "enterDelay": 400, "describeChild": true, "borderRadius": 6, "maxWidthPx": 320 },
+    "MuiAlert":       { "borderRadius": 6, "border": "1px solid currentColor" },
+    "MuiDialog":      { "paperBorderRadius": 6 },
+    "MuiListItemButton": { "borderRadius": 6 },
+    "MuiLink":        { "underline": "always" }
+  },
+  "not_canonized": [
+    {
+      "item": "AppShell wordmark uses fontWeight: 650 inline",
+      "reason": "Used exactly once. A token used once is not a system. A second use should either adopt 600 or promote 650 into the type scale."
+    }
+  ]
+}

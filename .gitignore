@@ -1,0 +1,26 @@
+node_modules/
+native/build/
+dist/
+coverage/
+.DS_Store
+*.local
+
+# App-owned SQLite authority in development, plus its rollback journal.
+data/
+*.db
+*.db-journal
+
+# Recovery artifacts and legacy export bundles never belong in the repository.
+artifacts/
+legacy-export/
+
+# Scratch extraction of the pinned Hearth source used during the port.
+.porting-source/
+
+# Machine-local design-hook state. The design sidecar itself is committed.
+.impeccable/hook.cache.json
+.impeccable/config.local.json
+
+.env
+.env.*
+!.env.example

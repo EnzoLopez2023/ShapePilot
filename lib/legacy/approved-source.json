@@ -1,0 +1,304 @@
+{
+  "contract": "shapepilot.approved-legacy-source.v1",
+  "contractVersion": 1,
+  "app": "shapepilot",
+  "product": "ShapePilot",
+  "status": "approved",
+  "recordedUtc": "2026-08-28T12:26:00.000Z",
+  "evidence": {
+    "decompositionManifest": "decomposition-manifest.json",
+    "productDataBaseline": "product-data-baseline.json",
+    "backupManifest": "production-backup-manifest.json",
+    "canonicalHashes": {
+      "artifact": "production-canonical-hashes.json",
+      "contract": "hearth.sqlite-canonical-table-hashes.v1",
+      "artifactBytes": 170576,
+      "artifactSha256": "14327542e0a554230b08f7c32c9544e1b37831541c51436ff31a88d84baef39c",
+      "script": "hash-sqlite-tables.mjs"
+    }
+  },
+  "source": {
+    "repository": "EnzoLopez2023/Hearth",
+    "commit": "f0b05fc1dbf53e8aa26c215d8e858894a2793871",
+    "tree": "62cbd35861c511f7c17187c875d19ee6e353b80d",
+    "version": "2.13.2",
+    "build": 172,
+    "imageDigest": "sha256:dc4df7e0f966be5b0608e71643d316cc5eba7590b8e56cec482583ab69443140",
+    "workflowRunId": "32935405922",
+    "backupBundle": "20260828T053625317Z-1e0918fd4eea2be7",
+    "backupCreatedUtc": "2026-08-28T05:36:25.317Z",
+    "bytes": 950947840,
+    "sha256": "dc9fb47d269b339a3dcae37279dc3116f37a0635728a2d2b2ac2c511811a5807"
+  },
+  "canonical": {
+    "tableAlgorithm": "hearth.sqlite-table-canonical.v1",
+    "productAlgorithm": "hearth.sqlite-product-canonical.v1",
+    "productCanonicalSha256": "20ce15ff94cf352169959fa8f102f799112b06b724d94f3584d8a8476119d1f8",
+    "totalRowCount": 14
+  },
+  "sqliteSequence": [
+    {
+      "name": "keycap_tray_designs",
+      "seq": 2
+    },
+    {
+      "name": "keycap_tray_pockets",
+      "seq": 17
+    },
+    {
+      "name": "keycap_pocket_library",
+      "seq": 1
+    }
+  ],
+  "tables": [
+    {
+      "name": "keycap_tray_designs",
+      "rowCount": 2,
+      "createSqlSha256": "a1a8376088049d4f1cde56c76276e003f66e57faad6eaa22cc90936002e1c9c2",
+      "primaryKey": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "notNull": false,
+          "primaryKeyOrder": 1
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "notNull": true,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "notes",
+          "type": "TEXT",
+          "notNull": false,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "profile_kind",
+          "type": "TEXT",
+          "notNull": true,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "profile_json",
+          "type": "TEXT",
+          "notNull": true,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "sizing_json",
+          "type": "TEXT",
+          "notNull": true,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "floor_mm",
+          "type": "REAL",
+          "notNull": true,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "depth_mm",
+          "type": "REAL",
+          "notNull": true,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "engrave_mm",
+          "type": "REAL",
+          "notNull": true,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "updated_at",
+          "type": "TEXT",
+          "notNull": true,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "canonicalSha256": "1897345a4e6d978da36c531b0da34edf669a8e3577c8de2bb72de1ed5c5e4172"
+    },
+    {
+      "name": "keycap_tray_pockets",
+      "rowCount": 11,
+      "createSqlSha256": "578ba0573460ba7d435e5bf191f8531424080b71037512d800dd80f8c4586619",
+      "primaryKey": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "notNull": false,
+          "primaryKeyOrder": 1
+        },
+        {
+          "name": "design_id",
+          "type": "INTEGER",
+          "notNull": true,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "units",
+          "type": "REAL",
+          "notNull": true,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "height_units",
+          "type": "REAL",
+          "notNull": true,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "x_mm",
+          "type": "REAL",
+          "notNull": true,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "y_mm",
+          "type": "REAL",
+          "notNull": true,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "rotation_deg",
+          "type": "INTEGER",
+          "notNull": true,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "is_through",
+          "type": "INTEGER",
+          "notNull": true,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "label",
+          "type": "TEXT",
+          "notNull": false,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "label_mode",
+          "type": "TEXT",
+          "notNull": true,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "depth_mm",
+          "type": "REAL",
+          "notNull": false,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "width_mm",
+          "type": "REAL",
+          "notNull": false,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "height_mm",
+          "type": "REAL",
+          "notNull": false,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "corner_mm",
+          "type": "REAL",
+          "notNull": false,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "sort_order",
+          "type": "INTEGER",
+          "notNull": true,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "mirror_x",
+          "type": "INTEGER",
+          "notNull": true,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "shape",
+          "type": "TEXT",
+          "notNull": false,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "canonicalSha256": "2e18f559e62b862f9945522ccfbcd5f09cf8c1fa2a7e524afa9d498f7a98cf02"
+    },
+    {
+      "name": "keycap_pocket_library",
+      "rowCount": 1,
+      "createSqlSha256": "747a291fe19935c71e20a95c747555d74902cbba19dfc61a91e0e4a1b6265d62",
+      "primaryKey": [
+        "id"
+      ],
+      "columns": [
+        {
+          "name": "id",
+          "type": "INTEGER",
+          "notNull": false,
+          "primaryKeyOrder": 1
+        },
+        {
+          "name": "name",
+          "type": "TEXT",
+          "notNull": true,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "units",
+          "type": "REAL",
+          "notNull": true,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "width_mm",
+          "type": "REAL",
+          "notNull": false,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "height_mm",
+          "type": "REAL",
+          "notNull": false,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "corner_mm",
+          "type": "REAL",
+          "notNull": false,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "notes",
+          "type": "TEXT",
+          "notNull": false,
+          "primaryKeyOrder": 0
+        },
+        {
+          "name": "created_at",
+          "type": "TEXT",
+          "notNull": true,
+          "primaryKeyOrder": 0
+        }
+      ],
+      "canonicalSha256": "77dae531d34bfce1d010a6a6dd04bd51e71255a60b4869fc9a0ed7580066d8fe"
+    }
+  ]
+}
