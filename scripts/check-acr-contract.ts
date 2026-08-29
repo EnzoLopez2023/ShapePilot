@@ -1,5 +1,4 @@
 import { execFileSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
 
 interface Arguments {
   registry: string
@@ -7,7 +6,6 @@ interface Arguments {
   resourceGroup: string
   subscriptionId: string
   repository: string
-  expectedSiblingFingerprint?: string
 }
 
 const object = (value: unknown, description: string): Record<string, unknown> => {
@@ -41,7 +39,6 @@ function parseArguments(args: string[]): Arguments {
     'resource-group',
     'subscription-id',
     'repository',
-    'expected-sibling-fingerprint',
   ])
   for (const key of values.keys()) {
     if (!allowed.has(key)) throw new Error(`unknown argument --${key}`)
@@ -53,8 +50,6 @@ function parseArguments(args: string[]): Arguments {
     subscriptionId: required(values, 'subscription-id'),
     repository: required(values, 'repository'),
   }
-  const expected = values.get('expected-sibling-fingerprint')
-  if (expected) parsed.expectedSiblingFingerprint = expected
   return parsed
 }
 
@@ -72,9 +67,8 @@ function azJson(args: string[]): unknown {
 }
 
 const lower = (value: unknown): string => String(value ?? '').toLowerCase()
-const DIGEST = /^sha256:[0-9a-f]{64}$/
-const FINGERPRINT = /^[0-9a-f]{64}$/
 const REPOSITORY = /^[a-z0-9]+(?:[._/-][a-z0-9]+)*$/
+const OWNED_REPOSITORY = 'shapepilot'
 
 function validateRegistry(registry: Record<string, unknown>, options: Arguments): void {
   const expectedId = [
@@ -102,52 +96,10 @@ function validateRegistry(registry: Record<string, unknown>, options: Arguments)
   }
 }
 
-function siblingFingerprint(options: Arguments): string {
-  const rawRepositories = azJson([
-    'acr', 'repository', 'list',
-    '--name', options.registry,
-  ])
-  if (!Array.isArray(rawRepositories)
-    || rawRepositories.some((value) => typeof value !== 'string')) {
-    throw new Error('Azure CLI returned an invalid repository catalog')
-  }
-  const repositories = [...new Set(rawRepositories as string[])].sort()
-  if (repositories.some((value) => !REPOSITORY.test(value))) {
-    throw new Error('shared ACR returned an invalid repository name')
-  }
-
-  const catalog = repositories
-    .filter((repository) => repository !== options.repository)
-    .map((repository) => {
-      const rawManifests = azJson([
-        'acr', 'manifest', 'list-metadata',
-        '--registry', options.registry,
-        '--name', repository,
-      ])
-      if (!Array.isArray(rawManifests)) {
-        throw new Error(`Azure CLI returned invalid manifests for ${repository}`)
-      }
-      const digests = rawManifests.map((manifest) => {
-        const digest = object(manifest, `manifest for ${repository}`).digest
-        if (typeof digest !== 'string' || !DIGEST.test(digest)) {
-          throw new Error(`shared ACR returned an invalid digest for ${repository}`)
-        }
-        return digest
-      })
-      return { repository, digests: [...new Set(digests)].sort() }
-    })
-
-  return createHash('sha256').update(JSON.stringify(catalog)).digest('hex')
-}
-
 try {
   const options = parseArguments(process.argv.slice(2))
-  if (!REPOSITORY.test(options.repository)) {
-    throw new Error('--repository is not a valid lowercase ACR repository')
-  }
-  if (options.expectedSiblingFingerprint
-    && !FINGERPRINT.test(options.expectedSiblingFingerprint)) {
-    throw new Error('--expected-sibling-fingerprint must be a SHA-256 value')
+  if (!REPOSITORY.test(options.repository) || options.repository !== OWNED_REPOSITORY) {
+    throw new Error(`--repository must be ${OWNED_REPOSITORY}`)
   }
   const registry = object(azJson([
     'acr', 'show',
@@ -155,16 +107,10 @@ try {
     '--name', options.registry,
   ]), 'registry')
   validateRegistry(registry, options)
-  const fingerprint = siblingFingerprint(options)
-  if (options.expectedSiblingFingerprint
-    && fingerprint !== options.expectedSiblingFingerprint) {
-    throw new Error('a sibling ACR repository name or digest changed during deployment')
-  }
   console.log(JSON.stringify({
     status: 'ok',
     registry: options.registry,
     repository: options.repository,
-    siblingFingerprint: fingerprint,
   }))
 } catch (error) {
   console.error(
