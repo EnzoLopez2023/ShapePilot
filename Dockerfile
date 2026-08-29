@@ -56,6 +56,11 @@ ARG BUILD_SHA
 ARG BUILD_ID
 RUN test -n "$BUILD_SHA" && test -n "$BUILD_ID"
 
+# The runtime invokes Node directly; exclude npm's bundled dependency tree from
+# the production attack surface after dependency installation is complete.
+RUN rm -rf /usr/local/lib/node_modules/npm \
+  && rm -f /usr/local/bin/npm /usr/local/bin/npx
+
 LABEL org.opencontainers.image.source="https://github.com/EnzoLopez2023/ShapePilot" \
   org.opencontainers.image.revision=$BUILD_SHA \
   org.opencontainers.image.version=$BUILD_ID

@@ -166,8 +166,8 @@ promotion, and after rollback.
 The workflow builds the run-unique `<sha>-<run-id>-<run-attempt>` candidate
 locally on pinned Ubuntu, pushes only
 `acrenzolopez01.azurecr.io/shapepilot`, resolves and pulls the exact digest,
-generates an SPDX image SBOM, blocks HIGH/CRITICAL Trivy findings, and creates
-and verifies keyless Cosign signature, SLSA provenance, and signed SBOM
+generates an SPDX image SBOM, blocks fixable HIGH/CRITICAL Trivy findings, and
+creates and verifies keyless Cosign signature, SLSA provenance, and signed SBOM
 attestation. It never invokes ACR Tasks or image import.
 
 For the first allocation, manual `publish_image_only=true` performs those full
