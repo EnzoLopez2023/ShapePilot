@@ -1110,6 +1110,53 @@ describe('restore', () => {
     assert.equal(existsSync(join(outside, 'restored.db')), false)
     assertNoRestoreTemps(displaced)
   })
+
+  test('a raced work name cannot redirect cleanup or retain snapshot bytes', async () => {
+    const fixture = seededDatabase('restore-work-cleanup-race')
+    const result = await createBackup(backupOptions(fixture))
+    const parent = join(fixture.storeRoot, '..', 'restore-work-cleanup-parent')
+    mkdirSync(parent)
+    const destination = join(parent, 'restored.db')
+    let displacedWork = ''
+    let replacementWork = ''
+    const racingStore = {
+      ...fixture.store,
+      async fetchToFileAt(
+        key: string,
+        target: Parameters<typeof fixture.store.fetchToFileAt>[1],
+      ) {
+        const fetched = await fixture.store.fetchToFileAt(key, target)
+        const workName = readdirSync(parent)
+          .find((name) => name.startsWith('.shapepilot-restore-'))
+        assert.ok(workName)
+        replacementWork = join(parent, workName)
+        displacedWork = `${replacementWork}-displaced`
+        renameSync(replacementWork, displacedWork)
+        mkdirSync(replacementWork)
+        writeFileSync(join(replacementWork, BACKUP_DATABASE_FILE), 'not owned by ShapePilot')
+        writeFileSync(
+          join(replacementWork, `${BACKUP_DATABASE_FILE}-journal`),
+          'not owned by ShapePilot',
+        )
+        return fetched
+      },
+    }
+
+    await assert.rejects(
+      () => restoreBackup({
+        store: racingStore,
+        artifactId: result.artifactId,
+        destinationPath: destination,
+      }),
+      (error: unknown) => error instanceof RecoveryError
+        && error.code === 'RESTORE_CLEANUP_FAILED',
+    )
+    assert.equal(existsSync(join(displacedWork, BACKUP_DATABASE_FILE)), false)
+    assert.equal(readFileSync(join(replacementWork, BACKUP_DATABASE_FILE), 'utf8'),
+      'not owned by ShapePilot')
+    assert.equal(readFileSync(join(replacementWork, `${BACKUP_DATABASE_FILE}-journal`), 'utf8'),
+      'not owned by ShapePilot')
+  })
 })
 
 describe('recovery never runs implicitly', () => {

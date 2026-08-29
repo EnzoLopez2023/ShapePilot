@@ -425,6 +425,7 @@ async function removeOwnedRestore(
 
 async function removeOwnedRestoreWork(
   parent: FileHandle,
+  workParent: FileHandle | null,
   workPath: string,
   sourcePath: string,
   identity: RestoreWorkIdentity,
@@ -440,7 +441,11 @@ async function removeOwnedRestoreWork(
       (identity.source?.dev ?? 0n).toString(),
       (identity.source?.ino ?? 0n).toString(),
     ],
-    { stdio: ['ignore', 'ignore', 'pipe', parent.fd] },
+    {
+      stdio: workParent
+        ? ['ignore', 'ignore', 'pipe', parent.fd, workParent.fd]
+        : ['ignore', 'ignore', 'pipe', parent.fd],
+    },
   )
   const stderr: Buffer[] = []
   child.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk))
@@ -528,6 +533,7 @@ export async function restoreBackup(options: RestoreOptions): Promise<RestoreRes
   let destinationParent: FileHandle | null = null
   let reservedIdentity: ReservedFileIdentity | null = null
   let workIdentity: RestoreWorkIdentity | null = null
+  let workParent: FileHandle | null = null
   let work = ''
   let materialized = ''
   try {
@@ -545,26 +551,22 @@ export async function restoreBackup(options: RestoreOptions): Promise<RestoreRes
     work = join(parentPath, createdWork.name)
     materialized = join(work, BACKUP_DATABASE_FILE)
     workIdentity = { directory: createdWork.identity, source: null }
-    const workParent = await open(
+    workParent = await open(
       work,
       constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
     )
-    try {
-      const heldWork = await workParent.stat({ bigint: true })
-      if (heldWork.dev !== createdWork.identity.dev || heldWork.ino !== createdWork.identity.ino
-          || !await parentPathMatches(destinationParent, parentPath)) {
-        throw new RecoveryError(
-          'RESTORE_DESTINATION_RACED',
-          'the restore work directory stopped referring to the descriptor-created directory',
-        )
-      }
-      await options.store.fetchToFileAt(
-        `${options.artifactId}/${BACKUP_DATABASE_FILE}`,
-        { parent: workParent, leaf: BACKUP_DATABASE_FILE },
+    const heldWork = await workParent.stat({ bigint: true })
+    if (heldWork.dev !== createdWork.identity.dev || heldWork.ino !== createdWork.identity.ino
+        || !await parentPathMatches(destinationParent, parentPath)) {
+      throw new RecoveryError(
+        'RESTORE_DESTINATION_RACED',
+        'the restore work directory stopped referring to the descriptor-created directory',
       )
-    } finally {
-      await workParent.close()
     }
+    await options.store.fetchToFileAt(
+      `${options.artifactId}/${BACKUP_DATABASE_FILE}`,
+      { parent: workParent, leaf: BACKUP_DATABASE_FILE },
+    )
     const details = await stat(materialized)
     const sha256 = await sha256File(materialized)
     if (details.size !== manifest.database.bytes || sha256 !== manifest.database.sha256) {
@@ -694,9 +696,16 @@ export async function restoreBackup(options: RestoreOptions): Promise<RestoreRes
     try {
       if (destinationParent && workIdentity && work && materialized) {
         descriptorCleanupAttempted = true
-        await removeOwnedRestoreWork(destinationParent, work, materialized, workIdentity)
+        await removeOwnedRestoreWork(
+          destinationParent,
+          workParent,
+          work,
+          materialized,
+          workIdentity,
+        )
       }
     } finally {
+      await workParent?.close()
       await destinationParent?.close()
       if (!descriptorCleanupAttempted && work) {
         await rm(work, { recursive: true, force: true })

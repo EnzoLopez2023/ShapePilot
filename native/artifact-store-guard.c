@@ -881,6 +881,7 @@ static void remove_owned_restore(
 
 static void remove_owned_restore_work(
   int parent_fd,
+  int inherited_work_fd,
   const char *work_leaf,
   unsigned long long work_dev,
   unsigned long long work_ino,
@@ -892,20 +893,24 @@ static void remove_owned_restore_work(
     errno = EINVAL;
     fail("invalid restore work identity");
   }
-  struct stat named_work;
-  if (fstatat(parent_fd, work_leaf, &named_work, AT_SYMLINK_NOFOLLOW) != 0
-      || !S_ISDIR(named_work.st_mode)
-      || (unsigned long long)named_work.st_dev != work_dev
-      || (unsigned long long)named_work.st_ino != work_ino) {
+  int work_fd = inherited_work_fd;
+  if (work_fd < 0) {
+    work_fd = openat(
+      parent_fd,
+      work_leaf,
+      O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
+    );
+    if (work_fd < 0) fail("cannot open restore work directory for cleanup");
+  }
+  struct stat opened_work;
+  if (fstat(work_fd, &opened_work) != 0
+      || !S_ISDIR(opened_work.st_mode)
+      || (unsigned long long)opened_work.st_dev != work_dev
+      || (unsigned long long)opened_work.st_ino != work_ino) {
+    close(work_fd);
     errno = ESTALE;
     fail("restore work directory changed before cleanup");
   }
-  int work_fd = openat(
-    parent_fd,
-    work_leaf,
-    O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
-  );
-  if (work_fd < 0) fail("cannot open restore work directory for cleanup");
   if (source_dev != 0 || source_ino != 0) {
     struct stat owned_source;
     memset(&owned_source, 0, sizeof(owned_source));
@@ -937,6 +942,7 @@ static void remove_owned_restore_work(
   }
   if (fsync(work_fd) != 0) fail("cannot sync restore work cleanup");
   close(work_fd);
+  struct stat named_work;
   if (fstatat(parent_fd, work_leaf, &named_work, AT_SYMLINK_NOFOLLOW) != 0
       || !S_ISDIR(named_work.st_mode)
       || (unsigned long long)named_work.st_dev != work_dev
@@ -1064,6 +1070,7 @@ int main(int argc, char **argv) {
     }
     remove_owned_restore_work(
       root_fd,
+      fcntl(4, F_GETFD) == -1 ? -1 : 4,
       argv[2],
       work_dev,
       work_ino,
