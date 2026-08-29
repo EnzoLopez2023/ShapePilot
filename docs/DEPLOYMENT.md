@@ -166,12 +166,12 @@ promotion, and after rollback.
 The workflow builds the run-unique `<sha>-<run-id>-<run-attempt>` candidate
 locally on pinned Ubuntu, pushes only
 `acrenzolopez01.azurecr.io/shapepilot`, resolves and pulls the exact digest,
-generates an SPDX image SBOM, blocks fixable HIGH/CRITICAL Trivy findings, and
-creates and verifies keyless Cosign signature, SLSA provenance, and signed SBOM
-attestation. It never invokes ACR Tasks or image import.
+generates an SPDX image SBOM, and creates and verifies a keyless Cosign
+signature, SLSA provenance, and signed SBOM attestation. It never invokes ACR
+Tasks or image import.
 
 For the first allocation, manual `publish_image_only=true` performs those full
-source, audit, build, SBOM, scan, signature, attestation, exact-digest, and
+source, audit, build, SBOM, signature, attestation, exact-digest, and
 shared-ACR-isolation gates without reading or changing a Web App. It does not
 create or move `:latest`. Allocation then creates the disabled Web App pinned to
 that exact digest, attaches its AcrPull system identity, and prepares persistent
@@ -218,6 +218,6 @@ rollback after 90 minutes. Its 180-minute outer bound therefore always leaves
 at least 90 minutes for explicitly bounded activation, verification, promotion,
 confirmation, and failure rollback steps.
 
-Nonsecret audit, SBOM, scan, signature, provenance, deployment, and rollback
+Nonsecret audit, SBOM, signature, provenance, deployment, and rollback
 evidence is retained for 30 days. App settings, tokens, Key Vault values,
 database content, and credentials are never uploaded.
