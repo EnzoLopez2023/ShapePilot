@@ -86,9 +86,11 @@ export interface ReconcileOptions {
   owner: unknown
   signedOffUtc?: string
   approvedSource?: ApprovedSource
+  /** Deterministic regression seam after each target table read. */
+  afterTableRead?: (table: OwnedLegacyTable) => void
 }
 
-export function reconcile(options: ReconcileOptions): ReconcileReport {
+function reconcileSnapshot(options: ReconcileOptions): ReconcileReport {
   const bundle: ExportBundle = validateExportBundle(options.bundle)
   const approval = assertApprovedSource(bundle, options.approvedSource ?? APPROVED_SOURCE)
   const owner = requireOwner(options.owner)
@@ -106,6 +108,7 @@ export function reconcile(options: ReconcileOptions): ReconcileReport {
     const sourceRowsHash = rowsHash(table, exported.rows)
 
     const target = readTarget(options.db, table, owner)
+    options.afterTableRead?.(table)
     const targetRows = target.rows.map((row) => canonicalRow(table, row))
     const targetIds = targetRows.map((row) => rowId(row, table))
     const targetRowsHash = rowsHash(table, targetRows)
@@ -139,6 +142,7 @@ export function reconcile(options: ReconcileOptions): ReconcileReport {
           differences.push({ table, check: 'fieldHash', detail: `row ${id} differs` })
         }
       }
+
       if (!differences.some((d) => d.table === table && d.check === 'fieldHash')) {
         differences.push({ table, check: 'rowsHash', detail: 'canonical table hashes differ' })
       }
@@ -271,4 +275,9 @@ export function reconcile(options: ReconcileOptions): ReconcileReport {
     ok: differences.length === 0,
     signedOffUtc: options.signedOffUtc ?? new Date().toISOString(),
   }
+}
+
+export function reconcile(options: ReconcileOptions): ReconcileReport {
+  const snapshot = options.db.transaction(() => reconcileSnapshot(options))
+  return snapshot.deferred()
 }

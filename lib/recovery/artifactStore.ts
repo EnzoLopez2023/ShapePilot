@@ -11,6 +11,7 @@ import { closeSync, fstatSync, lstatSync, openSync } from 'node:fs'
 import {
   access, lstat, mkdir, open,
 } from 'node:fs/promises'
+import type { FileHandle } from 'node:fs/promises'
 import { spawn } from 'node:child_process'
 import type { ChildProcess, StdioOptions } from 'node:child_process'
 import { basename, dirname, isAbsolute, normalize, resolve } from 'node:path'
@@ -44,6 +45,11 @@ export interface ArtifactStore {
    * owns cleanup of that temporary directory on every outcome.
    */
   fetchToFile(key: string, destinationPath: string): Promise<StoredObject>
+  /** Materialize relative to a caller-pinned destination directory descriptor. */
+  fetchToFileAt(key: string, destination: {
+    parent: FileHandle
+    leaf: string
+  }): Promise<StoredObject>
   list(prefix: string): Promise<string[]>
 }
 
@@ -190,6 +196,38 @@ export function createFilesystemArtifactStore(root: string): ArtifactStore {
     output.on('error', () => undefined)
     if (control && 'on' in control) control.on('error', () => undefined)
     return { child, input, output, control: control as Writable | undefined, completion }
+  }
+  const fetchToOpenParent = async (
+    key: string,
+    parent: FileHandle,
+    leaf: string,
+  ): Promise<StoredObject> => {
+    const safe = assertSafeKey(key)
+    const safeLeaf = assertSafeKey(leaf)
+    if (safeLeaf.includes('/')) {
+      throw new ArtifactStoreError(
+        'ARTIFACT_KEY_INVALID',
+        'materialized artifact leaf must be one path segment',
+      )
+    }
+    const guard = startGuard('fetch', safe, safeLeaf, parent.fd)
+    try {
+      guard.input.end()
+      const hash = createHash('sha256')
+      let bytes = 0
+      for await (const raw of guard.output) {
+        const chunk = Buffer.from(raw)
+        hash.update(chunk)
+        bytes += chunk.byteLength
+      }
+      await guard.completion
+      return { key: safe, bytes, sha256: hash.digest('hex') }
+    } catch (cause) {
+      guard.output.destroy()
+      guard.child.kill()
+      await guard.completion.catch(() => undefined)
+      throw cause
+    }
   }
 
   return {
@@ -493,13 +531,11 @@ export function createFilesystemArtifactStore(root: string): ArtifactStore {
     },
 
     async fetchToFile(key, destinationPath) {
-      const safe = assertSafeKey(key)
       const parentPath = dirname(destinationPath)
       const parent = await open(
         parentPath,
         constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
       )
-      let guard: GuardProcess | undefined
       try {
         const [held, named] = await Promise.all([
           parent.stat({ bigint: true }),
@@ -512,25 +548,14 @@ export function createFilesystemArtifactStore(root: string): ArtifactStore {
             'materialized artifact parent changed while its descriptor was acquired',
           )
         }
-        guard = startGuard('fetch', safe, basename(destinationPath), parent.fd)
-        guard.input.end()
-        const hash = createHash('sha256')
-        let bytes = 0
-        for await (const raw of guard.output) {
-          const chunk = Buffer.from(raw)
-          hash.update(chunk)
-          bytes += chunk.byteLength
-        }
-        await guard.completion
-        return { key: safe, bytes, sha256: hash.digest('hex') }
-      } catch (cause) {
-        guard?.output.destroy()
-        guard?.child.kill()
-        await guard?.completion.catch(() => undefined)
-        throw cause
+        return await fetchToOpenParent(key, parent, basename(destinationPath))
       } finally {
         await parent.close()
       }
+    },
+
+    async fetchToFileAt(key, destination) {
+      return fetchToOpenParent(key, destination.parent, destination.leaf)
     },
 
     async list(prefix) {

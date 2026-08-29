@@ -211,6 +211,10 @@ node scripts/reconcile.ts \
   --report       /path/outside/repo/reconcile-report.json
 ```
 
+Reconciliation holds one explicit SQLite read transaction for all table,
+relationship, ownership, ordering, and sequence checks, so the report describes
+one coherent target snapshot even if normal application writes continue.
+
 All of them accept `--database <path>` to target a specific database; without it
 they use `SHAPEPILOT_DB_PATH`. `--dry-run` and `scripts/reconcile.ts` open that
 database read-only (`readonly`, `fileMustExist`, `query_only = ON`) and validate

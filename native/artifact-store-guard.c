@@ -906,11 +906,35 @@ static void remove_owned_restore_work(
     O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
   );
   if (work_fd < 0) fail("cannot open restore work directory for cleanup");
-  struct stat owned_source;
-  memset(&owned_source, 0, sizeof(owned_source));
-  owned_source.st_dev = (dev_t)source_dev;
-  owned_source.st_ino = (ino_t)source_ino;
-  cleanup_owned(work_fd, source_leaf, &owned_source);
+  if (source_dev != 0 || source_ino != 0) {
+    struct stat owned_source;
+    memset(&owned_source, 0, sizeof(owned_source));
+    owned_source.st_dev = (dev_t)source_dev;
+    owned_source.st_ino = (ino_t)source_ino;
+    cleanup_owned(work_fd, source_leaf, &owned_source);
+  } else {
+    struct stat source;
+    if (fstatat(work_fd, source_leaf, &source, AT_SYMLINK_NOFOLLOW) == 0
+        && S_ISREG(source.st_mode)) {
+      (void)unlinkat(work_fd, source_leaf, 0);
+    }
+  }
+  static const char *suffixes[] = { "-journal", "-wal", "-shm" };
+  char sidecar[512];
+  for (size_t index = 0; index < sizeof(suffixes) / sizeof(suffixes[0]); ++index) {
+    if (snprintf(
+        sidecar,
+        sizeof(sidecar),
+        "%s%s",
+        source_leaf,
+        suffixes[index]
+      ) >= (int)sizeof(sidecar)) continue;
+    struct stat details;
+    if (fstatat(work_fd, sidecar, &details, AT_SYMLINK_NOFOLLOW) == 0
+        && S_ISREG(details.st_mode)) {
+      (void)unlinkat(work_fd, sidecar, 0);
+    }
+  }
   if (fsync(work_fd) != 0) fail("cannot sync restore work cleanup");
   close(work_fd);
   if (fstatat(parent_fd, work_leaf, &named_work, AT_SYMLINK_NOFOLLOW) != 0
@@ -922,6 +946,50 @@ static void remove_owned_restore_work(
     errno = errno ? errno : ESTALE;
     fail("cannot remove restore work directory");
   }
+}
+
+static void create_restore_work(int parent_fd) {
+  char name[128];
+  for (unsigned int attempt = 0; attempt < 1000; ++attempt) {
+    snprintf(
+      name,
+      sizeof(name),
+      ".shapepilot-restore-%ld-%u",
+      (long)getpid(),
+      attempt
+    );
+    if (mkdirat(parent_fd, name, 0700) != 0) {
+      if (errno == EEXIST) continue;
+      fail("cannot create restore work directory");
+    }
+    int work_fd = openat(
+      parent_fd,
+      name,
+      O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
+    );
+    struct stat owned;
+    if (work_fd < 0 || fstat(work_fd, &owned) != 0 || !S_ISDIR(owned.st_mode)) {
+      if (work_fd >= 0) close(work_fd);
+      (void)unlinkat(parent_fd, name, AT_REMOVEDIR);
+      fail("cannot identify restore work directory");
+    }
+    if (fsync(parent_fd) != 0
+        || dprintf(
+          STDOUT_FILENO,
+          "%s %llu %llu\n",
+          name,
+          (unsigned long long)owned.st_dev,
+          (unsigned long long)owned.st_ino
+        ) < 0) {
+      close(work_fd);
+      (void)unlinkat(parent_fd, name, AT_REMOVEDIR);
+      fail("cannot commit restore work directory");
+    }
+    close(work_fd);
+    return;
+  }
+  errno = EEXIST;
+  fail("cannot reserve restore work directory");
 }
 
 static void list_objects(int root_fd, const char *prefix) {
@@ -949,6 +1017,11 @@ int main(int argc, char **argv) {
     return 2;
   }
   int root_fd = open_root();
+  if (strcmp(argv[1], "create-restore-work") == 0 && argc == 3) {
+    create_restore_work(root_fd);
+    close(root_fd);
+    return 0;
+  }
   if (strcmp(argv[1], "restore") == 0 && argc == 4) {
     char *end = NULL;
     errno = 0;

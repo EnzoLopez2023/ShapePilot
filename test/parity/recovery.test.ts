@@ -927,9 +927,11 @@ describe('restore', () => {
     const destination = join(fixture.storeRoot, '..', 'partial-fetch.db')
     const failingStore = {
       ...fixture.store,
-      async fetchToFile(_key: string, target: string): Promise<never> {
-        writeFileSync(target, 'partial SQLite bytes')
-        writeFileSync(`${target}-journal`, 'temporary')
+      async fetchToFileAt(
+        key: string,
+        target: Parameters<typeof fixture.store.fetchToFileAt>[1],
+      ): Promise<never> {
+        await fixture.store.fetchToFileAt(key, target)
         throw new ArtifactStoreError('ARTIFACT_FETCH_FAILED', 'injected fetch failure')
       },
     }
@@ -953,8 +955,11 @@ describe('restore', () => {
     const destination = join(fixture.storeRoot, '..', 'raced.db')
     const racingStore = {
       ...fixture.store,
-      async fetchToFile(key: string, target: string) {
-        const stored = await fixture.store.fetchToFile(key, target)
+      async fetchToFileAt(
+        key: string,
+        target: Parameters<typeof fixture.store.fetchToFileAt>[1],
+      ) {
+        const stored = await fixture.store.fetchToFileAt(key, target)
         writeFileSync(destination, 'created by another process')
         return stored
       },
@@ -979,8 +984,11 @@ describe('restore', () => {
     const sidecar = `${destination}-journal`
     const racingStore = {
       ...fixture.store,
-      async fetchToFile(key: string, target: string) {
-        const stored = await fixture.store.fetchToFile(key, target)
+      async fetchToFileAt(
+        key: string,
+        target: Parameters<typeof fixture.store.fetchToFileAt>[1],
+      ) {
+        const stored = await fixture.store.fetchToFileAt(key, target)
         writeFileSync(sidecar, 'owned by another process')
         return stored
       },
@@ -1067,6 +1075,39 @@ describe('restore', () => {
     assert.equal(existsSync(join(outside, 'restored.db')), false)
     assert.equal(existsSync(join(displaced, 'restored.db')), false)
     assert.equal(lstatSync(parent).isSymbolicLink(), true)
+    assertNoRestoreTemps(displaced)
+  })
+
+  test('a parent race during artifact fetch cannot strand the work snapshot', async () => {
+    const fixture = seededDatabase('restore-fetch-parent-race')
+    const result = await createBackup(backupOptions(fixture))
+    const parent = join(fixture.storeRoot, '..', 'restore-fetch-parent')
+    const displaced = join(fixture.storeRoot, '..', 'restore-fetch-parent-displaced')
+    const outside = scratchDir('restore-fetch-parent-outside')
+    mkdirSync(parent)
+    const destination = join(parent, 'restored.db')
+    const racingStore = {
+      ...fixture.store,
+      async fetchToFileAt(
+        key: string,
+        target: Parameters<typeof fixture.store.fetchToFileAt>[1],
+      ) {
+        const fetched = await fixture.store.fetchToFileAt(key, target)
+        renameSync(parent, displaced)
+        symlinkSync(outside, parent, 'dir')
+        return fetched
+      },
+    }
+
+    await assert.rejects(
+      () => restoreBackup({
+        store: racingStore,
+        artifactId: result.artifactId,
+        destinationPath: destination,
+      }),
+    )
+    assert.equal(existsSync(join(outside, BACKUP_DATABASE_FILE)), false)
+    assert.equal(existsSync(join(outside, 'restored.db')), false)
     assertNoRestoreTemps(displaced)
   })
 })

@@ -65,7 +65,10 @@ no-follow directory-entry metadata. Dangling symlinks and symlinks that resolve
 to the reserved destination inode are rejected rather than treated as safe. The
 destination parent is pinned by descriptor; exclusive `0600` creation, copying,
 verification, and owned cleanup are performed relative to that descriptor, so
-an ancestor rename or symlink race cannot redirect or delete another path.
+an ancestor rename or symlink race cannot redirect or delete another path. The
+temporary restore directory is also created, populated, and removed relative to
+the pinned parent, preventing a pre-publication race from stranding snapshot
+bytes under a displaced directory.
 
 ## Commands
 

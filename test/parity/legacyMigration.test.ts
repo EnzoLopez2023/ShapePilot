@@ -708,6 +708,48 @@ describe('legacy import apply', () => {
 })
 
 describe('reconciliation', () => {
+  test('all reconciliation reads share one SQLite snapshot', async () => {
+    await withFixture('valid', (bundle, approved) => {
+      const path = join(TEST_ROOT, `reconcile-lock-${randomUUID()}.db`)
+      const primary = openDatabase({ path, busyTimeoutMs: 2_000, createIfMissing: true })
+      const competitor = openExistingCompatibleDatabase({ path, busyTimeoutMs: 100 })
+      try {
+        applyImport({
+          db: primary.handle,
+          bundle,
+          owner,
+          approvedSource: approved,
+          expectedReportHash: planImport({
+            db: primary.handle, bundle, owner, approvedSource: approved,
+          }).reportHash,
+        })
+        let attempted = false
+        const report = reconcile({
+          db: primary.handle,
+          bundle,
+          owner,
+          approvedSource: approved,
+          afterTableRead: (table) => {
+            if (attempted || table !== 'keycap_tray_designs') return
+            attempted = true
+            assert.throws(
+              () => competitor.handle.prepare(
+                "UPDATE keycap_tray_designs SET name = 'raced' WHERE id = 1",
+              ).run(),
+              (error: unknown) => (error as { code?: string }).code === 'SQLITE_BUSY',
+            )
+          },
+        })
+        assert.equal(attempted, true)
+        assert.equal(report.ok, true)
+      } finally {
+        competitor.close()
+        primary.close()
+        rmSync(path, { force: true })
+      }
+    })
+  })
+
   test('a correct import reconciles with zero unexplained differences', async () => {
     await withFixture('valid', (bundle, approved) => {
       const db = openEphemeralDatabase()

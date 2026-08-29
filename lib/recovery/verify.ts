@@ -211,7 +211,7 @@ interface ReservedFileIdentity {
 
 interface RestoreWorkIdentity {
   directory: ReservedFileIdentity
-  source: ReservedFileIdentity
+  source: ReservedFileIdentity | null
 }
 
 const fileIdentity = (
@@ -437,8 +437,8 @@ async function removeOwnedRestoreWork(
       identity.directory.dev.toString(),
       identity.directory.ino.toString(),
       basename(sourcePath),
-      identity.source.dev.toString(),
-      identity.source.ino.toString(),
+      (identity.source?.dev ?? 0n).toString(),
+      (identity.source?.ino ?? 0n).toString(),
     ],
     { stdio: ['ignore', 'ignore', 'pipe', parent.fd] },
   )
@@ -454,6 +454,42 @@ async function removeOwnedRestoreWork(
       ))
     })
   })
+}
+
+async function createRestoreWork(
+  parent: FileHandle,
+): Promise<{ name: string; identity: ReservedFileIdentity }> {
+  const child = spawn(
+    restoreGuardPath,
+    ['create-restore-work', '_'],
+    { stdio: ['ignore', 'pipe', 'pipe', parent.fd] },
+  )
+  const stdout: Buffer[] = []
+  const stderr: Buffer[] = []
+  child.stdout?.on('data', (chunk: Buffer) => stdout.push(chunk))
+  child.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk))
+  await new Promise<void>((resolveCreation, rejectCreation) => {
+    child.once('error', rejectCreation)
+    child.once('close', (code) => {
+      if (code === 0) resolveCreation()
+      else rejectCreation(new RecoveryError(
+        'RESTORE_WORK_CREATE_FAILED',
+        Buffer.concat(stderr).toString('utf8').trim() || 'restore work guard failed',
+      ))
+    })
+  })
+  const match = /^(\.shapepilot-restore-[A-Za-z0-9-]+) (\d+) (\d+)\n$/
+    .exec(Buffer.concat(stdout).toString('ascii'))
+  if (!match) {
+    throw new RecoveryError(
+      'RESTORE_WORK_CREATE_FAILED',
+      'restore work guard returned an invalid directory identity',
+    )
+  }
+  return {
+    name: match[1],
+    identity: { dev: BigInt(match[2]), ino: BigInt(match[3]) },
+  }
 }
 
 /** Forward-only restore into a new file, verified before an operator promotes it. */
@@ -487,15 +523,48 @@ export async function restoreBackup(options: RestoreOptions): Promise<RestoreRes
   }
 
   const manifest = await readManifest(options.store, options.artifactId)
-  await mkdir(dirname(destination), { recursive: true })
-  const work = await mkdtemp(join(dirname(destination), '.shapepilot-restore-'))
-  const materialized = join(work, BACKUP_DATABASE_FILE)
+  const parentPath = dirname(destination)
+  await mkdir(parentPath, { recursive: true })
   let destinationParent: FileHandle | null = null
   let reservedIdentity: ReservedFileIdentity | null = null
   let workIdentity: RestoreWorkIdentity | null = null
+  let work = ''
+  let materialized = ''
   try {
-    await options.store.fetchToFile(
-      `${options.artifactId}/${BACKUP_DATABASE_FILE}`, materialized)
+    destinationParent = await open(
+      parentPath,
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    )
+    if (!await parentPathMatches(destinationParent, parentPath)) {
+      throw new RecoveryError(
+        'RESTORE_DESTINATION_RACED',
+        'the restore destination parent changed while its authority descriptor was acquired',
+      )
+    }
+    const createdWork = await createRestoreWork(destinationParent)
+    work = join(parentPath, createdWork.name)
+    materialized = join(work, BACKUP_DATABASE_FILE)
+    workIdentity = { directory: createdWork.identity, source: null }
+    const workParent = await open(
+      work,
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    )
+    try {
+      const heldWork = await workParent.stat({ bigint: true })
+      if (heldWork.dev !== createdWork.identity.dev || heldWork.ino !== createdWork.identity.ino
+          || !await parentPathMatches(destinationParent, parentPath)) {
+        throw new RecoveryError(
+          'RESTORE_DESTINATION_RACED',
+          'the restore work directory stopped referring to the descriptor-created directory',
+        )
+      }
+      await options.store.fetchToFileAt(
+        `${options.artifactId}/${BACKUP_DATABASE_FILE}`,
+        { parent: workParent, leaf: BACKUP_DATABASE_FILE },
+      )
+    } finally {
+      await workParent.close()
+    }
     const details = await stat(materialized)
     const sha256 = await sha256File(materialized)
     if (details.size !== manifest.database.bytes || sha256 !== manifest.database.sha256) {
@@ -537,11 +606,6 @@ export async function restoreBackup(options: RestoreOptions): Promise<RestoreRes
       db.close()
     }
 
-    const parentPath = dirname(destination)
-    destinationParent = await open(
-      parentPath,
-      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
-    )
     if (!await parentPathMatches(destinationParent, parentPath)) {
       throw new RecoveryError(
         'RESTORE_DESTINATION_RACED',
@@ -628,13 +692,13 @@ export async function restoreBackup(options: RestoreOptions): Promise<RestoreRes
   } finally {
     let descriptorCleanupAttempted = false
     try {
-      if (destinationParent && workIdentity) {
+      if (destinationParent && workIdentity && work && materialized) {
         descriptorCleanupAttempted = true
         await removeOwnedRestoreWork(destinationParent, work, materialized, workIdentity)
       }
     } finally {
       await destinationParent?.close()
-      if (!descriptorCleanupAttempted) {
+      if (!descriptorCleanupAttempted && work) {
         await rm(work, { recursive: true, force: true })
       }
     }
