@@ -71,7 +71,7 @@ client secret and uses managed identity in production.
 | `NODE_ENV` | yes outside `npm start` | `development`, `test` or `production`; never inferred |
 | `PORT` | production | API port, default `8080` outside production; production requires `3000` |
 | `AAD_TENANT_ID` / `SHAPEPILOT_ENTRA_TENANT_ID` | yes | Tenant whose tokens are accepted; aliases must agree |
-| `SHAPEPILOT_API_AUDIENCE` | yes | ShapePilot's own API audience |
+| `SHAPEPILOT_API_AUDIENCE` | yes | ShapePilot API identifier URI (`api://<client-id>`); the server derives the Entra v2 token's client-ID `aud` claim |
 | `SHAPEPILOT_API_SCOPE` | no | Required delegated scope, default `access_as_user` |
 | `SHAPEPILOT_JWKS_URI` | no | Override the tenant's JWKS endpoint |
 | `SHAPEPILOT_ADMIN_OIDS` | no | Comma-separated GUIDs granted `admin` on first sign-in |

@@ -111,12 +111,16 @@ configuration must use that identity (`acrUseManagedIdentityCreds=true`); the
 workflow verifies both the identity and its direct AcrPull assignment.
 The compute tenant is `de625678-c55b-4494-9558-14946cbb6133`; the subscription
 is `1cf02211-8d77-4658-bb6a-0f83ec831c3b`. The user-facing Entra tenant is
-`52188f12-db6b-46c6-88ff-08c802f0ed3b`, and the API audience is
+`52188f12-db6b-46c6-88ff-08c802f0ed3b`, and the API identifier URI is
 `api://60b0b8cf-f1e2-4ba4-b89b-7d6dc3358251` with delegated scope
 `access_as_user`; the committed client build argument is the literal
 `VITE_API_SCOPE=api://60b0b8cf-f1e2-4ba4-b89b-7d6dc3358251/access_as_user`.
-No GitHub
-Environment or static Azure credential is part of this contract.
+The single-tenant `ShapePilot` app registration must request v2 access tokens,
+expose that identifier URI and scope, and retain the production URL as an SPA
+redirect URI. Entra v2 access tokens carry the bare API client ID in `aud`;
+the server derives that claim value from the standard `api://<client-id>`
+identifier URI.
+No GitHub Environment or static Azure credential is part of this contract.
 
 The App Service configuration must provide these exact nonsecret values:
 
