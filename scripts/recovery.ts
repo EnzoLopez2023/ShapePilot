@@ -8,7 +8,7 @@
 //   node scripts/recovery.ts list
 //   node scripts/recovery.ts verify --artifact <id>
 //   node scripts/recovery.ts restore --artifact <id> --to /path/to/new.db
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
 import { buildIdentity } from '../lib/lineage/buildIdentity.ts'
 import { assertDirectory, createFilesystemArtifactStore } from '../lib/recovery/artifactStore.ts'
 import { createBackup } from '../lib/recovery/backup.ts'
@@ -40,6 +40,7 @@ try {
         appVersion: identity.version,
         buildId: identity.build,
         sourceCommit: identity.commit,
+        workRoot: config.recoveryWorkDir ?? undefined,
       })
       console.log(`artifact    ${result.artifactId}`)
       console.log(`store       ${store.description}`)
@@ -64,7 +65,11 @@ try {
     }
 
     case 'verify': {
-      const report = await verifyBackup({ store, artifactId: requireFlag(args, 'artifact') })
+      const report = await verifyBackup({
+        store,
+        artifactId: requireFlag(args, 'artifact'),
+        workRoot: config.recoveryWorkDir ?? undefined,
+      })
       console.log(`artifact    ${report.artifactId}`)
       console.log(`bytes       ${report.bytes}`)
       console.log(`sha256      ${report.sha256}`)
@@ -85,10 +90,22 @@ try {
     }
 
     case 'restore': {
+      const destinationPath = resolve(requireFlag(args, 'to'))
+      if (
+        config.nodeEnv === 'production'
+        && (
+          !config.recoveryWorkDir
+          || dirname(destinationPath) !== resolve(config.recoveryWorkDir)
+        )
+      ) {
+        throw new UsageError(
+          'production restore destinations must be direct children of RECOVERY_WORK_ROOT',
+        )
+      }
       const result = await restoreBackup({
         store,
         artifactId: requireFlag(args, 'artifact'),
-        destinationPath: requireFlag(args, 'to'),
+        destinationPath,
         activePath: config.database.path,
       })
       console.log(`restored    ${result.destinationPath}`)

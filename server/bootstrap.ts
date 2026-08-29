@@ -4,15 +4,20 @@
 // invariants, run pending migrations, build the app, listen. There is no
 // integrity scan, no backup, no repair and no unbounded work anywhere on this
 // path — those are explicit operator commands (see scripts/recovery.ts).
+import { randomUUID } from 'node:crypto'
 import type { Server } from 'node:http'
 import { openDatabase } from '../lib/db/connection.ts'
 import type { AppDatabase } from '../lib/db/connection.ts'
 import { createRepositories } from '../lib/db/repositories/index.ts'
 import type { Lifecycle } from '../lib/health/readiness.ts'
-import { buildIdentity } from '../lib/lineage/buildIdentity.ts'
+import { assertProductionBuildIdentity, buildIdentity } from '../lib/lineage/buildIdentity.ts'
 import { createApp } from './app.ts'
 import { loadConfig } from './config.ts'
 import type { AppConfig } from './config.ts'
+import { validateProductionStorage } from './storage.ts'
+import { ensureProductionEmptySeed } from './emptySeed.ts'
+
+const DRAIN_TIMEOUT_MS = 45_000
 
 export interface RunningServer {
   server: Server
@@ -24,7 +29,10 @@ export interface RunningServer {
 
 export async function start(env: NodeJS.ProcessEnv = process.env): Promise<RunningServer> {
   const config = loadConfig(env)
-  const identity = buildIdentity(env)
+  const identity = buildIdentity()
+  if (config.nodeEnv === 'production') assertProductionBuildIdentity(identity)
+  validateProductionStorage(config)
+  ensureProductionEmptySeed(config, identity)
 
   let lifecycle: Lifecycle = 'starting'
   const database = openDatabase(config.database)
@@ -36,6 +44,7 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<Runni
     repos,
     database: () => database,
     lifecycle: () => lifecycle,
+    instanceId: randomUUID(),
   })
 
   const server = await new Promise<Server>((resolve, reject) => {
@@ -60,7 +69,21 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<Runni
 
   const close = async (): Promise<void> => {
     lifecycle = 'draining'
-    await new Promise<void>((resolve) => server.close(() => resolve()))
+    await new Promise<void>((resolve) => {
+      let settled = false
+      const finish = () => {
+        if (settled) return
+        settled = true
+        clearTimeout(timeout)
+        resolve()
+      }
+      const timeout = setTimeout(() => {
+        server.closeAllConnections()
+        finish()
+      }, DRAIN_TIMEOUT_MS)
+      timeout.unref()
+      server.close(finish)
+    })
     database.close()
     lifecycle = 'stopped'
   }

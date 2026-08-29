@@ -29,6 +29,7 @@ export interface CreateAppOptions {
   database: () => AppDatabase | null
   lifecycle: () => Lifecycle
   startedAtMs?: number
+  instanceId?: string
   /** Injectable for tests; defaults to real JWKS verification. */
   verifier?: TokenVerifier | null
   logger?: (message: string, error: unknown) => void
@@ -39,6 +40,7 @@ const JSON_LIMIT = '2mb'
 export function createApp(options: CreateAppOptions): Express {
   const { config, identity, repos } = options
   const startedAtMs = options.startedAtMs ?? Date.now()
+  const instanceId = options.instanceId ?? randomUUID()
 
   const verifier = options.verifier !== undefined
     ? options.verifier
@@ -62,6 +64,7 @@ export function createApp(options: CreateAppOptions): Express {
     startedAtMs,
     lifecycle: options.lifecycle,
     database: options.database,
+    instanceId,
   }))
   app.use(createVersionRouter(identity))
 
@@ -81,6 +84,7 @@ export function createApp(options: CreateAppOptions): Express {
     identity,
     database: options.database,
     lifecycle: options.lifecycle,
+    instanceId,
   }))
 
   app.use('/api', notFoundHandler)

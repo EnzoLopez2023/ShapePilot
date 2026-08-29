@@ -97,6 +97,7 @@ export interface TestServer {
   database: AppDatabase
   fetchJson<T>(path: string, init?: RequestInit & { token?: string }): Promise<{
     status: number
+    headers: Headers
     body: T
   }>
   close(): Promise<void>
@@ -148,6 +149,7 @@ export async function startTestServer(options: StartServerOptions = {}): Promise
       const text = await response.text()
       return {
         status: response.status,
+        headers: response.headers,
         body: (text ? JSON.parse(text) : null) as T,
       }
     },

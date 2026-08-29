@@ -4,7 +4,7 @@
 // is no dotenv: App Service (and `node --env-file` locally) already supply the
 // environment, and a missing required value must stop the process rather than
 // be defaulted into something insecure.
-import { isAbsolute, resolve } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 
 export type NodeEnvironment = 'development' | 'test' | 'production'
 
@@ -41,18 +41,22 @@ export interface AppConfig {
     path: string
     busyTimeoutMs: number
     createIfMissing: boolean
+    initializeEmptySeed: boolean
+    emptySeedMarkerPath: string
   }
   auth: AuthConfig
   /** External filesystem destination for backup bundles and export artifacts. */
   artifactStoreDir: string | null
+  /** Bounded scratch space used only by explicit recovery commands. */
+  recoveryWorkDir: string | null
   /** Serve the built SPA from this directory when it exists. */
   clientDir: string
 }
 
 export class ConfigError extends Error {
   readonly code: string
-  constructor(code: string, message: string) {
-    super(message)
+  constructor(code: string, message: string, options?: ErrorOptions) {
+    super(message, options)
     this.name = 'ConfigError'
     this.code = code
   }
@@ -68,6 +72,34 @@ const required = (env: NodeJS.ProcessEnv, key: string): string => {
 
 const bool = (value: string | undefined): boolean =>
   value != null && ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
+
+const aliased = (
+  env: NodeJS.ProcessEnv,
+  canonical: string,
+  compatibility: string,
+): string | undefined => {
+  const canonicalValue = env[canonical]?.trim()
+  const compatibilityValue = env[compatibility]?.trim()
+  if (canonicalValue && compatibilityValue && canonicalValue !== compatibilityValue) {
+    throw new ConfigError(
+      'CONFIG_CONFLICT',
+      `${canonical} and ${compatibility} must match when both are set`,
+    )
+  }
+  return canonicalValue || compatibilityValue
+}
+
+const absolutePath = (
+  raw: string,
+  key: string,
+  cwd: string,
+  requireAbsolute: boolean,
+): string => {
+  if (requireAbsolute && !isAbsolute(raw)) {
+    throw new ConfigError('CONFIG_INVALID', `${key} must be an absolute path in production`)
+  }
+  return isAbsolute(raw) ? raw : resolve(cwd, raw)
+}
 
 const intInRange = (
   raw: string | undefined, fallback: number, min: number, max: number, key: string,
@@ -110,16 +142,58 @@ export function loadConfig(
       'SHAPEPILOT_DEV_AUTH cannot be enabled when NODE_ENV=production',
     )
   }
+  if (isProduction) {
+    for (const key of [
+      'PORT',
+      'DB_PATH',
+      'SQLITE_JOURNAL_MODE',
+      'BACKUP_ROOT',
+      'RECOVERY_WORK_ROOT',
+      'AAD_TENANT_ID',
+      'SHAPEPILOT_ENTRA_TENANT_ID',
+      'SHAPEPILOT_API_AUDIENCE',
+    ]) {
+      required(env, key)
+    }
+  }
 
+  const configuredTenantId = aliased(env, 'AAD_TENANT_ID', 'SHAPEPILOT_ENTRA_TENANT_ID')
   const tenantId = isProduction || !devBypassRequested
-    ? required(env, 'SHAPEPILOT_ENTRA_TENANT_ID')
-    : (env.SHAPEPILOT_ENTRA_TENANT_ID?.trim() || DEV_TENANT)
+    ? (configuredTenantId || required(env, 'SHAPEPILOT_ENTRA_TENANT_ID'))
+    : (configuredTenantId || DEV_TENANT)
   const audience = isProduction || !devBypassRequested
     ? required(env, 'SHAPEPILOT_API_AUDIENCE')
     : (env.SHAPEPILOT_API_AUDIENCE?.trim() || 'api://shapepilot-dev')
+  const clientId = env.VITE_AZURE_CLIENT_ID?.trim()
+  if (isProduction && clientId && audience !== `api://${clientId}`) {
+    throw new ConfigError(
+      'CONFIG_CONFLICT',
+      'SHAPEPILOT_API_AUDIENCE must identify the configured ShapePilot client ID',
+    )
+  }
 
-  const dbPathRaw = env.SHAPEPILOT_DB_PATH?.trim()
-    || (isProduction ? '/home/data/shapepilot.db' : 'data/shapepilot.db')
+  const dbPathRaw = aliased(env, 'DB_PATH', 'SHAPEPILOT_DB_PATH')
+    || (isProduction ? required(env, 'DB_PATH') : 'data/shapepilot.db')
+  const initializeEmptySeedValue = env.SHAPEPILOT_INITIALIZE_EMPTY_DB?.trim()
+  if (initializeEmptySeedValue && (!isProduction || initializeEmptySeedValue !== '1')) {
+    throw new ConfigError(
+      'CONFIG_INVALID',
+      'SHAPEPILOT_INITIALIZE_EMPTY_DB is permitted only as exact value 1 in production',
+    )
+  }
+  const journalMode = env.SQLITE_JOURNAL_MODE?.trim()
+  if (isProduction && journalMode !== 'DELETE') {
+    throw new ConfigError(
+      journalMode ? 'CONFIG_INVALID' : 'CONFIG_MISSING',
+      'SQLITE_JOURNAL_MODE=DELETE is required in production',
+    )
+  }
+  if (isProduction && bool(env.SHAPEPILOT_DB_ALLOW_CREATE)) {
+    throw new ConfigError(
+      'CONFIG_INVALID',
+      'SHAPEPILOT_DB_ALLOW_CREATE cannot be enabled in production',
+    )
+  }
 
   const bootstrapAdminOids = (env.SHAPEPILOT_ADMIN_OIDS ?? '')
     .split(',')
@@ -137,17 +211,43 @@ export function loadConfig(
     throw new ConfigError('CONFIG_INVALID', 'SHAPEPILOT_DEV_AUTH_OID must be a GUID')
   }
 
-  const artifactStoreDir = env.SHAPEPILOT_ARTIFACT_STORE_DIR?.trim()
+  const artifactStoreRaw = aliased(
+    env,
+    'BACKUP_ROOT',
+    'SHAPEPILOT_ARTIFACT_STORE_DIR',
+  ) || (isProduction ? required(env, 'BACKUP_ROOT') : undefined)
+  const artifactStoreDir = artifactStoreRaw
+    ? absolutePath(artifactStoreRaw, 'BACKUP_ROOT', cwd, isProduction)
+    : null
+  const recoveryWorkRaw = aliased(
+    env,
+    'RECOVERY_WORK_ROOT',
+    'SHAPEPILOT_RECOVERY_WORK_DIR',
+  )
+  const recoveryWorkDir = recoveryWorkRaw
+    ? absolutePath(recoveryWorkRaw, 'RECOVERY_WORK_ROOT', cwd, isProduction)
+    : !isProduction && artifactStoreDir
+      ? join(artifactStoreDir, '.work')
+      : null
 
+  const databasePath = absolutePath(dbPathRaw, 'DB_PATH', cwd, isProduction)
   return Object.freeze({
     nodeEnv,
-    port: intInRange(env.PORT, 8080, 1, 65_535, 'PORT'),
+    port: intInRange(
+      isProduction ? required(env, 'PORT') : env.PORT,
+      8080,
+      1,
+      65_535,
+      'PORT',
+    ),
     database: {
-      path: isAbsolute(dbPathRaw) ? dbPathRaw : resolve(cwd, dbPathRaw),
+      path: databasePath,
       busyTimeoutMs: intInRange(
         env.SHAPEPILOT_DB_BUSY_TIMEOUT_MS, 5_000, 100, 60_000, 'SHAPEPILOT_DB_BUSY_TIMEOUT_MS'),
       // An absent file in production means the volume did not mount.
-      createIfMissing: !isProduction || bool(env.SHAPEPILOT_DB_ALLOW_CREATE),
+      createIfMissing: !isProduction,
+      initializeEmptySeed: initializeEmptySeedValue === '1',
+      emptySeedMarkerPath: join(dirname(databasePath), '.shapepilot-empty-seed.json'),
     },
     auth: {
       tenantId,
@@ -169,7 +269,8 @@ export function loadConfig(
         role: devRole,
       },
     },
-    artifactStoreDir: artifactStoreDir ? resolve(cwd, artifactStoreDir) : null,
+    artifactStoreDir,
+    recoveryWorkDir,
     clientDir: resolve(cwd, env.SHAPEPILOT_CLIENT_DIR?.trim() || 'dist/client'),
   })
 }

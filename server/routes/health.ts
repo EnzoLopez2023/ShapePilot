@@ -9,6 +9,7 @@ export interface HealthRouterOptions {
   startedAtMs: number
   lifecycle: () => Lifecycle
   database: () => AppDatabase | null
+  instanceId: string
 }
 
 /**
@@ -20,11 +21,23 @@ export function createHealthRouter(options: HealthRouterOptions): Router {
   const router = Router()
 
   router.get('/live', (_req, res) => {
-    res.json(liveness(options.identity, options.lifecycle(), options.startedAtMs))
+    res.setHeader('Cache-Control', 'no-store')
+    res.json(liveness(
+      options.identity,
+      options.lifecycle(),
+      options.startedAtMs,
+      options.instanceId,
+    ))
   })
 
   router.get('/ready', (_req, res) => {
-    const report = readiness(options.identity, options.lifecycle(), options.database())
+    res.setHeader('Cache-Control', 'no-store')
+    const report = readiness(
+      options.identity,
+      options.lifecycle(),
+      options.database(),
+      options.instanceId,
+    )
     res.status(report.status === 'ready' ? 200 : 503).json(report)
   })
 
