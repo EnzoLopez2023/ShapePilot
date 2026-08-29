@@ -77,7 +77,7 @@ static int shapepilot_file_identity(
 
 static int shapepilot_path_exists(const char *path) {
   struct stat info;
-  return stat(path, &info) == 0;
+  return lstat(path, &info) == 0;
 }
 
 /*

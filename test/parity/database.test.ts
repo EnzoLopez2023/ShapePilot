@@ -5,8 +5,8 @@
 // happen as what does.
 import assert from 'node:assert/strict'
 import {
-  closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, renameSync,
-  rmSync, statSync,
+  closeSync, copyFileSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync,
+  renameSync, rmSync, statSync, symlinkSync,
 } from 'node:fs'
 import { createHash, randomUUID } from 'node:crypto'
 import { spawnSync } from 'node:child_process'
@@ -335,6 +335,35 @@ describe('connection invariants', () => {
     }, before)
     rmSync(journalPath, { force: true })
     rmSync(path, { force: true })
+  })
+
+  test('a dangling SQLite sidecar symlink blocks every writable open', () => {
+    const path = tempPath('dangling-sidecar')
+    const database = openDatabase({ path, busyTimeoutMs: 2_000, createIfMissing: true })
+    database.close()
+    const sidecar = `${path}-journal`
+    symlinkSync('missing-journal-target', sidecar)
+    const before = {
+      hash: createHash('sha256').update(readFileSync(path)).digest('hex'),
+      mtimeNs: statSync(path, { bigint: true }).mtimeNs,
+    }
+
+    assert.throws(() => openDatabase({
+      path,
+      busyTimeoutMs: 2_000,
+      createIfMissing: false,
+    }))
+    assert.throws(() => openExistingCompatibleDatabase({
+      path,
+      busyTimeoutMs: 2_000,
+    }))
+    assert.deepEqual({
+      hash: createHash('sha256').update(readFileSync(path)).digest('hex'),
+      mtimeNs: statSync(path, { bigint: true }).mtimeNs,
+    }, before)
+    assert.equal(lstatSync(sidecar).isSymbolicLink(), true)
+    rmSync(sidecar)
+    rmSync(path)
   })
 
   test('the SQLite descriptor rejects an ABA replacement before hot-journal recovery', () => {

@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict'
 import {
   chmodSync, closeSync, constants, existsSync, linkSync, lstatSync, mkdirSync, openSync,
-  readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync, writeSync,
+  readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync, writeSync,
 } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
@@ -308,6 +308,33 @@ describe('artifact store', () => {
       readdirSync(join(root, 'bundle')).filter((name) => name.startsWith('.shapepilot-tmp-')),
       [],
     )
+  })
+
+  test('a replaced single-object staging inode cannot be published', async () => {
+    const root = scratchDir('store-single-staging-race')
+    const data = Buffer.from('approved bytes')
+    const rootFd = openSync(root, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
+    const child = spawn(
+      artifactGuard,
+      ['put', 'object.bin', String(data.byteLength)],
+      { stdio: ['pipe', 'ignore', 'pipe', rootFd, 'pipe'] },
+    )
+    closeSync(rootFd)
+    const control = child.stdio[4]
+    if (!child.stdin || !control || !('end' in control)) {
+      throw new Error('artifact guard did not expose its put pipes')
+    }
+    child.stdin.end(data)
+    const staging = join(root, '.shapepilot-staging')
+    const temporary = await waitForEntry(staging, '.shapepilot-tmp-')
+    const displaced = `${temporary}.displaced`
+    renameSync(join(staging, temporary), join(staging, displaced))
+    writeFileSync(join(staging, temporary), 'attacker bytes')
+    control.end('C')
+
+    assert.notEqual(await guardExitBounded(child), 0)
+    assert.equal(existsSync(join(root, 'object.bin')), false)
+    assert.equal(readFileSync(join(staging, temporary), 'utf8'), 'attacker bytes')
   })
 
   test('a failed put leaves no partial object to poison a retry', async () => {
@@ -787,6 +814,7 @@ describe('restore', () => {
     })
     assert.equal(restored.sha256, result.sha256)
     assert.equal(restored.checks.foreignKeyCheck.ok, true)
+    assert.equal(statSync(destination).mode & 0o777, 0o600)
 
     const reopened = openDatabase({
       path: destination, busyTimeoutMs: 2_000, createIfMissing: false,
@@ -1013,6 +1041,33 @@ describe('restore', () => {
         && error.code === 'RESTORE_DESTINATION_RACED')
     assert.equal(lstatSync(destination).isSymbolicLink(), true)
     assertNoRestoreTemps(join(destination, '..'))
+  })
+
+  test('a raced destination parent cannot redirect descriptor-relative restore', async () => {
+    const fixture = seededDatabase('restore-parent-race')
+    const result = await createBackup(backupOptions(fixture))
+    const parent = join(fixture.storeRoot, '..', 'restore-parent')
+    const displaced = join(fixture.storeRoot, '..', 'restore-parent-displaced')
+    const outside = scratchDir('restore-parent-outside')
+    mkdirSync(parent)
+    const destination = join(parent, 'restored.db')
+
+    await assert.rejects(
+      () => restoreBackup({
+        store: fixture.store,
+        artifactId: result.artifactId,
+        destinationPath: destination,
+        afterDestinationReserved: () => {
+          renameSync(parent, displaced)
+          symlinkSync(outside, parent, 'dir')
+        },
+      }),
+      (error: unknown) => error instanceof RecoveryError
+        && error.code === 'RESTORE_DESTINATION_RACED')
+    assert.equal(existsSync(join(outside, 'restored.db')), false)
+    assert.equal(existsSync(join(displaced, 'restored.db')), false)
+    assert.equal(lstatSync(parent).isSymbolicLink(), true)
+    assertNoRestoreTemps(displaced)
   })
 })
 

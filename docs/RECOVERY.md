@@ -62,7 +62,10 @@ directories are synced before success is reported.
 
 Forward restore likewise validates the destination and every SQLite sidecar with
 no-follow directory-entry metadata. Dangling symlinks and symlinks that resolve
-to the reserved destination inode are rejected rather than treated as safe.
+to the reserved destination inode are rejected rather than treated as safe. The
+destination parent is pinned by descriptor; exclusive `0600` creation, copying,
+verification, and owned cleanup are performed relative to that descriptor, so
+an ancestor rename or symlink race cannot redirect or delete another path.
 
 ## Commands
 

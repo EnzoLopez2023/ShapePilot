@@ -17,7 +17,8 @@ ShapePilot's own database, and how that move is proven correct.
 4. The target owner is **explicit**. Legacy rows carry no ownership; none is
    invented, defaulted or inferred.
 5. Nothing is renamed, remapped, coerced or overwritten. A row is inserted
-   exactly as it was, is a proven no-op, or the run fails.
+   exactly as it was, is a proven no-op backed by a completed matching import-ledger
+   entry, or the run fails.
 6. There is **no partial apply**. One rejected row fails the whole run.
 7. A dry run is **strictly read-only**. It cannot create a directory, a file or
    a database, cannot set a persistent pragma and cannot run a migration.
@@ -218,7 +219,9 @@ its app marker and complete ordered migration ledger before planning anything;
 already-initialized database whose complete current ShapePilot identity matches
 this build, including the hash of the actual `sqlite_schema` catalog; it proves
 that identity before setting persistent pragmas and never runs migrations on an
-import target.
+import target. Apply acquires SQLite's single-writer reservation with
+`BEGIN IMMEDIATE` before recomputing the approved plan, so a concurrent write
+cannot make the dry-run report stale between validation and use.
 
 ## Dispositions
 

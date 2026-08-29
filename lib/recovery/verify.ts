@@ -14,9 +14,12 @@
 // always materializes a new file, which is then verified before an operator
 // promotes it. Neither runs at startup or inside an HTTP request.
 import { createHash } from 'node:crypto'
+import { constants } from 'node:fs'
 import { copyFile, lstat, mkdir, mkdtemp, open, rm, stat } from 'node:fs/promises'
 import type { FileHandle } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { spawn } from 'node:child_process'
+import { basename, dirname, join, parse, resolve, sep } from 'node:path'
+import type { Readable, Writable } from 'node:stream'
 import Database from 'better-sqlite3'
 import type { DatabaseIdentity } from '../db/identity.ts'
 import {
@@ -201,53 +204,21 @@ export interface RestoreResult {
   checks: ReturnType<typeof runSnapshotChecks>
 }
 
-async function copyIntoHandle(sourcePath: string, destination: FileHandle): Promise<void> {
-  const source = await open(sourcePath, 'r')
-  const buffer = Buffer.allocUnsafe(1024 * 1024)
-  let position = 0
-  try {
-    while (true) {
-      const { bytesRead } = await source.read(buffer, 0, buffer.length, position)
-      if (bytesRead === 0) break
-      let written = 0
-      while (written < bytesRead) {
-        const result = await destination.write(
-          buffer, written, bytesRead - written, position + written)
-        written += result.bytesWritten
-      }
-      position += bytesRead
-    }
-    await destination.sync()
-  } finally {
-    await source.close()
-  }
-}
-
-async function hashHandle(handle: FileHandle): Promise<string> {
-  const hash = createHash('sha256')
-  const buffer = Buffer.allocUnsafe(1024 * 1024)
-  let position = 0
-  while (true) {
-    const { bytesRead } = await handle.read(buffer, 0, buffer.length, position)
-    if (bytesRead === 0) break
-    hash.update(buffer.subarray(0, bytesRead))
-    position += bytesRead
-  }
-  return hash.digest('hex')
-}
-
 interface ReservedFileIdentity {
   dev: bigint
   ino: bigint
-  birthtimeNs: bigint
+}
+
+interface RestoreWorkIdentity {
+  directory: ReservedFileIdentity
+  source: ReservedFileIdentity
 }
 
 const fileIdentity = (
-  details: { dev: bigint; ino: bigint; birthtimeNs: bigint },
+  details: { dev: bigint; ino: bigint },
 ): ReservedFileIdentity => ({
   dev: details.dev,
   ino: details.ino,
-  birthtimeNs: details.birthtimeNs,
 })
 
 async function pathIsReservedFile(
@@ -259,7 +230,6 @@ async function pathIsReservedFile(
     return details.isFile()
       && actual.dev === expected.dev
       && actual.ino === expected.ino
-      && actual.birthtimeNs === expected.birthtimeNs
   } catch {
     return false
   }
@@ -273,6 +243,217 @@ async function pathEntryExists(path: string): Promise<boolean> {
     if ((cause as NodeJS.ErrnoException).code === 'ENOENT') return false
     throw cause
   }
+}
+
+const restoreGuardPath = resolve(
+  import.meta.dirname,
+  '../../native/build/artifact-store-guard',
+)
+
+async function pathHasOnlyRealDirectories(path: string): Promise<boolean> {
+  const absolute = resolve(path)
+  const root = parse(absolute).root
+  let current = root
+  for (const segment of absolute.slice(root.length).split(sep).filter(Boolean)) {
+    current = join(current, segment)
+    try {
+      const details = await lstat(current)
+      if (details.isSymbolicLink() || !details.isDirectory()) return false
+    } catch {
+      return false
+    }
+  }
+  return true
+}
+
+async function parentPathMatches(
+  parent: FileHandle,
+  parentPath: string,
+): Promise<boolean> {
+  if (!await pathHasOnlyRealDirectories(parentPath)) return false
+  try {
+    const held = await parent.stat({ bigint: true })
+    const named = await lstat(parentPath, { bigint: true })
+    return named.isDirectory()
+      && !named.isSymbolicLink()
+      && held.dev === named.dev
+      && held.ino === named.ino
+  } catch {
+    return false
+  }
+}
+
+async function publishRestoreDestination(options: {
+  parent: FileHandle
+  leaf: string
+  sourcePath: string
+  expectedBytes: number
+  afterReserved?: (identity: ReservedFileIdentity) => void | Promise<void>
+}): Promise<{ identity: ReservedFileIdentity; bytes: number; sha256: string }> {
+  const source = await open(options.sourcePath, constants.O_RDONLY | constants.O_NOFOLLOW)
+  try {
+    const child = spawn(
+      restoreGuardPath,
+      ['restore', options.leaf, String(options.expectedBytes)],
+      {
+        stdio: ['ignore', 'pipe', 'pipe', options.parent.fd, source.fd, 'pipe', 'pipe'],
+      },
+    )
+    if (!child.stdout || !child.stderr) {
+      throw new RecoveryError(
+        'RESTORE_GUARD_UNAVAILABLE',
+        'the restore guard did not expose its verification streams',
+      )
+    }
+    const streams = child.stdio as unknown as (Readable | Writable | null)[]
+    const control = streams[5] as Writable | null
+    const readiness = streams[6] as Readable | null
+    if (!control || !readiness) {
+      throw new RecoveryError(
+        'RESTORE_GUARD_UNAVAILABLE',
+        'the restore guard did not expose its control streams',
+      )
+    }
+    control.on('error', () => undefined)
+    const output = child.stdout
+    output.on('error', () => undefined)
+    readiness.on('error', () => undefined)
+    const stderr: Buffer[] = []
+    child.stderr.on('data', (chunk: Buffer) => stderr.push(chunk))
+    const completion = new Promise<void>((resolveCompletion, rejectCompletion) => {
+      child.once('error', (cause) => rejectCompletion(new RecoveryError(
+        'RESTORE_GUARD_UNAVAILABLE',
+        `could not start the restore guard: ${cause.message}`,
+      )))
+      child.once('close', (code) => {
+        const detail = Buffer.concat(stderr).toString('utf8').trim()
+        if (code === 0) {
+          resolveCompletion()
+        } else if (code === 3) {
+          rejectCompletion(new RecoveryError(
+            'RESTORE_DESTINATION_EXISTS',
+            'the restore destination was created concurrently',
+          ))
+        } else if (code === 4) {
+          rejectCompletion(new RecoveryError(
+            'RESTORE_DESTINATION_ACTIVE',
+            'a SQLite sidecar appeared at the restore destination',
+          ))
+        } else {
+          rejectCompletion(new RecoveryError(
+            'RESTORE_DESTINATION_RACED',
+            detail || `restore guard exited ${String(code)}`,
+          ))
+        }
+      })
+    })
+    void completion.catch(() => undefined)
+    const ready = new Promise<ReservedFileIdentity>((resolveReady, rejectReady) => {
+      const chunks: Buffer[] = []
+      readiness.on('data', (chunk: Buffer) => chunks.push(chunk))
+      readiness.once('end', () => {
+        const match = /^(\d+) (\d+)\n$/.exec(Buffer.concat(chunks).toString('ascii'))
+        if (!match) {
+          rejectReady(new RecoveryError(
+            'RESTORE_GUARD_UNAVAILABLE',
+            'the restore guard closed before reporting its reserved file',
+          ))
+          return
+        }
+        resolveReady({ dev: BigInt(match[1]), ino: BigInt(match[2]) })
+      })
+    })
+    let identity: ReservedFileIdentity
+    try {
+      identity = await ready
+    } catch {
+      await completion
+      throw new RecoveryError(
+        'RESTORE_GUARD_UNAVAILABLE',
+        'the restore guard did not reserve a destination',
+      )
+    }
+
+    const hash = createHash('sha256')
+    let bytes = 0
+    const receive = (async () => {
+      for await (const raw of output) {
+        const chunk = Buffer.from(raw)
+        bytes += chunk.byteLength
+        hash.update(chunk)
+      }
+    })()
+    void receive.catch(() => undefined)
+    try {
+      await options.afterReserved?.(identity)
+      control.end('C')
+      await Promise.all([receive, completion])
+    } catch (cause) {
+      if (!control.destroyed) control.end('A')
+      await Promise.allSettled([receive, completion])
+      throw cause
+    }
+    return { identity, bytes, sha256: hash.digest('hex') }
+  } finally {
+    await source.close()
+  }
+}
+
+async function removeOwnedRestore(
+  parent: FileHandle,
+  leaf: string,
+  identity: ReservedFileIdentity,
+): Promise<void> {
+  const child = spawn(
+    restoreGuardPath,
+    ['remove-restore', leaf, identity.dev.toString(), identity.ino.toString()],
+    { stdio: ['ignore', 'ignore', 'pipe', parent.fd] },
+  )
+  const stderr: Buffer[] = []
+  child.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk))
+  await new Promise<void>((resolveCleanup, rejectCleanup) => {
+    child.once('error', rejectCleanup)
+    child.once('close', (code) => {
+      if (code === 0) resolveCleanup()
+      else rejectCleanup(new RecoveryError(
+        'RESTORE_CLEANUP_FAILED',
+        Buffer.concat(stderr).toString('utf8').trim() || 'restore cleanup guard failed',
+      ))
+    })
+  })
+}
+
+async function removeOwnedRestoreWork(
+  parent: FileHandle,
+  workPath: string,
+  sourcePath: string,
+  identity: RestoreWorkIdentity,
+): Promise<void> {
+  const child = spawn(
+    restoreGuardPath,
+    [
+      'remove-restore-work',
+      basename(workPath),
+      identity.directory.dev.toString(),
+      identity.directory.ino.toString(),
+      basename(sourcePath),
+      identity.source.dev.toString(),
+      identity.source.ino.toString(),
+    ],
+    { stdio: ['ignore', 'ignore', 'pipe', parent.fd] },
+  )
+  const stderr: Buffer[] = []
+  child.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk))
+  await new Promise<void>((resolveCleanup, rejectCleanup) => {
+    child.once('error', rejectCleanup)
+    child.once('close', (code) => {
+      if (code === 0) resolveCleanup()
+      else rejectCleanup(new RecoveryError(
+        'RESTORE_CLEANUP_FAILED',
+        Buffer.concat(stderr).toString('utf8').trim() || 'restore work cleanup guard failed',
+      ))
+    })
+  })
 }
 
 /** Forward-only restore into a new file, verified before an operator promotes it. */
@@ -309,8 +490,9 @@ export async function restoreBackup(options: RestoreOptions): Promise<RestoreRes
   await mkdir(dirname(destination), { recursive: true })
   const work = await mkdtemp(join(dirname(destination), '.shapepilot-restore-'))
   const materialized = join(work, BACKUP_DATABASE_FILE)
-  let reservation: FileHandle | null = null
+  let destinationParent: FileHandle | null = null
   let reservedIdentity: ReservedFileIdentity | null = null
+  let workIdentity: RestoreWorkIdentity | null = null
   try {
     await options.store.fetchToFile(
       `${options.artifactId}/${BACKUP_DATABASE_FILE}`, materialized)
@@ -355,38 +537,56 @@ export async function restoreBackup(options: RestoreOptions): Promise<RestoreRes
       db.close()
     }
 
-    try {
-      reservation = await open(destination, 'wx+')
-      reservedIdentity = fileIdentity(await reservation.stat({ bigint: true }))
-      await options.afterDestinationReserved?.()
-    } catch (cause) {
-      if ((cause as NodeJS.ErrnoException).code === 'EEXIST') {
-        throw new RecoveryError(
-          'RESTORE_DESTINATION_EXISTS',
-          `${destination} was created while the restore was being verified; nothing was overwritten`,
-          { cause },
-        )
-      }
-      throw cause
-    }
-    let racedSidecar: string | undefined
-    for (const sidecar of destinationSidecars) {
-      if (await pathEntryExists(sidecar)) {
-        racedSidecar = sidecar
-        break
-      }
-    }
-    if (racedSidecar) {
+    const parentPath = dirname(destination)
+    destinationParent = await open(
+      parentPath,
+      constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+    )
+    if (!await parentPathMatches(destinationParent, parentPath)) {
       throw new RecoveryError(
-        'RESTORE_DESTINATION_ACTIVE',
-        `${racedSidecar} appeared while the restore was being verified`,
+        'RESTORE_DESTINATION_RACED',
+        'the restore destination parent changed while its authority descriptor was acquired',
       )
     }
-
-    await copyIntoHandle(materialized, reservation)
-    const finalDetails = await reservation.stat()
-    const finalSha256 = await hashHandle(reservation)
-    if (finalDetails.size !== details.size || finalSha256 !== sha256) {
+    const workDetails = await lstat(work, { bigint: true })
+    const sourceDetails = await lstat(materialized, { bigint: true })
+    if (!workDetails.isDirectory() || workDetails.isSymbolicLink()
+        || !sourceDetails.isFile() || sourceDetails.isSymbolicLink()) {
+      throw new RecoveryError(
+        'RESTORE_DESTINATION_RACED',
+        'the restore work files changed before descriptor-relative publication',
+      )
+    }
+    workIdentity = {
+      directory: fileIdentity(workDetails),
+      source: fileIdentity(sourceDetails),
+    }
+    const published = await publishRestoreDestination({
+      parent: destinationParent,
+      leaf: basename(destination),
+      sourcePath: materialized,
+      expectedBytes: details.size,
+      afterReserved: async (reserved) => {
+        reservedIdentity = reserved
+        await options.afterDestinationReserved?.()
+        if (!await parentPathMatches(destinationParent as FileHandle, parentPath)) {
+          throw new RecoveryError(
+            'RESTORE_DESTINATION_RACED',
+            'the restore destination parent stopped referring to the pinned directory',
+          )
+        }
+        for (const sidecar of destinationSidecars) {
+          if (await pathEntryExists(sidecar)) {
+            throw new RecoveryError(
+              'RESTORE_DESTINATION_ACTIVE',
+              `${sidecar} appeared while the restore was being verified`,
+            )
+          }
+        }
+      },
+    })
+    reservedIdentity = published.identity
+    if (published.bytes !== details.size || published.sha256 !== sha256) {
       throw new RecoveryError(
         'RESTORE_VERIFICATION_FAILED',
         'the exclusively created destination does not match the verified artifact',
@@ -405,7 +605,8 @@ export async function restoreBackup(options: RestoreOptions): Promise<RestoreRes
         `${lateSidecar} appeared while the destination was being written`,
       )
     }
-    if (!await pathIsReservedFile(destination, reservedIdentity)) {
+    if (!await parentPathMatches(destinationParent, parentPath)
+        || !await pathIsReservedFile(destination, reservedIdentity)) {
       throw new RecoveryError(
         'RESTORE_DESTINATION_RACED',
         'the destination path stopped referring to the exclusively created restore file',
@@ -414,21 +615,28 @@ export async function restoreBackup(options: RestoreOptions): Promise<RestoreRes
     return {
       artifactId: options.artifactId,
       destinationPath: destination,
-      bytes: finalDetails.size,
-      sha256: finalSha256,
+      bytes: published.bytes,
+      sha256: published.sha256,
       identity,
       checks,
     }
   } catch (error) {
-    if (reservation && reservedIdentity) {
-      await reservation.truncate(0)
-      if (await pathIsReservedFile(destination, reservedIdentity)) {
-        await rm(destination, { force: true })
-      }
+    if (destinationParent && reservedIdentity) {
+      await removeOwnedRestore(destinationParent, basename(destination), reservedIdentity)
     }
     throw error
   } finally {
-    await reservation?.close()
-    await rm(work, { recursive: true, force: true })
+    let descriptorCleanupAttempted = false
+    try {
+      if (destinationParent && workIdentity) {
+        descriptorCleanupAttempted = true
+        await removeOwnedRestoreWork(destinationParent, work, materialized, workIdentity)
+      }
+    } finally {
+      await destinationParent?.close()
+      if (!descriptorCleanupAttempted) {
+        await rm(work, { recursive: true, force: true })
+      }
+    }
   }
 }

@@ -4,9 +4,13 @@
 // Hearth DDL. No test needs the real production backup to be present, and none
 // of them can touch it.
 import assert from 'node:assert/strict'
+import { randomUUID } from 'node:crypto'
 import { rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, test } from 'vitest'
-import { openEphemeralDatabase } from '../../lib/db/connection.ts'
+import {
+  openDatabase, openEphemeralDatabase, openExistingCompatibleDatabase,
+} from '../../lib/db/connection.ts'
 import { OWNED_LEGACY_TABLES } from '../../lib/db/schema.ts'
 import { LEGACY_COLUMNS, rowValue, serializeCanonical } from '../../lib/legacy/canonical.ts'
 import { exportLegacyBundle } from '../../lib/legacy/exportLegacy.ts'
@@ -18,7 +22,7 @@ import {
   approvedSourceFor, bundleFor, createCorruptFixture, createLegacyFixture, evidenceFor,
 } from '../helpers/legacyFixtures.ts'
 import type { ApprovedSource } from '../../lib/legacy/approvedSource.ts'
-import { TEST_OID, TEST_TENANT, OTHER_OID } from '../helpers/server.ts'
+import { TEST_OID, TEST_ROOT, TEST_TENANT, OTHER_OID } from '../helpers/server.ts'
 
 const owner = { tenantId: TEST_TENANT, oid: TEST_OID }
 const otherOwner = { tenantId: TEST_TENANT, oid: OTHER_OID }
@@ -447,6 +451,7 @@ describe('legacy import dry run', () => {
           db: db.handle, bundle, owner, approvedSource: approved,
           expectedReportHash: planImport({ db: db.handle, bundle, owner, approvedSource: approved }).reportHash,
         })
+
         db.handle.prepare('DELETE FROM keycap_pocket_library WHERE id = 1').run()
         const plan = planImport({ db: db.handle, bundle, owner, approvedSource: approved })
         const library = plan.report.tables.find(t => t.name === 'keycap_pocket_library')
@@ -456,9 +461,67 @@ describe('legacy import dry run', () => {
       }
     })
   })
+
+  test('matching target rows without completed ledger evidence are not adopted as replays', async () => {
+    await withFixture('valid', (bundle, approved) => {
+      const db = openEphemeralDatabase()
+      try {
+        applyImport({
+          db: db.handle, bundle, owner, approvedSource: approved,
+          expectedReportHash: planImport({
+            db: db.handle, bundle, owner, approvedSource: approved,
+          }).reportHash,
+        })
+        db.handle.exec('DELETE FROM legacy_import_runs')
+
+        const plan = planImport({ db: db.handle, bundle, owner, approvedSource: approved })
+        assert.equal(plan.report.ok, false)
+        assert.equal(plan.report.totals.noop, 0)
+        assert.ok(plan.report.tables.every(
+          (table) => table.reject.every((row) => row.code === 'UNTRACKED_TARGET_ROW'),
+        ))
+      } finally {
+        db.close()
+      }
+    })
+  })
 })
 
 describe('legacy import apply', () => {
+  test('BEGIN IMMEDIATE prevents a writer from changing the approved plan', async () => {
+    await withFixture('valid', (bundle, approved) => {
+      const path = join(TEST_ROOT, `import-lock-${randomUUID()}.db`)
+      const primary = openDatabase({ path, busyTimeoutMs: 2_000, createIfMissing: true })
+      const competitor = openExistingCompatibleDatabase({ path, busyTimeoutMs: 100 })
+      try {
+        const plan = planImport({
+          db: primary.handle, bundle, owner, approvedSource: approved,
+        })
+        const result = applyImport({
+          db: primary.handle,
+          bundle,
+          owner,
+          approvedSource: approved,
+          expectedReportHash: plan.reportHash,
+          beforeTransactionalPlan: () => {
+            assert.throws(
+              () => competitor.handle.prepare(`
+                INSERT INTO audit_events (category, action, outcome)
+                VALUES ('test', 'competing-write', 'success')
+              `).run(),
+              (error: unknown) => (error as { code?: string }).code === 'SQLITE_BUSY',
+            )
+          },
+        })
+        assert.equal(result.inserted, 7)
+      } finally {
+        competitor.close()
+        primary.close()
+        rmSync(path, { force: true })
+      }
+    })
+  })
+
   test('apply refuses a wrong or missing dry-run hash', async () => {
     await withFixture('valid', (bundle, approved) => {
       const db = openEphemeralDatabase()

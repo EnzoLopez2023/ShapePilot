@@ -340,6 +340,29 @@ static int same_file_snapshot(const struct stat *left, const struct stat *right)
 #endif
 }
 
+static int file_path_matches(
+  int parent_fd,
+  const char *name,
+  const struct stat *owned
+) {
+  struct stat current;
+  return fstatat(parent_fd, name, &current, AT_SYMLINK_NOFOLLOW) == 0
+    && S_ISREG(current.st_mode)
+    && same_file_snapshot(&current, owned);
+}
+
+static int same_published_file(const struct stat *left, const struct stat *right) {
+  if (left->st_dev != right->st_dev || left->st_ino != right->st_ino
+      || left->st_size != right->st_size || left->st_mode != right->st_mode) return 0;
+#ifdef __APPLE__
+  return left->st_mtimespec.tv_sec == right->st_mtimespec.tv_sec
+    && left->st_mtimespec.tv_nsec == right->st_mtimespec.tv_nsec;
+#else
+  return left->st_mtim.tv_sec == right->st_mtim.tv_sec
+    && left->st_mtim.tv_nsec == right->st_mtim.tv_nsec;
+#endif
+}
+
 static int bundle_contents_match(
   int bundle_fd,
   int file_count,
@@ -592,13 +615,29 @@ static void put_object(int root_fd, const char *key, unsigned long long expected
   if (fstat(target, &owned) != 0) fail("cannot identify created artifact object");
   unsigned long long copied = 0;
   int failed = copy_fd(STDIN_FILENO, target, &copied) != 0 || copied != expected_bytes
-    || fsync(target) != 0 || close(target) != 0;
+    || fsync(target) != 0;
+  struct stat completed;
+  if (!failed && (fstat(target, &completed) != 0
+      || !S_ISREG(completed.st_mode)
+      || completed.st_dev != owned.st_dev
+      || completed.st_ino != owned.st_ino
+      || completed.st_size < 0
+      || (unsigned long long)completed.st_size != expected_bytes)) failed = 1;
+  else if (!failed) owned = completed;
+  if (close(target) != 0) failed = 1;
   unsigned char decision = 0;
   if (!failed && (read(4, &decision, 1) != 1 || decision != 'C')) failed = 1;
   int published = 0;
+  if (!failed && !file_path_matches(staging_fd, temporary, &owned)) failed = 1;
   if (!failed && publish_no_replace(staging_fd, temporary, parent_fd, leaf) != 0) failed = 1;
   else if (!failed) published = 1;
+  struct stat published_snapshot;
+  if (!failed && (fstatat(parent_fd, leaf, &published_snapshot, AT_SYMLINK_NOFOLLOW) != 0
+      || !S_ISREG(published_snapshot.st_mode)
+      || !same_published_file(&published_snapshot, &owned))) failed = 1;
+  else if (!failed) owned = published_snapshot;
   if (!failed && fsync(parent_fd) != 0) failed = 1;
+  if (!failed && !file_path_matches(parent_fd, leaf, &owned)) failed = 1;
   if (failed) {
     cleanup_owned(published ? parent_fd : staging_fd, published ? leaf : temporary, &owned);
     (void)fsync(parent_fd);
@@ -726,6 +765,165 @@ static void fetch_object(int root_fd, const char *key, const char *destination_l
   free(source_leaf);
 }
 
+static int restore_sidecars_absent(int parent_fd, const char *leaf) {
+  static const char *suffixes[] = { "-journal", "-wal", "-shm" };
+  char name[512];
+  for (size_t index = 0; index < sizeof(suffixes) / sizeof(suffixes[0]); ++index) {
+    if (snprintf(name, sizeof(name), "%s%s", leaf, suffixes[index]) >= (int)sizeof(name)) {
+      errno = ENAMETOOLONG;
+      return 0;
+    }
+    struct stat ignored;
+    if (fstatat(parent_fd, name, &ignored, AT_SYMLINK_NOFOLLOW) == 0) {
+      errno = EBUSY;
+      return 0;
+    }
+    if (errno != ENOENT) return 0;
+  }
+  return 1;
+}
+
+static void restore_object(
+  int parent_fd,
+  const char *leaf,
+  unsigned long long expected_bytes
+) {
+  if (!valid_segment(leaf)) {
+    errno = EINVAL;
+    fail("invalid restore destination leaf");
+  }
+  struct stat source_before;
+  if (fstat(4, &source_before) != 0 || !S_ISREG(source_before.st_mode)
+      || source_before.st_size < 0
+      || (unsigned long long)source_before.st_size != expected_bytes) {
+    errno = EINVAL;
+    fail("restore source is not the approved regular file");
+  }
+  if (!restore_sidecars_absent(parent_fd, leaf)) {
+    fprintf(stderr, "RESTORE_DESTINATION_ACTIVE\n");
+    exit(4);
+  }
+  int target = openat(
+    parent_fd,
+    leaf,
+    O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC,
+    0600
+  );
+  if (target < 0) {
+    if (errno == EEXIST) {
+      fprintf(stderr, "RESTORE_DESTINATION_EXISTS\n");
+      exit(3);
+    }
+    fail("cannot reserve restore destination");
+  }
+  struct stat owned;
+  memset(&owned, 0, sizeof(owned));
+  if (fstat(target, &owned) != 0 || !S_ISREG(owned.st_mode)) {
+    cleanup_owned(parent_fd, leaf, &owned);
+    fail("cannot identify reserved restore destination");
+  }
+  if (dprintf(
+      6,
+      "%llu %llu\n",
+      (unsigned long long)owned.st_dev,
+      (unsigned long long)owned.st_ino
+    ) < 0) {
+    close(target);
+    cleanup_owned(parent_fd, leaf, &owned);
+    fail("cannot report reserved restore destination");
+  }
+  close(6);
+  unsigned char decision = 0;
+  int failed = read(5, &decision, 1) != 1 || decision != 'C';
+  unsigned long long copied = 0;
+  if (!failed && (copy_and_echo_bounded(4, target, expected_bytes, &copied) != 0
+      || copied != expected_bytes || fsync(target) != 0)) failed = 1;
+  struct stat source_after;
+  if (!failed && (fstat(4, &source_after) != 0
+      || !same_file_snapshot(&source_before, &source_after))) failed = 1;
+  struct stat completed;
+  if (!failed && (fstat(target, &completed) != 0
+      || !S_ISREG(completed.st_mode)
+      || completed.st_dev != owned.st_dev
+      || completed.st_ino != owned.st_ino
+      || completed.st_size < 0
+      || (unsigned long long)completed.st_size != expected_bytes)) failed = 1;
+  if (close(target) != 0) failed = 1;
+  if (!failed && (!file_path_matches(parent_fd, leaf, &completed)
+      || !restore_sidecars_absent(parent_fd, leaf)
+      || fsync(parent_fd) != 0
+      || !file_path_matches(parent_fd, leaf, &completed)
+      || !restore_sidecars_absent(parent_fd, leaf))) failed = 1;
+  if (failed) {
+    cleanup_owned(parent_fd, leaf, &owned);
+    (void)fsync(parent_fd);
+    fail("cannot commit restore destination");
+  }
+}
+
+static void remove_owned_restore(
+  int parent_fd,
+  const char *leaf,
+  unsigned long long expected_dev,
+  unsigned long long expected_ino
+) {
+  if (!valid_segment(leaf)) {
+    errno = EINVAL;
+    fail("invalid restore destination leaf");
+  }
+  struct stat owned;
+  memset(&owned, 0, sizeof(owned));
+  owned.st_dev = (dev_t)expected_dev;
+  owned.st_ino = (ino_t)expected_ino;
+  cleanup_owned(parent_fd, leaf, &owned);
+  if (fsync(parent_fd) != 0) fail("cannot sync restore cleanup");
+}
+
+static void remove_owned_restore_work(
+  int parent_fd,
+  const char *work_leaf,
+  unsigned long long work_dev,
+  unsigned long long work_ino,
+  const char *source_leaf,
+  unsigned long long source_dev,
+  unsigned long long source_ino
+) {
+  if (!valid_segment(work_leaf) || !valid_segment(source_leaf)) {
+    errno = EINVAL;
+    fail("invalid restore work identity");
+  }
+  struct stat named_work;
+  if (fstatat(parent_fd, work_leaf, &named_work, AT_SYMLINK_NOFOLLOW) != 0
+      || !S_ISDIR(named_work.st_mode)
+      || (unsigned long long)named_work.st_dev != work_dev
+      || (unsigned long long)named_work.st_ino != work_ino) {
+    errno = ESTALE;
+    fail("restore work directory changed before cleanup");
+  }
+  int work_fd = openat(
+    parent_fd,
+    work_leaf,
+    O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
+  );
+  if (work_fd < 0) fail("cannot open restore work directory for cleanup");
+  struct stat owned_source;
+  memset(&owned_source, 0, sizeof(owned_source));
+  owned_source.st_dev = (dev_t)source_dev;
+  owned_source.st_ino = (ino_t)source_ino;
+  cleanup_owned(work_fd, source_leaf, &owned_source);
+  if (fsync(work_fd) != 0) fail("cannot sync restore work cleanup");
+  close(work_fd);
+  if (fstatat(parent_fd, work_leaf, &named_work, AT_SYMLINK_NOFOLLOW) != 0
+      || !S_ISDIR(named_work.st_mode)
+      || (unsigned long long)named_work.st_dev != work_dev
+      || (unsigned long long)named_work.st_ino != work_ino
+      || unlinkat(parent_fd, work_leaf, AT_REMOVEDIR) != 0
+      || fsync(parent_fd) != 0) {
+    errno = errno ? errno : ESTALE;
+    fail("cannot remove restore work directory");
+  }
+}
+
 static void list_objects(int root_fd, const char *prefix) {
   int directory = descend(root_fd, prefix, 0);
   DIR *stream = fdopendir(directory);
@@ -751,6 +949,58 @@ int main(int argc, char **argv) {
     return 2;
   }
   int root_fd = open_root();
+  if (strcmp(argv[1], "restore") == 0 && argc == 4) {
+    char *end = NULL;
+    errno = 0;
+    unsigned long long expected = strtoull(argv[3], &end, 10);
+    if (errno != 0 || !end || *end != '\0') {
+      fprintf(stderr, "invalid restore byte length\n");
+      return 2;
+    }
+    restore_object(root_fd, argv[2], expected);
+    close(root_fd);
+    return 0;
+  }
+  if (strcmp(argv[1], "remove-restore") == 0 && argc == 5) {
+    char *dev_end = NULL;
+    char *ino_end = NULL;
+    errno = 0;
+    unsigned long long dev = strtoull(argv[3], &dev_end, 10);
+    unsigned long long ino = strtoull(argv[4], &ino_end, 10);
+    if (errno != 0 || !dev_end || *dev_end != '\0' || !ino_end || *ino_end != '\0') {
+      fprintf(stderr, "invalid restore identity\n");
+      return 2;
+    }
+    remove_owned_restore(root_fd, argv[2], dev, ino);
+    close(root_fd);
+    return 0;
+  }
+  if (strcmp(argv[1], "remove-restore-work") == 0 && argc == 8) {
+    char *ends[4] = { NULL, NULL, NULL, NULL };
+    errno = 0;
+    unsigned long long work_dev = strtoull(argv[3], &ends[0], 10);
+    unsigned long long work_ino = strtoull(argv[4], &ends[1], 10);
+    unsigned long long source_dev = strtoull(argv[6], &ends[2], 10);
+    unsigned long long source_ino = strtoull(argv[7], &ends[3], 10);
+    if (errno != 0 || !ends[0] || *ends[0] != '\0'
+        || !ends[1] || *ends[1] != '\0'
+        || !ends[2] || *ends[2] != '\0'
+        || !ends[3] || *ends[3] != '\0') {
+      fprintf(stderr, "invalid restore work identity\n");
+      return 2;
+    }
+    remove_owned_restore_work(
+      root_fd,
+      argv[2],
+      work_dev,
+      work_ino,
+      argv[5],
+      source_dev,
+      source_ino
+    );
+    close(root_fd);
+    return 0;
+  }
   int staging_fd = staging_directory(root_fd);
   cleanup_staging(staging_fd);
   close(staging_fd);

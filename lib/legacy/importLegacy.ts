@@ -196,6 +196,7 @@ export function planImport(options: PlanOptions): ImportPlan {
   // The approval gate runs first and throws: an unapproved or tampered bundle
   // never reaches a disposition, let alone a transaction.
   const approval = assertApprovedSource(bundle, options.approvedSource ?? APPROVED_SOURCE)
+  const approvedBundleHash = bundleHash(bundle)
 
   // Recompute every table hash: a tampered bundle must not survive validation.
   for (const table of bundle.tables) {
@@ -221,10 +222,38 @@ export function planImport(options: PlanOptions): ImportPlan {
     if (!exported) throw new LegacyError('EXPORT_TABLES_INVALID', `${table} is missing from the bundle`)
 
     const targetRows = readTargetRows(options.db, table)
-    const ledgerRows = new Set<number>(
-      options.db.prepare<[string], { source_id: number }>(
-        'SELECT source_id FROM legacy_import_rows WHERE source_table = ?',
-      ).all(table).map((r) => Number(r.source_id)))
+    const ledgerRows = new Map<number, {
+      targetId: number
+      rowHash: string
+      bundleHash: string
+      ownerTenantId: string
+      ownerOid: string
+      completedAt: string | null
+    }>(
+      options.db.prepare<[string], {
+        source_id: number
+        target_id: number
+        row_hash: string
+        source_manifest_hash: string
+        owner_tenant_id: string
+        owner_oid: string
+        completed_at: string | null
+      }>(`
+        SELECT rows.source_id, rows.target_id, rows.row_hash,
+               runs.source_manifest_hash, runs.owner_tenant_id, runs.owner_oid,
+               runs.completed_at
+          FROM legacy_import_rows rows
+          JOIN legacy_import_runs runs ON runs.id = rows.run_id
+         WHERE rows.source_table = ?
+      `).all(table).map((entry) => [Number(entry.source_id), {
+        targetId: Number(entry.target_id),
+        rowHash: entry.row_hash,
+        bundleHash: entry.source_manifest_hash,
+        ownerTenantId: entry.owner_tenant_id,
+        ownerOid: entry.owner_oid,
+        completedAt: entry.completed_at,
+      }]),
+    )
     const seenIds = new Set<number>()
     const seenBusinessKeys = new Set<string>()
     const disposition: TableDisposition = { name: table, insert: [], noop: [], reject: [] }
@@ -282,14 +311,28 @@ export function planImport(options: PlanOptions): ImportPlan {
 
       const hash = rowHash(table, row)
       const existingTarget = targetRows.get(id)
+      const ledgerRow = ledgerRows.get(id)
 
       if (existingTarget) {
         // Only a row this exact source produced, unchanged, and owned by the
         // declared owner, may be treated as an idempotent replay.
         const ownedByTarget = table === 'keycap_tray_pockets'
           || (existingTarget.ownerTenantId === owner.tenantId && existingTarget.ownerOid === owner.oid)
-        if (existingTarget.hash === hash && ownedByTarget) {
+        const trackedReplay = ledgerRow?.targetId === id
+          && ledgerRow.rowHash === hash
+          && ledgerRow.bundleHash === approvedBundleHash
+          && ledgerRow.ownerTenantId === owner.tenantId
+          && ledgerRow.ownerOid === owner.oid
+          && ledgerRow.completedAt !== null
+        if (existingTarget.hash === hash && ownedByTarget && trackedReplay) {
           disposition.noop.push(id)
+          continue
+        }
+        if (existingTarget.hash === hash && ownedByTarget) {
+          reject(
+            'UNTRACKED_TARGET_ROW',
+            `${table} id ${id} matches the source but has no completed import-ledger evidence`,
+          )
           continue
         }
         reject(
@@ -310,7 +353,7 @@ export function planImport(options: PlanOptions): ImportPlan {
       // A ledger entry with no surviving target row means an imported row was
       // deleted afterwards. Re-inserting it silently would resurrect data the
       // owner removed, so it fails instead.
-      if (ledgerRows.has(id)) {
+      if (ledgerRow) {
         reject('LEDGER_ROW_DELETED',
           `${table} id ${id} was imported before and has since been deleted from the target`)
         continue
@@ -351,7 +394,7 @@ export function planImport(options: PlanOptions): ImportPlan {
     contractVersion: REPORT_CONTRACT_VERSION,
     app: 'shapepilot',
     mode: 'dry-run',
-    bundleHash: bundleHash(bundle),
+    bundleHash: approvedBundleHash,
     source: bundle.source,
     approval,
     targetAuthorityId: readAuthorityId(options.db),
@@ -368,6 +411,8 @@ export function planImport(options: PlanOptions): ImportPlan {
 export interface ApplyOptions extends PlanOptions {
   /** The hash printed by the dry run. Apply refuses to proceed without it. */
   expectedReportHash: string
+  /** Deterministic regression seam after BEGIN IMMEDIATE and before target planning. */
+  beforeTransactionalPlan?: () => void
 }
 
 export interface ApplyResult {
@@ -415,21 +460,6 @@ const bindValues = (
  * foreign key is satisfied without deferring it.
  */
 export function applyImport(options: ApplyOptions): ApplyResult {
-  const plan = planImport(options)
-  if (plan.reportHash !== options.expectedReportHash) {
-    throw new LegacyError(
-      'REPORT_HASH_MISMATCH',
-      'the supplied dry-run report hash does not match the current plan; re-run --dry-run',
-    )
-  }
-  if (!plan.report.ok) {
-    throw new LegacyError(
-      'IMPORT_REJECTED',
-      `${plan.report.totals.reject} row(s) were rejected; nothing was written`,
-    )
-  }
-
-  const owner = plan.report.owner
   const ledger = createImportLedger(options.db)
   const statements = Object.fromEntries(
     OWNED_LEGACY_TABLES.map((table) => [table, options.db.prepare(INSERT_SQL[table])]),
@@ -438,6 +468,21 @@ export function applyImport(options: ApplyOptions): ApplyResult {
   let runId: number | null = null
 
   const run = options.db.transaction(() => {
+    options.beforeTransactionalPlan?.()
+    const plan = planImport(options)
+    if (plan.reportHash !== options.expectedReportHash) {
+      throw new LegacyError(
+        'REPORT_HASH_MISMATCH',
+        'the supplied dry-run report hash does not match the current plan; re-run --dry-run',
+      )
+    }
+    if (!plan.report.ok) {
+      throw new LegacyError(
+        'IMPORT_REJECTED',
+        `${plan.report.totals.reject} row(s) were rejected; nothing was written`,
+      )
+    }
+    const owner = plan.report.owner
     if (readAuthorityId(options.db) !== plan.report.targetAuthorityId) {
       throw new LegacyError(
         'TARGET_AUTHORITY_CHANGED',
@@ -483,9 +528,12 @@ export function applyImport(options: ApplyOptions): ApplyResult {
     }
 
     if (runId !== null) ledger.completeRunSync(runId)
+    return plan
   })
 
-  run()
+  // BEGIN IMMEDIATE reserves the single SQLite writer before the target is
+  // planned, so the approved report cannot go stale between validation and use.
+  const plan = run.immediate()
 
   return {
     report: plan.report,
