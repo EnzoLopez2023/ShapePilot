@@ -46,7 +46,8 @@ requireCondition(!/^VOLUME\s+.*\/home/im.test(dockerfile), 'Dockerfile must not 
 requireCondition(dockerfile.includes('USER node'), 'runtime image must be non-root')
 requireCondition(!dockerfile.includes('npm ci --ignore-scripts'), 'npm lifecycle scripts must run')
 
-const deployWorkflow = read('.github/workflows/deploy.yml')
+const ciWorkflow = read('.github/workflows/ci.yml')
+const deployWorkflow = ciWorkflow
 requireCondition(
   deployWorkflow.includes('RG: rg-personal-apps-prod')
     && deployWorkflow.includes('ACR: acrenzolopez01')
@@ -62,8 +63,10 @@ requireCondition(
   deployWorkflow.includes('docker build --pull')
     && deployWorkflow.includes('docker push "$candidate"')
     && deployWorkflow.includes('deploy:acr-check')
-    && deployWorkflow.includes('deploy:rbac-check'),
-  'deployment must build locally and enforce shared-ACR isolation',
+    && deployWorkflow.includes('deploy:rbac-check')
+    && deployWorkflow.includes('published_digest')
+    && !deployWorkflow.includes('expected-sibling-fingerprint'),
+  'deployment must build locally and verify only the immutable ShapePilot image',
 )
 requireCondition(
   deployWorkflow.includes('publish_image_only')
@@ -92,12 +95,18 @@ requireCondition(
     && !deploymentRbac.includes("'--all'"),
   'deployment RBAC checks must remain inside RG-authorized exact scopes',
 )
-const ciWorkflow = read('.github/workflows/ci.yml')
 requireCondition(
   ciWorkflow.includes('AAD_TENANT_ID=$TEST_TENANT_ID')
     && ciWorkflow.includes('SHAPEPILOT_INITIALIZE_EMPTY_DB=1')
     && ciWorkflow.includes('EMPTY_SEED_DOMAIN_TABLES'),
   'Linux CI must exercise the real production empty-seed and restart path',
+)
+requireCondition(
+  ciWorkflow.includes('pull_request:')
+    && ciWorkflow.includes('needs: container')
+    && ciWorkflow.includes("github.ref == 'refs/heads/main'")
+    && ciWorkflow.includes('id-token: write'),
+  'the single workflow must gate main deployment on pull-request CI without weakening OIDC',
 )
 requireCondition(
   deployWorkflow.includes("ROLLBACK_MAX_ATTEMPTS: '120'")
@@ -124,19 +133,25 @@ for (const directory of ['server', 'src']) {
 }
 
 const workflowDirectory = join(root, '.github', 'workflows')
-for (const entry of readdirSync(workflowDirectory, { withFileTypes: true })) {
-  if (!entry.isFile() || !/\.ya?ml$/.test(entry.name)) continue
-  const workflow = readFileSync(join(workflowDirectory, entry.name), 'utf8')
+const workflowFiles = readdirSync(workflowDirectory, { withFileTypes: true })
+  .filter((entry) => entry.isFile() && /\.ya?ml$/.test(entry.name))
+  .map((entry) => entry.name)
+requireCondition(
+  workflowFiles.length === 1 && workflowFiles[0] === 'ci.yml',
+  'CI and production deployment must remain consolidated in one ci.yml workflow',
+)
+for (const workflowFile of workflowFiles) {
+  const workflow = readFileSync(join(workflowDirectory, workflowFile), 'utf8')
   for (const match of workflow.matchAll(/^\s*uses:\s*([^\s#]+)@([^\s#]+)/gm)) {
     if (match[1].startsWith('./')) continue
     requireCondition(
       /^[0-9a-f]{40}$/.test(match[2]),
-      `${entry.name} action ${match[1]} is not pinned by commit`,
+      `${workflowFile} action ${match[1]} is not pinned by commit`,
     )
   }
   requireCondition(
     !/continue-on-error:\s*true/.test(workflow),
-    `${entry.name} weakens a gate with continue-on-error`,
+    `${workflowFile} weakens a gate with continue-on-error`,
   )
 }
 

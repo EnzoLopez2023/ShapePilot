@@ -47,10 +47,11 @@ storage environment are both present; all other metadata still fails closed.
 
 ## CI
 
-`.github/workflows/ci.yml` runs on pinned Ubuntu 24.04 and Node 24.17.0. It
-installs with lifecycle scripts, then gates architecture invariants, strict
-TypeScript, ESLint, all Vitest suites, the native guard and client build, a
-HIGH/CRITICAL full and production dependency audit, and a CycloneDX source SBOM.
+The single `.github/workflows/ci.yml` workflow runs on pinned Ubuntu 24.04 and
+Node 24.17.0. It installs with lifecycle scripts, then gates architecture
+invariants, strict TypeScript, ESLint, all Vitest suites, the native guard and
+client build, a HIGH/CRITICAL full and production dependency audit, and a
+CycloneDX source SBOM.
 
 The container job builds the pinned image, verifies its non-root user, labels,
 and `/home` volume prohibition, initializes a disposable production-shaped
@@ -58,11 +59,13 @@ SQLite volume, then uses `docker exec` to prove three consecutive agreeing
 static-version/version/liveness/readiness rounds and the native
 `better-sqlite3` DELETE-journal authority.
 
-## Production workflow
+## Production job
 
-`.github/workflows/deploy.yml` uses Azure federated OIDC only. It requires the
-nonsecret `AZURE_CLIENT_ID` and `VITE_AZURE_CLIENT_ID` Actions variables and
-fails before Azure mutation unless the latter is exactly
+On pushes to `main`, the deployment job in `.github/workflows/ci.yml` waits for
+both CI jobs and then uses Azure federated OIDC only. Pull requests run CI
+without receiving OIDC permission. Deployment requires the nonsecret
+`AZURE_CLIENT_ID` and `VITE_AZURE_CLIENT_ID` Actions variables and fails before
+Azure mutation unless the latter is exactly
 `60b0b8cf-f1e2-4ba4-b89b-7d6dc3358251`. The workflow
 targets only:
 
@@ -168,9 +171,11 @@ make an Azure OpenAI request.
 No App Insights component, availability test, alert, or action group is part of
 the deployment contract. Before building, the workflow proves the owner
 invariant that metric, scheduled-query, and smart-detector alert counts remain
-exactly `0/0/0`. It fingerprints every sibling ACR repository name and digest
-and proves that fingerprint remains unchanged before activation, after
-promotion, and after rollback.
+exactly `0/0/0`. Registry preflight validates the approved shared ACR without
+enumerating or coupling deployment to sibling repositories. Before activation,
+the workflow resolves ShapePilot's run-unique tag again and requires it to match
+the locally inspected immutable digest. Promotion, health checks, and rollback
+also verify only ShapePilot's digest, build identity, and runtime configuration.
 
 The workflow builds the run-unique `<sha>-<run-id>-<run-attempt>` candidate
 locally on pinned Ubuntu, pushes only
@@ -178,7 +183,7 @@ locally on pinned Ubuntu, pushes only
 generates an SPDX image SBOM. It never invokes ACR Tasks or image import.
 
 For the first allocation, manual `publish_image_only=true` performs the source,
-build, SBOM, exact-digest, and shared-ACR-isolation gates without reading or
+build, SBOM, exact-digest, and shared-ACR contract gates without reading or
 changing a Web App. It does not
 create or move `:latest`. Allocation then creates the disabled Web App pinned to
 that exact digest, attaches its AcrPull system identity, and prepares persistent
