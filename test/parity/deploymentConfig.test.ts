@@ -12,6 +12,7 @@ import { validateProductionStorage } from '../../server/storage.ts'
 import { TEST_AUDIENCE, TEST_TENANT } from '../helpers/server.ts'
 
 const roots: string[] = []
+const TEST_CLIENT_ID = '11112222-3333-4444-5555-666677778888'
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true })
 })
@@ -92,6 +93,31 @@ describe('production deployment configuration', () => {
     assert.throws(
       () => loadConfig(productionEnv(root, {
         SHAPEPILOT_DB_PATH: join(root, 'different.db'),
+      })),
+      (error: unknown) => error instanceof ConfigError && error.code === 'CONFIG_CONFLICT',
+    )
+  })
+
+  test('validates the Entra v2 token audience as the API client id', () => {
+    const root = mkdtempSync(join(tmpdir(), 'shapepilot-audience-'))
+    roots.push(root)
+    const config = loadConfig(productionEnv(root, {
+      SHAPEPILOT_API_AUDIENCE: `api://${TEST_CLIENT_ID}`,
+      VITE_AZURE_CLIENT_ID: TEST_CLIENT_ID,
+    }))
+    assert.equal(config.auth.audience, TEST_CLIENT_ID)
+
+    assert.throws(
+      () => loadConfig(productionEnv(root, {
+        SHAPEPILOT_API_AUDIENCE: `api://${TEST_CLIENT_ID}`,
+        VITE_AZURE_CLIENT_ID: 'not-a-guid',
+      })),
+      (error: unknown) => error instanceof ConfigError && error.code === 'CONFIG_INVALID',
+    )
+    assert.throws(
+      () => loadConfig(productionEnv(root, {
+        SHAPEPILOT_API_AUDIENCE: `api://${TEST_CLIENT_ID}`,
+        VITE_AZURE_CLIENT_ID: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
       })),
       (error: unknown) => error instanceof ConfigError && error.code === 'CONFIG_CONFLICT',
     )

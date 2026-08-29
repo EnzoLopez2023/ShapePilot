@@ -11,7 +11,7 @@ export type NodeEnvironment = 'development' | 'test' | 'production'
 export interface AuthConfig {
   /** Entra tenant the app accepts tokens from. */
   tenantId: string
-  /** ShapePilot's own API audience (`api://<id>` or the API app's client id). */
+  /** Expected access-token `aud` claim (the API client id for Entra v2). */
   audience: string
   /** Delegated scope the SPA must present. */
   requiredScope: string
@@ -62,7 +62,9 @@ export class ConfigError extends Error {
   }
 }
 
-const GUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const GUID_TEXT = '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+const GUID = new RegExp(`^${GUID_TEXT}$`, 'i')
+const API_CLIENT_ID_URI = new RegExp(`^api://(${GUID_TEXT})$`, 'i')
 
 const required = (env: NodeJS.ProcessEnv, key: string): string => {
   const value = env[key]?.trim()
@@ -161,11 +163,19 @@ export function loadConfig(
   const tenantId = isProduction || !devBypassRequested
     ? (configuredTenantId || required(env, 'SHAPEPILOT_ENTRA_TENANT_ID'))
     : (configuredTenantId || DEV_TENANT)
-  const audience = isProduction || !devBypassRequested
+  const configuredAudience = isProduction || !devBypassRequested
     ? required(env, 'SHAPEPILOT_API_AUDIENCE')
     : (env.SHAPEPILOT_API_AUDIENCE?.trim() || 'api://shapepilot-dev')
   const clientId = env.VITE_AZURE_CLIENT_ID?.trim()
-  if (isProduction && clientId && audience !== `api://${clientId}`) {
+  if (clientId && !GUID.test(clientId)) {
+    throw new ConfigError('CONFIG_INVALID', 'VITE_AZURE_CLIENT_ID must be a GUID')
+  }
+  // Scopes use the App ID URI, but a v2 access token's aud claim is the bare
+  // API application (client) ID.
+  const resourceClientId = API_CLIENT_ID_URI.exec(configuredAudience)?.[1]
+  const directClientId = GUID.test(configuredAudience) ? configuredAudience : undefined
+  const audience = (resourceClientId ?? directClientId)?.toLowerCase() ?? configuredAudience
+  if (isProduction && clientId && audience.toLowerCase() !== clientId.toLowerCase()) {
     throw new ConfigError(
       'CONFIG_CONFLICT',
       'SHAPEPILOT_API_AUDIENCE must identify the configured ShapePilot client ID',
