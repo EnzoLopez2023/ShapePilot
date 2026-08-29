@@ -1157,6 +1157,27 @@ describe('restore', () => {
     assert.equal(readFileSync(join(replacementWork, `${BACKUP_DATABASE_FILE}-journal`), 'utf8'),
       'not owned by ShapePilot')
   })
+
+  test('cleanup without an inherited work descriptor preserves the original failure', async () => {
+    const fixture = seededDatabase('restore-work-fallback-cleanup')
+    const result = await createBackup(backupOptions(fixture))
+    const parent = join(fixture.storeRoot, '..', 'restore-work-fallback-parent')
+    mkdirSync(parent)
+    const originalFailure = new Error('injected failure before work descriptor acquisition')
+
+    await assert.rejects(
+      () => restoreBackup({
+        store: fixture.store,
+        artifactId: result.artifactId,
+        destinationPath: join(parent, 'restored.db'),
+        afterWorkCreated: () => {
+          throw originalFailure
+        },
+      }),
+      (error: unknown) => error === originalFailure,
+    )
+    assertNoRestoreTemps(parent)
+  })
 })
 
 describe('recovery never runs implicitly', () => {

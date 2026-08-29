@@ -1054,7 +1054,7 @@ int main(int argc, char **argv) {
     close(root_fd);
     return 0;
   }
-  if (strcmp(argv[1], "remove-restore-work") == 0 && argc == 8) {
+  if (strcmp(argv[1], "remove-restore-work") == 0 && argc == 9) {
     char *ends[4] = { NULL, NULL, NULL, NULL };
     errno = 0;
     unsigned long long work_dev = strtoull(argv[3], &ends[0], 10);
@@ -1068,9 +1068,16 @@ int main(int argc, char **argv) {
       fprintf(stderr, "invalid restore work identity\n");
       return 2;
     }
+    int inherited_work_fd = -1;
+    if (strcmp(argv[8], "inherited") == 0) {
+      inherited_work_fd = 4;
+    } else if (strcmp(argv[8], "open-by-name") != 0) {
+      fprintf(stderr, "invalid restore work descriptor mode\n");
+      return 2;
+    }
     remove_owned_restore_work(
       root_fd,
-      fcntl(4, F_GETFD) == -1 ? -1 : 4,
+      inherited_work_fd,
       argv[2],
       work_dev,
       work_ino,

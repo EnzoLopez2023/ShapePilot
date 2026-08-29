@@ -190,6 +190,8 @@ export interface RestoreOptions {
   activePath?: string
   /** Injectable only so cleanup of each failed offline check is regression-tested. */
   snapshotChecks?: typeof runSnapshotChecks
+  /** Deterministic test seam for cleanup before the work descriptor is acquired. */
+  afterWorkCreated?: () => void | Promise<void>
   /** Deterministic test seam for a path replacement after exclusive creation. */
   afterDestinationReserved?: () => void | Promise<void>
 }
@@ -440,6 +442,7 @@ async function removeOwnedRestoreWork(
       basename(sourcePath),
       (identity.source?.dev ?? 0n).toString(),
       (identity.source?.ino ?? 0n).toString(),
+      workParent ? 'inherited' : 'open-by-name',
     ],
     {
       stdio: workParent
@@ -551,6 +554,7 @@ export async function restoreBackup(options: RestoreOptions): Promise<RestoreRes
     work = join(parentPath, createdWork.name)
     materialized = join(work, BACKUP_DATABASE_FILE)
     workIdentity = { directory: createdWork.identity, source: null }
+    await options.afterWorkCreated?.()
     workParent = await open(
       work,
       constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
