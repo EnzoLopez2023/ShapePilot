@@ -1,5 +1,8 @@
 import { useMemo, useState } from 'react'
-import { Alert, Button, Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
+import { Box, Button, Stack, ToggleButton, ToggleButtonGroup, Tooltip } from '@mui/material'
+import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline'
+import WarningAmberIcon from '@mui/icons-material/WarningAmber'
+import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
 import type { Issue, Target } from '../geometry/validate.ts'
 import { issuesFor } from '../geometry/validate.ts'
 import type { Mesh } from '../geometry/mesh.ts'
@@ -23,12 +26,22 @@ const FORMATS: { id: string; label: string; target: Target; ext: string; mime: s
   { id: 'dxf', label: 'DXF', target: 'cnc', ext: 'dxf', mime: 'image/vnd.dxf' },
 ]
 
+// Lives in the header toolbar rather than a full side panel, so status is a
+// single icon with the detail in its tooltip instead of a stack of Alerts.
 export default function ExportPanel({ design, mesh, issues }: ExportPanelProps) {
   const [target, setTarget] = useState<Target>('print')
 
   const scoped = useMemo(() => issuesFor(issues, target), [issues, target])
   const errors = scoped.filter(i => i.severity === 'error')
   const warnings = scoped.filter(i => i.severity === 'warning')
+
+  const statusText = errors.length
+    ? errors.map(i => i.message).join(' ')
+    : warnings.length
+      ? warnings.map(i => i.message).join(' ')
+      : (target === 'print'
+          ? `Watertight mesh, ${mesh.triangleCount.toLocaleString()} triangles. Files are generated in the browser; nothing is uploaded.`
+          : 'All pockets are machinable with the current bit. Files are generated in the browser; nothing is uploaded.')
 
   const download = (id: string) => {
     const fmt = FORMATS.find(f => f.id === id)!
@@ -40,9 +53,7 @@ export default function ExportPanel({ design, mesh, issues }: ExportPanelProps) 
   }
 
   return (
-    <Stack spacing={1.25} sx={{ p: 1.5 }}>
-      <Typography variant="h3" component="h2">Export</Typography>
-
+    <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}>
       <ToggleButtonGroup
         exclusive size="small" value={target}
         aria-label="Fabrication target"
@@ -52,36 +63,23 @@ export default function ExportPanel({ design, mesh, issues }: ExportPanelProps) 
         <ToggleButton value="cnc">Shaper Origin</ToggleButton>
       </ToggleButtonGroup>
 
-      <div aria-live="polite">
-        {errors.map(i => (
-          <Alert key={i.code} severity="error" sx={{ fontSize: 12, mb: 1 }}>{i.message}</Alert>
-        ))}
-        {warnings.map(i => (
-          <Alert key={i.code} severity="warning" sx={{ fontSize: 12, mb: 1 }}>{i.message}</Alert>
-        ))}
-        {!scoped.length && (
-          <Alert severity="success" sx={{ fontSize: 12 }}>
-            {target === 'print'
-              ? `Watertight mesh, ${mesh.triangleCount.toLocaleString()} triangles.`
-              : 'All pockets are machinable with the current bit.'}
-          </Alert>
-        )}
-      </div>
+      <Box component="span" aria-live="polite" sx={{ display: 'flex' }}>
+        <Tooltip title={statusText}>
+          {errors.length
+            ? <ErrorOutlineIcon color="error" fontSize="small" role="img" aria-label={statusText} />
+            : warnings.length
+              ? <WarningAmberIcon color="warning" fontSize="small" role="img" aria-label={statusText} />
+              : <CheckCircleOutlineIcon color="success" fontSize="small" role="img" aria-label={statusText} />}
+        </Tooltip>
+      </Box>
 
-      <Stack direction="row" spacing={1}>
+      <Stack direction="row" spacing={0.5}>
         {FORMATS.filter(f => f.target === target).map(f => (
-          <Button
-            key={f.id} variant="contained" size="small" onClick={() => download(f.id)}
-            sx={{ flex: 1 }}
-          >
+          <Button key={f.id} variant="contained" size="small" onClick={() => download(f.id)}>
             {f.label}
           </Button>
         ))}
       </Stack>
-
-      <Typography variant="body2" color="text.secondary">
-        Files are generated in the browser; nothing is uploaded.
-      </Typography>
     </Stack>
   )
 }

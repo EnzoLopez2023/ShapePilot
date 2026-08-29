@@ -29,7 +29,7 @@ export function AppShell() {
   const items = NAV.filter(item => !item.adminOnly || role === 'admin')
 
   return (
-    <Box sx={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column' }}>
+    <Box sx={{ height: '100dvh', display: 'flex', flexDirection: 'column' }}>
       <Box
         component="a"
         href="#main"
@@ -103,6 +103,7 @@ export function AppShell() {
         sx={{
           flex: 1,
           minHeight: 0,
+          overflowY: 'auto',
           px: { xs: 1.5, md: 2.5 },
           py: { xs: 1.5, md: 2 },
           display: 'flex',

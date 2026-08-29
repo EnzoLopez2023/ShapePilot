@@ -8,6 +8,7 @@ import { multiBBox } from '../geometry/vec.ts'
 import { pocketExtent } from '../state/useTrayDesign.ts'
 import type { FabricationSettings, Pocket, TrayDesign, TrayProfile } from '../model/types.ts'
 import LengthField from './LengthField.tsx'
+import HoverTooltip from './HoverTooltip.tsx'
 
 export interface PropertiesPanelProps {
   design: TrayDesign
@@ -41,6 +42,20 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
       onPocket(p.id, axis === 'x' ? { x: trayCenter.cx - w / 2 } : { y: trayCenter.cy - h / 2 })
     }
   }
+  // Reflect each selected pocket's position across the tray's centreline --
+  // handy for building the mirrored other half of a split layout.
+  const mirrorSelected = () => {
+    for (const p of selected) {
+      const { w } = pocketExtent(p, design.sizing)
+      onPocket(p.id, { x: 2 * trayCenter.cx - p.x - w })
+    }
+  }
+  const flipSelected = () => {
+    for (const p of selected) {
+      const { h } = pocketExtent(p, design.sizing)
+      onPocket(p.id, { y: 2 * trayCenter.cy - p.y - h })
+    }
+  }
 
   const sizingPreset =
     design.sizing.cornerRadius === LIBRARY_SIZING.cornerRadius &&
@@ -69,7 +84,7 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
           onChange={e => onDesign(d => ({ ...d, name: e.target.value }))}
         />
       </Tooltip>
-      <Tooltip title="The tray outline pockets sit inside. Presets match a physical Systainer insert; Custom rectangle lets you set any width and depth.">
+      <HoverTooltip title="The tray outline pockets sit inside. Presets match a physical Systainer insert; Custom rectangle lets you set any width and depth.">
         <TextField
           select size="small" label="Profile"
           value={design.profile.kind === 'preset' ? design.profile.id : design.profile.kind}
@@ -84,7 +99,7 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
           ))}
           <MenuItem value="rect">Custom rectangle</MenuItem>
         </TextField>
-      </Tooltip>
+      </HoverTooltip>
 
       {design.profile.kind === 'rect' && (
         <Stack direction="row" spacing={1}>
@@ -120,7 +135,7 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
 
       <Divider />
       {heading('Pocket sizing')}
-      <Tooltip title="How a unit count becomes a pocket size. Library sizing rounds corners at 2 mm, wide enough for a 1/8&quot; bit; Python sizing matches the trays already cut but needs a smaller bit.">
+      <HoverTooltip title="How a unit count becomes a pocket size. Library sizing rounds corners at 2 mm, wide enough for a 1/8&quot; bit; Python sizing matches the trays already cut but needs a smaller bit.">
         <TextField
           select size="small" label="Preset" value={sizingPreset}
           onChange={e => {
@@ -139,7 +154,7 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
           <MenuItem value="python">Python source — 19.05u − 0.25, r 1.00</MenuItem>
           {sizingPreset === 'custom' && <MenuItem value="custom">Custom</MenuItem>}
         </TextField>
-      </Tooltip>
+      </HoverTooltip>
       <Stack direction="row" spacing={1}>
         <LengthField
           label="Width offset" imperial={imperial} valueMm={design.sizing.widthOffset}
@@ -185,18 +200,28 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
           <Divider />
           <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
             {heading(selected.length === 1 ? 'Selected pocket' : `${selected.length} pockets`)}
-            <Stack direction="row" spacing={0.5}>
-              <Tooltip title="Move each selected pocket so it's centred left-to-right on the tray.">
-                <Button size="small" onClick={() => centerSelected('x')} sx={{ minWidth: 0, px: 1 }}>
-                  Center X
-                </Button>
-              </Tooltip>
-              <Tooltip title="Move each selected pocket so it's centred front-to-back on the tray.">
-                <Button size="small" onClick={() => centerSelected('y')} sx={{ minWidth: 0, px: 1 }}>
-                  Center Y
-                </Button>
-              </Tooltip>
-            </Stack>
+          </Stack>
+          <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>
+            <Tooltip title="Move each selected pocket so it's centred left-to-right on the tray.">
+              <Button size="small" onClick={() => centerSelected('x')} sx={{ minWidth: 0, px: 1 }}>
+                Center X
+              </Button>
+            </Tooltip>
+            <Tooltip title="Move each selected pocket so it's centred front-to-back on the tray.">
+              <Button size="small" onClick={() => centerSelected('y')} sx={{ minWidth: 0, px: 1 }}>
+                Center Y
+              </Button>
+            </Tooltip>
+            <Tooltip title="Reflect each selected pocket's position left-to-right across the tray's centreline -- useful for mirroring a layout onto the other half of a split tray.">
+              <Button size="small" onClick={mirrorSelected} sx={{ minWidth: 0, px: 1 }}>
+                Mirror
+              </Button>
+            </Tooltip>
+            <Tooltip title="Reflect each selected pocket's position front-to-back across the tray's centreline.">
+              <Button size="small" onClick={flipSelected} sx={{ minWidth: 0, px: 1 }}>
+                Flip
+              </Button>
+            </Tooltip>
           </Stack>
           {selected.length === 1 && (
             <>
@@ -245,7 +270,7 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
                         onChange={e => onPocket(p.id, { rotationDeg: e.target.checked ? 90 : 0 })}
                       />
                     }
-                    label={<Typography variant="body2">Rotate</Typography>}
+                    label={<Typography variant="body2">Tilt</Typography>}
                   />
                 </Tooltip>
               )}

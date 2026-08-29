@@ -22,6 +22,7 @@ import TrayCanvas from './components/TrayCanvas.tsx'
 import PocketPalette from './components/PocketPalette.tsx'
 import PropertiesPanel from './components/PropertiesPanel.tsx'
 import ExportPanel from './components/ExportPanel.tsx'
+import HoverTooltip from './components/HoverTooltip.tsx'
 import { useConfirm } from '../../components/ConfirmDialogProvider.tsx'
 import { EmptyState, LoadingState } from '../../components/LoadingState.tsx'
 
@@ -236,7 +237,7 @@ export default function KeycapTrayPage() {
             </span></Tooltip>
           </Stack>
 
-          <Tooltip title="How far a dragged or dropped pocket jumps between positions. 1u pitch lines pockets up key-to-key.">
+          <HoverTooltip title="How far a dragged or dropped pocket jumps between positions. 1u pitch lines pockets up key-to-key.">
             <TextField
               select size="small" label="Snap" value={snapMm}
               onChange={e => setSnapMm(parseFloat(e.target.value))}
@@ -247,8 +248,8 @@ export default function KeycapTrayPage() {
               <MenuItem value={1}>1 mm</MenuItem>
               <MenuItem value={19.05}>1u pitch</MenuItem>
             </TextField>
-          </Tooltip>
-          <Tooltip title="Reference grid drawn on the canvas — purely visual, independent of Snap.">
+          </HoverTooltip>
+          <HoverTooltip title="Reference grid drawn on the canvas — purely visual, independent of Snap.">
             <TextField
               select size="small" label="Grid" value={gridMm}
               onChange={e => setGridMm(parseFloat(e.target.value))}
@@ -260,7 +261,7 @@ export default function KeycapTrayPage() {
               <MenuItem value={4}>4 mm</MenuItem>
               <MenuItem value={5}>5 mm</MenuItem>
             </TextField>
-          </Tooltip>
+          </HoverTooltip>
 
           <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>
             <Button size="small" aria-pressed={showLabels} onClick={() => setShowLabels(v => !v)}>
@@ -282,6 +283,8 @@ export default function KeycapTrayPage() {
           </Stack>
 
           <Box sx={{ flex: 1, minWidth: 0 }} />
+
+          <ExportPanel design={design} mesh={mesh} issues={issues} />
 
           <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', rowGap: 1 }}>
             <Button
@@ -374,20 +377,15 @@ export default function KeycapTrayPage() {
           </Typography>
         </Paper>
 
-        <Stack spacing={1.5} sx={{ minHeight: 0, order: { xs: 3, md: 0 } }}>
-          <Paper sx={{ ...panel, flex: { lg: 1 } }}>
-            <PropertiesPanel
-              design={design} selected={selectedPockets} fab={fab}
-              imperial={imperial} onImperial={setImperial}
-              onProfile={p => { d.setProfile(p); setFitToken(t => t + 1) }} onSizing={d.setSizing}
-              onDesign={mutate => d.replace(mutate)}
-              onPocket={d.updatePocket} onFab={setFab}
-            />
-          </Paper>
-          <Paper sx={{ flexShrink: 0 }}>
-            <ExportPanel design={design} mesh={mesh} issues={issues} />
-          </Paper>
-        </Stack>
+        <Paper sx={{ ...panel, order: { xs: 3, md: 0 } }}>
+          <PropertiesPanel
+            design={design} selected={selectedPockets} fab={fab}
+            imperial={imperial} onImperial={setImperial}
+            onProfile={p => { d.setProfile(p); setFitToken(t => t + 1) }} onSizing={d.setSizing}
+            onDesign={mutate => d.replace(mutate)}
+            onPocket={d.updatePocket} onFab={setFab}
+          />
+        </Paper>
       </Box>
 
       <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>
