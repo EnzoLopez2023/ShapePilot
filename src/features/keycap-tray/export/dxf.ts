@@ -1,9 +1,9 @@
 // DXF R2000 with LWPOLYLINE, matching the known-good systainer_tray_1_SHAPER.dxf
 // that already cuts correctly on the Origin: $INSUNITS 4 (mm), layers
 // PROFILE / POCKETS / THROUGH. Y stays CAD-up -- no flip.
-import type { MultiPolygon, Ring } from '../geometry/vec.ts'
+import type { MultiPolygon, Ring } from '../../../geometry/vec.ts'
 import { buildRegions } from '../geometry/layers.ts'
-import { multiBBox } from '../geometry/vec.ts'
+import { multiBBox } from '../../../geometry/vec.ts'
 import { pocketRing } from '../geometry/shapes.ts'
 import type { TrayDesign } from '../model/types.ts'
 

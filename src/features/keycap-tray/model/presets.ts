@@ -1,5 +1,5 @@
-import type { MultiPolygon, Ring } from '../geometry/vec.ts'
-import { normalizePolygon } from '../geometry/vec.ts'
+import type { MultiPolygon, Ring } from '../../../geometry/vec.ts'
+import { normalizePolygon } from '../../../geometry/vec.ts'
 import { rectRing } from '../geometry/shapes.ts'
 import { LIBRARY_SIZING, PYTHON_SIZING } from '../geometry/shapes.ts'
 import type { PresetProfileId, TrayDesign, TrayProfile } from './types.ts'

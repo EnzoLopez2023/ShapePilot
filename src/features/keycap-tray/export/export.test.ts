@@ -2,11 +2,11 @@ import assert from 'node:assert/strict'
 import { test } from 'vitest'
 import { unzipSync, strFromU8 } from 'fflate'
 import { buildTrayMesh } from '../geometry/layers.ts'
-import { checkManifold } from '../geometry/mesh.ts'
+import { checkManifold } from '../../../geometry/mesh.ts'
 import { PYTHON_SIZING } from '../geometry/shapes.ts'
 import type { Pocket, TrayDesign } from '../model/types.ts'
-import { readBinaryStl, writeBinaryStl } from './stl.ts'
-import { writeThreeMf } from './threemf.ts'
+import { readBinaryStl, writeBinaryStl } from '../../../export/stl.ts'
+import { writeThreeMf } from '../../../export/threemf.ts'
 
 const design = (pockets: Pocket[], over: Partial<TrayDesign> = {}): TrayDesign => ({
   id: 't', name: 'Test tray',

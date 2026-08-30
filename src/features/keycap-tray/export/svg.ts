@@ -1,8 +1,8 @@
 // Shaper Origin SVG. The colour convention is what Shaper actually reads; the
 // shaper:cutType attributes are additive and preferred when present. Matches
 // systainer_tray_1_SHAPER.svg field for field.
-import type { MultiPolygon, Ring } from '../geometry/vec.ts'
-import { signedArea } from '../geometry/vec.ts'
+import type { MultiPolygon, Ring } from '../../../geometry/vec.ts'
+import { signedArea } from '../../../geometry/vec.ts'
 import { buildRegions } from '../geometry/layers.ts'
 import { pocketRing } from '../geometry/shapes.ts'
 import type { TrayDesign } from '../model/types.ts'

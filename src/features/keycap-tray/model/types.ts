@@ -1,4 +1,4 @@
-import type { MultiPolygon } from '../geometry/vec.ts'
+import type { MultiPolygon } from '../../../geometry/vec.ts'
 import type { PocketSizing } from '../geometry/shapes.ts'
 
 export type { PocketSizing }

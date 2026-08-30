@@ -10,10 +10,10 @@ import assert from 'node:assert/strict'
 import { createHash } from 'node:crypto'
 import { test } from 'vitest'
 import { buildTrayMesh } from '../../src/features/keycap-tray/geometry/layers.ts'
-import { checkManifold } from '../../src/features/keycap-tray/geometry/mesh.ts'
+import { checkManifold } from '../../src/geometry/mesh.ts'
 import { PYTHON_SIZING } from '../../src/features/keycap-tray/geometry/shapes.ts'
-import { QUANTUM } from '../../src/features/keycap-tray/geometry/vec.ts'
-import { writeBinaryStl } from '../../src/features/keycap-tray/export/stl.ts'
+import { QUANTUM } from '../../src/geometry/vec.ts'
+import { writeBinaryStl } from '../../src/export/stl.ts'
 import type { Pocket, TrayDesign } from '../../src/features/keycap-tray/model/types.ts'
 import fixture from '../fixtures/reference/systainer-75-pocket.json' with { type: 'json' }
 

@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
-import { difference, intersection, punchDisjointFast, union, unionDisjointFast } from './boolean.ts'
+import { difference, intersection, punchDisjointFast, union, unionDisjointFast } from '../../../geometry/boolean.ts'
 import { LIBRARY_SIZING, PYTHON_SIZING, isoEnterRing, pocketRing, pocketWidth, pocketHeight, roundedRectRing } from './shapes.ts'
-import type { Ring } from './vec.ts'
-import { multiArea, normalizeAngleDeg, normalizePolygon, pointInRing, reflectRingInBox, rotateRing, signedArea } from './vec.ts'
+import type { Ring } from '../../../geometry/vec.ts'
+import { multiArea, normalizeAngleDeg, normalizePolygon, pointInRing, reflectRingInBox, rotateRing, signedArea } from '../../../geometry/vec.ts'
 
 const rect = (x: number, y: number, w: number, h: number): Ring =>
   [[x, y], [x + w, y], [x + w, y + h], [x, y + h]]
