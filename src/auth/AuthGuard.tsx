@@ -1,48 +1,24 @@
 import { useEffect } from 'react'
-import { Box, Button, Stack, Typography } from '@mui/material'
 import { AuthenticatedTemplate, UnauthenticatedTemplate, useMsal } from '@azure/msal-react'
 import type { ReactNode } from 'react'
 import { AUTH_ENABLED, authConfigured, loginRequest } from './msal.ts'
 import { useAccessToken } from './useAccessToken.ts'
+import { LandingPage } from '../features/landing/LandingPage.tsx'
 
+/**
+ * What every signed-out visitor sees: the marketing landing page, whose
+ * "Sign in with Microsoft" actions start the same redirect the app has always
+ * used (cache cleared first so a stale account never blocks the prompt).
+ */
 function SignInPanel() {
   const { instance } = useMsal()
   return (
-    <Box
-      component="main"
-      sx={{
-        minHeight: '100dvh',
-        display: 'grid',
-        placeItems: 'center',
-        px: 3,
-        bgcolor: 'background.default',
+    <LandingPage
+      authConfigured={authConfigured}
+      onSignIn={() => {
+        void instance.clearCache().then(() => instance.loginRedirect(loginRequest))
       }}
-    >
-      <Stack spacing={2.5} sx={{ maxWidth: 420, width: '100%' }}>
-        <Typography variant="h1" component="h1">ShapePilot</Typography>
-        <Typography color="text.secondary">
-          Sign in with your work account to open your saved trays. Designs are scoped to
-          your account and are not shared with anyone else.
-        </Typography>
-        {authConfigured ? (
-          <Button
-            variant="contained"
-            onClick={() => {
-              void instance.clearCache().then(() => instance.loginRedirect(loginRequest))
-            }}
-            sx={{ alignSelf: 'flex-start' }}
-          >
-            Sign in
-          </Button>
-        ) : (
-          <Typography color="error">
-            Sign-in is not configured for this build. Set VITE_ENTRA_CLIENT_ID,
-            VITE_ENTRA_TENANT_ID and VITE_API_SCOPE, or run with
-            VITE_AUTH_MODE=development.
-          </Typography>
-        )}
-      </Stack>
-    </Box>
+    />
   )
 }
 
