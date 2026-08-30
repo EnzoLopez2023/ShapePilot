@@ -8,6 +8,15 @@
     <link rel="icon" href="/favicon.ico" sizes="any" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
 
+    <!-- Display + drawing-office mono faces. Used only by the signed-out landing
+         page; the workbench itself stays on the system stack from theme.ts. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Martian+Mono:wght@400;500;600&display=swap"
+    />
+
     <!-- PWA / installable app shell -->
     <meta name="theme-color" content="#131a2c" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -17,6 +26,37 @@
     <title>ShapePilot</title>
   </head>
   <body>
+    <!--
+      IMPECCABLE DIRECTION CONTRACT — surface: signed-out landing (src/features/landing/LandingPage.tsx)
+      Mode: Persuade. New surface inside an established Operate world; direction pinned by the
+      user to the nintek app-family landing system (cairn/workshop/tabloom/lantern.nintek.com).
+      Build path: code-led (no image-generation tool available).
+
+      THESIS: A landing page for a CAD/fabrication workbench that IS a fabrication drawing —
+        graph-paper ground, corner registration marks, dimension lines, a title block, FIG. plates.
+        It refuses the SaaS hero: no floating gradient blob, no feature-card grid as decoration,
+        no invented metrics or customer logos. Every claim is a demonstration of the real UI.
+      OWN-WORLD: Warm-paper blueprint (#F1EFE9) with blue-tinted grid (#1F5C8B @ 10/16% alpha);
+        one structural accent = ShapePilot blue; one warm note = machined brass (#8A4F1C) on the
+        primary action only. Display face Archivo (tight, technical), micro-labels Martian Mono
+        (drawing-office caps), body on the app's system stack. Mockup "sheets" are white, hairline
+        #C4C0B8, on a two-layer plotter shadow. Full graphite-blueprint dark variant.
+      STORY: A lone maker with a Bambu X2D and a Shaper Origin learns, in one viewport, that
+        ShapePilot lays out Systainer-tray pockets to the millimetre, checks manufacturability per
+        machine, and exports a file the machine accepts with nothing uploaded — then signs in with
+        Microsoft.
+      FIRST VIEWPORT: Full-bleed blueprint grid + 4 corner marks + corner title block. Left column:
+        Martian-Mono eyebrow, huge Archivo H1 "Know it fits" / accent-blue "before you cut.",
+        subhead, brass "Sign in with Microsoft" pill + ghost "See the workbench" link, mono
+        reassurance line. Right column: a floating tray-blueprint sheet — Systainer S 76 outline
+        with dimensioned keycap pockets, one pocket selected with rotate handles, a counting
+        angle tag, a "Watertight" status chip, and a hand-annotation with a leader line.
+        A static mono spec rule sits below the fold. Primary action sits mid-left, above the fold.
+      FORM: Fabrication drawing / drawing-office plate set. Position 1 of the ordered list
+        (the audience reads machine drawings daily; the product literally emits SVG/DXF).
+        Direction pinned by user reference — concept-seed not run (narrow, pinned request).
+      FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+    -->
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
