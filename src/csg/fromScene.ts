@@ -133,9 +133,14 @@ export function objectNode(o: SceneObject, opts: FromSceneOptions = {}): PartNod
         : { id: o.id, name: o.name, op: 'union', children, transform }
     }
 
-    // Imported meshes are carried as meshes, not programs -- the viewport adds
-    // them alongside the evaluated solid. See src/import/.
-    case 'imported': return null
+    // An imported model joins the program as a `mesh` node keyed by its content
+    // hash; the triangles travel beside the program, not inside it. That is what
+    // lets an import be grouped, cut against and exported like anything else.
+    case 'imported':
+      return {
+        id: o.id, name: o.name, op: 'mesh', transform,
+        params: { meshId: o.asset.hash },
+      }
 
     case 'group': return groupNode(o, opts)
   }

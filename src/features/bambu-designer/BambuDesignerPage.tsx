@@ -37,6 +37,7 @@ import { writeBinaryStl } from '../../export/stl.ts'
 import { writeThreeMf } from '../../export/threemf.ts'
 import { evaluateProgram } from '../../csg/evaluate.ts'
 import { programFromScene } from '../../csg/fromScene.ts'
+import { resolveAssets } from '../../import/assets.ts'
 import { programToObjects } from '../../csg/toScene.ts'
 import SolidPalette from './components/SolidPalette.tsx'
 import type { SolidPaletteKind } from './components/solidEntries.ts'
@@ -83,7 +84,7 @@ export default function BambuDesignerPage() {
     })
   }, [objects])
 
-  const { parts, evaluating, failures } = useSceneMeshes(doc.doc, textOutlines)
+  const { parts, evaluating, failures, detached } = useSceneMeshes(doc.doc, textOutlines)
 
   const viewportParts = useMemo<ViewportPart[]>(
     () => parts.map(p => ({
@@ -105,7 +106,8 @@ export default function BambuDesignerPage() {
     let cancelled = false
     const program = programFromScene(objects, { textOutlines })
     if (!program.parts.length) { setWholeMesh(null); return }
-    void evaluateProgram(program)
+    void resolveAssets(objects)
+      .then(({ meshes }) => evaluateProgram(program, { meshes }))
       .then(mesh => { if (!cancelled) setWholeMesh(mesh) })
       .catch(() => { if (!cancelled) setWholeMesh(null) })
     return () => { cancelled = true }
@@ -202,7 +204,8 @@ export default function BambuDesignerPage() {
       return
     }
     try {
-      const mesh = await evaluateProgram(program)
+      const { meshes } = await resolveAssets(objects)
+      const mesh = await evaluateProgram(program, { meshes })
       const name = safeFilename(doc.doc.name)
       if (format === 'stl') {
         triggerDownload(writeBinaryStl(mesh, doc.doc.name), `${name}.stl`, 'model/stl')
@@ -433,6 +436,14 @@ export default function BambuDesignerPage() {
               onPatch={patch => selectedObject && doc.updateObject(selectedObject.id, patch)}
             />
 
+            {detached.size > 0 && (
+              <Alert severity="info" variant="outlined">
+                {detached.size === 1 ? 'One imported file is' : `${detached.size} imported files are`}
+                {' '}not available on this device. Import{detached.size === 1 ? ' it' : ' them'}
+                {' '}again to restore {detached.size === 1 ? 'that object' : 'those objects'};
+                the rest of the design is unaffected.
+              </Alert>
+            )}
             {failures.size > 0 && (
               <Alert severity="warning" variant="outlined">
                 {failures.size} {failures.size === 1 ? 'object' : 'objects'} could not be built and

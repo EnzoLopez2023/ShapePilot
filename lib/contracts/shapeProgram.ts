@@ -14,12 +14,20 @@ export type Point2 = readonly [number, number]
 export type Triple = readonly [number, number, number]
 
 export type PrimitiveOp =
-  | 'box' | 'cylinder' | 'sphere' | 'cone' | 'torus' | 'wedge' | 'extrude' | 'text'
+  | 'box' | 'cylinder' | 'sphere' | 'cone' | 'torus' | 'wedge' | 'extrude' | 'text' | 'mesh'
 
 export type BooleanOp = 'union' | 'difference' | 'intersection'
 
 export const PRIMITIVE_OPS: readonly PrimitiveOp[] =
-  ['box', 'cylinder', 'sphere', 'cone', 'torus', 'wedge', 'extrude', 'text']
+  ['box', 'cylinder', 'sphere', 'cone', 'torus', 'wedge', 'extrude', 'text', 'mesh']
+
+/**
+ * What the AI may emit. `mesh` is excluded on purpose: it references imported
+ * bytes by content hash, which the model has no way to know and no business
+ * inventing. Everything else is describable from a prompt.
+ */
+export const AI_PRIMITIVE_OPS: readonly PrimitiveOp[] =
+  PRIMITIVE_OPS.filter(op => op !== 'mesh')
 export const BOOLEAN_OPS: readonly BooleanOp[] = ['union', 'difference', 'intersection']
 
 export interface ProgramTransform {
@@ -48,6 +56,13 @@ export interface ProgramParams {
   text?: string
   fontId?: string
   sizeMm?: number
+  /**
+   * `mesh` only: the content hash of an imported file. The triangles are passed
+   * to the evaluator alongside the program rather than inlined here -- a 60 MB
+   * STL has no business travelling as JSON, and the program stays small enough
+   * to send to a model as context.
+   */
+  meshId?: string
 }
 
 export interface PrimitiveNode {
@@ -223,7 +238,7 @@ function validateTransform(value: unknown, field: string): ProgramTransform {
 
 const PARAM_KEYS = [
   'widthMm', 'depthMm', 'heightMm', 'radiusMm', 'topRadiusMm', 'tubeMm',
-  'segments', 'profile', 'holes', 'text', 'fontId', 'sizeMm',
+  'segments', 'profile', 'holes', 'text', 'fontId', 'sizeMm', 'meshId',
 ] as const
 
 /** Which params each op actually requires. Anything else present is allowed
@@ -238,6 +253,7 @@ const REQUIRED_PARAMS: Record<PrimitiveOp, readonly (keyof ProgramParams)[]> = {
   wedge: ['widthMm', 'depthMm', 'heightMm'],
   extrude: ['profile', 'heightMm'],
   text: ['text', 'heightMm'],
+  mesh: ['meshId'],
 }
 
 function validateParams(value: unknown, op: PrimitiveOp, field: string): ProgramParams {
@@ -270,6 +286,15 @@ function validateParams(value: unknown, op: PrimitiveOp, field: string): Program
   }
   if (raw.text !== undefined) params.text = requireString(raw.text, `${field}.text`, PROGRAM_LIMITS.maxTextLength)
   if (raw.fontId !== undefined) params.fontId = requireString(raw.fontId, `${field}.fontId`, PROGRAM_LIMITS.maxNameLength)
+  if (raw.meshId !== undefined) {
+    const meshId = requireString(raw.meshId, `${field}.meshId`, 64)
+    // The id is a content hash, and the evaluator looks it up in a map keyed by
+    // exactly that; anything else could only ever miss.
+    if (!/^[0-9a-f]{64}$/.test(meshId)) {
+      bad(`${field}.meshId`, `${field}.meshId must be a SHA-256 hex digest`)
+    }
+    params.meshId = meshId
+  }
 
   for (const key of REQUIRED_PARAMS[op]) {
     if (params[key] === undefined) bad(`${field}.${key}`, `${op} requires params.${key}`)

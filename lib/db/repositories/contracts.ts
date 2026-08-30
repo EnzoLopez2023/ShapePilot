@@ -268,10 +268,44 @@ export interface DesignDocumentRepository {
   remove(owner: Owner, id: string): Promise<boolean>
 }
 
+
+// -- Design assets ------------------------------------------------------------
+// Metadata only. The bytes live behind the artifact store; this records which
+// owner has which content hash, so a lookup can be scoped by owner rather than
+// letting a hash act as a bearer token for anyone who guesses it.
+
+export type DesignAssetFormat = 'stl' | 'obj' | 'svg' | 'dxf' | '3mf'
+
+export const DESIGN_ASSET_FORMATS: readonly DesignAssetFormat[] =
+  ['stl', 'obj', 'svg', 'dxf', '3mf']
+
+export interface DesignAssetRecord {
+  hash: string
+  filename: string
+  format: DesignAssetFormat
+  byteLength: number
+  createdAt: string
+}
+
+export interface DesignAssetInput {
+  hash: string
+  filename: string
+  format: DesignAssetFormat
+  byteLength: number
+}
+
+export interface DesignAssetRepository {
+  list(owner: Owner): Promise<DesignAssetRecord[]>
+  find(owner: Owner, hash: string): Promise<DesignAssetRecord | null>
+  /** Idempotent: re-uploading identical content is a no-op by construction. */
+  record(owner: Owner, input: DesignAssetInput): Promise<DesignAssetRecord>
+}
+
 export interface Repositories {
   memberships: MembershipRepository
   settings: SettingsRepository
   audit: AuditRepository
   keycapTrays: KeycapTrayRepository
   designDocuments: DesignDocumentRepository
+  designAssets: DesignAssetRepository
 }

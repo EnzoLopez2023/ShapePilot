@@ -60,12 +60,13 @@ Named here so that their absence is a decision rather than an oversight.
 - Material and tooling profiles beyond the current fabrication fields. Machine
   profiles now exist for the printers and the Origin.
 - Server-side geometry, collaboration, multi-instance operation, and PostgreSQL.
-- **Imported meshes persisted server-side.** An imported STL or SVG is held in
-  the browser's IndexedDB, content-addressed, and the document stores only the
-  hash. Reopening on the same browser resolves; on another device the object
-  reports as detached and the file can be re-attached. A server-side artifact
-  store is the right answer and `lib/recovery/artifactStore.ts` is already
-  shaped for it, but nothing persists binary artifacts yet.
+- **Imported files covered by backup.** They are stored server-side behind the
+  artifact store and travel between devices, but they are deliberately *not*
+  authoritative: the backup manifest describes one SQLite file, and an asset
+  that goes missing degrades to "re-attach this file" rather than breaking the
+  document. Making them first-class would mean a manifest that covers them,
+  verifies them on restore, and garbage-collects unreferenced ones. The
+  parametric document is the design; an imported mesh is a reference.
 - Sketch constraints, fillets and chamfers, and boolean history editing beyond
   the group tree.
 - Slicing. ShapePilot exports a mesh; Bambu Studio slices it.

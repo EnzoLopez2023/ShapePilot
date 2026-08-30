@@ -44,6 +44,12 @@ const ROLLBACK_COMPATIBLE_LEDGER = [
     name: 'design documents',
     checksum: '4b7e7414f4d6db453f12e001b62f7a1dafec6fb9702078928453650399ff94ba',
   },
+  {
+    ordinal: 3,
+    id: '004-design-assets',
+    name: 'design assets',
+    checksum: '9c0980e90616e1feb6472810d01e372d48216c5935b33a73617e88241621dc41',
+  },
 ] as const
 
 const REQUIRED_TABLES = [
@@ -51,6 +57,7 @@ const REQUIRED_TABLES = [
   'app_memberships',
   'app_settings',
   'audit_events',
+  'design_assets',
   'design_documents',
   'keycap_pocket_library',
   'keycap_tray_designs',

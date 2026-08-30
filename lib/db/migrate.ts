@@ -15,6 +15,7 @@ import { MIGRATION_LEDGER_DDL } from './schema.ts'
 import { migration001 } from './migrations/001-initial.ts'
 import { migration002 } from './migrations/002-app-identity.ts'
 import { migration003 } from './migrations/003-design-documents.ts'
+import { migration004 } from './migrations/004-design-assets.ts'
 import {
   APP_MARKER, SCHEMA_MARKER_FORMAT, schemaMarkerOf, schemaObjectsHash,
 } from './identity.ts'
@@ -29,7 +30,8 @@ export interface Migration {
   readonly statements: readonly string[]
 }
 
-export const MIGRATIONS: readonly Migration[] = [migration001, migration002, migration003]
+export const MIGRATIONS: readonly Migration[] =
+  [migration001, migration002, migration003, migration004]
 
 export const migrationChecksum = (migration: Migration): string =>
   createHash('sha256')

@@ -4,7 +4,7 @@
 // The schema constrains the shape of the answer; lib/contracts/shapeProgram.ts
 // still validates the result, because structured output guarantees well-formed
 // JSON matching a schema, not that the numbers make a manufacturable part.
-import { BOOLEAN_OPS, PRIMITIVE_OPS, PROGRAM_LIMITS } from '../../lib/contracts/shapeProgram.ts'
+import { AI_PRIMITIVE_OPS, BOOLEAN_OPS, PROGRAM_LIMITS } from '../../lib/contracts/shapeProgram.ts'
 
 const point2 = {
   type: 'array',
@@ -74,7 +74,7 @@ const nodeAtDepth = (depth: number): Record<string, unknown> => {
           + 'reuse the existing id when modifying a part so the edit is targeted',
       },
       name: { type: 'string', description: 'short human-readable label, e.g. "cable cutout"' },
-      op: { type: 'string', enum: [...PRIMITIVE_OPS, ...BOOLEAN_OPS] },
+      op: { type: 'string', enum: [...AI_PRIMITIVE_OPS, ...BOOLEAN_OPS] },
       params,
       transform,
     },

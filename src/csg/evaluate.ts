@@ -19,7 +19,17 @@ const DEFAULT_SEGMENTS = 64
 const toContour = (ring: readonly Point2[]): [number, number][] =>
   ring.map(([x, y]) => [x, y] as [number, number])
 
-function buildPrimitive(wasm: ManifoldToplevel, node: PrimitiveNode): Manifold {
+/** Imported triangles, by content hash. Kept beside the program rather than in
+ *  it: see ProgramParams.meshId. */
+export type MeshSources = ReadonlyMap<string, Mesh>
+
+export interface EvaluateOptions {
+  meshes?: MeshSources
+}
+
+function buildPrimitive(
+  wasm: ManifoldToplevel, node: PrimitiveNode, options: EvaluateOptions,
+): Manifold {
   const { Manifold: M, CrossSection } = wasm
   const p = node.params
   const segs = p.segments ?? DEFAULT_SEGMENTS
@@ -66,7 +76,36 @@ function buildPrimitive(wasm: ManifoldToplevel, node: PrimitiveNode): Manifold {
         `part.${node.id}`,
         'text nodes must be expanded to extrusions before evaluation',
       )
+
+    case 'mesh': {
+      const source = options.meshes?.get(p.meshId!)
+      if (!source) {
+        // The bytes are not authoritative and may simply be absent -- opened on
+        // another browser, or evicted. The caller decides whether that is fatal;
+        // here it is a named, catchable failure rather than a silent empty solid.
+        throw new ShapeProgramError(
+          `part.${node.id}`,
+          `the imported file for "${node.name}" is not available`,
+        )
+      }
+      return meshToManifold(wasm, source)
+    }
   }
+}
+
+/**
+ * The app's Mesh -> a Manifold. `ofMesh` takes ownership of the triangles as
+ * they are, so an imported model that was not watertight stays not watertight;
+ * `status()` at the end of evaluation is what surfaces that, rather than this
+ * silently repairing geometry the user handed us.
+ */
+function meshToManifold(wasm: ManifoldToplevel, source: Mesh): Manifold {
+  const mesh = new wasm.Mesh({
+    numProp: 3,
+    vertProperties: source.positions,
+    triVerts: source.indices,
+  })
+  return wasm.Manifold.ofMesh(mesh)
 }
 
 function applyTransform(solid: Manifold, t: ProgramTransform): Manifold {
@@ -80,8 +119,10 @@ function applyTransform(solid: Manifold, t: ProgramTransform): Manifold {
   return out
 }
 
-function buildBoolean(wasm: ManifoldToplevel, node: BooleanNode): Manifold {
-  const parts = node.children.map(c => buildNode(wasm, c))
+function buildBoolean(
+  wasm: ManifoldToplevel, node: BooleanNode, options: EvaluateOptions,
+): Manifold {
+  const parts = node.children.map(c => buildNode(wasm, c, options))
   const [first, ...rest] = parts
   switch (node.op) {
     case 'union':
@@ -95,8 +136,12 @@ function buildBoolean(wasm: ManifoldToplevel, node: BooleanNode): Manifold {
   }
 }
 
-function buildNode(wasm: ManifoldToplevel, node: PartNode): Manifold {
-  const solid = isBooleanNode(node) ? buildBoolean(wasm, node) : buildPrimitive(wasm, node)
+function buildNode(
+  wasm: ManifoldToplevel, node: PartNode, options: EvaluateOptions,
+): Manifold {
+  const solid = isBooleanNode(node)
+    ? buildBoolean(wasm, node, options)
+    : buildPrimitive(wasm, node, options)
   return applyTransform(solid, node.transform)
 }
 
@@ -143,11 +188,13 @@ const EMPTY_MESH: Mesh = {
  * checked once at the end: a bad boolean silently yields an empty solid
  * otherwise, and an empty STL is a much worse failure than an error message.
  */
-export async function evaluateProgram(program: ShapeProgram): Promise<Mesh> {
+export async function evaluateProgram(
+  program: ShapeProgram, options: EvaluateOptions = {},
+): Promise<Mesh> {
   if (!program.parts.length) return EMPTY_MESH
   const wasm = await loadManifold()
 
-  const [first, ...rest] = program.parts.map(p => buildNode(wasm, p))
+  const [first, ...rest] = program.parts.map(p => buildNode(wasm, p, options))
   const result = rest.reduce<Manifold>((acc, m) => acc.add(m), first)
 
   const status = result.status()
@@ -158,9 +205,11 @@ export async function evaluateProgram(program: ShapeProgram): Promise<Mesh> {
 }
 
 /** Evaluate one named part, for per-object preview and selection highlighting. */
-export async function evaluateNode(node: PartNode): Promise<Mesh> {
+export async function evaluateNode(
+  node: PartNode, options: EvaluateOptions = {},
+): Promise<Mesh> {
   const wasm = await loadManifold()
-  const solid = buildNode(wasm, node)
+  const solid = buildNode(wasm, node, options)
   const status = solid.status()
   if (status !== 'NoError') {
     throw new ShapeProgramError(`part.${node.id}`, `"${node.name}" could not be built (${status})`)

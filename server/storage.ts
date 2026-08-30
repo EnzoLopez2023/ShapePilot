@@ -34,6 +34,7 @@ export function validateProductionStorage(config: AppConfig): void {
       mkdirSync(dirname(config.database.path), { recursive: true, mode: 0o700 })
     }
     mkdirSync(config.artifactStoreDir, { recursive: true, mode: 0o700 })
+    mkdirSync(config.assetStoreDir, { recursive: true, mode: 0o700 })
     mkdirSync(config.recoveryWorkDir, { recursive: true, mode: 0o700 })
   } catch (cause) {
     throw new ConfigError(

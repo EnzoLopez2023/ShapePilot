@@ -78,6 +78,9 @@ function primitiveObject(node: PrimitiveNode): SceneObject | null {
     }
   }
 
+  // `mesh` has no scene form here: it names imported bytes by hash, and only
+  // an import can create one. The AI is not offered the op (AI_PRIMITIVE_OPS),
+  // so a proposal can never contain one.
   return null
 }
 

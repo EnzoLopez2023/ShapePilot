@@ -24,6 +24,7 @@ import type { ViewportPart } from '../../components/viewport3d/Viewport3D.tsx'
 import { EmptyState } from '../../components/LoadingState.tsx'
 import { evaluateProgram } from '../../csg/evaluate.ts'
 import { programFromScene } from '../../csg/fromScene.ts'
+import { resolveAssets } from '../../import/assets.ts'
 import { programToObjects } from '../../csg/toScene.ts'
 import { useSceneMeshes } from '../bambu-designer/useSceneMeshes.ts'
 import { checkPrint, worstSeverity } from '../bambu-designer/printChecks.ts'
@@ -128,7 +129,10 @@ export default function PlaygroundPage() {
       return
     }
     try {
-      const mesh = await evaluateProgram(currentProgram)
+      // A playground design can carry an import once it has been handed back
+      // from one of the designers, so the same resolution applies here.
+      const { meshes } = await resolveAssets(objects)
+      const mesh = await evaluateProgram(currentProgram, { meshes })
       const name = safeFilename(doc.doc.name)
       if (format === 'stl') {
         triggerDownload(writeBinaryStl(mesh, doc.doc.name), `${name}.stl`, 'model/stl')
@@ -138,7 +142,7 @@ export default function PlaygroundPage() {
     } catch (cause) {
       lifecycle.setError(cause instanceof Error ? cause.message : 'export failed')
     }
-  }, [currentProgram, doc.doc.name, lifecycle])
+  }, [currentProgram, objects, doc.doc.name, lifecycle])
 
   const handOff = useCallback(async (kind: 'shaper' | 'bambu') => {
     const id = await lifecycle.handOff(kind)

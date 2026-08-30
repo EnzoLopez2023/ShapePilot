@@ -12,6 +12,13 @@ let provider: AccessTokenProvider = async () => null
 
 export const setAccessTokenProvider = (next: AccessTokenProvider): void => { provider = next }
 
+/**
+ * The current token, for the one caller that cannot go through `apiRequest`:
+ * asset transfers carry a raw body and their own timeout. Everything else
+ * should use `apiRequest` and never touch this.
+ */
+export const accessToken = (): Promise<string | null> => provider()
+
 export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
   body?: unknown

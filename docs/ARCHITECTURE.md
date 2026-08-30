@@ -204,10 +204,23 @@ like credentials are redacted before storage. Retrieval is admin-only.
 ## The artifact-store boundary
 
 `lib/recovery/artifactStore.ts` is an object-store shaped interface. Backup
-bundles, and later any binary design asset, live behind it — outside SQLite,
-outside the repository, and outside the application's own disk. The filesystem
-adapter ships now; a Blob adapter can be added without the database or any
-feature module gaining an Azure dependency.
+bundles and imported design assets live behind it — outside SQLite, outside the
+repository, and outside the application's own disk. The filesystem adapter
+ships now; a Blob adapter can be added without the database or any feature
+module gaining an Azure dependency.
+
+Imported assets are **deliberately not authoritative.** The recovery model has
+exactly one authority: a restored backup is a single self-describing,
+hash-verified SQLite file, and every stage re-derives its identity from the
+bytes in front of it. Assets sit outside that. A missing one is an ordinary
+state — the object reports as detached and can be re-attached — so a restored
+database can never carry a broken reference. `design_assets` stores metadata
+only, keyed by content hash and scoped by `(tenant_id, oid)`, because a hash
+must never act as a bearer token.
+
+Making assets first-class would mean a manifest that bundles, hashes and
+verifies them alongside the database, plus collection of unreferenced ones.
+That trade has not been taken; the parametric document is the design.
 
 ## Extension points
 

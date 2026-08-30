@@ -52,6 +52,12 @@ export interface AppConfig {
   /** Serve the built SPA from this directory when it exists. */
   clientDir: string
   ai: AiConfig
+  /**
+   * Where imported design assets live. Derived from the database's own
+   * directory rather than configured, deliberately: it needs no new App Service
+   * setting, and the deploy job asserts that settings map exactly.
+   */
+  assetStoreDir: string
 }
 
 /**
@@ -347,5 +353,8 @@ export function loadConfig(
     recoveryWorkDir,
     clientDir: resolve(cwd, env.SHAPEPILOT_CLIENT_DIR?.trim() || 'dist/client'),
     ai: aiConfig(env, isProduction),
+    assetStoreDir: env.SHAPEPILOT_ASSET_DIR?.trim()
+      ? absolutePath(env.SHAPEPILOT_ASSET_DIR.trim(), 'SHAPEPILOT_ASSET_DIR', cwd, isProduction)
+      : join(dirname(databasePath), 'assets'),
   })
 }

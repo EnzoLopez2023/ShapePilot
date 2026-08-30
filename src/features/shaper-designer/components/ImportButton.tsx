@@ -6,7 +6,7 @@ import { Button, CircularProgress } from '@mui/material'
 import FileUploadRoundedIcon from '@mui/icons-material/FileUploadRounded'
 import type { ImportFormat, SceneObject } from '../../../model/document.ts'
 import { ACCEPT_ATTRIBUTE, importFile } from '../../../import/index.ts'
-import { putAsset } from '../../../import/assetStore.ts'
+import { storeImportedFile } from '../../../import/assets.ts'
 import { newId } from '../../../model/scene.ts'
 import { IDENTITY_TRANSFORM } from '../../../model/scene.ts'
 
@@ -57,9 +57,10 @@ export default function ImportButton(props: ImportButtonProps) {
         return
       }
 
-      // The bytes stay in the browser: PRODUCT.md keeps fabrication data out of
-      // the database, so the document carries only a content hash.
-      const asset = await putAsset(await file.arrayBuffer(), file.name, result.format)
+      // Stored locally for this session and uploaded so the design opens on
+      // another device. The document carries only the content hash; the bytes
+      // live behind the artifact store, never in the database.
+      const asset = await storeImportedFile(await file.arrayBuffer(), file.name, result.format)
       onImported([{
         ...base,
         id: newId(),

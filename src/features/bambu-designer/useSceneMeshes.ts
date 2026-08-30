@@ -9,6 +9,7 @@ import type { Mesh } from '../../geometry/mesh.ts'
 import { evaluateNode } from '../../csg/evaluate.ts'
 import { objectNode } from '../../csg/fromScene.ts'
 import type { TextOutlines } from '../../geometry/sceneShapes.ts'
+import { resolveAssets } from '../../import/assets.ts'
 import type { DesignDocument, SceneObject } from '../../model/document.ts'
 
 export interface EvaluatedObject {
@@ -21,11 +22,14 @@ export interface SceneMeshes {
   evaluating: boolean
   /** Per-object failure, keyed by id, so one bad solid does not blank the view. */
   failures: Map<string, string>
+  /** Imported objects whose file could not be found on this device or the
+   *  server. The design still opens; these need re-attaching. */
+  detached: Set<string>
 }
 
 export function useSceneMeshes(doc: DesignDocument, textOutlines: TextOutlines): SceneMeshes {
   const [state, setState] = useState<SceneMeshes>(
-    { parts: [], evaluating: false, failures: new Map() })
+    { parts: [], evaluating: false, failures: new Map(), detached: new Set() })
   const generation = useRef(0)
 
   useEffect(() => {
@@ -37,12 +41,19 @@ export function useSceneMeshes(doc: DesignDocument, textOutlines: TextOutlines):
       const parts: EvaluatedObject[] = []
       const failures = new Map<string, string>()
 
+      // Imported triangles are fetched before evaluation because the evaluator
+      // is synchronous once it starts: a `mesh` node looks its bytes up in this
+      // map rather than awaiting them mid-boolean.
+      const { meshes, detached } = await resolveAssets(doc.objects)
+      if (run !== generation.current) return
+
       for (const object of doc.objects) {
         if (!object.visible) continue
+        if (detached.has(object.id)) continue
         const node = objectNode(object, { textOutlines })
         if (!node) continue
         try {
-          parts.push({ object, mesh: await evaluateNode(node) })
+          parts.push({ object, mesh: await evaluateNode(node, { meshes }) })
         } catch (cause) {
           // A single unbuildable solid is reported next to its object rather
           // than taking the whole viewport down.
@@ -52,7 +63,7 @@ export function useSceneMeshes(doc: DesignDocument, textOutlines: TextOutlines):
       }
 
       if (!cancelled && run === generation.current) {
-        setState({ parts, evaluating: false, failures })
+        setState({ parts, evaluating: false, failures, detached })
       }
     })()
 
