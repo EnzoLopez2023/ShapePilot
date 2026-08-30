@@ -177,11 +177,24 @@ backup work in ShapePilot; recovery remains explicit and operator-invoked.
 `https://kv-shapepilot-prod.vault.azure.net/`. The only declared secret setting
 is `AZURE_OPENAI_API_KEY`, and its App Service value must remain the versionless
 Key Vault reference to secret `AZURE-OPENAI-API-KEY`; the workflow never reads,
-prints, or uploads the secret value. That setting is **vestigial**: the secret it
-points at does not exist in the vault, and the runtime never reads it. The AI
-design assistant authenticates with the Web App's managed identity instead (see
-below), so the reference is inert. It is retained only because the deploy job
-asserts the app-settings map exactly; removing it means editing that assertion.
+prints, or uploads the secret value.
+
+That setting is **vestigial and deliberately left unresolvable.** The secret it
+points at does not exist, so the reference reports `SecretNotFound` and App
+Service passes the reference string through verbatim as the value. The runtime
+must therefore never treat `AZURE_OPENAI_API_KEY` as a credential in
+production, and `server/config.ts` does not: it refuses any value there,
+resolved or not, so the assistant always authenticates with the managed
+identity. The key path exists only for local development, and an unresolved
+reference is rejected as a value everywhere.
+
+Creating the secret would be the wrong fix. It would replace a keyless
+managed-identity flow with a long-lived key that grants full access to the
+Foundry account and has to be rotated by hand — the posture `.env.example`
+explicitly disclaims and the one Microsoft's own Foundry guidance recommends
+against for production. The setting is retained only because the deploy job
+asserts the app-settings map exactly; removing it means editing that
+assertion, the table above, and the Web App out of band.
 
 ### AI design assistant
 

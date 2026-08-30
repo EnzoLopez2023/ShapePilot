@@ -142,3 +142,77 @@ describe('production deployment configuration', () => {
     )
   })
 })
+
+describe('AI configuration', () => {
+  const FOUNDRY = {
+    AZURE_AI_FOUNDRY_ENDPOINT: 'https://aif-shapepilot-prod.openai.azure.com/openai/v1/',
+    AZURE_AI_FOUNDRY_DEPLOYMENT: 'shapepilot-designer',
+  }
+  // What App Service actually puts in the environment when a Key Vault
+  // reference cannot be resolved: the reference itself, verbatim.
+  const UNRESOLVED_REFERENCE =
+    '@Microsoft.KeyVault(SecretUri=https://kv-shapepilot-prod.vault.azure.net/secrets/AZURE-OPENAI-API-KEY/)'
+
+  // The documented local setup: the dev auth bypass, which is what makes the
+  // tenant settings optional outside production.
+  const developmentEnv = (overrides: NodeJS.ProcessEnv = {}): NodeJS.ProcessEnv => ({
+    NODE_ENV: 'development',
+    SHAPEPILOT_DEV_AUTH: '1',
+    ...FOUNDRY,
+    ...overrides,
+  })
+
+  const withRoot = (overrides: NodeJS.ProcessEnv = {}) => {
+    const root = mkdtempSync(join(tmpdir(), 'shapepilot-ai-'))
+    roots.push(root)
+    return loadConfig(productionEnv(root, overrides))
+  }
+
+  test('production authenticates with the managed identity, never a key', () => {
+    const config = withRoot({ ...FOUNDRY, AZURE_OPENAI_API_KEY: 'a-real-looking-key' })
+    assert.equal(config.ai.enabled, true)
+    // A key in production would silently downgrade to a long-lived credential
+    // with full access to the resource. It is refused regardless of its value.
+    assert.equal(config.ai.apiKey, null)
+  })
+
+  test('an unresolved Key Vault reference is not mistaken for a key', () => {
+    // The bug this guards: the reference string is truthy, so it was used as a
+    // bearer token and every call came back 401 while the setting looked fine.
+    const production = withRoot({ ...FOUNDRY, AZURE_OPENAI_API_KEY: UNRESOLVED_REFERENCE })
+    assert.equal(production.ai.apiKey, null)
+
+    const development = loadConfig(developmentEnv({
+      AZURE_OPENAI_API_KEY: UNRESOLVED_REFERENCE,
+    }))
+    assert.equal(development.ai.apiKey, null, 'also refused outside production')
+  })
+
+  test('a real key is honoured in development, where it is a convenience', () => {
+    const config = loadConfig(developmentEnv({ AZURE_OPENAI_API_KEY: 'local-dev-key' }))
+    assert.equal(config.ai.apiKey, 'local-dev-key')
+  })
+
+  test('no Foundry settings disables the assistant rather than failing startup', () => {
+    const config = withRoot()
+    assert.equal(config.ai.enabled, false)
+    assert.equal(config.ai.endpoint, null)
+    assert.equal(config.ai.deployment, null)
+  })
+
+  test('half-configured Foundry settings are a startup error', () => {
+    for (const half of [
+      { AZURE_AI_FOUNDRY_ENDPOINT: FOUNDRY.AZURE_AI_FOUNDRY_ENDPOINT },
+      { AZURE_AI_FOUNDRY_DEPLOYMENT: FOUNDRY.AZURE_AI_FOUNDRY_DEPLOYMENT },
+    ]) {
+      assert.throws(() => withRoot(half), ConfigError)
+    }
+  })
+
+  test('a non-https endpoint is refused', () => {
+    assert.throws(
+      () => withRoot({ ...FOUNDRY, AZURE_AI_FOUNDRY_ENDPOINT: 'http://insecure.example/' }),
+      ConfigError,
+    )
+  })
+})

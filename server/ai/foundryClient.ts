@@ -42,8 +42,8 @@ export interface FoundryResponse {
 export function createFoundryClient(config: AiConfig): FoundryClient | null {
   if (!config.enabled || !config.endpoint || !config.deployment) return null
 
-  // An API key is a development convenience only; production has none and uses
-  // the managed identity the Web App already carries.
+  // An API key is a development convenience only. server/config.ts refuses to
+  // surface one in production, so this branch is never the production path.
   const auth = config.apiKey
     ? { apiKey: config.apiKey }
     : { apiKey: getBearerTokenProvider(new DefaultAzureCredential(), FOUNDRY_SCOPE) }

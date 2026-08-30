@@ -113,7 +113,28 @@ const aliased = (
  * settings; the credential is a managed-identity token acquired at call time.
  * AZURE_OPENAI_API_KEY stays supported as a local-development fallback only.
  */
-function aiConfig(env: NodeJS.ProcessEnv): AiConfig {
+/**
+ * App Service passes a Key Vault reference through verbatim when it cannot
+ * resolve it, so an unresolved secret arrives looking exactly like a value.
+ * Treating that as a credential produces a 401 on every call and a confusing
+ * one, because the setting looks populated.
+ */
+const KEY_VAULT_REFERENCE = /^@Microsoft\.KeyVault\(/i
+
+/**
+ * The key path is a local-development convenience and nothing more. Production
+ * authenticates with the Web App's managed identity, which is what
+ * .env.example promises and what the Foundry guidance recommends; honouring a
+ * key there would silently downgrade to a long-lived credential that grants
+ * full access to the resource and has to be rotated by hand.
+ */
+function developmentApiKey(env: NodeJS.ProcessEnv, isProduction: boolean): string | null {
+  const raw = env.AZURE_OPENAI_API_KEY?.trim()
+  if (!raw || isProduction) return null
+  return KEY_VAULT_REFERENCE.test(raw) ? null : raw
+}
+
+function aiConfig(env: NodeJS.ProcessEnv, isProduction: boolean): AiConfig {
   const endpoint = env.AZURE_AI_FOUNDRY_ENDPOINT?.trim() || null
   const deployment = env.AZURE_AI_FOUNDRY_DEPLOYMENT?.trim() || null
   if (endpoint && !/^https:\/\/[^\s]+$/.test(endpoint)) {
@@ -130,7 +151,7 @@ function aiConfig(env: NodeJS.ProcessEnv): AiConfig {
     enabled: Boolean(endpoint && deployment),
     endpoint,
     deployment,
-    apiKey: env.AZURE_OPENAI_API_KEY?.trim() || null,
+    apiKey: developmentApiKey(env, isProduction),
   }
 }
 
@@ -325,6 +346,6 @@ export function loadConfig(
     artifactStoreDir,
     recoveryWorkDir,
     clientDir: resolve(cwd, env.SHAPEPILOT_CLIENT_DIR?.trim() || 'dist/client'),
-    ai: aiConfig(env),
+    ai: aiConfig(env, isProduction),
   })
 }
