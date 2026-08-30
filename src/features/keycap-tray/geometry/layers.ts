@@ -1,11 +1,11 @@
 // The whole solid as an ordered list of z-bands. Two rules turn this into a
 // mesh, and both are closed-form -- no 3D boolean anywhere.
-import type { MultiPolygon, Polygon } from './vec.ts'
-import { difference, punchDisjointFast, union, unionDisjointFast } from './boolean.ts'
+import type { MultiPolygon, Polygon } from '../../../geometry/vec.ts'
+import { difference, punchDisjointFast, union, unionDisjointFast } from '../../../geometry/boolean.ts'
 import { pocketRing } from './shapes.ts'
-import { insertTJunctions } from './tjunction.ts'
-import type { Mesh } from './mesh.ts'
-import { MeshBuilder } from './mesh.ts'
+import { insertTJunctions } from '../../../geometry/tjunction.ts'
+import type { Mesh } from '../../../geometry/mesh.ts'
+import { MeshBuilder } from '../../../geometry/mesh.ts'
 import type { Pocket, TrayDesign } from '../model/types.ts'
 import { profileToMulti } from '../model/presets.ts'
 

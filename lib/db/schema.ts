@@ -173,6 +173,65 @@ export const APP_IDENTITY_STATEMENTS: readonly string[] = [
   `INSERT INTO app_identity (key, value) VALUES ('authority_id', lower(hex(randomblob(16))))`,
 ]
 
+/**
+ * Design documents for the Shaper, Bambu and Playground sub-apps.
+ *
+ * One table for all three kinds, deliberately: opening a Bambu model in the
+ * Shaper Designer is a product requirement, and three near-identical tables
+ * would make every cross-app query a union. The scene tree lives in doc_json
+ * because it is a nested, freeform structure -- normalising it the way
+ * keycap_tray_pockets is normalised would buy nothing, since nothing queries
+ * inside a scene.
+ *
+ * Imported STL and SVG bytes are NOT here. PRODUCT.md keeps fabrication data
+ * out of the database; the document stores a content hash and the browser keeps
+ * the bytes.
+ */
+export const DESIGN_DOCUMENT_STATEMENTS: readonly string[] = [
+  `CREATE TABLE design_documents (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_tenant_id TEXT    NOT NULL,
+  owner_oid       TEXT    NOT NULL,
+  kind            TEXT    NOT NULL CHECK (kind IN ('shaper', 'bambu', 'playground')),
+  name            TEXT    NOT NULL,
+  notes           TEXT,
+  doc_json        TEXT    NOT NULL,
+  object_count    INTEGER NOT NULL DEFAULT 0,
+  created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+)`,
+  `CREATE INDEX idx_design_documents_owner
+  ON design_documents (owner_tenant_id, owner_oid, kind, updated_at DESC)`,
+]
+
+/**
+ * Metadata for imported design assets. The bytes live behind the artifact store
+ * (docs/ARCHITECTURE.md, "The artifact-store boundary"), never in here -- this
+ * table holds only the content hash that keys them, plus enough to show the
+ * object in a UI.
+ *
+ * Assets are deliberately NOT authoritative. The backup manifest describes one
+ * SQLite file, and nothing here changes that; a missing asset degrades to
+ * "re-attach this file" rather than breaking the document that references it.
+ */
+export const DESIGN_ASSET_STATEMENTS: readonly string[] = [
+  `CREATE TABLE design_assets (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_tenant_id TEXT    NOT NULL,
+  owner_oid       TEXT    NOT NULL,
+  hash            TEXT    NOT NULL,
+  filename        TEXT    NOT NULL,
+  format          TEXT    NOT NULL,
+  byte_length     INTEGER NOT NULL,
+  created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+)`,
+  // A hash is content, not a capability: lookups are always scoped by owner, so
+  // knowing someone else's hash reveals nothing. The uniqueness is per owner
+  // for the same reason.
+  `CREATE UNIQUE INDEX idx_design_assets_owner_hash
+  ON design_assets (owner_tenant_id, owner_oid, hash)`,
+]
+
 /** Tables ShapePilot owns and reconciles. Order is the reconciliation order. */
 export const OWNED_LEGACY_TABLES = [
   'keycap_tray_designs',

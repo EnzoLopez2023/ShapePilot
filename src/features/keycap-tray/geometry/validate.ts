@@ -3,14 +3,14 @@
 // nothing is auto-corrected -- the export dialog shows the warnings that apply
 // to the format being written.
 import type { FabricationSettings, Pocket, TrayDesign } from '../model/types.ts'
-import type { Polygon, Ring, Vec2 } from './vec.ts'
-import { bboxOverlaps, multiArea, ringBBox } from './vec.ts'
-import { difference, intersection } from './boolean.ts'
+import type { Polygon, Ring, Vec2 } from '../../../geometry/vec.ts'
+import { bboxOverlaps, multiArea, ringBBox } from '../../../geometry/vec.ts'
+import { difference, intersection } from '../../../geometry/boolean.ts'
 import { effectivePocketCornerRadius, pocketRing } from './shapes.ts'
 import { buildRegions } from './layers.ts'
 import { profileToMulti } from '../model/presets.ts'
-import { checkManifold } from './mesh.ts'
-import type { Mesh } from './mesh.ts'
+import { checkManifold } from '../../../geometry/mesh.ts'
+import type { Mesh } from '../../../geometry/mesh.ts'
 
 export type Target = 'cnc' | 'print'
 export type Severity = 'error' | 'warning'

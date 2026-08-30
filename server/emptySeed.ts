@@ -23,6 +23,8 @@ export const EMPTY_SEED_DOMAIN_TABLES = [
   'app_memberships',
   'app_settings',
   'audit_events',
+  'design_assets',
+  'design_documents',
   'keycap_pocket_library',
   'keycap_tray_designs',
   'keycap_tray_pockets',

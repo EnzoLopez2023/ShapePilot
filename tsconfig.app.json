@@ -32,6 +32,7 @@
   },
   "include": [
     "src",
+    "lib/contracts",
     "test/ui",
     "test/parity/referenceGeometry.test.ts",
     "vite.config.ts",

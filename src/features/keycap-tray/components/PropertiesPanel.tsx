@@ -4,12 +4,12 @@ import {
 } from '@mui/material'
 import type { PocketSizing } from '../geometry/shapes.ts'
 import { LIBRARY_SIZING, PYTHON_SIZING, PROFILE_PRESETS, profileToMulti } from '../model/presets.ts'
-import { multiBBox } from '../geometry/vec.ts'
+import { multiBBox } from '../../../geometry/vec.ts'
 import { pocketAABB } from '../state/useTrayDesign.ts'
 import type { FabricationSettings, Pocket, TrayDesign, TrayProfile } from '../model/types.ts'
-import LengthField from './LengthField.tsx'
-import AngleField from './AngleField.tsx'
-import HoverTooltip from './HoverTooltip.tsx'
+import LengthField from '../../../components/LengthField.tsx'
+import AngleField from '../../../components/AngleField.tsx'
+import HoverTooltip from '../../../components/HoverTooltip.tsx'
 
 export interface PropertiesPanelProps {
   design: TrayDesign

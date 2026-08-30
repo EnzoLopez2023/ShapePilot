@@ -402,7 +402,10 @@ jobs:
               $s.VITE_AZURE_CLIENT_ID == $client and
               ($s | has("SHAPEPILOT_INITIALIZE_EMPTY_DB") | not) and
               $s.AZURE_OPENAI_API_KEY ==
-                "@Microsoft.KeyVault(SecretUri=https://kv-shapepilot-prod.vault.azure.net/secrets/AZURE-OPENAI-API-KEY/)"
+                "@Microsoft.KeyVault(SecretUri=https://kv-shapepilot-prod.vault.azure.net/secrets/AZURE-OPENAI-API-KEY/)" and
+              $s.AZURE_AI_FOUNDRY_ENDPOINT ==
+                "https://aif-shapepilot-prod.openai.azure.com/openai/v1/" and
+              $s.AZURE_AI_FOUNDRY_DEPLOYMENT == "shapepilot-designer"
             ' <<<"$settings" > /dev/null
 
       - name: Capture prior release and protected configuration

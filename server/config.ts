@@ -51,6 +51,29 @@ export interface AppConfig {
   recoveryWorkDir: string | null
   /** Serve the built SPA from this directory when it exists. */
   clientDir: string
+  ai: AiConfig
+  /**
+   * Where imported design assets live. Derived from the database's own
+   * directory rather than configured, deliberately: it needs no new App Service
+   * setting, and the deploy job asserts that settings map exactly.
+   */
+  assetStoreDir: string
+}
+
+/**
+ * The dedicated Azure AI Foundry resource. Absent configuration disables the AI
+ * routes rather than failing startup: the designers work without them, and a
+ * missing model deployment should not take the whole app down.
+ */
+export interface AiConfig {
+  enabled: boolean
+  /** Base URL including the /openai/v1/ route, which uses implicit versioning. */
+  endpoint: string | null
+  /** Deployment name, passed as `model`. Pinning the deployment rather than the
+   *  model means the model can be swapped in Azure with no code change. */
+  deployment: string | null
+  /** Development only. Production authenticates with the managed identity. */
+  apiKey: string | null
 }
 
 export class ConfigError extends Error {
@@ -89,6 +112,53 @@ const aliased = (
     )
   }
   return canonicalValue || compatibilityValue
+}
+
+/**
+ * Foundry configuration. Both values are non-secret, so they are plain app
+ * settings; the credential is a managed-identity token acquired at call time.
+ * AZURE_OPENAI_API_KEY stays supported as a local-development fallback only.
+ */
+/**
+ * App Service passes a Key Vault reference through verbatim when it cannot
+ * resolve it, so an unresolved secret arrives looking exactly like a value.
+ * Treating that as a credential produces a 401 on every call and a confusing
+ * one, because the setting looks populated.
+ */
+const KEY_VAULT_REFERENCE = /^@Microsoft\.KeyVault\(/i
+
+/**
+ * The key path is a local-development convenience and nothing more. Production
+ * authenticates with the Web App's managed identity, which is what
+ * .env.example promises and what the Foundry guidance recommends; honouring a
+ * key there would silently downgrade to a long-lived credential that grants
+ * full access to the resource and has to be rotated by hand.
+ */
+function developmentApiKey(env: NodeJS.ProcessEnv, isProduction: boolean): string | null {
+  const raw = env.AZURE_OPENAI_API_KEY?.trim()
+  if (!raw || isProduction) return null
+  return KEY_VAULT_REFERENCE.test(raw) ? null : raw
+}
+
+function aiConfig(env: NodeJS.ProcessEnv, isProduction: boolean): AiConfig {
+  const endpoint = env.AZURE_AI_FOUNDRY_ENDPOINT?.trim() || null
+  const deployment = env.AZURE_AI_FOUNDRY_DEPLOYMENT?.trim() || null
+  if (endpoint && !/^https:\/\/[^\s]+$/.test(endpoint)) {
+    throw new ConfigError('CONFIG_INVALID', 'AZURE_AI_FOUNDRY_ENDPOINT must be an https URL')
+  }
+  // Half-configured is a mistake worth catching, unlike not configured at all.
+  if (Boolean(endpoint) !== Boolean(deployment)) {
+    throw new ConfigError(
+      'CONFIG_CONFLICT',
+      'AZURE_AI_FOUNDRY_ENDPOINT and AZURE_AI_FOUNDRY_DEPLOYMENT must be set together',
+    )
+  }
+  return {
+    enabled: Boolean(endpoint && deployment),
+    endpoint,
+    deployment,
+    apiKey: developmentApiKey(env, isProduction),
+  }
 }
 
 const absolutePath = (
@@ -282,5 +352,9 @@ export function loadConfig(
     artifactStoreDir,
     recoveryWorkDir,
     clientDir: resolve(cwd, env.SHAPEPILOT_CLIENT_DIR?.trim() || 'dist/client'),
+    ai: aiConfig(env, isProduction),
+    assetStoreDir: env.SHAPEPILOT_ASSET_DIR?.trim()
+      ? absolutePath(env.SHAPEPILOT_ASSET_DIR.trim(), 'SHAPEPILOT_ASSET_DIR', cwd, isProduction)
+      : join(dirname(databasePath), 'assets'),
   })
 }

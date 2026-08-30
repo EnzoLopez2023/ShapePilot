@@ -11,6 +11,20 @@ import {
 } from '../lib/db/migrate.ts'
 import { applyConnectionPragmas } from '../lib/db/connection.ts'
 
+/**
+ * The migration lineage this release ships.
+ *
+ * Updating this list is a deliberate acknowledgement, not a formality. Once a
+ * new migration has applied in production, `migrate()` refuses to start any
+ * image whose ledger is shorter (SCHEMA_AHEAD_OF_CODE), so CI's automatic
+ * image rollback no longer has a working previous image to fall back to. The
+ * checks below still prove the *data* stays readable by a prior release's
+ * queries -- which is what makes a manual, deliberate rollback recoverable --
+ * but the automatic path must be treated as unavailable for that deploy.
+ *
+ * The runbook -- take a snapshot first, and how to recover deliberately if
+ * verification fails -- is "Deploys that add a migration" in docs/DEPLOYMENT.md.
+ */
 const ROLLBACK_COMPATIBLE_LEDGER = [
   {
     ordinal: 0,
@@ -24,6 +38,18 @@ const ROLLBACK_COMPATIBLE_LEDGER = [
     name: 'app identity markers',
     checksum: '8c544e56627040b6a2cd397454b4b5611e89f49b50345342db29364271e5114b',
   },
+  {
+    ordinal: 2,
+    id: '003-design-documents',
+    name: 'design documents',
+    checksum: '4b7e7414f4d6db453f12e001b62f7a1dafec6fb9702078928453650399ff94ba',
+  },
+  {
+    ordinal: 3,
+    id: '004-design-assets',
+    name: 'design assets',
+    checksum: '9c0980e90616e1feb6472810d01e372d48216c5935b33a73617e88241621dc41',
+  },
 ] as const
 
 const REQUIRED_TABLES = [
@@ -31,6 +57,8 @@ const REQUIRED_TABLES = [
   'app_memberships',
   'app_settings',
   'audit_events',
+  'design_assets',
+  'design_documents',
   'keycap_pocket_library',
   'keycap_tray_designs',
   'keycap_tray_pockets',

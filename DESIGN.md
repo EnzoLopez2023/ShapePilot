@@ -166,8 +166,10 @@ App shell (`src/app/AppShell.tsx`):
   real `NavLink` routes. There is no global view toggle.
 - A `<main id="main">` that fills the remainder in a flex column.
 
-Designer surface (`src/features/keycap-tray/KeycapTrayPage.tsx`) — the only
-workbench in Wave 1:
+Designer surface — the keycap tray
+(`src/features/keycap-tray/KeycapTrayPage.tsx`) and, since Wave 2, the Shaper
+and Bambu designers through the shared
+`src/components/designer/DesignerLayout.tsx`:
 
 ```
 grid-template-rows:    auto minmax(0, 1fr)
@@ -188,6 +190,36 @@ lift so the panel floats above the canvas. `elevation` stays `0` — the shadow
 is the single `boxShadow` from the token, not MUI's elevation scale — and
 `backgroundImage: none` is enforced so a Paper never picks up MUI's default
 overlay gradient in dark mode.
+
+The AI Imagination Playground (`src/features/playground/PlaygroundPage.tsx`)
+deliberately does **not** use the three-column workbench. There the conversation
+is the tool rather than an accessory to a canvas, so it takes a column of its
+own:
+
+```
+grid-template-columns: 1fr                        @ xs
+                       340px minmax(0, 1fr)       @ md
+```
+
+At `xs` the viewport still re-orders first, on the same rule as the workbench.
+
+## Designer conventions (Wave 2)
+
+Behaviours the three designers share, so moving between them teaches nothing new:
+
+- **A gesture is one undo step.** The canvas and the 3D gizmo both mutate the
+  document once, on release — never per frame. An applied AI turn is likewise a
+  single `replace` call.
+- **Solid or hole is a property, grouping is the verb.** A hole outside a group
+  is inert. This is Tinkercad's model and users arrive already knowing it.
+- **The assistant proposes.** Its result is previewed with a diff of the parts it
+  would add, change or remove, next to Apply and Discard. Nothing it returns
+  reaches the document unasked.
+- **Manufacturability is advisory.** Checks read the machine profile and report;
+  nothing is silently corrected, per `PRODUCT.md`.
+- **Direct manipulation, numeric confirmation.** Drag on the canvas, then read
+  and adjust the exact value in the inspector. `LengthField` speaks millimetres
+  or fractional inches; the document is always millimetres.
 
 ## Per-pocket transform (keycap tray)
 

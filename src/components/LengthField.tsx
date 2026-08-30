@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { TextField, Tooltip } from '@mui/material'
 import type { TextFieldProps } from '@mui/material'
-import { formatLength, parseLength } from '../model/units.ts'
+import { formatLength, parseLength } from '../units.ts'
 
 export interface LengthFieldProps {
   label: string

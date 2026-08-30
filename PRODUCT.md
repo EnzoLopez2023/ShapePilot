@@ -4,15 +4,25 @@ Approachable AI-assisted 2D/3D design, viewing, editing, and fabrication.
 
 ## What this is
 
-ShapePilot is a standalone design and fabrication workbench. Wave 1 ships one
-complete capability — the **Keycap Tray Designer** — extracted with exact
-behaviour and data parity from the Hearth monolith, on its own runtime, its own
-identity boundary and its own database.
+ShapePilot is a standalone design and fabrication workbench, on its own runtime,
+its own identity boundary and its own database.
 
-A person opens ShapePilot to lay out keycap pockets in a tray, check whether the
-result can actually be printed or cut, and export a file their machine accepts.
-Everything downstream of that — geometry, validation, STL/3MF/SVG/DXF — happens
-in the browser. Nothing about a design is uploaded except its parameters.
+Wave 1 shipped one complete capability — the **Keycap Tray Designer** —
+extracted with exact behaviour and data parity from the Hearth monolith. Wave 2
+adds three more, sharing one scene document so a design can move between them:
+
+- **Shaper Designer** — 2D design for the Shaper Origin. Basic shapes and text,
+  SVG/DXF/STL import, the five Origin cut types, and SVG or DXF out.
+- **Bambu Designer** — a Tinkercad-style 3D modeller for the Bambu Lab X2D.
+  Primitive solids that are each either material or a hole, resolved by
+  grouping; align, mirror and duplicate; STL/OBJ/3MF/SVG import; STL or 3MF out.
+- **AI Imagination Playground** — describe a part, get geometry, keep talking to
+  refine it, then save it or hand it to either designer.
+
+A person opens ShapePilot to lay something out, check whether the result can
+actually be printed or cut, and export a file their machine accepts. Everything
+downstream of that — geometry, validation, STL/3MF/SVG/DXF — happens in the
+browser. Nothing about a design is uploaded except its parameters.
 
 ## Who it is for
 
@@ -45,18 +55,26 @@ These hold regardless of what the product grows into.
 
 Named here so that their absence is a decision rather than an oversight.
 
-- Importing STL or SVG for viewing and editing, and a UI for authoring custom
-  tray profiles. Custom profile data already loads and exports; nothing creates
-  it yet.
-- Original freeform 2D/3D modelling beyond the keycap tray.
-- Machine, material and tooling profiles beyond the current fabrication fields.
-- The AI design copilot. When it arrives it proposes typed, previewable,
-  undoable modelling commands — it does not edit the document directly.
-- Server-side geometry, persisted generated artifacts, collaboration,
-  multi-instance operation, and PostgreSQL.
-- Azure provisioning, image build and deployment, and the production cutover.
-- Blob-backed design assets. The artifact-store boundary exists now; the Blob
-  adapter arrives with the first feature that persists binary artifacts.
+- A UI for authoring custom keycap tray profiles. Custom profile data already
+  loads and exports; nothing creates it yet.
+- Material and tooling profiles beyond the current fabrication fields. Machine
+  profiles now exist for the printers and the Origin.
+- Server-side geometry, collaboration, multi-instance operation, and PostgreSQL.
+- **Imported files covered by backup.** They are stored server-side behind the
+  artifact store and travel between devices, but they are deliberately *not*
+  authoritative: the backup manifest describes one SQLite file, and an asset
+  that goes missing degrades to "re-attach this file" rather than breaking the
+  document. Making them first-class would mean a manifest that covers them,
+  verifies them on restore, and garbage-collects unreferenced ones. The
+  parametric document is the design; an imported mesh is a reference.
+- Sketch constraints, fillets and chamfers, and boolean history editing beyond
+  the group tree.
+- Slicing. ShapePilot exports a mesh; Bambu Studio slices it.
+
+Delivered in Wave 2, previously listed here: STL/SVG import, freeform 2D/3D
+modelling, machine profiles, the AI design copilot, and Azure provisioning and
+deployment. The copilot shipped under the rule stated for it: it proposes typed,
+previewable, undoable commands and does not edit the document directly.
 
 ## Inherited semantics kept on purpose
 

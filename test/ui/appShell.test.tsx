@@ -38,6 +38,9 @@ const renderAt = (path: string, role: 'user' | 'admin' = 'user') => {
         <Routes>
           <Route element={<AppShell />}>
             <Route path="/keycap-tray" element={<h1>Designer stub</h1>} />
+            <Route path="/shaper-designer" element={<h1>Shaper stub</h1>} />
+            <Route path="/bambu-designer" element={<h1>Bambu stub</h1>} />
+            <Route path="/playground" element={<h1>Playground stub</h1>} />
             <Route path="/settings" element={<h1>Settings stub</h1>} />
             <Route path="/admin" element={<h1>Admin stub</h1>} />
             <Route path="*" element={<h1>Page not found</h1>} />
@@ -97,4 +100,40 @@ test('the active section is marked for assistive technology and sighted users', 
   renderAt('/settings')
   const active = screen.getByRole('link', { name: 'Settings' })
   assert.ok(active.className.includes('active'))
+})
+
+test('every designer has its own nav entry and its own address', async () => {
+  const sections: [string, string][] = [
+    ['/keycap-tray', 'Keycap tray'],
+    ['/shaper-designer', 'Shaper designer'],
+    ['/bambu-designer', 'Bambu designer'],
+    ['/playground', 'AI playground'],
+  ]
+  for (const [path, label] of sections) {
+    renderAt(path)
+    await waitFor(() => expect(screen.getByRole('link', { name: label })).toBeTruthy())
+    // Real routing, not a view switch: the nav link points at the address.
+    assert.equal(screen.getByRole('link', { name: label }).getAttribute('href'), path)
+    cleanup()
+  }
+})
+
+test('the nav marks only the current section as current', async () => {
+  renderAt('/bambu-designer')
+  await waitFor(() => expect(screen.getByRole('link', { name: 'Bambu designer' })).toBeTruthy())
+
+  const current = screen.getByRole('link', { name: 'Bambu designer' })
+  assert.equal(current.getAttribute('aria-current'), 'page')
+  for (const other of ['Keycap tray', 'Shaper designer', 'AI playground']) {
+    assert.notEqual(screen.getByRole('link', { name: other }).getAttribute('aria-current'), 'page')
+  }
+})
+
+test('each designer route renders exactly one main and one h1', async () => {
+  for (const path of ['/shaper-designer', '/bambu-designer', '/playground']) {
+    renderAt(path)
+    await waitFor(() => expect(screen.getAllByRole('main')).toHaveLength(1))
+    assert.equal(screen.getAllByRole('heading', { level: 1 }).length, 1, path)
+    cleanup()
+  }
 })

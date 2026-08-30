@@ -18,6 +18,24 @@ tests). Neither can accidentally reach the other's globals. Both are strict, wit
 `verbatimModuleSyntax` and `erasableSyntaxOnly`, so Node 24 runs the TypeScript
 directly — no server bundler, no transpile step, no `tsx` in production.
 
+`lib/contracts/` is the one directory both projects include. It holds pure,
+dependency-free type-and-validator modules that must agree across the wire —
+today `shapeProgram.ts`, the AI's geometry vocabulary, which the server
+validates on the way out and the browser validates again on the way in.
+Anything placed here must import nothing: no node, no DOM, no ApiError.
+
+Shared client modules sit above the feature folders rather than inside one:
+
+```
+src/geometry/   2D primitives, boolean ops, triangulation, meshing, nesting
+src/csg/        the shape program, its manifold-3d evaluator, scene <-> program
+src/model/      the DesignDocument, its scene tree, machine profiles
+src/state/      useDesignDocument, the undo/redo document hook
+src/import/     STL, OBJ, 3MF, SVG, DXF readers and the browser asset store
+src/export/     STL, 3MF, Shaper SVG, DXF writers
+src/text/       glyph outlines, so text cuts as geometry rather than a font ref
+```
+
 ## The client-side modelling boundary
 
 Everything about geometry happens in the browser. The server has no geometry
@@ -186,10 +204,23 @@ like credentials are redacted before storage. Retrieval is admin-only.
 ## The artifact-store boundary
 
 `lib/recovery/artifactStore.ts` is an object-store shaped interface. Backup
-bundles, and later any binary design asset, live behind it — outside SQLite,
-outside the repository, and outside the application's own disk. The filesystem
-adapter ships now; a Blob adapter can be added without the database or any
-feature module gaining an Azure dependency.
+bundles and imported design assets live behind it — outside SQLite, outside the
+repository, and outside the application's own disk. The filesystem adapter
+ships now; a Blob adapter can be added without the database or any feature
+module gaining an Azure dependency.
+
+Imported assets are **deliberately not authoritative.** The recovery model has
+exactly one authority: a restored backup is a single self-describing,
+hash-verified SQLite file, and every stage re-derives its identity from the
+bytes in front of it. Assets sit outside that. A missing one is an ordinary
+state — the object reports as detached and can be re-attached — so a restored
+database can never carry a broken reference. `design_assets` stores metadata
+only, keyed by content hash and scoped by `(tenant_id, oid)`, because a hash
+must never act as a bearer token.
+
+Making assets first-class would mean a manifest that bundles, hashes and
+verifies them alongside the database, plus collection of unreferenced ones.
+That trade has not been taken; the parametric document is the design.
 
 ## Extension points
 
@@ -199,9 +230,17 @@ feature module gaining an Azure dependency.
   feature.
 - **Persisted binary artifacts.** Implement `ArtifactStore` for Blob and store
   the object key plus its hash in SQLite. Never store bytes in the database.
-- **The AI design copilot.** It must emit typed commands that run through
-  `useTrayDesign.replace`, so every AI edit is previewable and lands as exactly
-  one undo step. It must not mutate the document directly.
+- **The AI design copilot.** Delivered. It emits a typed `ShapeProgram`
+  (`lib/contracts/shapeProgram.ts`) that is validated server-side and again in
+  the browser, previewed, and applied through a single `replace` call so an
+  accepted turn is exactly one undo step. It does not mutate the document
+  directly, and that rule holds for anything added to it.
+- **A new geometry primitive.** Add the op to `lib/contracts/shapeProgram.ts`
+  (including its required params), build it in `src/csg/evaluate.ts`, and map it
+  both ways in `src/csg/fromScene.ts` and `toScene.ts`. `src/csg/evaluate.test.ts`
+  asserts every primitive is watertight; a new one belongs in that list.
+- **A new machine.** Add a profile to `src/model/machines.ts`. Checks read the
+  profile rather than hard-coding a machine, so nothing else needs to change.
 - **A second product surface.** Everything app-local — identity, settings, roles,
   audit, health, recovery — is already owned here. Nothing needs a shared
   service.

@@ -2,8 +2,8 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 import type { Pocket, TrayDesign, TrayProfile } from '../model/types.ts'
 import type { PocketSizing } from '../geometry/shapes.ts'
 import { pocketHeight, pocketRing, pocketWidth } from '../geometry/shapes.ts'
-import type { BBox } from '../geometry/vec.ts'
-import { ringBBox } from '../geometry/vec.ts'
+import type { BBox } from '../../../geometry/vec.ts'
+import { ringBBox } from '../../../geometry/vec.ts'
 import { emptyDesign } from '../model/presets.ts'
 
 const HISTORY_LIMIT = 50

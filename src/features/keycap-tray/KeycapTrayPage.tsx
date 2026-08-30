@@ -23,7 +23,7 @@ import TrayCanvas from './components/TrayCanvas.tsx'
 import PocketPalette from './components/PocketPalette.tsx'
 import PropertiesPanel from './components/PropertiesPanel.tsx'
 import ExportPanel from './components/ExportPanel.tsx'
-import HoverTooltip from './components/HoverTooltip.tsx'
+import HoverTooltip from '../../components/HoverTooltip.tsx'
 import { useConfirm } from '../../components/ConfirmDialogProvider.tsx'
 import { EmptyState, LoadingState } from '../../components/LoadingState.tsx'
 

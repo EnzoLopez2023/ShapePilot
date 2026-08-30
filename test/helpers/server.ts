@@ -19,6 +19,8 @@ import { loadConfig } from '../../server/config.ts'
 import type { AppConfig } from '../../server/config.ts'
 import type { RawClaims } from '../../server/auth/claims.ts'
 import type { TokenVerifier } from '../../server/auth/verifyToken.ts'
+import type { FoundryClient } from '../../server/ai/foundryClient.ts'
+import type { ArtifactStore } from '../../lib/recovery/artifactStore.ts'
 import { ApiError } from '../../server/errors/ApiError.ts'
 
 export const TEST_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '.tmp')
@@ -106,6 +108,10 @@ export interface TestServer {
 export interface StartServerOptions {
   env?: NodeJS.ProcessEnv
   verifier?: TokenVerifier | null
+  /** Stubbed so the suite never calls -- or pays for -- the real deployment. */
+  aiClient?: FoundryClient | null
+  /** A throwaway store, so asset tests never touch a real artifact root. */
+  assetStore?: ArtifactStore
   label?: string
 }
 
@@ -127,6 +133,8 @@ export async function startTestServer(options: StartServerOptions = {}): Promise
     database: () => temp.database,
     lifecycle: () => 'ready',
     verifier: options.verifier ?? null,
+    aiClient: options.aiClient ?? null,
+    ...(options.assetStore ? { assetStore: options.assetStore } : {}),
     logger: () => { /* suppressed in tests */ },
   })
 

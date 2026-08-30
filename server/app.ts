@@ -1,7 +1,7 @@
 // Express application construction. This module never listens; bootstrap.ts
 // owns the socket and the lifecycle.
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import express from 'express'
 import type { Express } from 'express'
@@ -17,6 +17,13 @@ import { createTokenVerifier } from './auth/verifyToken.ts'
 import { createErrorMiddleware, notFoundHandler } from './errors/errorMiddleware.ts'
 import { createAdminRouter } from './routes/admin.ts'
 import { createAuditAdminRouter, createAuditRouter } from './routes/audit.ts'
+import type { ArtifactStore } from '../lib/recovery/artifactStore.ts'
+import type { FoundryClient } from './ai/foundryClient.ts'
+import { createFoundryClient } from './ai/foundryClient.ts'
+import { createAiRouter } from './routes/ai.ts'
+import { createFilesystemArtifactStore } from '../lib/recovery/artifactStore.ts'
+import { createDesignAssetRouter } from './routes/designAssets.ts'
+import { createDesignDocumentRouter } from './routes/designDocuments.ts'
 import { createHealthRouter } from './routes/health.ts'
 import { createKeycapTrayRouter } from './routes/keycapTrays.ts'
 import { createSettingsRouter } from './routes/settings.ts'
@@ -32,10 +39,32 @@ export interface CreateAppOptions {
   instanceId?: string
   /** Injectable for tests; defaults to real JWKS verification. */
   verifier?: TokenVerifier | null
+  /** Injectable for tests; defaults to a client built from config.ai, which is
+   *  null when the Foundry resource is not configured. */
+  aiClient?: FoundryClient | null
+  /** Injectable for tests; defaults to the filesystem store at config.assetStoreDir. */
+  assetStore?: ArtifactStore
   logger?: (message: string, error: unknown) => void
 }
 
 const JSON_LIMIT = '2mb'
+
+/**
+ * Memoized, and only touched when an asset route is actually used. Production
+ * storage validation creates this directory up front; creating it here as well
+ * is what lets a development or test server work without one.
+ */
+function assetStore(injected: ArtifactStore | undefined, dir: string): () => ArtifactStore {
+  if (injected) return () => injected
+  let store: ArtifactStore | null = null
+  return () => {
+    if (!store) {
+      mkdirSync(dir, { recursive: true, mode: 0o700 })
+      store = createFilesystemArtifactStore(dir)
+    }
+    return store
+  }
+}
 
 export function createApp(options: CreateAppOptions): Express {
   const { config, identity, repos } = options
@@ -45,6 +74,12 @@ export function createApp(options: CreateAppOptions): Express {
   const verifier = options.verifier !== undefined
     ? options.verifier
     : createTokenVerifier(config.auth)
+
+  // Built once: DefaultAzureCredential caches tokens internally, so a
+  // per-request client would re-acquire needlessly.
+  const aiClient = options.aiClient !== undefined
+    ? options.aiClient
+    : createFoundryClient(config.ai)
 
   const app = express()
   app.disable('x-powered-by')
@@ -76,6 +111,15 @@ export function createApp(options: CreateAppOptions): Express {
   const adminOnly = requireRole('admin', repos.memberships)
 
   app.use('/api/keycap-trays', authenticated, createKeycapTrayRouter(repos))
+  app.use('/api/design-documents', authenticated, createDesignDocumentRouter(repos))
+  // Asset bytes never touch express.json, which only parses application/json;
+  // an octet-stream body passes straight through to this route's own raw
+  // parser, which has its own much larger limit.
+  app.use('/api/design-assets', authenticated, createDesignAssetRouter({
+    repos,
+    store: assetStore(options.assetStore, config.assetStoreDir),
+  }))
+  app.use('/api/ai', authenticated, createAiRouter({ repos, client: aiClient }))
   app.use('/api/settings', authenticated, createSettingsRouter(repos))
   app.use('/api/audit', authenticated, createAuditRouter(repos))
   app.use('/api/admin/audit', authenticated, adminOnly, createAuditAdminRouter(repos))

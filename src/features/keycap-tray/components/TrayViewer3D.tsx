@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react'
 import { Box, useTheme } from '@mui/material'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import type { Mesh as TrayMesh } from '../geometry/mesh.ts'
+import type { Mesh as TrayMesh } from '../../../geometry/mesh.ts'
 
 export interface TrayViewer3DProps {
   mesh: TrayMesh

@@ -1,9 +1,21 @@
 # Production deployment
 
 ShapePilot follows the `p1-11-v1` `sqlite-one-worker` contract from
-`EnzoLopez2023/azure-infra`. This repository never provisions or reconciles
-Azure resources; it only validates the declared resources and deploys an
-immutable ShapePilot image.
+`EnzoLopez2023/azure-infra`. The CI pipeline in this repository never provisions
+or reconciles Azure resources; it only validates the declared resources and
+deploys an immutable ShapePilot image.
+
+Provisioning by hand is permitted only with the owner's explicit, per-resource
+permission, and anything created that way must be recorded here and reconciled
+back into `azure-infra`. One resource currently sits in that state:
+
+| Resource | Created | Why it is separate |
+| --- | --- | --- |
+| `aif-shapepilot-prod` (Microsoft.CognitiveServices, kind `AIServices`, S0, eastus, tagged `app=shapepilot`) | 2026-08-30, by hand with permission | A Foundry account used only by ShapePilot, so its inference spend is attributable to this app on its own billing line rather than pooled with other apps. |
+
+It carries one model deployment, `shapepilot-designer`
+(`gpt-5.6-terra` 2026-07-09, GlobalStandard, 50K TPM). GlobalStandard is
+pay-per-token with no idle cost, so an unused deployment bills nothing.
 
 ## Runtime image
 
@@ -165,8 +177,48 @@ backup work in ShapePilot; recovery remains explicit and operator-invoked.
 `https://kv-shapepilot-prod.vault.azure.net/`. The only declared secret setting
 is `AZURE_OPENAI_API_KEY`, and its App Service value must remain the versionless
 Key Vault reference to secret `AZURE-OPENAI-API-KEY`; the workflow never reads,
-prints, or uploads the secret value. The current ShapePilot runtime does not
-make an Azure OpenAI request.
+prints, or uploads the secret value.
+
+That setting is **vestigial and deliberately left unresolvable.** The secret it
+points at does not exist, so the reference reports `SecretNotFound` and App
+Service passes the reference string through verbatim as the value. The runtime
+must therefore never treat `AZURE_OPENAI_API_KEY` as a credential in
+production, and `server/config.ts` does not: it refuses any value there,
+resolved or not, so the assistant always authenticates with the managed
+identity. The key path exists only for local development, and an unresolved
+reference is rejected as a value everywhere.
+
+Creating the secret would be the wrong fix. It would replace a keyless
+managed-identity flow with a long-lived key that grants full access to the
+Foundry account and has to be rotated by hand — the posture `.env.example`
+explicitly disclaims and the one Microsoft's own Foundry guidance recommends
+against for production. The setting is retained only because the deploy job
+asserts the app-settings map exactly; removing it means editing that
+assertion, the table above, and the Web App out of band.
+
+### AI design assistant
+
+Two further app settings, both **non-secret**, configure the assistant behind
+the Bambu Designer and the AI Imagination Playground:
+
+| Setting | Value |
+| --- | --- |
+| `AZURE_AI_FOUNDRY_ENDPOINT` | `https://aif-shapepilot-prod.openai.azure.com/openai/v1/` |
+| `AZURE_AI_FOUNDRY_DEPLOYMENT` | `shapepilot-designer` |
+
+They must be set together; either alone is a startup `CONFIG_CONFLICT`. With
+neither set the AI routes report themselves unavailable and the rest of the app
+runs normally, which is the intended behaviour for local development.
+
+Authentication is keyless. The server acquires a token for
+`https://ai.azure.com/.default` through `DefaultAzureCredential`, which resolves
+to the Web App's system-assigned managed identity
+(`02e09929-0ac6-4d01-a08d-46ffa63f99d1`). That identity holds **Cognitive
+Services OpenAI User** scoped to the Foundry account and nothing wider.
+
+The endpoint pins the *deployment* name, not the model, so the model behind
+`shapepilot-designer` can be changed in Azure with no code change and no
+redeploy.
 
 No App Insights component, availability test, alert, or action group is part of
 the deployment contract. Before building, the workflow proves the owner
@@ -233,3 +285,61 @@ confirmation, and failure rollback steps.
 Nonsecret SBOM, deployment, and rollback evidence is retained for 30 days. App
 settings, tokens, Key Vault values, database content, and credentials are never
 uploaded.
+
+## Deploys that add a migration
+
+Automatic rollback assumes the previous image can start against the database the
+new one leaves behind. When a release adds a migration, it cannot: `migrate()`
+refuses a database whose ledger is longer than the build ships
+(`SCHEMA_AHEAD_OF_CODE`), `assertApprovedExistingSchema` refuses to open the file
+at all, and readiness would report a schema-identity mismatch even if it did. So
+the failure-rollback step runs, restores the previous digest, and that image will
+not come up.
+
+The exposure is exactly one deploy. Once the migration-carrying release is itself
+the *previous* release, both sides know the migration and rollback works again.
+
+This is a known, accepted limitation rather than an oversight. Closing it would
+mean relaxing the exact-lineage database contract to tolerate a database that is
+ahead by unknown migrations, which loosens the guard that catches a wrong file
+mounted, a wrong backup restored, or a hand-edited schema. That trade has not
+been taken.
+
+### Before such a deploy
+
+Take a snapshot from the App Service SSH console and keep the artifact id. The
+Web App already sets `BACKUP_ROOT`, so no environment setup is needed:
+
+```bash
+node scripts/recovery.ts backup
+```
+
+### If verification fails
+
+Automatic rollback will also fail. Recover deliberately:
+
+```bash
+# 1. Restore forward into a new file. Never over the live authority; in
+#    production the destination must be a direct child of RECOVERY_WORK_ROOT.
+node scripts/recovery.ts restore \
+  --artifact <id> \
+  --to /home/data/recovery/shapepilot/pre-<release>.db
+
+# 2. Stop the Web App, then promote the restored file into DB_PATH by hand.
+#    Restore never promotes; that step is deliberately an operator's.
+
+# 3. Point the container back at the previous digest and start it.
+az webapp config container set \
+  --resource-group rg-personal-apps-prod \
+  --name app-shapepilot-prod-lwxhu7jxlrbtu \
+  --container-image-name <previous-digest-reference>
+```
+
+Writes made between the snapshot and the failure are lost. The window is the
+verification period, so in practice that is nothing.
+
+### Migrations shipped this way
+
+| Migration | Release | Snapshot taken |
+| --- | --- | --- |
+| `003-design-documents` | Shaper, Bambu and Playground designers | record the artifact id here |

@@ -5,13 +5,13 @@ import WarningAmberIcon from '@mui/icons-material/WarningAmber'
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
 import type { Issue, Target } from '../geometry/validate.ts'
 import { issuesFor } from '../geometry/validate.ts'
-import type { Mesh } from '../geometry/mesh.ts'
+import type { Mesh } from '../../../geometry/mesh.ts'
 import type { TrayDesign } from '../model/types.ts'
-import { writeBinaryStl } from '../export/stl.ts'
-import { writeThreeMf } from '../export/threemf.ts'
+import { writeBinaryStl } from '../../../export/stl.ts'
+import { writeThreeMf } from '../../../export/threemf.ts'
 import { writeShaperSvg } from '../export/svg.ts'
 import { writeDxf } from '../export/dxf.ts'
-import { safeFilename, triggerDownload } from '../export/download.ts'
+import { safeFilename, triggerDownload } from '../../../export/download.ts'
 
 export interface ExportPanelProps {
   design: TrayDesign

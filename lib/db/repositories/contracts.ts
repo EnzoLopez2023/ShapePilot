@@ -216,9 +216,96 @@ export class InvalidProfileError extends Error {
   }
 }
 
+
+// -- Design documents ---------------------------------------------------------
+// Shared by the Shaper, Bambu and Playground sub-apps. The scene tree crosses
+// this boundary as already-validated JSON: server/validation/designDocument.ts
+// rebuilds it before anything reaches a transaction, so the repository stores a
+// string and never inspects it.
+
+export type DesignDocumentKind = 'shaper' | 'bambu' | 'playground'
+
+export const DESIGN_DOCUMENT_KINDS: readonly DesignDocumentKind[] =
+  ['shaper', 'bambu', 'playground']
+
+export interface DesignDocumentRecord {
+  id: string
+  kind: DesignDocumentKind
+  name: string
+  notes: string | null
+  /** The serialised scene. Opaque here by design. */
+  docJson: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DesignDocumentSummary {
+  id: string
+  kind: DesignDocumentKind
+  name: string
+  notes: string | null
+  /** Cheap enough to compute on write and worth having in a picker. */
+  objectCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DesignDocumentInput {
+  kind: DesignDocumentKind
+  name: string
+  notes?: string | null
+  docJson: string
+  objectCount: number
+}
+
+export interface DesignDocumentRepository {
+  list(owner: Owner, kind?: DesignDocumentKind): Promise<DesignDocumentSummary[]>
+  get(owner: Owner, id: string): Promise<DesignDocumentRecord | null>
+  create(owner: Owner, input: DesignDocumentInput): Promise<{ id: string }>
+  update(owner: Owner, id: string, input: DesignDocumentInput): Promise<boolean>
+  /** `kind` retargets the copy, which is how "continue in Bambu Designer" works. */
+  clone(owner: Owner, id: string, name?: string, kind?: DesignDocumentKind): Promise<{ id: string } | null>
+  remove(owner: Owner, id: string): Promise<boolean>
+}
+
+
+// -- Design assets ------------------------------------------------------------
+// Metadata only. The bytes live behind the artifact store; this records which
+// owner has which content hash, so a lookup can be scoped by owner rather than
+// letting a hash act as a bearer token for anyone who guesses it.
+
+export type DesignAssetFormat = 'stl' | 'obj' | 'svg' | 'dxf' | '3mf'
+
+export const DESIGN_ASSET_FORMATS: readonly DesignAssetFormat[] =
+  ['stl', 'obj', 'svg', 'dxf', '3mf']
+
+export interface DesignAssetRecord {
+  hash: string
+  filename: string
+  format: DesignAssetFormat
+  byteLength: number
+  createdAt: string
+}
+
+export interface DesignAssetInput {
+  hash: string
+  filename: string
+  format: DesignAssetFormat
+  byteLength: number
+}
+
+export interface DesignAssetRepository {
+  list(owner: Owner): Promise<DesignAssetRecord[]>
+  find(owner: Owner, hash: string): Promise<DesignAssetRecord | null>
+  /** Idempotent: re-uploading identical content is a no-op by construction. */
+  record(owner: Owner, input: DesignAssetInput): Promise<DesignAssetRecord>
+}
+
 export interface Repositories {
   memberships: MembershipRepository
   settings: SettingsRepository
   audit: AuditRepository
   keycapTrays: KeycapTrayRepository
+  designDocuments: DesignDocumentRepository
+  designAssets: DesignAssetRepository
 }
