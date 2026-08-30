@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
 import assert from 'node:assert/strict'
+import type * as MsalModuleType from '../../src/auth/msal.ts'
 import { useEffect } from 'react'
 import { act, cleanup, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, test, vi } from 'vitest'
+
+type MsalModule = typeof MsalModuleType
 
 const auth = vi.hoisted(() => {
   const state = {
@@ -20,6 +23,15 @@ const auth = vi.hoisted(() => {
   }
   return { state, instance }
 })
+
+// This suite is about what happens when Entra auth IS on, so it says so rather
+// than inheriting VITE_AUTH_MODE from the ambient environment. A developer with
+// `VITE_AUTH_MODE=development` in .env.local would otherwise see it fail
+// locally and pass in CI, which is exactly what happened.
+vi.mock('../../src/auth/msal.ts', async importOriginal => ({
+  ...(await importOriginal<MsalModule>()),
+  AUTH_ENABLED: true,
+}))
 
 vi.mock('@azure/msal-react', () => ({
   useMsal: () => ({ instance: auth.instance, accounts: auth.state.accounts }),
