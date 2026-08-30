@@ -57,6 +57,47 @@ interface SceneState {
 
 const DEG = 180 / Math.PI
 
+/** Outline tones. Dark enough to read as a drawn edge, not a highlight. */
+const EDGE_COLOUR_LIGHT = 0x4a4f57
+const EDGE_COLOUR_DARK = 0xc9cdd4
+const EDGE_OPACITY = 0.7
+
+/**
+ * Only edges where the surface genuinely turns. Below this the facets of a
+ * tessellated cylinder would each draw a line and the part would look like a
+ * wireframe; a 64-segment cylinder turns about 5.6 degrees per facet.
+ */
+const EDGE_ANGLE_DEGREES = 20
+
+/**
+ * Outlining is O(triangles) and runs on the main thread, so a large imported
+ * mesh is left unoutlined rather than freezing the viewport. Flat shading
+ * alone still reads correctly.
+ */
+const MAX_OUTLINED_TRIANGLES = 150_000
+
+function buildEdges(
+  geometry: THREE.BufferGeometry, colour: number, triangleCount: number,
+): THREE.LineSegments | null {
+  if (triangleCount > MAX_OUTLINED_TRIANGLES) return null
+  return new THREE.LineSegments(
+    new THREE.EdgesGeometry(geometry, EDGE_ANGLE_DEGREES),
+    new THREE.LineBasicMaterial({ color: colour, transparent: true, opacity: EDGE_OPACITY }),
+  )
+}
+
+/** A body owns its outline as a child, so both are freed together. */
+function disposeBody(body: THREE.Mesh): void {
+  body.geometry.dispose()
+  ;(body.material as THREE.Material).dispose()
+  for (const child of body.children) {
+    const line = child as THREE.LineSegments
+    line.geometry?.dispose()
+    ;(line.material as THREE.Material | undefined)?.dispose()
+  }
+  body.clear()
+}
+
 export default function Viewport3D(props: Viewport3DProps) {
   const {
     parts, selection, buildMm, innerBuildMm, gizmo, snapMm,
@@ -104,13 +145,21 @@ export default function Viewport3D(props: Viewport3DProps) {
     const helper = gizmoControls.getHelper()
     scene.add(helper)
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.55))
-    const key = new THREE.DirectionalLight(0xffffff, 1.6)
+    // Flatter than a product render on purpose. Each facet is already a single
+    // solid tone, so the lights only need to separate faces that point
+    // differently -- a hard key would blow out whichever face happens to face
+    // it and defeat the point.
+    scene.add(new THREE.AmbientLight(0xffffff, 0.78))
+    const key = new THREE.DirectionalLight(0xffffff, 0.85)
     key.position.set(180, -220, 320)
     scene.add(key)
-    const fill = new THREE.DirectionalLight(0xffffff, 0.5)
+    const fill = new THREE.DirectionalLight(0xffffff, 0.35)
     fill.position.set(-200, 160, 140)
     scene.add(fill)
+    // Straight down, so a top face never reads the same as a side.
+    const top = new THREE.DirectionalLight(0xffffff, 0.22)
+    top.position.set(0, 0, 400)
+    scene.add(top)
 
     const workplane = new THREE.Group()
     scene.add(workplane)
@@ -188,10 +237,7 @@ export default function Viewport3D(props: Viewport3DProps) {
       gizmoControls.detach()
       gizmoControls.dispose()
       controls.dispose()
-      for (const body of state.bodies.values()) {
-        body.geometry.dispose()
-        ;(body.material as THREE.Material).dispose()
-      }
+      for (const body of state.bodies.values()) disposeBody(body)
       disposeGroup(workplane)
       renderer.dispose()
       host.removeChild(renderer.domElement)
@@ -209,35 +255,51 @@ export default function Viewport3D(props: Viewport3DProps) {
     for (const [id, body] of state.bodies) {
       if (wanted.has(id)) continue
       state.scene.remove(body)
-      body.geometry.dispose()
-      ;(body.material as THREE.Material).dispose()
+      disposeBody(body)
       state.bodies.delete(id)
     }
+
+    const edgeColour = dark ? EDGE_COLOUR_DARK : EDGE_COLOUR_LIGHT
 
     for (const part of parts) {
       const existing = state.bodies.get(part.id)
       if (existing) {
         state.scene.remove(existing)
-        existing.geometry.dispose()
-        ;(existing.material as THREE.Material).dispose()
+        disposeBody(existing)
       }
       const geom = new THREE.BufferGeometry()
       geom.setAttribute('position', new THREE.BufferAttribute(part.mesh.positions, 3))
       geom.setIndex(new THREE.BufferAttribute(part.mesh.indices, 1))
-      geom.computeVertexNormals()
+      // Deliberately no computeVertexNormals: the kernel returns welded,
+      // indexed geometry, so averaging normals at shared vertices smooths
+      // across every sharp edge and shades a flat face like a curved one.
+      // `flatShading` derives the normal per triangle in the shader instead,
+      // which is both correct for CAD solids and what makes a face read as one
+      // solid tone.
 
       const hole = part.mode === 'hole'
       const material = new THREE.MeshStandardMaterial({
         color: new THREE.Color(part.color ?? (hole ? '#8899aa' : (dark ? 0xb9b0a2 : 0xd8d2c6))),
-        roughness: 0.72,
-        metalness: 0.02,
+        flatShading: true,
+        roughness: 0.9,
+        metalness: 0,
         // A hole is a subtraction, so it reads as a ghost rather than a body.
         transparent: hole,
-        opacity: hole ? 0.35 : 1,
+        opacity: hole ? 0.3 : 1,
         side: THREE.FrontSide,
+        // Outlines sit exactly on the surface they trace, so the faces are
+        // pushed back a touch in depth. Without this the lines stipple in and
+        // out as the camera turns.
+        polygonOffset: true,
+        polygonOffsetFactor: 1,
+        polygonOffsetUnits: 1,
       })
       const body = new THREE.Mesh(geom, material)
       body.userData.id = part.id
+
+      const edges = buildEdges(geom, edgeColour, part.mesh.triangleCount)
+      if (edges) body.add(edges)
+
       state.scene.add(body)
       state.bodies.set(part.id, body)
     }
@@ -249,13 +311,24 @@ export default function Viewport3D(props: Viewport3DProps) {
     if (!state) return
     const accent = new THREE.Color(theme.palette.primary.main)
 
+    const edgeColour = dark ? EDGE_COLOUR_DARK : EDGE_COLOUR_LIGHT
+
     for (const [id, body] of state.bodies) {
       const material = body.material as THREE.MeshStandardMaterial
       const isSelected = selection.has(id)
       // Mutate the existing Color rather than replacing it: no allocation, and
       // three reuses the same uniform.
       material.emissive.set(isSelected ? accent : 0x000000)
-      setEmissiveIntensity(material, isSelected ? 0.28 : 0)
+      setEmissiveIntensity(material, isSelected ? 0.22 : 0)
+
+      // The outline carries the selection more legibly than a wash of emissive
+      // over a solid face.
+      const outline = body.children.find(child => child instanceof THREE.LineSegments)
+      if (outline) {
+        const line = (outline as THREE.LineSegments).material as THREE.LineBasicMaterial
+        line.color.set(isSelected ? accent : edgeColour)
+        line.opacity = isSelected ? 1 : EDGE_OPACITY
+      }
     }
 
     // The gizmo attaches only to a single selection: with several bodies there
@@ -276,7 +349,7 @@ export default function Viewport3D(props: Viewport3DProps) {
       state.pivot.userData.id = undefined
       state.gizmo.detach()
     }
-  }, [selection, parts, theme.palette.primary.main])
+  }, [selection, parts, dark, theme.palette.primary.main])
 
   useEffect(() => {
     const state = stateRef.current

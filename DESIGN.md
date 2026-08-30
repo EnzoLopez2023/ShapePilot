@@ -220,6 +220,15 @@ Behaviours the three designers share, so moving between them teaches nothing new
 - **Direct manipulation, numeric confirmation.** Drag on the canvas, then read
   and adjust the exact value in the inspector. `LengthField` speaks millimetres
   or fractional inches; the document is always millimetres.
+- **Solids render flat, with their edges drawn.** Each facet is one tone and
+  feature edges are outlined, which is how CAD reads and how a fabricable part
+  should look — not a product render. Concretely: `flatShading`, no
+  `computeVertexNormals` (the kernel returns welded geometry, so averaging
+  normals smooths across every sharp edge and shades a flat face like a curved
+  one), an `EdgesGeometry` outline above 20 degrees so a tessellated cylinder
+  does not draw as a wireframe, polygon offset so those lines do not stipple,
+  and deliberately soft lighting because the facets already separate the faces.
+  Selection recolours the outline, which reads better than a wash of emissive.
 
 ## Per-pocket transform (keycap tray)
 
