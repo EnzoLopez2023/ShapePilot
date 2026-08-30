@@ -51,6 +51,23 @@ export interface AppConfig {
   recoveryWorkDir: string | null
   /** Serve the built SPA from this directory when it exists. */
   clientDir: string
+  ai: AiConfig
+}
+
+/**
+ * The dedicated Azure AI Foundry resource. Absent configuration disables the AI
+ * routes rather than failing startup: the designers work without them, and a
+ * missing model deployment should not take the whole app down.
+ */
+export interface AiConfig {
+  enabled: boolean
+  /** Base URL including the /openai/v1/ route, which uses implicit versioning. */
+  endpoint: string | null
+  /** Deployment name, passed as `model`. Pinning the deployment rather than the
+   *  model means the model can be swapped in Azure with no code change. */
+  deployment: string | null
+  /** Development only. Production authenticates with the managed identity. */
+  apiKey: string | null
 }
 
 export class ConfigError extends Error {
@@ -89,6 +106,32 @@ const aliased = (
     )
   }
   return canonicalValue || compatibilityValue
+}
+
+/**
+ * Foundry configuration. Both values are non-secret, so they are plain app
+ * settings; the credential is a managed-identity token acquired at call time.
+ * AZURE_OPENAI_API_KEY stays supported as a local-development fallback only.
+ */
+function aiConfig(env: NodeJS.ProcessEnv): AiConfig {
+  const endpoint = env.AZURE_AI_FOUNDRY_ENDPOINT?.trim() || null
+  const deployment = env.AZURE_AI_FOUNDRY_DEPLOYMENT?.trim() || null
+  if (endpoint && !/^https:\/\/[^\s]+$/.test(endpoint)) {
+    throw new ConfigError('CONFIG_INVALID', 'AZURE_AI_FOUNDRY_ENDPOINT must be an https URL')
+  }
+  // Half-configured is a mistake worth catching, unlike not configured at all.
+  if (Boolean(endpoint) !== Boolean(deployment)) {
+    throw new ConfigError(
+      'CONFIG_CONFLICT',
+      'AZURE_AI_FOUNDRY_ENDPOINT and AZURE_AI_FOUNDRY_DEPLOYMENT must be set together',
+    )
+  }
+  return {
+    enabled: Boolean(endpoint && deployment),
+    endpoint,
+    deployment,
+    apiKey: env.AZURE_OPENAI_API_KEY?.trim() || null,
+  }
 }
 
 const absolutePath = (
@@ -282,5 +325,6 @@ export function loadConfig(
     artifactStoreDir,
     recoveryWorkDir,
     clientDir: resolve(cwd, env.SHAPEPILOT_CLIENT_DIR?.trim() || 'dist/client'),
+    ai: aiConfig(env),
   })
 }

@@ -17,6 +17,9 @@ import { createTokenVerifier } from './auth/verifyToken.ts'
 import { createErrorMiddleware, notFoundHandler } from './errors/errorMiddleware.ts'
 import { createAdminRouter } from './routes/admin.ts'
 import { createAuditAdminRouter, createAuditRouter } from './routes/audit.ts'
+import type { FoundryClient } from './ai/foundryClient.ts'
+import { createFoundryClient } from './ai/foundryClient.ts'
+import { createAiRouter } from './routes/ai.ts'
 import { createDesignDocumentRouter } from './routes/designDocuments.ts'
 import { createHealthRouter } from './routes/health.ts'
 import { createKeycapTrayRouter } from './routes/keycapTrays.ts'
@@ -33,6 +36,9 @@ export interface CreateAppOptions {
   instanceId?: string
   /** Injectable for tests; defaults to real JWKS verification. */
   verifier?: TokenVerifier | null
+  /** Injectable for tests; defaults to a client built from config.ai, which is
+   *  null when the Foundry resource is not configured. */
+  aiClient?: FoundryClient | null
   logger?: (message: string, error: unknown) => void
 }
 
@@ -46,6 +52,12 @@ export function createApp(options: CreateAppOptions): Express {
   const verifier = options.verifier !== undefined
     ? options.verifier
     : createTokenVerifier(config.auth)
+
+  // Built once: DefaultAzureCredential caches tokens internally, so a
+  // per-request client would re-acquire needlessly.
+  const aiClient = options.aiClient !== undefined
+    ? options.aiClient
+    : createFoundryClient(config.ai)
 
   const app = express()
   app.disable('x-powered-by')
@@ -78,6 +90,7 @@ export function createApp(options: CreateAppOptions): Express {
 
   app.use('/api/keycap-trays', authenticated, createKeycapTrayRouter(repos))
   app.use('/api/design-documents', authenticated, createDesignDocumentRouter(repos))
+  app.use('/api/ai', authenticated, createAiRouter({ repos, client: aiClient }))
   app.use('/api/settings', authenticated, createSettingsRouter(repos))
   app.use('/api/audit', authenticated, createAuditRouter(repos))
   app.use('/api/admin/audit', authenticated, adminOnly, createAuditAdminRouter(repos))

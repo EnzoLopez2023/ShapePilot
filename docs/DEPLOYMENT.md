@@ -1,9 +1,21 @@
 # Production deployment
 
 ShapePilot follows the `p1-11-v1` `sqlite-one-worker` contract from
-`EnzoLopez2023/azure-infra`. This repository never provisions or reconciles
-Azure resources; it only validates the declared resources and deploys an
-immutable ShapePilot image.
+`EnzoLopez2023/azure-infra`. The CI pipeline in this repository never provisions
+or reconciles Azure resources; it only validates the declared resources and
+deploys an immutable ShapePilot image.
+
+Provisioning by hand is permitted only with the owner's explicit, per-resource
+permission, and anything created that way must be recorded here and reconciled
+back into `azure-infra`. One resource currently sits in that state:
+
+| Resource | Created | Why it is separate |
+| --- | --- | --- |
+| `aif-shapepilot-prod` (Microsoft.CognitiveServices, kind `AIServices`, S0, eastus, tagged `app=shapepilot`) | 2026-08-30, by hand with permission | A Foundry account used only by ShapePilot, so its inference spend is attributable to this app on its own billing line rather than pooled with other apps. |
+
+It carries one model deployment, `shapepilot-designer`
+(`gpt-5.6-terra` 2026-07-09, GlobalStandard, 50K TPM). GlobalStandard is
+pay-per-token with no idle cost, so an unused deployment bills nothing.
 
 ## Runtime image
 
@@ -165,8 +177,35 @@ backup work in ShapePilot; recovery remains explicit and operator-invoked.
 `https://kv-shapepilot-prod.vault.azure.net/`. The only declared secret setting
 is `AZURE_OPENAI_API_KEY`, and its App Service value must remain the versionless
 Key Vault reference to secret `AZURE-OPENAI-API-KEY`; the workflow never reads,
-prints, or uploads the secret value. The current ShapePilot runtime does not
-make an Azure OpenAI request.
+prints, or uploads the secret value. That setting is **vestigial**: the secret it
+points at does not exist in the vault, and the runtime never reads it. The AI
+design assistant authenticates with the Web App's managed identity instead (see
+below), so the reference is inert. It is retained only because the deploy job
+asserts the app-settings map exactly; removing it means editing that assertion.
+
+### AI design assistant
+
+Two further app settings, both **non-secret**, configure the assistant behind
+the Bambu Designer and the AI Imagination Playground:
+
+| Setting | Value |
+| --- | --- |
+| `AZURE_AI_FOUNDRY_ENDPOINT` | `https://aif-shapepilot-prod.openai.azure.com/openai/v1/` |
+| `AZURE_AI_FOUNDRY_DEPLOYMENT` | `shapepilot-designer` |
+
+They must be set together; either alone is a startup `CONFIG_CONFLICT`. With
+neither set the AI routes report themselves unavailable and the rest of the app
+runs normally, which is the intended behaviour for local development.
+
+Authentication is keyless. The server acquires a token for
+`https://ai.azure.com/.default` through `DefaultAzureCredential`, which resolves
+to the Web App's system-assigned managed identity
+(`02e09929-0ac6-4d01-a08d-46ffa63f99d1`). That identity holds **Cognitive
+Services OpenAI User** scoped to the Foundry account and nothing wider.
+
+The endpoint pins the *deployment* name, not the model, so the model behind
+`shapepilot-designer` can be changed in Azure with no code change and no
+redeploy.
 
 No App Insights component, availability test, alert, or action group is part of
 the deployment contract. Before building, the workflow proves the owner
