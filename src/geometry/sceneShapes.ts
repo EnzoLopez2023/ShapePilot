@@ -7,7 +7,7 @@ import { difference, union } from './boolean.ts'
 import {
   circleRing, ellipseRing, rectRing, regularPolygonRing, triangleRing,
 } from './primitives.ts'
-import type { SceneObject, Shape2DObject, TextObject } from '../model/document.ts'
+import type { PathObject, SceneObject, Shape2DObject, TextObject } from '../model/document.ts'
 
 /**
  * Glyph outlines need a font binary, which loads asynchronously. Callers resolve
@@ -65,6 +65,9 @@ function shape2dRings(o: Shape2DObject): Ring[] {
   }
 }
 
+/** Imported outlines arrive already normalised by the importer. */
+const pathRings = (o: PathObject): Ring[] => o.rings.map(r => r.map(([x, y]) => [x, y] as const))
+
 const textRings = (o: TextObject, opts: CompileOptions): Ring[] =>
   [...(opts.textOutlines?.get(o.id) ?? [])]
 
@@ -77,6 +80,7 @@ const textRings = (o: TextObject, opts: CompileOptions): Ring[] =>
 export function objectRings(o: SceneObject, opts: CompileOptions = {}): Ring[] {
   switch (o.type) {
     case 'shape2d': return place(shape2dRings(o), o)
+    case 'path': return place(pathRings(o), o)
     case 'text': return place(textRings(o, opts), o)
     // A 3D primitive dropped into a 2D document is not silently cut; the Shaper
     // page reports it as an unsupported object instead.

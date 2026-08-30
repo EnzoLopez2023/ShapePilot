@@ -104,6 +104,19 @@ export function objectNode(o: SceneObject, opts: FromSceneOptions = {}): PartNod
         params: { profile: toProfile(shape2dProfile(o)), heightMm: o.thicknessMm ?? 5 },
       }
 
+    case 'path': {
+      const [outer, ...holes] = o.rings
+      if (!outer?.length) return null
+      return {
+        id: o.id, name: o.name, op: 'extrude', transform,
+        params: {
+          profile: outer.map(([x, y]) => [x, y] as Point2),
+          holes: holes.map(h => h.map(([x, y]) => [x, y] as Point2)),
+          heightMm: o.thicknessMm ?? 5,
+        },
+      }
+    }
+
     case 'text': {
       const rings = opts.textOutlines?.get(o.id)
       if (!rings?.length) return null

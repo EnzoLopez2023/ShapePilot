@@ -45,6 +45,11 @@ export interface SceneObjectBase {
   cut?: CutSpec
 }
 
+/** Imported outlines and glyph runs are arbitrary polygons, not parameterised
+ *  shapes, so they get their own object type rather than a `path` variant of
+ *  Shape2DParams that no inspector field could edit. */
+export type Contour = readonly (readonly [number, number])[]
+
 export type Shape2DKind = 'circle' | 'ellipse' | 'rect' | 'square' | 'triangle' | 'polygon'
 
 /**
@@ -109,6 +114,15 @@ export interface TextObject extends SceneObjectBase {
   thicknessMm?: number
 }
 
+export interface PathObject extends SceneObjectBase {
+  type: 'path'
+  /** [outer CCW, ...holes CW], millimetres, object-local. */
+  rings: Contour[]
+  thicknessMm?: number
+  /** Where it came from, for the inspector and for re-import. */
+  source?: { format: ImportFormat; filename: string }
+}
+
 export interface SolidObject extends SceneObjectBase {
   type: 'solid'
   primitive: SolidKind
@@ -128,6 +142,7 @@ export interface GroupObject extends SceneObjectBase {
 
 export type SceneObject =
   | Shape2DObject
+  | PathObject
   | TextObject
   | SolidObject
   | ImportedObject
