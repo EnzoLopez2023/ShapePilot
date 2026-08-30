@@ -173,6 +173,37 @@ export const APP_IDENTITY_STATEMENTS: readonly string[] = [
   `INSERT INTO app_identity (key, value) VALUES ('authority_id', lower(hex(randomblob(16))))`,
 ]
 
+/**
+ * Design documents for the Shaper, Bambu and Playground sub-apps.
+ *
+ * One table for all three kinds, deliberately: opening a Bambu model in the
+ * Shaper Designer is a product requirement, and three near-identical tables
+ * would make every cross-app query a union. The scene tree lives in doc_json
+ * because it is a nested, freeform structure -- normalising it the way
+ * keycap_tray_pockets is normalised would buy nothing, since nothing queries
+ * inside a scene.
+ *
+ * Imported STL and SVG bytes are NOT here. PRODUCT.md keeps fabrication data
+ * out of the database; the document stores a content hash and the browser keeps
+ * the bytes.
+ */
+export const DESIGN_DOCUMENT_STATEMENTS: readonly string[] = [
+  `CREATE TABLE design_documents (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_tenant_id TEXT    NOT NULL,
+  owner_oid       TEXT    NOT NULL,
+  kind            TEXT    NOT NULL CHECK (kind IN ('shaper', 'bambu', 'playground')),
+  name            TEXT    NOT NULL,
+  notes           TEXT,
+  doc_json        TEXT    NOT NULL,
+  object_count    INTEGER NOT NULL DEFAULT 0,
+  created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+)`,
+  `CREATE INDEX idx_design_documents_owner
+  ON design_documents (owner_tenant_id, owner_oid, kind, updated_at DESC)`,
+]
+
 /** Tables ShapePilot owns and reconciles. Order is the reconciliation order. */
 export const OWNED_LEGACY_TABLES = [
   'keycap_tray_designs',

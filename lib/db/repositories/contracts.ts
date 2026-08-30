@@ -216,9 +216,62 @@ export class InvalidProfileError extends Error {
   }
 }
 
+
+// -- Design documents ---------------------------------------------------------
+// Shared by the Shaper, Bambu and Playground sub-apps. The scene tree crosses
+// this boundary as already-validated JSON: server/validation/designDocument.ts
+// rebuilds it before anything reaches a transaction, so the repository stores a
+// string and never inspects it.
+
+export type DesignDocumentKind = 'shaper' | 'bambu' | 'playground'
+
+export const DESIGN_DOCUMENT_KINDS: readonly DesignDocumentKind[] =
+  ['shaper', 'bambu', 'playground']
+
+export interface DesignDocumentRecord {
+  id: string
+  kind: DesignDocumentKind
+  name: string
+  notes: string | null
+  /** The serialised scene. Opaque here by design. */
+  docJson: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DesignDocumentSummary {
+  id: string
+  kind: DesignDocumentKind
+  name: string
+  notes: string | null
+  /** Cheap enough to compute on write and worth having in a picker. */
+  objectCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DesignDocumentInput {
+  kind: DesignDocumentKind
+  name: string
+  notes?: string | null
+  docJson: string
+  objectCount: number
+}
+
+export interface DesignDocumentRepository {
+  list(owner: Owner, kind?: DesignDocumentKind): Promise<DesignDocumentSummary[]>
+  get(owner: Owner, id: string): Promise<DesignDocumentRecord | null>
+  create(owner: Owner, input: DesignDocumentInput): Promise<{ id: string }>
+  update(owner: Owner, id: string, input: DesignDocumentInput): Promise<boolean>
+  /** `kind` retargets the copy, which is how "continue in Bambu Designer" works. */
+  clone(owner: Owner, id: string, name?: string, kind?: DesignDocumentKind): Promise<{ id: string } | null>
+  remove(owner: Owner, id: string): Promise<boolean>
+}
+
 export interface Repositories {
   memberships: MembershipRepository
   settings: SettingsRepository
   audit: AuditRepository
   keycapTrays: KeycapTrayRepository
+  designDocuments: DesignDocumentRepository
 }

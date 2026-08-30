@@ -17,6 +17,7 @@ import { createTokenVerifier } from './auth/verifyToken.ts'
 import { createErrorMiddleware, notFoundHandler } from './errors/errorMiddleware.ts'
 import { createAdminRouter } from './routes/admin.ts'
 import { createAuditAdminRouter, createAuditRouter } from './routes/audit.ts'
+import { createDesignDocumentRouter } from './routes/designDocuments.ts'
 import { createHealthRouter } from './routes/health.ts'
 import { createKeycapTrayRouter } from './routes/keycapTrays.ts'
 import { createSettingsRouter } from './routes/settings.ts'
@@ -76,6 +77,7 @@ export function createApp(options: CreateAppOptions): Express {
   const adminOnly = requireRole('admin', repos.memberships)
 
   app.use('/api/keycap-trays', authenticated, createKeycapTrayRouter(repos))
+  app.use('/api/design-documents', authenticated, createDesignDocumentRouter(repos))
   app.use('/api/settings', authenticated, createSettingsRouter(repos))
   app.use('/api/audit', authenticated, createAuditRouter(repos))
   app.use('/api/admin/audit', authenticated, adminOnly, createAuditAdminRouter(repos))
