@@ -12,6 +12,7 @@ import SaveIcon from '@mui/icons-material/SaveOutlined'
 import AddIcon from '@mui/icons-material/Add'
 import { buildTrayMesh } from './geometry/layers.ts'
 import { validateDesign } from './geometry/validate.ts'
+import type { Target } from './geometry/validate.ts'
 import { DEFAULT_FABRICATION, paletteItemExtra } from './model/defaults.ts'
 import type { PaletteItem } from './model/defaults.ts'
 import type { FabricationSettings } from './model/types.ts'
@@ -37,6 +38,11 @@ const TrayViewer3D = lazy(() => import('./components/TrayViewer3D.tsx'))
 // stable -- an inline object literal re-runs it on every render.
 const CANVAS_INSET = { left: 0, right: 0, top: 0, bottom: 0 }
 
+// Snap steps: 0.5 mm through 5 mm in 0.5 mm increments, plus the key pitch.
+const SNAP_STEPS_MM = Array.from({ length: 10 }, (_, i) => (i + 1) * 0.5)
+// Buffer guide distances, in mm inside the tray edge.
+const BUFFER_STEPS_MM = [1, 1.5, 1.8, 2, 2.5, 3, 3.5, 4, 5, 6, 8, 10]
+
 export default function KeycapTrayPage() {
   const confirm = useConfirm()
   const d = useTrayDesign()
@@ -49,6 +55,10 @@ export default function KeycapTrayPage() {
   const [showLabels, setShowLabels] = useState(true)
   const [showPlate, setShowPlate] = useState(false)
   const [showBuffer, setShowBuffer] = useState(false)
+  // Lifted from ExportPanel: the build-plate controls only make sense for the
+  // 3D printer, so the toolbar needs to know the target too.
+  const [target, setTarget] = useState<Target>('print')
+  const [bufferMm, setBufferMm] = useState(DEFAULT_FABRICATION.minWallMm)
   const [imperial, setImperial] = useState(false)
   const [designs, setDesigns] = useState<api.DesignSummary[]>([])
   const [savedId, setSavedId] = useState<string | null>(null)
@@ -244,8 +254,9 @@ export default function KeycapTrayPage() {
               sx={{ width: 104 }}
             >
               <MenuItem value={0}>Off</MenuItem>
-              <MenuItem value={0.5}>0.5 mm</MenuItem>
-              <MenuItem value={1}>1 mm</MenuItem>
+              {SNAP_STEPS_MM.map(v => (
+                <MenuItem key={v} value={v}>{v} mm</MenuItem>
+              ))}
               <MenuItem value={19.05}>1u pitch</MenuItem>
             </TextField>
           </HoverTooltip>
@@ -270,21 +281,40 @@ export default function KeycapTrayPage() {
             <Tooltip title="Zoom and centre the view on the tray outline">
               <Button size="small" onClick={() => setFitToken(t => t + 1)}>Fit</Button>
             </Tooltip>
-            <Tooltip title="Outline of the printer build plate, from Plate W/D in Fabrication">
-              <Button size="small" aria-pressed={showPlate} onClick={() => setShowPlate(v => !v)}>
-                {showPlate ? 'Hide plate' : 'Show plate'}
-              </Button>
-            </Tooltip>
-            <Tooltip title={`A dashed line ${fab.minWallMm} mm inside the tray edge — the same minimum wall used for the wall-thickness check. Keep pockets clear of it for a durable rim.`}>
+            {target === 'print' && (
+              <Tooltip title="Outline of the printer build plate, from Plate W/D in Fabrication">
+                <Button size="small" aria-pressed={showPlate} onClick={() => setShowPlate(v => !v)}>
+                  {showPlate ? 'Hide plate' : 'Show plate'}
+                </Button>
+              </Tooltip>
+            )}
+            <Tooltip title={`A dashed line ${bufferMm} mm inside the tray edge. Keep pockets clear of it for a durable rim; ${fab.minWallMm} mm matches the minimum wall used by the wall-thickness check.`}>
               <Button size="small" aria-pressed={showBuffer} onClick={() => setShowBuffer(v => !v)}>
                 {showBuffer ? 'Hide buffer' : 'Show buffer'}
               </Button>
             </Tooltip>
+            <HoverTooltip title="Distance the dashed buffer guide sits inside the tray edge. Purely visual — a wider margin than the minimum wall gives pockets more breathing room from the rim.">
+              <TextField
+                select size="small" label="Buffer" value={bufferMm}
+                onChange={e => setBufferMm(parseFloat(e.target.value))}
+                disabled={!showBuffer}
+                sx={{ width: 104 }}
+              >
+                {BUFFER_STEPS_MM.map(v => (
+                  <MenuItem key={v} value={v}>
+                    {v === DEFAULT_FABRICATION.minWallMm ? `${v} mm · min wall` : `${v} mm`}
+                  </MenuItem>
+                ))}
+              </TextField>
+            </HoverTooltip>
           </Stack>
 
           <Box sx={{ flex: 1, minWidth: 0 }} />
 
-          <ExportPanel design={design} mesh={mesh} issues={issues} />
+          <ExportPanel
+            design={design} mesh={mesh} issues={issues}
+            target={target} onTarget={setTarget}
+          />
 
           <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', rowGap: 1 }}>
             <Button
@@ -350,13 +380,14 @@ export default function KeycapTrayPage() {
           {view === '2d' ? (
             <TrayCanvas
               design={design} selection={selection} issues={issues}
-              snapMm={snapMm} gridMm={gridMm} showPlate={showPlate} showLabels={showLabels}
-              showBuffer={showBuffer} bufferMm={fab.minWallMm}
+              snapMm={snapMm} gridMm={gridMm} showPlate={showPlate && target === 'print'} showLabels={showLabels}
+              showBuffer={showBuffer} bufferMm={bufferMm}
               inset={CANVAS_INSET} fitToken={fitToken}
               plateWidthMm={fab.plateWidthMm} plateDepthMm={fab.plateDepthMm}
               onSelect={d.toggleSelection}
               onClearSelection={() => d.setSelection([])}
               onMove={d.movePockets}
+              onRotate={(id, deg) => d.updatePocket(id, { rotationDeg: deg })}
               onDropItem={(item, x, y) => d.addPocket(item.units, x, y, paletteItemExtra(item))}
             />
           ) : (

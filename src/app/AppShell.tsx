@@ -1,22 +1,61 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
-import { Box, Stack, Typography } from '@mui/material'
+import { Box, Drawer, IconButton, Stack, Tooltip, Typography, useMediaQuery } from '@mui/material'
+import { useTheme } from '@mui/material/styles'
+import type { SvgIconComponent } from '@mui/icons-material'
+import MenuRoundedIcon from '@mui/icons-material/MenuRounded'
+import MenuOpenRoundedIcon from '@mui/icons-material/MenuOpenRounded'
+import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded'
+import TuneRoundedIcon from '@mui/icons-material/TuneRounded'
+import AdminPanelSettingsRoundedIcon from '@mui/icons-material/AdminPanelSettingsRounded'
+import { EASE_IOS, GLASS, SHADOW } from '../theme/theme.ts'
 import { getSettings } from '../features/settings/preferences.ts'
 
-interface NavItem { to: string; label: string; adminOnly?: boolean }
+interface NavItem {
+  to: string
+  label: string
+  icon: SvgIconComponent
+  adminOnly?: boolean
+}
 
 const NAV: NavItem[] = [
-  { to: '/keycap-tray', label: 'Keycap tray' },
-  { to: '/settings', label: 'Settings' },
-  { to: '/admin', label: 'Admin', adminOnly: true },
+  { to: '/keycap-tray', label: 'Keycap tray', icon: GridViewRoundedIcon },
+  { to: '/settings', label: 'Settings', icon: TuneRoundedIcon },
+  { to: '/admin', label: 'Admin', icon: AdminPanelSettingsRoundedIcon, adminOnly: true },
 ]
 
+const SIDEBAR_WIDTH = 260
+const SIDEBAR_WIDTH_COLLAPSED = 76
+const COLLAPSE_KEY = 'shapepilot:nav-collapsed'
+
+const readCollapsed = (): boolean => {
+  try {
+    return localStorage.getItem(COLLAPSE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
 /**
- * One header, real links, no global view switch. The nav is a list of routes;
- * the browser's back button and a copied URL both work.
+ * A floating, rounded left sidebar in the native-iOS idiom: frosted glass over
+ * the page wash, squircle rows, a lifting shadow, an Apple-timed hover fade.
+ * On `md` and up it collapses to an icon rail (choice persisted); below `md`
+ * the same nav slides in as a temporary drawer from a glass top bar. The nav
+ * is real routes throughout — the back button and a copied URL both work.
  */
 export function AppShell() {
+  const theme = useTheme()
+  const glass = GLASS[theme.palette.mode]
+  const shadow = SHADOW[theme.palette.mode]
+  // `defaultMatches: true` keeps the permanent sidebar (and its single
+  // "Sections" landmark) present when `matchMedia` is unavailable, e.g. jsdom.
+  const permanent = useMediaQuery(theme.breakpoints.up('md'), {
+    defaultMatches: true,
+    noSsr: true,
+  })
   const [role, setRole] = useState<'user' | 'admin' | null>(null)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [collapsed, setCollapsed] = useState(readCollapsed)
 
   useEffect(() => {
     let cancelled = false
@@ -26,10 +65,33 @@ export function AppShell() {
     return () => { cancelled = true }
   }, [])
 
+  // A permanent sidebar and a temporary drawer are never mounted at once, so
+  // there is exactly one `navigation` landmark named "Sections" on the page.
+  useEffect(() => {
+    if (permanent) setDrawerOpen(false)
+  }, [permanent])
+
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed(prev => {
+      const next = !prev
+      try { localStorage.setItem(COLLAPSE_KEY, next ? '1' : '0') } catch { /* private mode */ }
+      return next
+    })
+  }, [])
+
   const items = NAV.filter(item => !item.adminOnly || role === 'admin')
 
+  const glassSurface = {
+    background: glass.fill,
+    backdropFilter: glass.backdrop,
+    WebkitBackdropFilter: glass.backdrop,
+    '@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)))': {
+      background: theme.palette.background.paper,
+    },
+  } as const
+
   return (
-    <Box sx={{ height: '100dvh', display: 'flex', flexDirection: 'column' }}>
+    <Box sx={{ height: '100dvh', display: 'flex', overflow: 'hidden' }}>
       <Box
         component="a"
         href="#main"
@@ -37,8 +99,9 @@ export function AppShell() {
           position: 'absolute',
           left: -9999,
           top: 0,
-          zIndex: 10,
+          zIndex: theme.zIndex.drawer + 2,
           p: 1,
+          borderRadius: '14px',
           bgcolor: 'background.paper',
           '&:focus': { left: 8, top: 8 },
         }}
@@ -46,72 +109,205 @@ export function AppShell() {
         Skip to content
       </Box>
 
+      {permanent ? (
+        <Box
+          component="aside"
+          sx={{
+            ...glassSurface,
+            m: 1.5,
+            width: collapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH,
+            flexShrink: 0,
+            borderRadius: '14px',
+            border: `1px solid ${glass.border}`,
+            boxShadow: shadow,
+            overflow: 'hidden',
+            transition: `width 0.25s ${EASE_IOS}`,
+          }}
+        >
+          <SidebarBody
+            items={items}
+            collapsed={collapsed}
+            onToggleCollapsed={toggleCollapsed}
+          />
+        </Box>
+      ) : (
+        <Drawer
+          open={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          PaperProps={{
+            sx: {
+              ...glassSurface,
+              width: SIDEBAR_WIDTH,
+              border: 'none',
+              borderRight: `1px solid ${glass.border}`,
+              borderRadius: '0 14px 14px 0',
+              backgroundImage: 'none',
+              boxShadow: shadow,
+            },
+          }}
+        >
+          <SidebarBody items={items} onNavigate={() => setDrawerOpen(false)} />
+        </Drawer>
+      )}
+
+      <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+        {!permanent && (
+          <Box
+            component="header"
+            sx={{
+              ...glassSurface,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1.5,
+              px: 1.5,
+              py: 1,
+              borderBottom: `1px solid ${glass.border}`,
+            }}
+          >
+            <IconButton
+              aria-label="Open navigation"
+              onClick={() => setDrawerOpen(true)}
+              sx={{ borderRadius: '14px' }}
+            >
+              <MenuRoundedIcon />
+            </IconButton>
+            <Typography
+              component="span"
+              sx={{ fontWeight: 650, letterSpacing: '-0.01em', fontSize: '0.9375rem' }}
+            >
+              ShapePilot
+            </Typography>
+          </Box>
+        )}
+
+        <Box
+          component="main"
+          id="main"
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            px: { xs: 1.5, md: 2 },
+            py: { xs: 1.5, md: 2 },
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          <Outlet />
+        </Box>
+      </Box>
+    </Box>
+  )
+}
+
+function SidebarBody({
+  items,
+  collapsed = false,
+  onToggleCollapsed,
+  onNavigate,
+}: {
+  items: NavItem[]
+  collapsed?: boolean
+  onToggleCollapsed?: () => void
+  onNavigate?: () => void
+}) {
+  const theme = useTheme()
+  const glass = GLASS[theme.palette.mode]
+
+  return (
+    <Stack sx={{ height: '100%', px: collapsed ? 1 : 1.5, py: 2, gap: 2 }}>
       <Box
-        component="header"
         sx={{
-          px: { xs: 2, md: 3 },
-          py: 1.25,
-          borderBottom: 1,
-          borderColor: 'divider',
-          bgcolor: 'background.paper',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: collapsed ? 'center' : 'space-between',
+          minHeight: 36,
         }}
       >
-        <Stack
-          direction="row"
-          spacing={3}
-          sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 1 }}
-        >
+        {!collapsed && (
           <Typography
             component="span"
-            sx={{ fontWeight: 650, letterSpacing: '-0.01em', fontSize: '0.9375rem' }}
+            sx={{
+              pl: 1,
+              fontWeight: 700,
+              letterSpacing: '-0.01em',
+              fontSize: '1.0625rem',
+            }}
           >
             ShapePilot
           </Typography>
-          <Stack component="nav" aria-label="Sections" direction="row" spacing={0.5}>
-            {items.map(item => (
+        )}
+        {onToggleCollapsed && (
+          <Tooltip title={collapsed ? 'Expand navigation' : 'Collapse navigation'}>
+            <IconButton
+              size="small"
+              onClick={onToggleCollapsed}
+              aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'}
+              aria-expanded={!collapsed}
+              sx={{ borderRadius: '14px' }}
+            >
+              {collapsed
+                ? <MenuRoundedIcon fontSize="small" />
+                : <MenuOpenRoundedIcon fontSize="small" />}
+            </IconButton>
+          </Tooltip>
+        )}
+      </Box>
+
+      <Stack component="nav" aria-label="Sections" sx={{ gap: 0.5 }}>
+        {items.map(item => {
+          const Icon = item.icon
+          const row = (
+            <Box
+              key={item.to}
+              component={NavLink}
+              to={item.to}
+              onClick={onNavigate}
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: collapsed ? 'center' : 'flex-start',
+                gap: collapsed ? 0 : 1.25,
+                px: collapsed ? 0 : 1.5,
+                py: 1.25,
+                borderRadius: '14px',
+                fontSize: '0.9375rem',
+                lineHeight: 1.2,
+                textDecoration: 'none',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                color: 'text.secondary',
+                transition: 'background 0.2s ease-in-out, color 0.2s ease-in-out',
+                '& .MuiSvgIcon-root': { fontSize: '1.25rem', flexShrink: 0 },
+                '&:hover': { background: glass.fillHover, color: 'text.primary' },
+                '&.active': {
+                  background: glass.fillActive,
+                  color: 'text.primary',
+                  fontWeight: 600,
+                },
+              }}
+            >
+              <Icon />
               <Box
-                key={item.to}
-                component={NavLink}
-                to={item.to}
+                component="span"
                 sx={{
-                  px: 1.25,
-                  py: 0.5,
-                  borderRadius: 1,
-                  fontSize: '0.875rem',
-                  textDecoration: 'none',
-                  color: 'text.secondary',
-                  border: 1,
-                  borderColor: 'transparent',
-                  '&:hover': { color: 'text.primary', bgcolor: 'action.hover' },
-                  '&.active': {
-                    color: 'text.primary',
-                    borderColor: 'divider',
-                    fontWeight: 600,
-                  },
+                  opacity: collapsed ? 0 : 1,
+                  width: collapsed ? 0 : 'auto',
+                  transition: `opacity 0.15s ${EASE_IOS}`,
                 }}
               >
                 {item.label}
               </Box>
-            ))}
-          </Stack>
-        </Stack>
-      </Box>
+            </Box>
+          )
 
-      <Box
-        component="main"
-        id="main"
-        sx={{
-          flex: 1,
-          minHeight: 0,
-          overflowY: 'auto',
-          px: { xs: 1.5, md: 2.5 },
-          py: { xs: 1.5, md: 2 },
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        <Outlet />
-      </Box>
-    </Box>
+          return collapsed ? (
+            <Tooltip key={item.to} title={item.label} placement="right">
+              {row}
+            </Tooltip>
+          ) : row
+        })}
+      </Stack>
+    </Stack>
   )
 }

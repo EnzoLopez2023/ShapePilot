@@ -12,8 +12,11 @@
 //   * update replaces the whole pocket set atomically
 //   * delete cascades through the foreign key
 //   * `revision` is runtime-only and always leaves the server as 0
-//   * `mirror_x` remains legacy-only; `shape` is persisted because ShapePilot's
-//     ISO Enter editor depends on it surviving save/open and clone
+//   * `shape` is persisted because ShapePilot's ISO Enter editor depends on it
+//     surviving save/open and clone
+//   * `mirror_x` is a ShapePilot-defined 0-3 bitfield (bit0 mirrorX, bit1 flipY)
+//     for in-place geometry mirror/flip. Legacy rows are 0/NULL, so import stays
+//     byte-for-byte and no DDL changes.
 import type { SqliteDatabase } from '../connection.ts'
 import type {
   KeycapTrayRepository,
@@ -31,7 +34,7 @@ import { DuplicateLibraryPocketError, InvalidProfileError } from './contracts.ts
 
 const POCKET_COLUMNS = `
   units, height_units, x_mm, y_mm, rotation_deg, is_through,
-  label, label_mode, depth_mm, width_mm, height_mm, corner_mm, sort_order, shape`
+  label, label_mode, depth_mm, width_mm, height_mm, corner_mm, sort_order, shape, mirror_x`
 
 interface DesignRow {
   id: number | bigint
@@ -60,6 +63,7 @@ interface PocketRow {
   rotation_deg: number
   is_through: number
   shape: 'rect' | 'iso-enter' | null
+  mirror_x: number | null
   label: string | null
   label_mode: string
   depth_mm: number | null
@@ -85,6 +89,8 @@ const rowToPocket = (r: PocketRow): PocketRecord => ({
   x: r.x_mm,
   y: r.y_mm,
   rotationDeg: r.rotation_deg,
+  mirrorX: ((r.mirror_x ?? 0) & 1) !== 0,
+  flipY: ((r.mirror_x ?? 0) & 2) !== 0,
   isThrough: !!r.is_through,
   shape: r.shape ?? undefined,
   label: r.label ?? undefined,
@@ -139,6 +145,7 @@ interface PocketParams {
   corner_mm: number | null
   sort_order: number
   shape: 'rect' | 'iso-enter' | null
+  mirror_x: number
 }
 
 const pocketParams = (designId: number | bigint, p: PocketInput, i: number): PocketParams => ({
@@ -149,6 +156,7 @@ const pocketParams = (designId: number | bigint, p: PocketInput, i: number): Poc
   y_mm: p.y,
   rotation_deg: p.rotationDeg ?? 0,
   is_through: p.isThrough ? 1 : 0,
+  mirror_x: (p.mirrorX ? 1 : 0) | (p.flipY ? 2 : 0),
   label: p.label ?? null,
   label_mode: p.labelMode ?? 'guide',
   depth_mm: p.depthMm ?? null,
@@ -164,7 +172,7 @@ export function createKeycapTrayRepository(db: SqliteDatabase): KeycapTrayReposi
     INSERT INTO keycap_tray_pockets (design_id, ${POCKET_COLUMNS})
     VALUES (@design_id, @units, @height_units, @x_mm, @y_mm, @rotation_deg, @is_through,
             @label, @label_mode, @depth_mm, @width_mm, @height_mm, @corner_mm, @sort_order,
-            @shape)`)
+            @shape, @mirror_x)`)
 
   const selectOwnedDesign = db.prepare<[string, string, string], DesignRow>(`
     SELECT id, name, notes, profile_kind, profile_json, sizing_json,

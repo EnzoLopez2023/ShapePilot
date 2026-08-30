@@ -2,7 +2,7 @@ import type { SqliteDatabase } from '../connection.ts'
 import type { AppPreferences, SettingsRepository } from './contracts.ts'
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
-  themeMode: 'system',
+  themeMode: 'light',
   units: 'mm',
   reducedMotion: 'system',
 }

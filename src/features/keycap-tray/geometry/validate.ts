@@ -50,10 +50,12 @@ export function checkWallThickness(d: TrayDesign, fab: FabricationSettings): Iss
   for (let i = 0; i < rings.length; i++) {
     for (let j = i + 1; j < rings.length; j++) {
       const a = ringBBox(rings[i].poly[0]), b = ringBBox(rings[j].poly[0])
+      // Broad phase: a rotated pocket's bbox is bigger than the shape, so bbox
+      // proximity alone over-reports. Confirm with the exact edge distance.
       if (!bboxOverlaps(a, b, fab.minWallMm)) continue
-      // Overlapping is caught separately; this is the "too close but apart" case.
-      if (bboxOverlaps(a, b, 0)) continue
-      thin.push(rings[i].p.id, rings[j].p.id)
+      const dist = ringDistance(rings[i].poly[0], rings[j].poly[0])
+      if (dist <= 1e-9) continue // touching / overlapping -- checkPlacement owns it
+      if (dist < fab.minWallMm - 1e-9) thin.push(rings[i].p.id, rings[j].p.id)
     }
   }
   const issues: Issue[] = []
@@ -113,6 +115,22 @@ const segmentDistance = (a0: Vec2, a1: Vec2, b0: Vec2, b1: Vec2): number => {
     pointSegmentDistance(b0, a0, a1),
     pointSegmentDistance(b1, a0, a1),
   )
+}
+
+/** Minimum distance between two closed rings; 0 if they touch or cross. */
+const ringDistance = (a: Ring, b: Ring): number => {
+  let min = Infinity
+  for (let i = 0; i < a.length; i++) {
+    const a0 = a[i], a1 = a[(i + 1) % a.length]
+    for (let j = 0; j < b.length; j++) {
+      const dd = segmentDistance(a0, a1, b[j], b[(j + 1) % b.length])
+      if (dd < min) {
+        min = dd
+        if (min === 0) return 0
+      }
+    }
+  }
+  return min
 }
 
 interface BoundarySegment {
@@ -273,6 +291,8 @@ export function checkPlacement(d: TrayDesign): Issue[] {
   const overlapping = new Set<string>()
   for (let i = 0; i < entries.length; i++) {
     for (let j = i + 1; j < entries.length; j++) {
+      // Broad phase only; a rotated pocket's bbox is loose but the exact
+      // intersection below still decides. More candidates, same verdict.
       const a = ringBBox(entries[i].poly[0]), b = ringBBox(entries[j].poly[0])
       if (!bboxOverlaps(a, b)) continue
       if (multiArea(intersection([entries[i].poly], [entries[j].poly])) > 1e-6) {

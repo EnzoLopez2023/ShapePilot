@@ -10,12 +10,14 @@
 //   * the messages `name is required` and `profile.kind is required`
 //   * optional dimensions keep their pinned defaults (2.4 / 10 / 0.4)
 //   * `sizing` may be absent, exactly as before, and is stored as `{}`
-//   * `mirror_x` and `shape` remain persisted dead fields: `shape` is accepted
-//     on the wire and validated, and — as in the pinned route — not written
+//   * `shape` is accepted on the wire, validated, and persisted (ShapePilot's
+//     ISO Enter editor needs it); `mirrorX`/`flipY` pack into the `mirror_x`
+//     column as a 0-3 bitfield. Legacy rows are 0/NULL, so import is unchanged.
 //
 // What is new is only refusal: NaN, Infinity, numeric strings, unknown keys,
 // unknown enum values, unknown preset ids, degenerate or unbounded geometry and
-// absurd magnitudes are 400s instead of rows.
+// absurd magnitudes are 400s instead of rows. `rotationDeg` is now any finite
+// angle in [0, 360) rather than only 0 or 90.
 import { ApiError } from '../errors/ApiError.ts'
 import type {
   LibraryPocketInput, PocketInput, TrayDesignInput,
@@ -50,7 +52,6 @@ export const KNOWN_PRESET_PROFILE_IDS = [
 export const LABEL_MODES = ['guide', 'engrave', 'none'] as const
 export const POCKET_SHAPES = ['rect', 'iso-enter'] as const
 export const PROFILE_KINDS = ['rect', 'preset', 'custom'] as const
-export const ROTATIONS = [0, 90] as const
 
 /**
  * Bounds. Every one of these is far beyond any real tray — a Systainer insert
@@ -428,8 +429,9 @@ function validateSizing(value: unknown): { stored: unknown; effective: PocketSiz
 // -- pockets ------------------------------------------------------------------
 
 const POCKET_KEYS = [
-  'id', 'units', 'heightUnits', 'x', 'y', 'rotationDeg', 'isThrough', 'shape',
-  'depthMm', 'label', 'labelMode', 'widthMm', 'heightMm', 'cornerRadiusMm',
+  'id', 'units', 'heightUnits', 'x', 'y', 'rotationDeg', 'mirrorX', 'flipY',
+  'isThrough', 'shape', 'depthMm', 'label', 'labelMode',
+  'widthMm', 'heightMm', 'cornerRadiusMm',
 ] as const
 
 function validatePocket(value: unknown, index: number, sizing: PocketSizing): PocketInput {
@@ -446,18 +448,18 @@ function validatePocket(value: unknown, index: number, sizing: PocketSizing): Po
   requireNumber(pocket.y, `${field}.y`, { max: LIMITS.maxCoordinateMm })
 
   if (!absent(pocket.rotationDeg)) {
-    const rotation = requireNumber(pocket.rotationDeg, `${field}.rotationDeg`, {
-      min: 0, max: 90, integer: true,
-    })
-    if (!ROTATIONS.includes(rotation as (typeof ROTATIONS)[number])) {
-      bad(`${field}.rotationDeg`, `${field}.rotationDeg must be 0 or 90`)
+    const rotation = requireNumber(pocket.rotationDeg, `${field}.rotationDeg`, { min: 0, max: 360 })
+    if (rotation >= 360) {
+      bad(`${field}.rotationDeg`, `${field}.rotationDeg must be in [0, 360)`)
     }
   }
 
   optionalBoolean(pocket.isThrough, `${field}.isThrough`)
+  optionalBoolean(pocket.mirrorX, `${field}.mirrorX`)
+  optionalBoolean(pocket.flipY, `${field}.flipY`)
 
-  // `shape` is accepted and validated but, as in the pinned route, not written:
-  // the column exists and is left to its default. See docs/PARITY_CHECKLIST.md.
+  // `shape`, `mirrorX` and `flipY` are all persisted -- `shape` in its own
+  // column, the two flags packed into `mirror_x` as a 0-3 bitfield by the repo.
   if (!absent(pocket.shape)) requireEnum(pocket.shape, `${field}.shape`, POCKET_SHAPES)
 
   if (!absent(pocket.label)) requireString(pocket.label, `${field}.label`, LIMITS.labelMaxLength)

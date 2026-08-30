@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { Box, Button, Stack, ToggleButton, ToggleButtonGroup, Tooltip } from '@mui/material'
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline'
 import WarningAmberIcon from '@mui/icons-material/WarningAmber'
@@ -17,6 +17,9 @@ export interface ExportPanelProps {
   design: TrayDesign
   mesh: Mesh
   issues: Issue[]
+  /** Lifted so the toolbar can hide printer-only controls for the CNC target. */
+  target: Target
+  onTarget: (target: Target) => void
 }
 
 const FORMATS: { id: string; label: string; target: Target; ext: string; mime: string }[] = [
@@ -28,9 +31,7 @@ const FORMATS: { id: string; label: string; target: Target; ext: string; mime: s
 
 // Lives in the header toolbar rather than a full side panel, so status is a
 // single icon with the detail in its tooltip instead of a stack of Alerts.
-export default function ExportPanel({ design, mesh, issues }: ExportPanelProps) {
-  const [target, setTarget] = useState<Target>('print')
-
+export default function ExportPanel({ design, mesh, issues, target, onTarget }: ExportPanelProps) {
   const scoped = useMemo(() => issuesFor(issues, target), [issues, target])
   const errors = scoped.filter(i => i.severity === 'error')
   const warnings = scoped.filter(i => i.severity === 'warning')
@@ -57,7 +58,7 @@ export default function ExportPanel({ design, mesh, issues }: ExportPanelProps) 
       <ToggleButtonGroup
         exclusive size="small" value={target}
         aria-label="Fabrication target"
-        onChange={(_e, v) => v && setTarget(v)}
+        onChange={(_e, v) => v && onTarget(v)}
       >
         <ToggleButton value="print">Bambu X2D</ToggleButton>
         <ToggleButton value="cnc">Shaper Origin</ToggleButton>

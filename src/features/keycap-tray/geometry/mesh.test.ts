@@ -58,6 +58,10 @@ const cases: [string, TrayDesign][] = [
   ['iso-enter beside a rect pocket, sharing a wall',
     design([pk(1.5, 10, 10, { shape: 'iso-enter' }), pk(1, 10 + 28.325, 10)])],
   ['iso-enter hanging off the corner', design([pk(1.5, -5, -5, { shape: 'iso-enter' })])],
+  ['freely rotated 2u', design([pk(2, 30, 30, { rotationDeg: 37 })])],
+  ['mirrored iso-enter', design([pk(1.5, 20, 20, { shape: 'iso-enter', mirrorX: true })])],
+  ['flipped iso-enter', design([pk(1.5, 20, 20, { shape: 'iso-enter', flipY: true })])],
+  ['rotated iso-enter', design([pk(1.5, 25, 25, { shape: 'iso-enter', rotationDeg: 22 })])],
 ]
 
 for (const [name, d] of cases) {
@@ -172,7 +176,14 @@ test('randomised layouts stay watertight across profiles and sizings', () => {
         x: rnd() * 270 - 20,
         y: rnd() * 180 - 20,
         isThrough: rnd() < 0.25,
+        // Mirror/flip are exact QUANTUM-safe reflections, so they are packed in
+        // with the rest. Free-angle rotation is swept separately (below): many
+        // freely-rotated pockets densely interacting can still trip the
+        // T-junction pass -- a known limitation, see DESIGN.md.
         rotationDeg: rnd() < 0.25 ? 90 : 0,
+        mirrorX: rnd() < 0.15,
+        flipY: rnd() < 0.15,
+        shape: rnd() < 0.12 ? 'iso-enter' : undefined,
       })
     }
     const d = design(pockets, {
@@ -182,5 +193,20 @@ test('randomised layouts stay watertight across profiles and sizings', () => {
     const r = checkManifold(buildTrayMesh(d))
     assert.equal(r.danglingEdges, 0, `trial ${trial}: ${r.danglingEdges} unpaired edges`)
     assert.ok(r.volume > 0, `trial ${trial}: volume ${r.volume}`)
+  }
+})
+
+test('a single freely-rotated pocket stays watertight at every angle', () => {
+  for (let deg = 0; deg < 180; deg += 5) {
+    for (const spot of [{ x: 60, y: 45 }, { x: 92, y: 20 }, { x: -4, y: -4 }]) {
+      for (const shape of [undefined, 'iso-enter' as const]) {
+        const d = design([pk(shape ? 1.5 : 2, spot.x, spot.y, {
+          rotationDeg: deg, shape, mirrorX: deg % 15 === 0, flipY: deg % 20 === 0,
+        })])
+        const r = checkManifold(buildTrayMesh(d))
+        assert.equal(r.danglingEdges, 0, `${deg}deg @ ${spot.x},${spot.y} ${shape ?? 'rect'}`)
+        assert.ok(r.volume > 0)
+      }
+    }
   }
 })

@@ -1,9 +1,12 @@
-// App-owned theme.
+// App-owned theme. iOS-mode by intent.
 //
-// A workbench, not a showcase: flat surfaces, one hairline border weight, a
-// single accent reserved for the active tool and primary action, and type that
-// stays legible next to a technical drawing. No translucency, no blur, no
-// gradient fills, no decorative shadows.
+// There is no Ionic in this stack, so `mode: 'ios'` is expressed here instead:
+// this MUI theme is the single bootstrap that forces the whole app into the
+// native-iOS idiom — one squircle radius (14px), Apple-style timing, and a
+// frosted-glass treatment reserved for app chrome (the sidebar and the mobile
+// bar). Working surfaces that sit over a technical drawing stay opaque so the
+// drawing underneath stays readable; the glass tokens below are consumed only
+// by the shell.
 //
 // Contrast targets: body text >= 7:1 on its surface, secondary text >= 4.5:1,
 // borders >= 3:1 against the surface they separate, and a 2px focus ring that
@@ -45,12 +48,48 @@ const dark = {
 
 export const palettes = { light, dark } as const
 
-/** One radius, one border weight, one motion duration. Repetition is the point. */
-export const RADIUS = 6
+/** One squircle radius, one border weight. iOS uses ~14px on cards and rows. */
+export const RADIUS = 14
 export const BORDER = 1
+
+/** Apple-style easing for chrome transitions (menus, drawer, hover fades). */
+export const EASE_IOS = 'cubic-bezier(0.32, 0.72, 0, 1)'
+
+/**
+ * Frosted-glass tokens for app chrome only (sidebar, mobile bar). `backdrop`
+ * needs the paired `-webkit-` value at the call site for Safari.
+ */
+export const GLASS = {
+  light: {
+    fill: 'rgba(255, 255, 255, 0.4)',
+    fillHover: 'rgba(255, 255, 255, 0.15)',
+    fillActive: 'rgba(255, 255, 255, 0.55)',
+    border: 'rgba(255, 255, 255, 0.35)',
+    backdrop: 'blur(20px) saturate(180%)',
+  },
+  dark: {
+    fill: 'rgba(28, 28, 30, 0.55)',
+    fillHover: 'rgba(255, 255, 255, 0.08)',
+    fillActive: 'rgba(255, 255, 255, 0.14)',
+    border: 'rgba(255, 255, 255, 0.12)',
+    backdrop: 'blur(20px) saturate(180%)',
+  },
+} as const
+
+/**
+ * Card lift. Every `Paper` (and the sidebar) carries this so surfaces read as
+ * floating above the canvas rather than inlaid into it. Two layers: a soft
+ * ambient pool and a tighter contact shadow.
+ */
+export const SHADOW = {
+  light:
+    '0 12px 32px -14px rgba(23, 23, 40, 0.28), 0 4px 10px -6px rgba(23, 23, 40, 0.16)',
+  dark: '0 12px 32px -14px rgba(0, 0, 0, 0.72), 0 4px 10px -6px rgba(0, 0, 0, 0.55)',
+} as const
 
 export function buildTheme(mode: ThemeMode): Theme {
   const c = palettes[mode]
+  const shadow = SHADOW[mode]
 
   return createTheme({
     cssVariables: false,
@@ -80,7 +119,16 @@ export function buildTheme(mode: ThemeMode): Theme {
       MuiCssBaseline: {
         styleOverrides: {
           ':root': { colorScheme: mode },
-          body: { backgroundColor: c.canvas },
+          // A faint wash so the frosted sidebar has depth to refract. The base
+          // colour is unchanged; the gradients are near-invisible on content.
+          body: {
+            backgroundColor: c.canvas,
+            backgroundImage:
+              mode === 'dark'
+                ? 'radial-gradient(1200px 800px at 100% 0%, rgba(121,182,228,0.10), transparent 60%), radial-gradient(1000px 700px at 0% 100%, rgba(121,182,228,0.06), transparent 55%)'
+                : 'radial-gradient(1200px 800px at 100% 0%, rgba(31,92,139,0.10), transparent 60%), radial-gradient(1000px 700px at 0% 100%, rgba(31,92,139,0.05), transparent 55%)',
+            backgroundAttachment: 'fixed',
+          },
           // Honour the OS setting globally rather than per component.
           '@media (prefers-reduced-motion: reduce)': {
             '*, *::before, *::after': {
@@ -99,11 +147,15 @@ export function buildTheme(mode: ThemeMode): Theme {
         },
       },
       MuiPaper: {
+        // `elevation` is left at 0 so MUI's own shadow scale stays out of it;
+        // the lift is a single deliberate `boxShadow` from the SHADOW token,
+        // applied to every Paper (panels, dialogs, menus) so surfaces float.
         defaultProps: { elevation: 0 },
         styleOverrides: {
           root: {
             backgroundImage: 'none',
             border: `${BORDER}px solid ${c.border}`,
+            boxShadow: shadow,
           },
         },
       },

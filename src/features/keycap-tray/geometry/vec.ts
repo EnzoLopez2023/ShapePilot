@@ -107,3 +107,31 @@ export const multiArea = (mp: MultiPolygon): number => mp.reduce((s, p) => s + a
 
 export const translateRing = (r: Ring, dx: number, dy: number): Ring =>
   r.map(([x, y]) => [x + dx, y + dy] as Vec2)
+
+/** Fold any angle into the canonical [0, 360) range. */
+export const normalizeAngleDeg = (deg: number): number => ((deg % 360) + 360) % 360
+
+/**
+ * Proper rotation (determinant +1) about (cx, cy), degrees CCW. Winding is
+ * preserved, so a CCW ring stays CCW -- no reverse needed.
+ */
+export function rotateRing(r: Ring, deg: number, cx: number, cy: number): Ring {
+  if (!deg) return r
+  const a = (deg * Math.PI) / 180
+  const cos = Math.cos(a), sin = Math.sin(a)
+  return r.map(([x, y]) => {
+    const dx = x - cx, dy = y - cy
+    return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos] as Vec2
+  })
+}
+
+/**
+ * Reflect a ring inside its own w x h footprint box: `mx` mirrors left-to-right
+ * (x -> w - x), `fy` flips front-to-back (y -> h - y). A single reflection
+ * reverses winding, so the ring is reversed again iff exactly one axis flips,
+ * restoring the CCW invariant. Operates on a fresh array, never a shared cache.
+ */
+export function reflectRingInBox(r: Ring, w: number, h: number, mx: boolean, fy: boolean): Ring {
+  const mapped = r.map(([x, y]) => [mx ? w - x : x, fy ? h - y : y] as Vec2)
+  return mx !== fy ? mapped.reverse() : mapped
+}

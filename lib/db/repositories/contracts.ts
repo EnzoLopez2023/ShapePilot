@@ -102,6 +102,8 @@ export interface PocketRecord {
   x: number
   y: number
   rotationDeg: number
+  mirrorX?: boolean
+  flipY?: boolean
   isThrough: boolean
   shape?: 'rect' | 'iso-enter'
   label?: string
@@ -155,6 +157,8 @@ export interface PocketInput {
   x: number
   y: number
   rotationDeg?: number
+  mirrorX?: boolean | null
+  flipY?: boolean | null
   isThrough?: boolean
   shape?: 'rect' | 'iso-enter' | null
   label?: string | null

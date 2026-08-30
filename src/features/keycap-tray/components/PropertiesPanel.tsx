@@ -5,9 +5,10 @@ import {
 import type { PocketSizing } from '../geometry/shapes.ts'
 import { LIBRARY_SIZING, PYTHON_SIZING, PROFILE_PRESETS, profileToMulti } from '../model/presets.ts'
 import { multiBBox } from '../geometry/vec.ts'
-import { pocketExtent } from '../state/useTrayDesign.ts'
+import { pocketAABB } from '../state/useTrayDesign.ts'
 import type { FabricationSettings, Pocket, TrayDesign, TrayProfile } from '../model/types.ts'
 import LengthField from './LengthField.tsx'
+import AngleField from './AngleField.tsx'
 import HoverTooltip from './HoverTooltip.tsx'
 
 export interface PropertiesPanelProps {
@@ -36,25 +37,24 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
     const b = multiBBox(profileToMulti(design.profile))
     return { cx: (b.minX + b.maxX) / 2, cy: (b.minY + b.maxY) / 2 }
   })()
+  // Nudge each pocket so its true (rotated) bounding box centres on the tray.
+  // `p.x`/`p.y` are the un-rotated footprint origin, so move by the delta.
   const centerSelected = (axis: 'x' | 'y') => {
     for (const p of selected) {
-      const { w, h } = pocketExtent(p, design.sizing)
-      onPocket(p.id, axis === 'x' ? { x: trayCenter.cx - w / 2 } : { y: trayCenter.cy - h / 2 })
+      const b = pocketAABB(p, design.sizing)
+      const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2
+      onPocket(p.id, axis === 'x'
+        ? { x: p.x + (trayCenter.cx - cx) }
+        : { y: p.y + (trayCenter.cy - cy) })
     }
   }
-  // Reflect each selected pocket's position across the tray's centreline --
-  // handy for building the mirrored other half of a split layout.
+  // Mirror / flip the pocket's own geometry in place -- bbox and position
+  // unchanged. Only asymmetric shapes (ISO Enter, future customs) change.
   const mirrorSelected = () => {
-    for (const p of selected) {
-      const { w } = pocketExtent(p, design.sizing)
-      onPocket(p.id, { x: 2 * trayCenter.cx - p.x - w })
-    }
+    for (const p of selected) onPocket(p.id, { mirrorX: !p.mirrorX })
   }
   const flipSelected = () => {
-    for (const p of selected) {
-      const { h } = pocketExtent(p, design.sizing)
-      onPocket(p.id, { y: 2 * trayCenter.cy - p.y - h })
-    }
+    for (const p of selected) onPocket(p.id, { flipY: !p.flipY })
   }
 
   const sizingPreset =
@@ -212,15 +212,25 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
                 Center Y
               </Button>
             </Tooltip>
-            <Tooltip title="Reflect each selected pocket's position left-to-right across the tray's centreline -- useful for mirroring a layout onto the other half of a split tray.">
-              <Button size="small" onClick={mirrorSelected} sx={{ minWidth: 0, px: 1 }}>
-                Mirror
-              </Button>
+            <Tooltip title="Mirror the pocket's own shape left-to-right, in place. Only changes an asymmetric shape like ISO Enter.">
+              <span>
+                <Button
+                  size="small" onClick={mirrorSelected} sx={{ minWidth: 0, px: 1 }}
+                  disabled={!selected.some(p => p.shape === 'iso-enter')}
+                >
+                  Mirror
+                </Button>
+              </span>
             </Tooltip>
-            <Tooltip title="Reflect each selected pocket's position front-to-back across the tray's centreline.">
-              <Button size="small" onClick={flipSelected} sx={{ minWidth: 0, px: 1 }}>
-                Flip
-              </Button>
+            <Tooltip title="Flip the pocket's own shape top-to-bottom, in place. Only changes an asymmetric shape like ISO Enter.">
+              <span>
+                <Button
+                  size="small" onClick={flipSelected} sx={{ minWidth: 0, px: 1 }}
+                  disabled={!selected.some(p => p.shape === 'iso-enter')}
+                >
+                  Flip
+                </Button>
+              </span>
             </Tooltip>
           </Stack>
           {selected.length === 1 && (
@@ -234,15 +244,21 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
               <Stack direction="row" spacing={1}>
                 <LengthField
                   label="X" imperial={imperial} valueMm={selected[0].x}
-                  hint="Lower-left corner of the pocket's bounding box, from the tray's origin."
+                  hint="Footprint origin (lower-left before rotation), from the tray's origin."
                   onChangeMm={v => onPocket(selected[0].id, { x: v })}
                 />
                 <LengthField
                   label="Y" imperial={imperial} valueMm={selected[0].y}
-                  hint="Lower-left corner of the pocket's bounding box, from the tray's origin."
+                  hint="Footprint origin (lower-left before rotation), from the tray's origin."
                   onChangeMm={v => onPocket(selected[0].id, { y: v })}
                 />
               </Stack>
+              <AngleField
+                valueDeg={selected[0].rotationDeg ?? 0}
+                onChangeDeg={v => onPocket(selected[0].id, { rotationDeg: v })}
+                hint="Rotate the pocket about its own centre. Or drag a corner handle on the canvas (hold Shift to snap to 15°)."
+                sx={{ maxWidth: 120 }}
+              />
             </>
           )}
           {selected.map(p => (
@@ -261,18 +277,42 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
                   label={<Typography variant="body2">Through cut</Typography>}
                 />
               </Tooltip>
-              {p.shape !== 'iso-enter' && (
-                <Tooltip title="Swaps width and height, for a pocket lying on its side.">
-                  <FormControlLabel
-                    control={
-                      <Switch
-                        size="small" checked={p.rotationDeg === 90}
-                        onChange={e => onPocket(p.id, { rotationDeg: e.target.checked ? 90 : 0 })}
-                      />
-                    }
-                    label={<Typography variant="body2">Tilt</Typography>}
-                  />
-                </Tooltip>
+              <Tooltip title="Rotate this pocket 90°. A free angle set on the canvas or in the Angle field shows this unchecked.">
+                <FormControlLabel
+                  control={
+                    <Switch
+                      size="small" checked={p.rotationDeg === 90}
+                      onChange={e => onPocket(p.id, { rotationDeg: e.target.checked ? 90 : 0 })}
+                    />
+                  }
+                  label={<Typography variant="body2">Tilt</Typography>}
+                />
+              </Tooltip>
+              {p.shape === 'iso-enter' && (
+                <>
+                  <Tooltip title="Mirror this shape left-to-right, in place.">
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          size="small" checked={!!p.mirrorX}
+                          onChange={e => onPocket(p.id, { mirrorX: e.target.checked })}
+                        />
+                      }
+                      label={<Typography variant="body2">Mirror</Typography>}
+                    />
+                  </Tooltip>
+                  <Tooltip title="Flip this shape top-to-bottom, in place.">
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          size="small" checked={!!p.flipY}
+                          onChange={e => onPocket(p.id, { flipY: e.target.checked })}
+                        />
+                      }
+                      label={<Typography variant="body2">Flip</Typography>}
+                    />
+                  </Tooltip>
+                </>
               )}
             </Stack>
           ))}

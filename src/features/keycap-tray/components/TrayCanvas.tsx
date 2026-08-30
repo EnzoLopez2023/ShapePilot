@@ -33,6 +33,7 @@ export interface TrayCanvasProps {
   onSelect: (id: string, additive: boolean) => void
   onClearSelection: () => void
   onMove: (ids: Iterable<string>, dx: number, dy: number) => void
+  onRotate: (id: string, deg: number) => void
   onDropItem: (item: PaletteItem, x: number, y: number) => void
 }
 
@@ -47,6 +48,22 @@ interface DragState {
   guideX: number | null
   guideY: number | null
 }
+
+interface RotateState {
+  pointerId: number
+  id: string
+  /** Rotation pivot, model mm. */
+  cx: number
+  cy: number
+  /** Pointer bearing about the pivot at press, degrees. */
+  startPointerDeg: number
+  /** The pocket's angle at press. */
+  baseRotation: number
+  /** Live angle for the preview and the commit. */
+  angle: number
+}
+
+const bearingDeg = (dx: number, dy: number): number => (Math.atan2(dy, dx) * 180) / Math.PI
 
 /**
  * The whole scene is mirrored so the model can stay y-up, which would render
@@ -80,11 +97,53 @@ function PocketLabel(
   )
 }
 
+/**
+ * Four grab points at the (rotated) footprint corners of the sole selected
+ * pocket. Dragging any of them spins the pocket about its centre. Drawn inside
+ * the y-flipped group, so positions are model mm and radii scale with the zoom.
+ */
+function RotateHandles(
+  { cx, cy, x, y, w, h, angleDeg, viewW, color, onBegin }: {
+    cx: number; cy: number; x: number; y: number; w: number; h: number
+    angleDeg: number; viewW: number; color: string
+    onBegin: (e: React.PointerEvent) => void
+  },
+) {
+  const a = (angleDeg * Math.PI) / 180
+  const cos = Math.cos(a), sin = Math.sin(a)
+  const rot = (px: number, py: number): [number, number] => {
+    const dx = px - cx, dy = py - cy
+    return [cx + dx * cos - dy * sin, cy + dx * sin + dy * cos]
+  }
+  const corners = [rot(x, y), rot(x + w, y), rot(x + w, y + h), rot(x, y + h)]
+  const rVis = viewW / 130
+  const rHit = viewW / 45
+  return (
+    <g>
+      {corners.map(([hx, hy], i) => (
+        <g key={i}>
+          <circle
+            cx={hx} cy={hy} r={rHit} fill="transparent"
+            role="button" aria-label="Rotate pocket"
+            onPointerDown={onBegin}
+            style={{ cursor: 'grab' }}
+          />
+          <circle
+            cx={hx} cy={hy} r={rVis} fill="none"
+            stroke={color} strokeWidth={viewW / 400}
+            style={{ pointerEvents: 'none' }}
+          />
+        </g>
+      ))}
+    </g>
+  )
+}
+
 export default function TrayCanvas(props: TrayCanvasProps) {
   const {
     design, selection, issues, snapMm, gridMm, showPlate, showLabels, inset, fitToken,
     plateWidthMm, plateDepthMm, showBuffer, bufferMm,
-    onSelect, onClearSelection, onMove, onDropItem,
+    onSelect, onClearSelection, onMove, onRotate, onDropItem,
   } = props
 
   const theme = useTheme()
@@ -93,6 +152,27 @@ export default function TrayCanvas(props: TrayCanvasProps) {
   const svgRef = useRef<SVGSVGElement | null>(null)
   const [view, setView] = useState({ x: -12, y: -12, w: 280, h: 200 })
   const [drag, setDrag] = useState<DragState | null>(null)
+  const [rotateDrag, setRotateDrag] = useState<RotateState | null>(null)
+  // Background gesture: a plain drag on empty canvas pans the view; holding
+  // Shift instead rubber-bands a region to zoom into. `marquee` (client pixels
+  // relative to the SVG) drives the zoom rectangle overlay; `grabbing` only
+  // swaps the cursor while panning.
+  const [marquee, setMarquee] = useState<
+    { x0: number; y0: number; x1: number; y1: number } | null
+  >(null)
+  const [grabbing, setGrabbing] = useState(false)
+  const bgPointer = useRef<
+    | {
+        id: number
+        mode: 'pan' | 'zoom'
+        startClientX: number
+        startClientY: number
+        viewX: number
+        viewY: number
+        moved: boolean
+      }
+    | null
+  >(null)
 
   const profileRings = useMemo(() => profileToMulti(design.profile), [design.profile])
   const profilePath = useMemo(
@@ -180,6 +260,55 @@ export default function TrayCanvas(props: TrayCanvasProps) {
     })
   }, [])
 
+  // Zoom the view to the dragged region, growing the short axis so it fills the
+  // viewport without distorting, then clamping to the same limits as the wheel.
+  const commitMarqueeZoom = useCallback(
+    (box: { x0: number; y0: number; x1: number; y1: number }) => {
+      const el = svgRef.current
+      if (!el) return
+      const r = el.getBoundingClientRect()
+      const a = toModel(r.left + box.x0, r.top + box.y0)
+      const b = toModel(r.left + box.x1, r.top + box.y1)
+      const cx = (a.x + b.x) / 2
+      const cy = (a.y + b.y) / 2
+      let w = Math.max(Math.abs(a.x - b.x), 1e-3)
+      let h = Math.max(Math.abs(a.y - b.y), 1e-3)
+      const ratio = view.w / view.h
+      if (w / h > ratio) h = w / ratio
+      else w = h * ratio
+      w = Math.min(2000, Math.max(20, w))
+      h = w / ratio
+      setView({ x: cx - w / 2, y: cy - h / 2, w, h })
+    },
+    [toModel, view.w, view.h],
+  )
+
+  const beginBackground = useCallback((e: React.PointerEvent) => {
+    if (e.button !== 0) return
+    const el = svgRef.current
+    if (!el) return
+    const zoom = e.shiftKey
+    bgPointer.current = {
+      id: e.pointerId,
+      mode: zoom ? 'zoom' : 'pan',
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      viewX: view.x,
+      viewY: view.y,
+      moved: false,
+    }
+    if (zoom) {
+      const r = el.getBoundingClientRect()
+      setMarquee({
+        x0: e.clientX - r.left, y0: e.clientY - r.top,
+        x1: e.clientX - r.left, y1: e.clientY - r.top,
+      })
+    } else {
+      setGrabbing(true)
+    }
+    try { el.setPointerCapture(e.pointerId) } catch { /* pointer already gone */ }
+  }, [view.x, view.y])
+
   const onWheel = useCallback((e: React.WheelEvent) => {
     // preventDefault is handled by the non-passive native listener below;
     // calling it here too logs a passive-listener violation on every scroll.
@@ -207,11 +336,57 @@ export default function TrayCanvas(props: TrayCanvasProps) {
     })
   }, [selection, onSelect])
 
+  const beginRotate = useCallback((e: React.PointerEvent, pocket: Pocket) => {
+    e.stopPropagation()
+    const { w, h } = pocketExtent(pocket, design.sizing)
+    const cx = pocket.x + w / 2, cy = pocket.y + h / 2
+    const m = toModel(e.clientX, e.clientY)
+    setRotateDrag({
+      pointerId: e.pointerId,
+      id: pocket.id,
+      cx, cy,
+      startPointerDeg: bearingDeg(m.x - cx, m.y - cy),
+      baseRotation: pocket.rotationDeg ?? 0,
+      angle: pocket.rotationDeg ?? 0,
+    })
+    try { (e.target as Element).setPointerCapture(e.pointerId) } catch { /* pointer already gone */ }
+  }, [design.sizing, toModel])
+
   // Screen-pixel snap radius for alignment guides, converted to model mm at
   // the current zoom so it feels like a constant ~6 px regardless of scale.
   const guideToleranceMm = useCallback((rectWidth: number) => (6 / rectWidth) * view.w, [view.w])
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
+    const bg = bgPointer.current
+    if (bg && bg.id === e.pointerId) {
+      const el = svgRef.current
+      if (!el) return
+      const r = el.getBoundingClientRect()
+      const dxPx = e.clientX - bg.startClientX
+      const dyPx = e.clientY - bg.startClientY
+      if (!bg.moved && Math.hypot(dxPx, dyPx) > 3) bg.moved = true
+      if (bg.mode === 'pan') {
+        // Keep the grabbed model point under the cursor. The group is y-flipped,
+        // so a downward drag raises view.y.
+        setView(v => ({
+          ...v,
+          x: bg.viewX - (dxPx / r.width) * v.w,
+          y: bg.viewY + (dyPx / r.height) * v.h,
+        }))
+      } else {
+        setMarquee(m => (m ? { ...m, x1: e.clientX - r.left, y1: e.clientY - r.top } : m))
+      }
+      return
+    }
+    if (rotateDrag && e.pointerId === rotateDrag.pointerId) {
+      const m = toModel(e.clientX, e.clientY)
+      const cur = bearingDeg(m.x - rotateDrag.cx, m.y - rotateDrag.cy)
+      let deg = rotateDrag.baseRotation + (cur - rotateDrag.startPointerDeg)
+      if (e.shiftKey) deg = Math.round(deg / 15) * 15
+      deg = ((deg % 360) + 360) % 360
+      setRotateDrag(d => (d ? { ...d, angle: deg } : d))
+      return
+    }
     if (!drag || e.pointerId !== drag.pointerId) return
     const el = svgRef.current
     if (!el) return
@@ -245,13 +420,56 @@ export default function TrayCanvas(props: TrayCanvasProps) {
     }
 
     setDrag(d => (d ? { ...d, dx, dy, guideX, guideY } : d))
-  }, [drag, view, snap, design.pockets, design.sizing, pocketCenters, trayCenter, guideToleranceMm])
+  }, [drag, rotateDrag, toModel, view, snap, design.pockets, design.sizing,
+      pocketCenters, trayCenter, guideToleranceMm])
 
   const endDrag = useCallback(() => {
     if (!drag) return
     if (drag.dx !== 0 || drag.dy !== 0) onMove(drag.ids, drag.dx, drag.dy)
     setDrag(null)
   }, [drag, onMove])
+
+  const endRotate = useCallback(() => {
+    if (!rotateDrag) return
+    if (Math.abs(rotateDrag.angle - rotateDrag.baseRotation) > 1e-6) {
+      onRotate(rotateDrag.id, rotateDrag.angle)
+    }
+    setRotateDrag(null)
+  }, [rotateDrag, onRotate])
+
+  // Background pointer released. Shift-drag frames a zoom region; a plain drag
+  // has already panned the view; a bare click (either mode, no real movement)
+  // clears the selection, as clicking empty canvas always did.
+  const onCanvasPointerUp = useCallback((e: React.PointerEvent) => {
+    if (rotateDrag && e.pointerId === rotateDrag.pointerId) { endRotate(); return }
+    const bg = bgPointer.current
+    if (bg && bg.id === e.pointerId) {
+      bgPointer.current = null
+      setGrabbing(false)
+      const box = marquee
+      setMarquee(null)
+      if (bg.mode === 'zoom' && box) {
+        const moved = Math.hypot(box.x1 - box.x0, box.y1 - box.y0)
+        if (moved < 5) onClearSelection()
+        else commitMarqueeZoom(box)
+      } else if (!bg.moved) {
+        onClearSelection()
+      }
+      return
+    }
+    endDrag()
+  }, [rotateDrag, endRotate, marquee, endDrag, onClearSelection, commitMarqueeZoom])
+
+  const onCanvasPointerCancel = useCallback((e: React.PointerEvent) => {
+    if (rotateDrag && e.pointerId === rotateDrag.pointerId) { setRotateDrag(null); return }
+    if (bgPointer.current?.id === e.pointerId) {
+      bgPointer.current = null
+      setGrabbing(false)
+      setMarquee(null)
+      return
+    }
+    endDrag()
+  }, [rotateDrag, endDrag])
 
   // Dropping from the palette.
   const onDrop = useCallback((e: React.DragEvent) => {
@@ -320,16 +538,22 @@ export default function TrayCanvas(props: TrayCanvasProps) {
         role="application"
         aria-label={
           `Tray layout, ${design.pockets.length} pockets. `
-          + 'Drag a pocket to move it; scroll to zoom.'
+          + 'Drag a pocket to move it; drag a corner handle to rotate it; '
+          + 'drag the background to pan; hold Shift and drag to zoom to a region; '
+          + 'scroll to zoom.'
         }
         onWheel={onWheel}
         onPointerMove={onPointerMove}
-        onPointerUp={endDrag}
-        onPointerCancel={endDrag}
-        onPointerDown={onClearSelection}
+        onPointerUp={onCanvasPointerUp}
+        onPointerCancel={onCanvasPointerCancel}
+        onPointerDown={beginBackground}
         onDragOver={e => e.preventDefault()}
         onDrop={onDrop}
-        style={{ display: 'block', touchAction: 'none' }}
+        style={{
+          display: 'block',
+          touchAction: 'none',
+          cursor: grabbing || rotateDrag ? 'grabbing' : 'grab',
+        }}
       >
         {/* Model space is y-up; flip once here so all geometry below is in mm. */}
         <g transform={`translate(0, ${2 * view.y + view.h}) scale(1, -1)`}>
@@ -377,26 +601,60 @@ export default function TrayCanvas(props: TrayCanvasProps) {
             const dragging = selected && drag ? { x: drag.dx, y: drag.dy } : null
             const isError = flagged.errors.has(p.id)
             const isWarn = !isError && flagged.warnings.has(p.id)
+            const { w, h } = pocketExtent(p, design.sizing)
+            const pcx = p.x + w / 2, pcy = p.y + h / 2
+            const rotating = rotateDrag && rotateDrag.id === p.id ? rotateDrag : null
+            // The committed geometry already bakes baseRotation; only the live
+            // delta needs an SVG rotate. Same matrix as rotateRing, y-up frame.
+            const previewDeg = rotating ? rotating.angle - rotating.baseRotation : 0
             return (
               <g key={p.id} transform={dragging ? `translate(${dragging.x},${dragging.y})` : undefined}>
-                <path
-                  d={d}
-                  fill={selected ? selFill : pocketFill}
-                  stroke={isError
-                    ? theme.palette.error.main
-                    : isWarn
-                      ? theme.palette.warning.main
-                      : selected ? theme.palette.primary.main : ink}
-                  strokeWidth={(isError || isWarn || selected ? 2.2 : 1) * (view.w / 800)}
-                  onPointerDown={e => beginDrag(e, p)}
-                  style={{ cursor: 'move' }}
-                />
+                <g transform={previewDeg ? `rotate(${previewDeg} ${pcx} ${pcy})` : undefined}>
+                  <path
+                    d={d}
+                    fill={selected ? selFill : pocketFill}
+                    stroke={isError
+                      ? theme.palette.error.main
+                      : isWarn
+                        ? theme.palette.warning.main
+                        : selected ? theme.palette.primary.main : ink}
+                    strokeWidth={(isError || isWarn || selected ? 2.2 : 1) * (view.w / 800)}
+                    onPointerDown={e => beginDrag(e, p)}
+                    style={{ cursor: 'move' }}
+                  />
+                </g>
                 {showLabels && <PocketLabel pocket={p} design={design} ink={ink} />}
+                {selected && selection.size === 1 && (
+                  <RotateHandles
+                    cx={pcx} cy={pcy} x={p.x} y={p.y} w={w} h={h}
+                    angleDeg={rotating ? rotating.angle : (p.rotationDeg ?? 0)}
+                    viewW={view.w}
+                    color={theme.palette.primary.main}
+                    onBegin={e => beginRotate(e, p)}
+                  />
+                )}
               </g>
             )
           })}
         </g>
       </svg>
+
+      {marquee && (
+        <Box
+          sx={{
+            position: 'absolute',
+            left: Math.min(marquee.x0, marquee.x1),
+            top: Math.min(marquee.y0, marquee.y1),
+            width: Math.abs(marquee.x1 - marquee.x0),
+            height: Math.abs(marquee.y1 - marquee.y0),
+            border: `1px dashed ${theme.palette.primary.main}`,
+            bgcolor: dark ? 'rgba(121,182,228,0.14)' : 'rgba(31,92,139,0.12)',
+            borderRadius: '2px',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+
       <Stack
         sx={{
           position: 'absolute', bottom: 8, right: 8,
