@@ -21,6 +21,9 @@ import { applyConnectionPragmas } from '../lib/db/connection.ts'
  * checks below still prove the *data* stays readable by a prior release's
  * queries -- which is what makes a manual, deliberate rollback recoverable --
  * but the automatic path must be treated as unavailable for that deploy.
+ *
+ * The runbook -- take a snapshot first, and how to recover deliberately if
+ * verification fails -- is "Deploys that add a migration" in docs/DEPLOYMENT.md.
  */
 const ROLLBACK_COMPATIBLE_LEDGER = [
   {

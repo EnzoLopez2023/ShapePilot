@@ -285,3 +285,61 @@ confirmation, and failure rollback steps.
 Nonsecret SBOM, deployment, and rollback evidence is retained for 30 days. App
 settings, tokens, Key Vault values, database content, and credentials are never
 uploaded.
+
+## Deploys that add a migration
+
+Automatic rollback assumes the previous image can start against the database the
+new one leaves behind. When a release adds a migration, it cannot: `migrate()`
+refuses a database whose ledger is longer than the build ships
+(`SCHEMA_AHEAD_OF_CODE`), `assertApprovedExistingSchema` refuses to open the file
+at all, and readiness would report a schema-identity mismatch even if it did. So
+the failure-rollback step runs, restores the previous digest, and that image will
+not come up.
+
+The exposure is exactly one deploy. Once the migration-carrying release is itself
+the *previous* release, both sides know the migration and rollback works again.
+
+This is a known, accepted limitation rather than an oversight. Closing it would
+mean relaxing the exact-lineage database contract to tolerate a database that is
+ahead by unknown migrations, which loosens the guard that catches a wrong file
+mounted, a wrong backup restored, or a hand-edited schema. That trade has not
+been taken.
+
+### Before such a deploy
+
+Take a snapshot from the App Service SSH console and keep the artifact id. The
+Web App already sets `BACKUP_ROOT`, so no environment setup is needed:
+
+```bash
+node scripts/recovery.ts backup
+```
+
+### If verification fails
+
+Automatic rollback will also fail. Recover deliberately:
+
+```bash
+# 1. Restore forward into a new file. Never over the live authority; in
+#    production the destination must be a direct child of RECOVERY_WORK_ROOT.
+node scripts/recovery.ts restore \
+  --artifact <id> \
+  --to /home/data/recovery/shapepilot/pre-<release>.db
+
+# 2. Stop the Web App, then promote the restored file into DB_PATH by hand.
+#    Restore never promotes; that step is deliberately an operator's.
+
+# 3. Point the container back at the previous digest and start it.
+az webapp config container set \
+  --resource-group rg-personal-apps-prod \
+  --name app-shapepilot-prod-lwxhu7jxlrbtu \
+  --container-image-name <previous-digest-reference>
+```
+
+Writes made between the snapshot and the failure are lost. The window is the
+verification period, so in practice that is nothing.
+
+### Migrations shipped this way
+
+| Migration | Release | Snapshot taken |
+| --- | --- | --- |
+| `003-design-documents` | Shaper, Bambu and Playground designers | record the artifact id here |
