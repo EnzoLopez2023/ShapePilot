@@ -16,9 +16,17 @@ export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
   body?: unknown
   signal?: AbortSignal
+  /**
+   * Override the default budget. Only for calls that are legitimately slow --
+   * an AI design turn is a model inference, not a database read -- and never as
+   * a way to paper over a slow endpoint.
+   */
+  timeoutMs?: number
 }
 
 const TIMEOUT_MS = 20_000
+/** Nothing should hold a request open longer than this, whatever it asks for. */
+const MAX_TIMEOUT_MS = 180_000
 
 async function parseError(response: Response): Promise<ApiRequestError> {
   const fallback = `${response.status} ${response.statusText}`.trim()
@@ -41,7 +49,8 @@ async function parseError(response: Response): Promise<ApiRequestError> {
 /** Every request is bounded, cancellable, and carries a fresh access token. */
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS)
+  const budget = Math.min(options.timeoutMs ?? TIMEOUT_MS, MAX_TIMEOUT_MS)
+  const timeout = setTimeout(() => controller.abort(), budget)
   options.signal?.addEventListener('abort', () => controller.abort(), { once: true })
 
   const headers: Record<string, string> = {}

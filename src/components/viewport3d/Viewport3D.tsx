@@ -320,18 +320,36 @@ export default function Viewport3D(props: Viewport3DProps) {
     }
     if (box.isEmpty()) box.set(new THREE.Vector3(-50, -50, 0), new THREE.Vector3(50, 50, 50))
 
-    const centre = box.getCenter(new THREE.Vector3())
-    const span = Math.max(...box.getSize(new THREE.Vector3()).toArray()) || 100
+    const sphere = box.getBoundingSphere(new THREE.Sphere())
+    const centre = sphere.center
+    const radius = sphere.radius || 50
+
+    // Distance from the field of view rather than a guessed multiple of the
+    // span: a fixed multiplier frames a 20 mm part and a 250 mm one completely
+    // differently. The horizontal field is the binding one on a wide viewport,
+    // so the smaller of the two decides.
+    const vFov = THREE.MathUtils.degToRad(state.camera.fov)
+    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * state.camera.aspect)
+    const distance = (radius / Math.sin(Math.min(vFov, hFov) / 2)) * 1.15
+
+    const direction = new THREE.Vector3(0.55, -1, 0.6).normalize()
     state.controls.target.copy(centre)
-    state.camera.position.set(
-      centre.x + span * 0.9, centre.y - span * 1.2, centre.z + span * 0.9)
-    state.camera.near = span / 100
-    state.camera.far = span * 40
+    state.camera.position.copy(centre).addScaledVector(direction, distance)
+    state.camera.near = Math.max(0.1, distance / 1_000)
+    state.camera.far = distance * 10 + radius * 4
     state.camera.updateProjectionMatrix()
     state.controls.update()
   }, [buildMm])
 
   useEffect(() => { frame() }, [frame, fitToken])
+
+  // Going from an empty scene to a first object should frame it; after that the
+  // camera is the user's to control and must not jump on every edit.
+  const wasEmpty = useRef(true)
+  useEffect(() => {
+    if (wasEmpty.current && parts.length) frame()
+    wasEmpty.current = parts.length === 0
+  }, [parts.length, frame])
 
   const triangles = parts.reduce((sum, p) => sum + p.mesh.triangleCount, 0)
 

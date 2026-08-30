@@ -2,12 +2,24 @@
 
 Approachable AI-assisted 2D/3D design, viewing, editing, and fabrication.
 
-Wave 1 ships the **Keycap Tray Designer**: lay out keycap pockets in a tray
-profile, see whether the result can actually be printed or cut, and export
-STL, 3MF, SVG or DXF. Geometry, validation and every exported byte are produced
-in the browser; the server stores design parameters and nothing else.
+Four designers, one shared document, so a design can move between them.
+Geometry, validation and every exported byte are produced in the browser; the
+server stores design parameters and nothing else.
 
-Behaviour and data come from Hearth commit
+| | |
+| --- | --- |
+| **Keycap Tray Designer** | Lay out keycap pockets in a tray profile. STL, 3MF, SVG, DXF. |
+| **Shaper Designer** | 2D design for the Shaper Origin: shapes, text, the five Origin cut types. Imports SVG, DXF, STL. |
+| **Bambu Designer** | Tinkercad-style 3D modelling for the Bambu Lab X2D: solids and holes resolved by grouping, align, mirror. Imports STL, OBJ, 3MF, SVG. |
+| **AI Imagination Playground** | Describe a part, refine it in conversation, then hand it to either designer. |
+
+The two 3D designers evaluate booleans with [manifold-3d](https://github.com/elalish/manifold),
+which guarantees watertight output — a requirement for anything that will be
+sliced. The assistant runs on a Foundry resource dedicated to this app so its
+inference cost is attributable on its own; see
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+
+The Keycap Tray Designer's behaviour and data come from Hearth commit
 `f0b05fc1dbf53e8aa26c215d8e858894a2793871` (version 2.13.2, build 172). See
 [`docs/SOURCE_LINEAGE.md`](docs/SOURCE_LINEAGE.md).
 

@@ -4,8 +4,26 @@
     {
       "name": "landing-preview",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["vite", "--mode", "landingpreview", "--port", "5199", "--strictPort"],
+      "runtimeArgs": [
+        "vite",
+        "--mode",
+        "landingpreview",
+        "--port",
+        "5199",
+        "--strictPort"
+      ],
       "port": 5199
+    },
+    {
+      "name": "dev",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "vite",
+        "--port",
+        "5173",
+        "--strictPort"
+      ],
+      "port": 5173
     }
   ]
 }

@@ -9,6 +9,9 @@ import { LoadingState } from '../components/LoadingState.tsx'
 // Real URL routing with lazy feature boundaries. There is no global conditional
 // view switch: each section is its own route and its own chunk.
 const KeycapTrayPage = lazy(() => import('../features/keycap-tray/KeycapTrayPage.tsx'))
+const ShaperDesignerPage = lazy(() => import('../features/shaper-designer/ShaperDesignerPage.tsx'))
+const BambuDesignerPage = lazy(() => import('../features/bambu-designer/BambuDesignerPage.tsx'))
+const PlaygroundPage = lazy(() => import('../features/playground/PlaygroundPage.tsx'))
 const SettingsPage = lazy(() => import('../features/settings/SettingsPage.tsx'))
 const AdminPage = lazy(() => import('../features/admin/AdminPage.tsx'))
 
@@ -38,6 +41,36 @@ export function AppRoutes() {
               <Box sx={{ flex: 1, minHeight: 0 }}>
                 <Suspense fallback={<LoadingState label="Loading the designer…" />}>
                   <KeycapTrayPage />
+                </Suspense>
+              </Box>
+            }
+          />
+          <Route
+            path="/shaper-designer"
+            element={
+              <Box sx={{ flex: 1, minHeight: 0 }}>
+                <Suspense fallback={<LoadingState label="Loading the Shaper designer…" />}>
+                  <ShaperDesignerPage />
+                </Suspense>
+              </Box>
+            }
+          />
+          <Route
+            path="/bambu-designer"
+            element={
+              <Box sx={{ flex: 1, minHeight: 0 }}>
+                <Suspense fallback={<LoadingState label="Loading the Bambu designer…" />}>
+                  <BambuDesignerPage />
+                </Suspense>
+              </Box>
+            }
+          />
+          <Route
+            path="/playground"
+            element={
+              <Box sx={{ flex: 1, minHeight: 0 }}>
+                <Suspense fallback={<LoadingState label="Loading the playground…" />}>
+                  <PlaygroundPage />
                 </Suspense>
               </Box>
             }

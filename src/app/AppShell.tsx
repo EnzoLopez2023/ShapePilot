@@ -6,6 +6,9 @@ import type { SvgIconComponent } from '@mui/icons-material'
 import MenuRoundedIcon from '@mui/icons-material/MenuRounded'
 import MenuOpenRoundedIcon from '@mui/icons-material/MenuOpenRounded'
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded'
+import ArchitectureRoundedIcon from '@mui/icons-material/ArchitectureRounded'
+import ViewInArRoundedIcon from '@mui/icons-material/ViewInArRounded'
+import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded'
 import AdminPanelSettingsRoundedIcon from '@mui/icons-material/AdminPanelSettingsRounded'
 import { EASE_IOS, GLASS, SHADOW } from '../theme/theme.ts'
@@ -20,6 +23,9 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { to: '/keycap-tray', label: 'Keycap tray', icon: GridViewRoundedIcon },
+  { to: '/shaper-designer', label: 'Shaper designer', icon: ArchitectureRoundedIcon },
+  { to: '/bambu-designer', label: 'Bambu designer', icon: ViewInArRoundedIcon },
+  { to: '/playground', label: 'AI playground', icon: AutoAwesomeRoundedIcon },
   { to: '/settings', label: 'Settings', icon: TuneRoundedIcon },
   { to: '/admin', label: 'Admin', icon: AdminPanelSettingsRoundedIcon, adminOnly: true },
 ]

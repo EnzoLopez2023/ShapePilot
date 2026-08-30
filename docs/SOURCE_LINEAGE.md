@@ -34,23 +34,27 @@ The local Hearth working tree and its `HEAD`
 
 ## Copied source map
 
+Wave 2 promoted the modules with no keycap knowledge out of the feature folder
+so the other designers could share them. Those rows say "promoted"; the code is
+unchanged, only its address. `…` abbreviates `src/features/keycap-tray`.
+
 | Hearth path | ShapePilot path | Change |
 |---|---|---|
-| `src/KeycapTray/geometry/vec.ts` | `src/features/keycap-tray/geometry/vec.ts` | verbatim |
-| `src/KeycapTray/geometry/shapes.ts` | `…/geometry/shapes.ts` | verbatim |
-| `src/KeycapTray/geometry/triangulate.ts` | `…/geometry/triangulate.ts` | verbatim |
-| `src/KeycapTray/geometry/boolean.ts` | `…/geometry/boolean.ts` | verbatim |
-| `src/KeycapTray/geometry/tjunction.ts` | `…/geometry/tjunction.ts` | verbatim |
-| `src/KeycapTray/geometry/mesh.ts` | `…/geometry/mesh.ts` | verbatim |
+| `src/KeycapTray/geometry/vec.ts` | `src/geometry/vec.ts` | verbatim; promoted out of the feature (Wave 2) |
+| `src/KeycapTray/geometry/shapes.ts` | `…/geometry/shapes.ts` | the generic ring builders moved to `src/geometry/primitives.ts` and are re-exported |
+| `src/KeycapTray/geometry/triangulate.ts` | `src/geometry/triangulate.ts` | verbatim; promoted (Wave 2) |
+| `src/KeycapTray/geometry/boolean.ts` | `src/geometry/boolean.ts` | verbatim; promoted (Wave 2) |
+| `src/KeycapTray/geometry/tjunction.ts` | `src/geometry/tjunction.ts` | verbatim; promoted (Wave 2) |
+| `src/KeycapTray/geometry/mesh.ts` | `src/geometry/mesh.ts` | verbatim; promoted (Wave 2) |
 | `src/KeycapTray/geometry/layers.ts` | `…/geometry/layers.ts` | import paths only |
 | `src/KeycapTray/geometry/validate.ts` | `…/geometry/validate.ts` | import paths; one unused parameter renamed `_d` |
-| `src/KeycapTray/export/download.ts` | `…/export/download.ts` | verbatim |
-| `src/KeycapTray/export/stl.ts` | `…/export/stl.ts` | default header string only |
-| `src/KeycapTray/export/threemf.ts` | `…/export/threemf.ts` | `Application` metadata string only |
-| `src/KeycapTray/export/svg.ts` | `…/export/svg.ts` | import paths only |
-| `src/KeycapTray/export/dxf.ts` | `…/export/dxf.ts` | import paths only |
+| `src/KeycapTray/export/download.ts` | `src/export/download.ts` | verbatim; promoted (Wave 2) |
+| `src/KeycapTray/export/stl.ts` | `src/export/stl.ts` | default header string; promoted (Wave 2) |
+| `src/KeycapTray/export/threemf.ts` | `src/export/threemf.ts` | `Application` metadata string; promoted (Wave 2) |
+| `src/KeycapTray/export/svg.ts` | `src/export/shaperSvg.ts` | takes cut layers instead of a `TrayDesign` (Wave 2); output byte-identical. `…/export/svg.ts` is now the tray's adapter |
+| `src/KeycapTray/export/dxf.ts` | `src/export/dxf.ts` | takes cut layers instead of a `TrayDesign` (Wave 2); same entities, layers and extents, but grouped by layer rather than interleaved, which shifts entity handles. `…/export/dxf.ts` is now the tray's adapter |
 | `src/KeycapTray/types.ts` | `…/model/types.ts` | `DEFAULT_FABRICATION` moved to `model/defaults.ts` |
-| `src/KeycapTray/units.ts` | `…/model/units.ts` | verbatim |
+| `src/KeycapTray/units.ts` | `src/units.ts` | verbatim; promoted (Wave 2) |
 | `src/KeycapTray/presets.ts` | `…/model/presets.ts` | import paths only |
 | `src/KeycapTray/profileData.ts` | `…/model/profileData.ts` | import path only |
 | `src/KeycapTray/paletteItems.ts` | `…/model/defaults.ts` | app-owned local-storage key |
