@@ -340,6 +340,18 @@ verification period, so in practice that is nothing.
 
 ### Migrations shipped this way
 
-| Migration | Release | Snapshot taken |
+| Migration | Release | Snapshot |
 | --- | --- | --- |
-| `003-design-documents` | Shaper, Bambu and Playground designers | record the artifact id here |
+| `003-design-documents`, `004-design-assets` | Shaper, Bambu and Playground designers | `/home/data/backups/shapepilot/pre-wave2-20260830T213939Z.db` |
+
+That snapshot was taken with `sqlite3 .backup` from the Kudu console rather than
+`scripts/recovery.ts backup`, because the app code lives in the application
+container and Kudu is a separate one that shares only `/home`. It still goes
+through SQLite's online backup API, so it cannot be torn by a concurrent
+writer, and it was verified in place: `integrity_check` and `quick_check` both
+`ok`, `foreign_key_check` empty, ledger at `001`/`002`.
+
+It is a plain database copy, not a recovery artifact -- no manifest, no
+identity derivation. That is enough for its one job, which is to restore the
+pre-migration database if this deploy fails. Prefer `scripts/recovery.ts
+backup` from the App Service SSH console when the app container is reachable.
