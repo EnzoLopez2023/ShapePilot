@@ -142,7 +142,8 @@ export default function PlaygroundPage() {
 
   const handOff = useCallback(async (kind: 'shaper' | 'bambu') => {
     const id = await lifecycle.handOff(kind)
-    if (id) navigate(kind === 'shaper' ? '/shaper-designer' : '/bambu-designer')
+    const path = kind === 'shaper' ? '/shaper-designer' : '/bambu-designer'
+    if (id) navigate(`${path}?open=${id}`)
   }, [lifecycle, navigate])
 
   return (

@@ -5,6 +5,7 @@
 // newer one, and a save must report honestly when edits landed while it was in
 // flight.
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import type { DesignDocument, DocumentKind } from '../../model/document.ts'
 import { emptyDocument } from '../../model/scene.ts'
 import type { DocumentSummary } from '../../services/designDocuments.ts'
@@ -56,6 +57,12 @@ export function useDocumentLifecycle(options: LifecycleOptions): DocumentLifecyc
 
   const hasUnsavedChanges = savedId !== null && savedRevision !== doc.revision
 
+  // A handoff from another designer arrives as ?open=<id>. The parameter is
+  // cleared as soon as it is consumed so a refresh or a Back does not reopen
+  // the document over whatever the user has since done.
+  const [params, setParams] = useSearchParams()
+  const handledOpenParam = useRef(false)
+
   const refresh = useCallback(async () => {
     setListLoading(true)
     try {
@@ -69,6 +76,7 @@ export function useDocumentLifecycle(options: LifecycleOptions): DocumentLifecyc
 
   useEffect(() => { void refresh() }, [refresh])
 
+
   const create = useCallback(() => {
     loadGeneration.current += 1
     setDoc(emptyDocument(kind))
@@ -76,7 +84,7 @@ export function useDocumentLifecycle(options: LifecycleOptions): DocumentLifecyc
     setSavedRevision(null)
   }, [kind, setDoc])
 
-  const open = useCallback(async (id: string) => {
+  const openDocument = useCallback(async (id: string) => {
     const generation = ++loadGeneration.current
     setBusy(true)
     try {
@@ -93,6 +101,17 @@ export function useDocumentLifecycle(options: LifecycleOptions): DocumentLifecyc
       if (generation === loadGeneration.current) setBusy(false)
     }
   }, [setDoc])
+
+  useEffect(() => {
+    const requested = params.get('open')
+    if (!requested || handledOpenParam.current) return
+    handledOpenParam.current = true
+    setParams(next => {
+      next.delete('open')
+      return next
+    }, { replace: true })
+    void openDocument(requested)
+  }, [params, setParams, openDocument])
 
   const save = useCallback(async () => {
     setBusy(true)
@@ -177,6 +196,6 @@ export function useDocumentLifecycle(options: LifecycleOptions): DocumentLifecyc
 
   return {
     documents, listLoading, busy, savedId, hasUnsavedChanges, toast, error,
-    setToast, setError, refresh, create, open, save, saveAs, remove, handOff,
+    setToast, setError, refresh, create, open: openDocument, save, saveAs, remove, handOff,
   }
 }

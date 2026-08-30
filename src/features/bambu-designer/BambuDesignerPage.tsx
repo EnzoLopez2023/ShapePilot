@@ -321,7 +321,7 @@ export default function BambuDesignerPage() {
         size="small" startIcon={<ArchitectureRoundedIcon />}
         onClick={async () => {
           const id = await lifecycle.handOff('shaper')
-          if (id) navigate('/shaper-designer')
+          if (id) navigate(`/shaper-designer?open=${id}`)
         }}
       >
         To Shaper

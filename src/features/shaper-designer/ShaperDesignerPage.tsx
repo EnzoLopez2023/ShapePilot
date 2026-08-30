@@ -261,7 +261,9 @@ export default function ShaperDesignerPage() {
         size="small" startIcon={<ViewInArRoundedIcon />}
         onClick={async () => {
           const id = await lifecycle.handOff('bambu')
-          if (id) navigate('/bambu-designer')
+          // The clone's id rides along so the target opens it rather than a
+          // fresh empty document.
+          if (id) navigate(`/bambu-designer?open=${id}`)
         }}
       >
         To Bambu

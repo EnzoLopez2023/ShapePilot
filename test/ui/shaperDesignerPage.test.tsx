@@ -12,28 +12,40 @@ import { ThemeModeProvider } from '../../src/theme/ThemeModeProvider.tsx'
 import { ConfirmDialogProvider } from '../../src/components/ConfirmDialogProvider.tsx'
 import ShaperDesignerPage from '../../src/features/shaper-designer/ShaperDesignerPage.tsx'
 
-const renderPage = () => render(
+const renderPage = (path = '/shaper-designer') => render(
   <ThemeModeProvider initialPreference="light">
     <ConfirmDialogProvider>
-      <MemoryRouter><ShaperDesignerPage /></MemoryRouter>
+      <MemoryRouter initialEntries={[path]}><ShaperDesignerPage /></MemoryRouter>
     </ConfirmDialogProvider>
   </ThemeModeProvider>,
 )
 
+const handedOffDocument = {
+  id: '42', kind: 'shaper', name: 'From Bambu', revision: 0,
+  objects: [{
+    id: 'plate', name: 'Plate', type: 'shape2d', shape: 'rect',
+    params: { widthMm: 40, heightMm: 25 },
+    transform: { position: [0, 0, 0], rotationDeg: [0, 0, 0], scale: [1, 1, 1] },
+    mode: 'solid', visible: true, locked: false,
+  }],
+}
+
+let requested: string[] = []
+
 beforeEach(() => {
+  requested = []
   vi.stubGlobal('ResizeObserver', class {
     observe() {} unobserve() {} disconnect() {}
   })
   vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : String(input)
-    if (url.includes('/api/design-documents')) {
-      return new Response(JSON.stringify([]), {
-        status: 200, headers: { 'content-type': 'application/json' },
-      })
-    }
-    return new Response(JSON.stringify({ ok: true }), {
+    requested.push(url)
+    const json = (body: unknown) => new Response(JSON.stringify(body), {
       status: 200, headers: { 'content-type': 'application/json' },
     })
+    if (url.includes('/api/design-documents/42')) return json(handedOffDocument)
+    if (url.includes('/api/design-documents')) return json([])
+    return json({ ok: true })
   })
 })
 
@@ -133,3 +145,28 @@ test('the machine panel names the tool the checks are against', async () => {
   await waitFor(() => expect(screen.getByText(/Shaper Origin/)).toBeTruthy())
   assert.ok(screen.getByText(/3\.175 mm bit/))
 })
+
+test('a handoff from another designer opens the document it names', async () => {
+  // The clone's id rides in ?open=; without it the target would show a blank
+  // document and the handoff would silently lose the design.
+  renderPage('/shaper-designer?open=42')
+
+  await waitFor(() => expect(screen.getByRole('list', { name: 'Objects' })).toBeTruthy())
+  assert.ok(within(screen.getByRole('list', { name: 'Objects' })).getByText('Plate'))
+  assert.ok(requested.includes('/api/design-documents/42'))
+})
+
+test('the open parameter is consumed once, so a refresh does not undo later work',
+  async () => {
+    const user = userEvent.setup()
+    renderPage('/shaper-designer?open=42')
+    await waitFor(() => expect(screen.getByRole('list', { name: 'Objects' })).toBeTruthy())
+
+    const before = requested.filter(u => u.includes('/design-documents/42')).length
+    await user.click(screen.getByRole('button', { name: /Circle/ }))
+
+    assert.equal(
+      requested.filter(u => u.includes('/design-documents/42')).length, before,
+      'the document must not be re-fetched after the parameter is consumed',
+    )
+  })
