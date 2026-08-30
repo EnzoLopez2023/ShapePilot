@@ -1,6 +1,6 @@
 // Rounded-rect generation and the pocket sizing formula.
 import type { Polygon, Ring, Vec2 } from './vec.ts'
-import { translateRing } from './vec.ts'
+import { normalizeAngleDeg, quantizeRing, reflectRingInBox, rotateRing, translateRing } from './vec.ts'
 
 export interface PocketSizing {
   /** Key pitch. 19.05 mm is the ANSI standard and should not change. */
@@ -76,11 +76,33 @@ export interface PocketLike {
   heightUnits?: number
   x: number
   y: number
-  rotationDeg?: 0 | 90
+  /** Real rotation about the un-rotated footprint centre, degrees, [0, 360). */
+  rotationDeg?: number
+  /** Reflect the geometry across its own vertical centreline, in place. */
+  mirrorX?: boolean
+  /** Reflect the geometry across its own horizontal centreline, in place. */
+  flipY?: boolean
   widthMm?: number
   heightMm?: number
   cornerRadiusMm?: number
   shape?: 'rect' | 'iso-enter'
+}
+
+/**
+ * The per-pocket transform, applied to a base ring built at the origin with an
+ * un-rotated footprint of `w0 x h0`: reflect inside that box, then rotate about
+ * its centre. Order matters -- reflecting first keeps mirror/flip meaningful in
+ * the pocket's own frame regardless of angle. Callers still translate by (x, y).
+ */
+function applyPocketTransform(local: Ring, w0: number, h0: number, p: PocketLike): Ring {
+  const deg = normalizeAngleDeg(p.rotationDeg ?? 0)
+  if (!p.mirrorX && !p.flipY && !deg) return local
+  let ring = local
+  if (p.mirrorX || p.flipY) ring = reflectRingInBox(ring, w0, h0, !!p.mirrorX, !!p.flipY)
+  if (deg) ring = rotateRing(ring, deg, w0 / 2, h0 / 2)
+  // Snap transcendental rotation coordinates onto the QUANTUM grid the boolean
+  // and T-junction passes assume; the plain (un-transformed) path is untouched.
+  return quantizeRing(ring)
 }
 
 export function effectivePocketCornerRadius(p: PocketLike, s: PocketSizing): number {
@@ -98,11 +120,12 @@ export function effectivePocketCornerRadius(p: PocketLike, s: PocketSizing): num
 
 export function pocketRing(p: PocketLike, s: PocketSizing): Polygon {
   if (p.shape === 'iso-enter') return [isoEnterRing(p, s)]
-  let w = p.widthMm ?? pocketWidth(p.units, s)
-  let h = p.heightMm ?? pocketHeight(p.heightUnits ?? 1, s)
-  if (p.rotationDeg === 90) [w, h] = [h, w]
+  // Un-rotated footprint; the cache stays keyed on this, rotation is applied after.
+  const w0 = p.widthMm ?? pocketWidth(p.units, s)
+  const h0 = p.heightMm ?? pocketHeight(p.heightUnits ?? 1, s)
   const r = effectivePocketCornerRadius(p, s)
-  return [translateRing(unitRing(w, h, r, s.cornerSegments), p.x, p.y)]
+  const ring = applyPocketTransform(unitRing(w0, h0, r, s.cornerSegments), w0, h0, p)
+  return [translateRing(ring, p.x, p.y)]
 }
 
 const dedupeRing = (ring: Ring): Ring => ring.filter((pt, i) => {
@@ -148,7 +171,8 @@ export function isoEnterRing(p: PocketLike, s: PocketSizing): Ring {
     ...arc(r, rowH - r, Math.PI / 2),               // foot of the step
     ...arc(r, r, Math.PI),                          // bottom-left
   ]
-  return dedupeRing(translateRing(ring as Ring, p.x, p.y))
+  const transformed = applyPocketTransform(ring as Ring, bottomW, 2 * rowH, p)
+  return dedupeRing(translateRing(transformed, p.x, p.y))
 }
 
 export const rectRing = (w: number, h: number, r = 0, segs = 16): Ring =>

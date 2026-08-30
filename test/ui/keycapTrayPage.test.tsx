@@ -8,7 +8,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { act, cleanup, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import KeycapTrayPage from '../../src/features/keycap-tray/KeycapTrayPage.tsx'
-import { useTrayDesign, pocketExtent } from '../../src/features/keycap-tray/state/useTrayDesign.ts'
+import { useTrayDesign, pocketExtent, pocketAABB } from '../../src/features/keycap-tray/state/useTrayDesign.ts'
 import { PYTHON_SIZING } from '../../src/features/keycap-tray/geometry/shapes.ts'
 import { ThemeModeProvider } from '../../src/theme/ThemeModeProvider.tsx'
 import { ConfirmDialogProvider } from '../../src/components/ConfirmDialogProvider.tsx'
@@ -206,11 +206,10 @@ describe('tray design state', () => {
     assert.equal(result.current.design.pockets.length, 1)
   })
 
-  test('pocketExtent honours rotation, explicit sizes and the ISO Enter footprint', () => {
+  test('pocketExtent is the un-rotated footprint (the rotation pivot box)', () => {
     const flat = pocketExtent({ id: 'a', units: 2, x: 0, y: 0 }, PYTHON_SIZING)
-    const tall = pocketExtent({ id: 'a', units: 2, x: 0, y: 0, rotationDeg: 90 }, PYTHON_SIZING)
-    assert.ok(Math.abs(flat.w - tall.h) < 1e-9)
-    assert.ok(Math.abs(flat.h - tall.w) < 1e-9)
+    const tilted = pocketExtent({ id: 'a', units: 2, x: 0, y: 0, rotationDeg: 90 }, PYTHON_SIZING)
+    assert.deepEqual([tilted.w, tilted.h], [flat.w, flat.h])
 
     const explicit = pocketExtent(
       { id: 'a', units: 1, x: 0, y: 0, widthMm: 14, heightMm: 14 }, PYTHON_SIZING)
@@ -218,6 +217,25 @@ describe('tray design state', () => {
 
     const iso = pocketExtent({ id: 'a', units: 1.5, x: 0, y: 0, shape: 'iso-enter' }, PYTHON_SIZING)
     assert.ok(Math.abs(iso.h - 2 * PYTHON_SIZING.height) < 1e-9)
+  })
+
+  test('pocketAABB gives the rotated bounds and a rotation-invariant centre', () => {
+    const flat = pocketAABB({ id: 'a', units: 2, x: 0, y: 0 }, PYTHON_SIZING)
+    const quarter = pocketAABB({ id: 'a', units: 2, x: 0, y: 0, rotationDeg: 90 }, PYTHON_SIZING)
+    const diag = pocketAABB({ id: 'a', units: 2, x: 0, y: 0, rotationDeg: 45 }, PYTHON_SIZING)
+
+    const w = (b: typeof flat) => b.maxX - b.minX
+    const h = (b: typeof flat) => b.maxY - b.minY
+    const mid = (b: typeof flat) => [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2]
+
+    // 90deg swaps the extent; 45deg grows it on both axes.
+    assert.ok(Math.abs(w(flat) - h(quarter)) < 1e-6)
+    assert.ok(Math.abs(h(flat) - w(quarter)) < 1e-6)
+    assert.ok(w(diag) > w(flat) + 1e-6 && h(diag) > h(flat) + 1e-6)
+
+    // The centre never moves -- rotation pivots on it.
+    assert.deepEqual(mid(quarter).map(n => Math.round(n * 1e6)), mid(flat).map(n => Math.round(n * 1e6)))
+    assert.deepEqual(mid(diag).map(n => Math.round(n * 1e6)), mid(flat).map(n => Math.round(n * 1e6)))
   })
 })
 
@@ -564,6 +582,36 @@ describe('designer page', () => {
     assert.ok(screen.getByRole('combobox', { name: 'Grid' }))
   })
 
+  test('snap offers 0.5 mm steps through 5 mm plus the key pitch', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
+
+    await user.click(screen.getByRole('combobox', { name: 'Snap' }))
+    const labels = screen.getAllByRole('option').map(o => o.textContent)
+    assert.deepEqual(labels, [
+      'Off', '0.5 mm', '1 mm', '1.5 mm', '2 mm', '2.5 mm',
+      '3 mm', '3.5 mm', '4 mm', '4.5 mm', '5 mm', '1u pitch',
+    ])
+  })
+
+  test('the buffer distance dropdown is gated on Show buffer', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
+
+    const buffer = screen.getByRole('combobox', { name: 'Buffer' })
+    assert.equal(buffer.getAttribute('aria-disabled'), 'true')
+
+    await user.click(screen.getByRole('button', { name: 'Show buffer' }))
+    await waitFor(() => expect(
+      screen.getByRole('combobox', { name: 'Buffer' }).getAttribute('aria-disabled'),
+    ).not.toBe('true'))
+
+    await user.click(screen.getByRole('combobox', { name: 'Buffer' }))
+    assert.ok(screen.getByRole('option', { name: '6 mm' }))
+  })
+
   test('the plate, buffer and label toggles report their pressed state', async () => {
     const user = userEvent.setup()
     renderPage()
@@ -579,5 +627,91 @@ describe('designer page', () => {
     assert.ok(screen.getByRole('button', { name: 'Hide buffer' }))
     await user.click(screen.getByRole('button', { name: 'Hide labels' }))
     assert.ok(screen.getByRole('button', { name: 'Show labels' }))
+  })
+
+  test('the plate control is hidden for the Shaper Origin (CNC) target', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
+
+    assert.ok(screen.getByRole('button', { name: 'Show plate' }))
+
+    await user.click(screen.getByRole('button', { name: 'Shaper Origin' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Show plate' })).toBeNull())
+    assert.equal(screen.queryByRole('button', { name: 'Hide plate' }), null)
+
+    await user.click(screen.getByRole('button', { name: 'Bambu X2D' }))
+    assert.ok(await screen.findByRole('button', { name: 'Show plate' }))
+  })
+
+  test('the selected pocket shows four rotate handles on the canvas', async () => {
+    const user = userEvent.setup()
+    const { container } = renderPage()
+    await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
+
+    assert.equal(container.querySelectorAll('[aria-label="Rotate pocket"]').length, 0)
+
+    // addPocket drops the pocket and selects it.
+    await user.click(await screen.findByRole('button', { name: 'Add a 1u pocket' }))
+    await waitFor(() =>
+      assert.equal(container.querySelectorAll('[aria-label="Rotate pocket"]').length, 4))
+
+    // A second pocket takes the selection; still exactly one pocket's worth.
+    await user.click(screen.getByRole('button', { name: 'Add a 2u pocket' }))
+    await waitFor(() =>
+      assert.equal(container.querySelectorAll('[aria-label="Rotate pocket"]').length, 4))
+  })
+
+  test('the Angle field rotates the selected pocket and normalises the value', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
+    await user.click(await screen.findByRole('button', { name: 'Add a 1u pocket' }))
+
+    const angle = screen.getByRole('textbox', { name: 'Angle in degrees' })
+    await user.clear(angle)
+    await user.type(angle, '400')
+    await user.tab()
+    await waitFor(() => assert.equal((angle as HTMLInputElement).value, '40'))
+
+    await user.click(screen.getByRole('button', { name: /^Save/ }))
+    await waitFor(() => {
+      const post = state.calls.find(c => c.method === 'POST' && c.path === '/api/keycap-trays')
+      const pocket = (post?.body as { pockets: { rotationDeg: number }[] }).pockets[0]
+      assert.equal(pocket.rotationDeg, 40)
+    })
+  })
+
+  test('Mirror and Flip toggle the ISO Enter shape, not its position', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
+    await user.click(await screen.findByRole('button', { name: 'Add a ISO Enter pocket' }))
+
+    await user.click(await screen.findByRole('switch', { name: 'Mirror' }))
+    await user.click(screen.getByRole('switch', { name: 'Flip' }))
+
+    await user.click(screen.getByRole('button', { name: /^Save/ }))
+    await waitFor(() => {
+      const post = state.calls.find(c => c.method === 'POST' && c.path === '/api/keycap-trays')
+      const pocket = (post?.body as {
+        pockets: { mirrorX?: boolean; flipY?: boolean; x: number; y: number }[]
+      }).pockets[0]
+      assert.equal(pocket.mirrorX, true)
+      assert.equal(pocket.flipY, true)
+      assert.equal(pocket.x, 10) // position untouched -- addPocket dropped it at (10, 10)
+      assert.equal(pocket.y, 10)
+    })
+  })
+
+  test('Mirror and Flip are disabled for a rectangular pocket', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
+    await user.click(await screen.findByRole('button', { name: 'Add a 1u pocket' }))
+
+    assert.equal((screen.getByRole('button', { name: 'Mirror' }) as HTMLButtonElement).disabled, true)
+    assert.equal((screen.getByRole('button', { name: 'Flip' }) as HTMLButtonElement).disabled, true)
+    assert.equal(screen.queryByRole('switch', { name: 'Mirror' }), null)
   })
 })

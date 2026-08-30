@@ -16,12 +16,14 @@ const ThemeModeContext = createContext<ThemeModeContextValue | null>(null)
 
 const STORAGE_KEY = 'shapepilot:appearance'
 
+// Light is the out-of-the-box default. `system` and `dark` are still honoured
+// once the user picks them (here or in Settings); only the unset state changed.
 const readStored = (): ThemePreference => {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    return raw === 'light' || raw === 'dark' || raw === 'system' ? raw : 'system'
+    return raw === 'light' || raw === 'dark' || raw === 'system' ? raw : 'light'
   } catch {
-    return 'system'
+    return 'light'
   }
 }
 

@@ -3,8 +3,8 @@
 // Table-driven: every row is a payload that must be refused with a typed 400
 // naming the offending field, and the database must be byte-identical
 // afterwards — same row counts, same rows, same sequences. The valid cases at
-// the end pin the behaviour that must *not* change, including the two
-// persisted dead fields (`mirror_x`, `shape`) the pinned route never writes.
+// the end pin the behaviour that must *not* change, including `shape` and the
+// `mirror_x` mirror/flip bitfield surviving a save/load round-trip.
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { afterAll, beforeAll, describe, test } from 'vitest'
@@ -322,7 +322,7 @@ describe('keycap tray write validation', () => {
       'pockets'],
     ['a pocket that is not an object', design({ pockets: [42] }), 'pockets[0]'],
     ['a pocket with an unknown key',
-      pocketDesign({ mirrorX: true }), 'pockets[0].mirrorX'],
+      pocketDesign({ nope: true }), 'pockets[0].nope'],
     ['a pocket without units', pocketDesign({ units: undefined }), 'pockets[0].units'],
     ['a pocket with string units', pocketDesign({ units: '1' }), 'pockets[0].units'],
     ['a pocket with zero units', pocketDesign({ units: 0 }), 'pockets[0].units'],
@@ -334,9 +334,12 @@ describe('keycap tray write validation', () => {
     ['a pocket with a null x', pocketDesign({ x: null }), 'pockets[0].x'],
     ['a pocket with an out-of-bounds y',
       pocketDesign({ y: LIMITS.maxCoordinateMm + 1 }), 'pockets[0].y'],
-    ['a pocket rotated 45 degrees', pocketDesign({ rotationDeg: 45 }), 'pockets[0].rotationDeg'],
+    ['a pocket rotated a full turn', pocketDesign({ rotationDeg: 360 }), 'pockets[0].rotationDeg'],
+    ['a pocket rotated negatively', pocketDesign({ rotationDeg: -1 }), 'pockets[0].rotationDeg'],
     ['a pocket rotated by a string', pocketDesign({ rotationDeg: '90' }), 'pockets[0].rotationDeg'],
     ['a pocket with a numeric isThrough', pocketDesign({ isThrough: 1 }), 'pockets[0].isThrough'],
+    ['a pocket with a numeric mirrorX', pocketDesign({ mirrorX: 1 }), 'pockets[0].mirrorX'],
+    ['a pocket with a string flipY', pocketDesign({ flipY: 'yes' }), 'pockets[0].flipY'],
     ['a pocket with an unknown shape', pocketDesign({ shape: 'circle' }), 'pockets[0].shape'],
     ['a pocket with an unknown label mode',
       pocketDesign({ labelMode: 'shout' }), 'pockets[0].labelMode'],
@@ -450,12 +453,36 @@ describe('valid keycap tray behaviour is unchanged', () => {
     assert.equal(loaded.body.pockets[0].labelMode, 'engrave')
     assert.equal(loaded.body.pockets[0].heightUnits, 2)
 
-    // ShapePilot persists the geometry discriminant; mirror_x remains legacy-only.
+    // ShapePilot persists the geometry discriminant. This payload sets no
+    // mirror/flip flag, so the mirror_x bitfield stays 0.
     const row = server.database.handle.prepare<[string], { shape: string | null; mirror_x: number }>(
       'SELECT shape, mirror_x FROM keycap_tray_pockets WHERE design_id = ?',
     ).get(created.body.id)
     assert.equal(row?.shape, 'iso-enter')
     assert.equal(Number(row?.mirror_x), 0)
+  })
+
+  test('free rotation and the mirror/flip bitfield round-trip through storage', async () => {
+    const created = await create(design({
+      name: 'Transformed',
+      pockets: [{
+        id: 'm', units: 1, x: 5, y: 5, rotationDeg: 33.5, mirrorX: true, flipY: true,
+      }],
+    }))
+    assert.equal(created.status, 201)
+
+    const loaded = await server.fetchJson<{
+      pockets: { rotationDeg: number; mirrorX?: boolean; flipY?: boolean }[]
+    }>(`/api/keycap-trays/${created.body.id}`, { token: TOKEN })
+    assert.equal(loaded.body.pockets[0].rotationDeg, 33.5)
+    assert.equal(loaded.body.pockets[0].mirrorX, true)
+    assert.equal(loaded.body.pockets[0].flipY, true)
+
+    const row = server.database.handle.prepare<[string], { rotation_deg: number; mirror_x: number }>(
+      'SELECT rotation_deg, mirror_x FROM keycap_tray_pockets WHERE design_id = ?',
+    ).get(created.body.id)
+    assert.equal(row?.rotation_deg, 33.5)
+    assert.equal(Number(row?.mirror_x), 3)
   })
 
   test('a custom outline is accepted and stored verbatim', async () => {

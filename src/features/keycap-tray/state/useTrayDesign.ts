@@ -1,7 +1,9 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import type { Pocket, TrayDesign, TrayProfile } from '../model/types.ts'
 import type { PocketSizing } from '../geometry/shapes.ts'
-import { pocketHeight, pocketWidth } from '../geometry/shapes.ts'
+import { pocketHeight, pocketRing, pocketWidth } from '../geometry/shapes.ts'
+import type { BBox } from '../geometry/vec.ts'
+import { ringBBox } from '../geometry/vec.ts'
 import { emptyDesign } from '../model/presets.ts'
 
 const HISTORY_LIMIT = 50
@@ -126,12 +128,21 @@ export function useTrayDesign(initial?: TrayDesign): TrayDesignApi {
        removePockets, setProfile, setSizing, setSelection, toggleSelection, undo, redo])
 }
 
+/**
+ * The pocket's UN-rotated footprint -- also its rotation-pivot box. Its centre
+ * `(p.x + w/2, p.y + h/2)` is invariant under rotate/mirror/flip, which is what
+ * the label anchor, alignment-guide targets, drag snap and drop centring want.
+ * For true on-screen bounds of a rotated pocket use `pocketAABB`.
+ */
 export const pocketExtent = (p: Pocket, s: PocketSizing): { w: number; h: number } => {
   if (p.shape === 'iso-enter') {
     return { w: p.widthMm ?? pocketWidth(1.5, s), h: 2 * (p.heightMm ?? pocketHeight(1, s)) }
   }
-  let w = p.widthMm ?? pocketWidth(p.units, s)
-  let h = p.heightMm ?? pocketHeight(p.heightUnits ?? 1, s)
-  if (p.rotationDeg === 90) [w, h] = [h, w]
-  return { w, h }
+  return {
+    w: p.widthMm ?? pocketWidth(p.units, s),
+    h: p.heightMm ?? pocketHeight(p.heightUnits ?? 1, s),
+  }
 }
+
+/** Exact axis-aligned bounds of the pocket as drawn (rotation, mirror, radius). */
+export const pocketAABB = (p: Pocket, s: PocketSizing): BBox => ringBBox(pocketRing(p, s)[0])

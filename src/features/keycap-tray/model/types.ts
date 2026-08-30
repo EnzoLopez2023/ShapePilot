@@ -19,7 +19,15 @@ export interface Pocket {
   y: number
   /** 2 for numpad Enter/Plus. Defaults to 1. */
   heightUnits?: number
-  rotationDeg?: 0 | 90
+  /**
+   * Real rotation about the un-rotated footprint centre, degrees, canonical
+   * [0, 360). 0 and 90 are also what the Tilt toggle sets.
+   */
+  rotationDeg?: number
+  /** Reflect the geometry across its own vertical centreline, in place. */
+  mirrorX?: boolean
+  /** Reflect the geometry across its own horizontal centreline, in place. */
+  flipY?: boolean
   /** Cuts clean through the floor instead of stopping at it. */
   isThrough?: boolean
   /** 'iso-enter' overrides the rectangular footprint with the ISO big-Enter L-shape. */

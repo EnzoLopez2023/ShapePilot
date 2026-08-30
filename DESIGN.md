@@ -13,21 +13,40 @@ scanability outrank expression. Nothing here is a landing page.
 
 ## World
 
-Restrained, low-clutter workbench. Flat surfaces separated by a single hairline
-border. One radius. One accent, used only for the active tool and the primary
-action on a surface. Type stays legible next to a technical drawing.
+Restrained workbench content wrapped in native-iOS chrome. Working surfaces
+(properties panel, canvas, dialogs) keep a single hairline border, one squircle
+radius, one accent for the active tool and the primary action, and type that
+stays legible next to a technical drawing — but every one now floats on the
+`SHADOW` lift so surfaces read as sitting above the canvas, not inlaid into it.
 
-The inherited Hearth "glass panel" aesthetic was removed on purpose:
-`src/KeycapTray/components/glass.ts` exists at Hearth commit
-`f0b05fc1dbf53e8aa26c215d8e858894a2793871` and was deliberately not ported. In
-the shipped code no component reads from a glass module and no MUI override
-introduces translucency, blur, gradient, or elevation.
+The app chrome — the left sidebar and the mobile top bar — is frosted glass:
+`rgba(255,255,255,0.4)` fill (dark: `rgba(28,28,30,0.55)`), a matching hairline
+in `rgba(255,255,255,0.35)` (dark `0.12`), and `backdrop-filter: blur(20px)
+saturate(180%)` with its `-webkit-` pair. The sidebar is a detached rounded
+panel (`14px`, `12px` margin, the `SHADOW` lift). On `md` and up it collapses
+to a `76px` icon rail via a toggle in its header; the choice persists in
+`localStorage` under `shapepilot:nav-collapsed` and rows show a right-placed
+tooltip while collapsed. Below `md` the same nav is a temporary drawer. Sidebar
+rows fade to an elevated `rgba(255,255,255,0.15)` on hover over
+`background 0.2s ease-in-out`; the active row sits on `…,0.55`. Tokens live in
+`GLASS` in `src/theme/theme.ts` and are consumed **only** by the shell
+(`src/app/AppShell.tsx`) — no working surface reads them.
+
+This reverses the earlier "no translucency, no blur, no gradient" rule, which
+had itself dropped the inherited Hearth glass aesthetic
+(`src/KeycapTray/components/glass.ts` at Hearth commit
+`f0b05fc1dbf53e8aa26c215d8e858894a2793871`). The reversal is scoped to chrome
+on purpose: glass frames the work, it does not sit under it.
 
 ## Tokens
 
 Single source: `src/theme/theme.ts`. Consumed through the MUI theme, not
 duplicated as CSS variables. The theme is rebuilt when the mode flips
 (`ThemeModeProvider.tsx`), so a light-only or dark-only value is a bug.
+
+**Light is the default.** With nothing stored, `ThemeModeProvider` and the
+server `DEFAULT_PREFERENCES` both resolve to `light`; `system` and `dark` apply
+only once the user chooses them (in Settings or via the appearance store).
 
 ### Palette — light
 
@@ -67,8 +86,11 @@ duplicated as CSS variables. The theme is rebuilt when the mode flips
 
 | Token    | Value | Rule                                                        |
 |----------|-------|-------------------------------------------------------------|
-| `RADIUS` | `6`   | Paper, Button, ToggleButton, OutlinedInput, Chip, Tooltip, Alert, Dialog, ListItemButton — every rounded corner in the app. |
-| `BORDER` | `1`   | Every visible edge. Paper, AppBar, Alert, outlined controls all use the same 1px hairline. Elevation is `0` everywhere. |
+| `RADIUS`   | `14` | iOS squircle. Paper, Button, ToggleButton, OutlinedInput, Chip, Tooltip, Alert, Dialog, ListItemButton — every rounded corner in the app, including the sidebar panel and its rows. |
+| `BORDER`   | `1`  | Every visible edge. Paper, AppBar, Alert, outlined controls all use the same 1px hairline. |
+| `SHADOW`   | see `theme.ts` | Two-layer card lift (ambient pool + contact shadow), per mode. Applied to every `MuiPaper` root and to the sidebar. |
+| `EASE_IOS` | `cubic-bezier(0.32, 0.72, 0, 1)` | Apple-style easing for chrome transitions (sidebar width, drawer, menus, hover fades). |
+| `GLASS`    | see `theme.ts` | Frosted-glass fill/hover/active/border/backdrop, per mode. Consumed only by `AppShell`. |
 
 Tooltip surface uses a separate ink independent of `surface`
 (`#2C2A26` light, `#33383F` dark) so it reads as an overlay, not a panel.
@@ -161,20 +183,65 @@ At `xs`, the columns collapse to one and the rows re-order so the canvas is
 first with `minmax(360px, 55vh)`, palette second, inspector third. The canvas
 is never hidden behind a tab; the operator always sees their work.
 
-Panels are `MUI Paper`. Paper is flat (`elevation={0}`) with a `1px` border in
-`divider` colour. `backgroundImage: none` is enforced so a Paper never picks up
-MUI's default overlay gradient in dark mode.
+Panels are `MUI Paper`: a `1px` border in `divider` colour plus the `SHADOW`
+lift so the panel floats above the canvas. `elevation` stays `0` — the shadow
+is the single `boxShadow` from the token, not MUI's elevation scale — and
+`backgroundImage: none` is enforced so a Paper never picks up MUI's default
+overlay gradient in dark mode.
+
+## Per-pocket transform (keycap tray)
+
+`pocketRing` (→ `isoEnterRing` for `iso-enter`) is the single function that turns
+a pocket into a polygon; the canvas, the SVG/DXF exports, the mesh and the
+validators all consume it. Generation order for any shape:
+
+```
+base ring, local coords, origin (0,0), bbox w0×h0   (w0,h0 = UN-rotated extents)
+ → reflect in footprint box   (mirrorX: x→w0-x ; flipY: y→h0-y ; re-reverse iff exactly one)
+ → rotate by rotationDeg about (w0/2, h0/2)          (proper rotation, winding kept)
+ → quantise to the 1e-4 mm grid   (only when a transform was applied)
+ → translate by (x, y)
+```
+
+- **Pivot is the un-rotated footprint centre.** So `(x + w0/2, y + h0/2)` is
+  invariant under rotate/mirror/flip. `pocketExtent` returns that un-rotated box
+  — the label anchor, alignment-guide targets, drag snap and drop centring all
+  key off its centre and need no rotation awareness. `pocketAABB` gives the true
+  rotated bounds for edge-based callers (Center X/Y).
+- **`rotationDeg` is one real number, any angle in `[0, 360)`.** The 90° "Tilt"
+  toggle just writes `0` / `90`; the canvas corner-handles and the panel's
+  `Angle°` field write anything. A pocket at 45° shows Tilt unchecked, and
+  toggling Tilt replaces the angle.
+- **Canvas rotate handles** (`RotateHandles` in `TrayCanvas.tsx`): four circles
+  at the rotated footprint corners of the sole selected pocket, radius `view.w/200`
+  with a `view.w/90` invisible grab target. Angle is `atan2` of the cursor about
+  the pivot in model space; the live preview is an SVG `rotate(delta cx cy)` on
+  the `<path>` only (the committed angle is already baked into `d`), so the label
+  and handles stay upright. Shift snaps to 15°. One history entry on pointer-up.
+- **Mirror / flip are `mirrorX` / `flipY` booleans**, generic across shapes but
+  only visible on an asymmetric one (rounded rects are symmetric). The panel
+  buttons/switches are gated to `shape === 'iso-enter'`.
+- **Known limitation:** many *freely-rotated* pockets packed densely can trip
+  the T-junction pass (`tjunction.ts`), surfacing as a spurious `non-manifold`
+  print error. A single rotated pocket at any angle is watertight (swept in
+  `mesh.test.ts`). Hardening the T-junction epsilons for non-axis-aligned
+  geometry is follow-up work.
 
 ## Named rules
 
-- **One hairline, one radius, one accent.** BORDER=1, RADIUS=6, and the accent
-  swatch are the only expressive channels. New components must reuse them.
-- **Elevation is zero.** No `boxShadow`, no `elevation` prop above 0, no
-  drop-shadow filters. The MUI defaults are turned off for `Paper`, `AppBar`,
-  and `Button`. Depth is communicated by the hairline and by `surfaceSunken`,
-  not by shadow.
-- **No translucency, no blur, no gradient.** Not in `background`, not in `text`,
-  not on `Paper`. This is a workbench, not glass.
+- **One hairline, one radius, one accent.** BORDER=1, RADIUS=14 (iOS squircle),
+  and the accent swatch are the only expressive channels. New components must
+  reuse them.
+- **Cards float, on one shadow.** Every `Paper` and the sidebar carry the
+  `SHADOW` token — a two-layer lift, nothing more. `elevation` stays `0` so
+  MUI's own shadow scale never enters; `AppBar` and `Button` keep their
+  elevation turned off. No ad-hoc `boxShadow`, no drop-shadow filters: a
+  surface that needs lift uses `SHADOW`, a recess uses `surfaceSunken`.
+- **Glass is for chrome only.** Translucency, blur (`backdrop-filter`), and the
+  faint body gradient are allowed on the sidebar and the mobile bar via the
+  `GLASS` tokens. Working surfaces — `Paper` panels, the canvas, dialogs — stay
+  opaque so the drawing underneath stays readable. A working surface that reads
+  `GLASS` is a bug.
 - **One accent, disciplined use.** `accent` is reserved for the primary action
   on a surface and for the active state of a tool (contained Save button;
   selected ToggleButton; `:focus-visible` outline; text selection). It is not

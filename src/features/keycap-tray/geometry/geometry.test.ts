@@ -3,7 +3,7 @@ import { test } from 'vitest'
 import { difference, intersection, punchDisjointFast, union, unionDisjointFast } from './boolean.ts'
 import { LIBRARY_SIZING, PYTHON_SIZING, isoEnterRing, pocketRing, pocketWidth, pocketHeight, roundedRectRing } from './shapes.ts'
 import type { Ring } from './vec.ts'
-import { multiArea, normalizePolygon, pointInRing, signedArea } from './vec.ts'
+import { multiArea, normalizeAngleDeg, normalizePolygon, pointInRing, reflectRingInBox, rotateRing, signedArea } from './vec.ts'
 
 const rect = (x: number, y: number, w: number, h: number): Ring =>
   [[x, y], [x + w, y], [x + w, y + h], [x, y + h]]
@@ -108,6 +108,95 @@ test('rotating a pocket 90 degrees swaps its extents', () => {
   const h = (r: Ring) => Math.max(...r.map(p => p[1])) - Math.min(...r.map(p => p[1]))
   assert.ok(Math.abs(w(flat) - h(tall)) < 1e-9)
   assert.ok(Math.abs(h(flat) - w(tall)) < 1e-9)
+})
+
+const bbox = (r: Ring) => {
+  const xs = r.map(p => p[0]), ys = r.map(p => p[1])
+  return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) }
+}
+// Transformed rings are snapped to the QUANTUM (1e-4 mm) grid; compare loosely.
+const sameBox = (a: Ring, b: Ring) => {
+  const p = bbox(a), q = bbox(b)
+  return Math.abs(p.minX - q.minX) < 1e-3 && Math.abs(p.maxX - q.maxX) < 1e-3
+    && Math.abs(p.minY - q.minY) < 1e-3 && Math.abs(p.maxY - q.maxY) < 1e-3
+}
+
+test('normalizeAngleDeg folds into [0, 360)', () => {
+  assert.equal(normalizeAngleDeg(0), 0)
+  assert.equal(normalizeAngleDeg(360), 0)
+  assert.equal(normalizeAngleDeg(-90), 270)
+  assert.equal(normalizeAngleDeg(450), 90)
+})
+
+test('rotateRing keeps winding and area and maps known points', () => {
+  const r: Ring = [[1, 0], [0, 1], [-1, 0], [0, -1]]
+  const spun = rotateRing(r, 90, 0, 0)
+  assert.ok(Math.abs(spun[0][0] - 0) < 1e-12 && Math.abs(spun[0][1] - 1) < 1e-12)
+  assert.ok(signedArea(spun) > 0 === signedArea(r) > 0)
+  assert.ok(Math.abs(Math.abs(signedArea(spun)) - Math.abs(signedArea(r))) < 1e-12)
+})
+
+test('a 45 degree pocket is genuinely rotated and keeps its footprint centre', () => {
+  const p = { units: 2, x: 10, y: 4 }
+  const flat = pocketRing(p, PYTHON_SIZING)[0]
+  const spun = pocketRing({ ...p, rotationDeg: 45 }, PYTHON_SIZING)[0]
+  const b0 = bbox(flat), b1 = bbox(spun)
+  // Same pivot centre, larger axis-aligned bounds.
+  assert.ok(Math.abs((b0.minX + b0.maxX) / 2 - (b1.minX + b1.maxX) / 2) < 1e-6)
+  assert.ok(Math.abs((b0.minY + b0.maxY) / 2 - (b1.minY + b1.maxY) / 2) < 1e-6)
+  assert.ok(b1.maxX - b1.minX > b0.maxX - b0.minX + 1e-6)
+  // No edge is axis-aligned any more.
+  const axisAligned = spun.every((v, i) => {
+    const n = spun[(i + 1) % spun.length]
+    return Math.abs(v[0] - n[0]) < 1e-9 || Math.abs(v[1] - n[1]) < 1e-9
+  })
+  assert.equal(axisAligned, false)
+})
+
+test('mirrorX / flipY reflect an ISO Enter in place, winding intact', () => {
+  const p = { units: 1.5, x: 10, y: 5, shape: 'iso-enter' as const }
+  const base = isoEnterRing(p, LIBRARY_SIZING)
+  const mx = isoEnterRing({ ...p, mirrorX: true }, LIBRARY_SIZING)
+  const fy = isoEnterRing({ ...p, flipY: true }, LIBRARY_SIZING)
+  const both = isoEnterRing({ ...p, mirrorX: true, flipY: true }, LIBRARY_SIZING)
+
+  for (const r of [mx, fy, both]) {
+    assert.ok(sameBox(r, base), 'position + bounds unchanged')
+    assert.ok(signedArea(r) > 0, 'stays CCW')
+  }
+
+  const bottomW = pocketWidth(1.5, LIBRARY_SIZING)
+  const topW = pocketWidth(1.25, LIBRARY_SIZING)
+  const rowH = pocketHeight(1, LIBRARY_SIZING)
+  const notchX = bottomW - topW
+  const notch = (r: Ring, nx: number) =>
+    r.some(([x, y]) => Math.abs(x - (p.x + nx)) < 1e-3 && Math.abs(y - (p.y + rowH)) < 1e-3)
+  assert.ok(notch(base, notchX), 'default notch at top-left')
+  assert.ok(notch(mx, bottomW - notchX), 'mirrored notch at top-right')
+
+  // mirror + flip == 180 degree rotation about the footprint centre.
+  const spun180 = rotateRing(base, 180, p.x + bottomW / 2, p.y + rowH)
+  assert.equal(both.length, spun180.length)
+  const order = (r: Ring) => [...r].sort((u, v) => (u[0] - v[0]) || (u[1] - v[1]))
+  const a = order(both), b = order(spun180)
+  for (let i = 0; i < a.length; i++) {
+    assert.ok(Math.hypot(a[i][0] - b[i][0], a[i][1] - b[i][1]) < 1e-3, `vertex ${i}`)
+  }
+})
+
+test('mirror / flip are a bbox and area no-op on a rounded rect', () => {
+  const base = pocketRing({ units: 2, x: 3, y: 7 }, PYTHON_SIZING)[0]
+  const flipped = pocketRing({ units: 2, x: 3, y: 7, mirrorX: true, flipY: true }, PYTHON_SIZING)[0]
+  assert.ok(sameBox(flipped, base))
+  assert.ok(Math.abs(Math.abs(signedArea(flipped)) - Math.abs(signedArea(base))) < 1e-2)
+  assert.ok(signedArea(flipped) > 0)
+})
+
+test('reflectRingInBox restores CCW after a single reflection', () => {
+  const r: Ring = [[0, 0], [4, 0], [4, 2], [0, 2]]
+  assert.ok(signedArea(reflectRingInBox(r, 4, 2, true, false)) > 0)
+  assert.ok(signedArea(reflectRingInBox(r, 4, 2, false, true)) > 0)
+  assert.ok(signedArea(reflectRingInBox(r, 4, 2, true, true)) > 0)
 })
 
 test('isoEnterRing is CCW, closes on itself, and its bbox matches the two-row footprint', () => {

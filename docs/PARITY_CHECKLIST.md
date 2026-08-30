@@ -29,16 +29,20 @@ otherwise. Run `npm test` to execute all of it.
 | A drag commits one history entry, not one per frame | same |
 | Selection replace, additive toggle, clear on delete | same |
 | Keyboard guard: Delete/Backspace and ⌘Z ignored inside inputs | `KeycapTrayPage.tsx` keydown handler; guard preserved verbatim |
-| Snap values Off / 0.5 / 1 / 19.05 mm | `test/ui/keycapTrayPage.test.tsx` |
+| Snap values Off / 0.5–5 mm in 0.5 mm steps / 1u pitch (19.05 mm) | `test/ui/keycapTrayPage.test.tsx` |
 | Grid Off / 2 / 3 / 4 / 5 mm, capped at 400 lines per axis | `TrayCanvas.tsx` (cap preserved verbatim) |
 | Alignment guides to pocket and tray centres, ~6 px tolerance | `TrayCanvas.tsx` (preserved verbatim) |
-| Pan/zoom keeping the cursor point fixed; fit-to-view | `TrayCanvas.tsx` (preserved verbatim) |
+| Wheel zoom keeping the cursor point fixed; fit-to-view | `TrayCanvas.tsx` (preserved verbatim) |
+| Drag empty canvas to pan; Shift-drag to rubber-band a region to zoom; a bare click still clears the selection | `TrayCanvas.tsx` (`beginBackground` / `commitMarqueeZoom`) |
 | Pocket labels, build-plate and edge-buffer overlays | `test/ui/keycapTrayPage.test.tsx` |
+| Build-plate control (Show plate) is printer-only — hidden, and the overlay suppressed, for the Shaper Origin (CNC) target | `test/ui/keycapTrayPage.test.tsx` |
+| Buffer guide distance selectable (1–10 mm), gated on Show buffer, default matches min wall | `test/ui/keycapTrayPage.test.tsx` |
 | Palette filtering, common pins, All/Custom tabs | same |
 | Custom library CRUD | same |
 | 14 mm seed is idempotent and only when the library is empty | same |
 | Profile, sizing and fabrication controls | `PropertiesPanel.tsx`; unit toggle covered by UI tests |
-| 0°/90° rotation swaps extents | `geometry/geometry.test.ts`, `test/ui/keycapTrayPage.test.tsx` |
+| `rotationDeg` is a real rotation about the un-rotated footprint centre, any angle in `[0, 360)`; the 90° Tilt toggle and the canvas corner-handles both write it. A rotated pocket's AABB still swaps at 90°. `rotation_deg` (bare `INTEGER`, no DDL change) now holds a REAL for non-integer angles — SQLite affinity keeps integral angles integral. | `geometry/geometry.test.ts`, `geometry/mesh.test.ts`, `test/ui/keycapTrayPage.test.tsx`, `test/parity/keycapTrayValidation.test.ts` |
+| In-place mirror / flip of a pocket's geometry (`mirrorX` / `flipY`), meaningful only for asymmetric shapes like ISO Enter | `geometry/geometry.test.ts`, `test/parity/keycapTrayValidation.test.ts` |
 | New / Open / Save / Clone / Delete with busy, empty and error states | `test/ui/keycapTrayPage.test.tsx` |
 
 ## Geometry
@@ -224,5 +228,5 @@ decision and this wave is a port.
 | `engrave_mm` / `engraveDepthMm` | Stored and round-trips. Nothing reads it. |
 | Pocket `depth_mm` | Stored and round-trips. Every pocket uses the design depth. |
 | Pocket `label_mode` | Stored and round-trips, always `guide`. |
-| Pocket `shape` and `mirror_x` | Both legacy columns import byte-for-byte. ShapePilot additionally persists and hydrates validated `shape` values (`rect` or `iso-enter`) so ISO Enter geometry survives save/open and clone; `mirror_x` remains legacy-only because the editor exposes no mirror behavior. Production's 11 source rows remain unchanged, including their `shape = NULL` values. Asserted by route and validation parity tests. |
+| Pocket `shape` and `mirror_x` | Both legacy columns import byte-for-byte. ShapePilot persists and hydrates validated `shape` values (`rect` or `iso-enter`), and repurposes `mirror_x` as a `0`–`3` bitfield (`bit0` = `mirrorX`, `bit1` = `flipY`) driving in-place geometry mirror/flip. No DDL change, so `schemaObjectsSha256` and the migration checksum are untouched. Production's 11 source rows are `0` / `NULL`, so legacy import and reconcile are unaffected. Asserted by route and validation parity tests. |
 | Custom profile rings | Load, render and export. There is no UI to author one. |
