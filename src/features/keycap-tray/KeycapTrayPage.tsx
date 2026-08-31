@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import {
-  Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
+  Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent,
   DialogTitle, Divider, IconButton, Menu, MenuItem, Paper, Snackbar, Stack, TextField,
   ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material'
@@ -12,6 +12,8 @@ import DeleteIcon from '@mui/icons-material/DeleteOutline'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import SaveIcon from '@mui/icons-material/SaveOutlined'
 import AddIcon from '@mui/icons-material/Add'
+import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
+import SettingsIcon from '@mui/icons-material/SettingsRounded'
 import { buildTrayMesh } from './geometry/layers.ts'
 import { validateDesign } from './geometry/validate.ts'
 import {
@@ -26,12 +28,11 @@ import { emptyDesign } from './model/presets.ts'
 import { useTrayDesign } from './state/useTrayDesign.ts'
 import * as api from './service.ts'
 import * as projects from '../keycap-projects/service.ts'
-import type { KeycapProject } from '../keycap-projects/model/types.ts'
+import type { KeycapProject, ProjectSummary } from '../keycap-projects/model/types.ts'
 import TrayCanvas from './components/TrayCanvas.tsx'
 import PocketPalette from './components/PocketPalette.tsx'
 import PropertiesPanel from './components/PropertiesPanel.tsx'
 import ExportPanel from './components/ExportPanel.tsx'
-import HoverTooltip from '../../components/HoverTooltip.tsx'
 import { useConfirm } from '../../components/ConfirmDialogProvider.tsx'
 import { EmptyState, LoadingState } from '../../components/LoadingState.tsx'
 import { formatUpdated } from '../keycap-projects/model/formatUpdated.ts'
@@ -44,11 +45,6 @@ const TrayViewer3D = lazy(() => import('./components/TrayViewer3D.tsx'))
 // whole element to work with. Hoisted so the fit effect's dependencies stay
 // stable -- an inline object literal re-runs it on every render.
 const CANVAS_INSET = { left: 0, right: 0, top: 0, bottom: 0 }
-
-// Snap steps: 0.5 mm through 5 mm in 0.5 mm increments, plus the key pitch.
-const SNAP_STEPS_MM = Array.from({ length: 10 }, (_, i) => (i + 1) * 0.5)
-// Buffer guide distances, in mm inside the tray edge.
-const BUFFER_STEPS_MM = [1, 1.5, 1.8, 2, 2.5, 3, 3.5, 4, 5, 6, 8, 10]
 
 export default function KeycapTrayPage() {
   const confirm = useConfirm()
@@ -89,7 +85,10 @@ export default function KeycapTrayPage() {
   const [openDialog, setOpenDialog] = useState(false)
   const [fitToken, setFitToken] = useState(0)
   const [project, setProject] = useState<KeycapProject | null>(null)
-  const [trayMenu, setTrayMenu] = useState<HTMLElement | null>(null)
+  const [projectList, setProjectList] = useState<ProjectSummary[]>([])
+  const [projectMenu, setProjectMenu] = useState<HTMLElement | null>(null)
+  const [newProjectOpen, setNewProjectOpen] = useState(false)
+  const [newProjectName, setNewProjectName] = useState('')
   const loadGeneration = useRef(0)
   // The tray id the address has already been answered for. Not "the tray in
   // the editor": abandoning one with New answers the address too, and until
@@ -114,6 +113,14 @@ export default function KeycapTrayPage() {
   }, [])
 
   useEffect(() => { void refresh() }, [refresh])
+
+  // The project picker's contents. A failure here just leaves the picker empty:
+  // the designer works fine without knowing every project.
+  const refreshProjects = useCallback(async () => {
+    try { setProjectList(await projects.listProjects()) } catch { /* picker stays empty */ }
+  }, [])
+
+  useEffect(() => { void refreshProjects() }, [refreshProjects])
 
   // The settings page decides how a designer opens. Applied to the current
   // state only while nothing is loaded and untouched -- a tray already open,
@@ -258,6 +265,50 @@ export default function KeycapTrayPage() {
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }, [savedId, d, refresh, confirm, designId, navigate])
 
+  // Switch to another project: open its most recently touched tray, or the
+  // project page itself when it has no trays yet. The list already carries
+  // every tray's project and timestamp, so this costs no request.
+  const goToProject = useCallback((id: string) => {
+    setProjectMenu(null)
+    const trays = designs
+      .filter(s => s.projectId === id)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    navigate(trays.length ? `/keycap-tray/${trays[0].id}` : `/projects/${id}`)
+  }, [designs, navigate])
+
+  // Start a project from the open tray and link the tray to it in one step,
+  // staying in the designer -- the gear is right there to fill in the set.
+  const createLinkedProject = useCallback(async () => {
+    const trimmed = newProjectName.trim()
+    if (!trimmed || !savedId) return
+    setBusy(true)
+    try {
+      const { id } = await projects.createProject({ name: trimmed })
+      await api.updateDesign(savedId, design, id)
+      d.replace(x => ({ ...x, projectId: id }))
+      setNewProjectOpen(false)
+      setNewProjectName('')
+      setProjectMenu(null)
+      await refresh()
+      await refreshProjects()
+      setToast('Project created')
+    } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
+  }, [newProjectName, savedId, design, d, refresh, refreshProjects])
+
+  // Unlink the tray from its project. The tray and its pockets are untouched --
+  // only the association goes.
+  const removeFromProject = useCallback(async () => {
+    if (!savedId) return
+    setProjectMenu(null)
+    setBusy(true)
+    try {
+      await api.updateDesign(savedId, design, null)
+      d.replace(x => ({ ...x, projectId: null }))
+      await refresh()
+      setToast('Removed from project')
+    } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
+  }, [savedId, design, d, refresh])
+
   // Delete / undo / redo while the canvas has focus.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -317,51 +368,83 @@ export default function KeycapTrayPage() {
             {design.name}
           </Typography>
 
-          {owningProjectId && owningProject?.projectName && (
-            <>
-              <Chip
-                size="small"
-                clickable
-                onClick={e => setTrayMenu(e.currentTarget)}
-                label={owningProject.projectName}
-                deleteIcon={<ExpandMoreIcon />}
-                onDelete={e => setTrayMenu(e.currentTarget.parentElement)}
-                aria-haspopup="menu"
-                aria-label={`${owningProject.projectName} — switch tray`}
-                sx={{ maxWidth: 220 }}
-              />
-              <Menu
-                open={!!trayMenu}
-                anchorEl={trayMenu}
-                onClose={() => setTrayMenu(null)}
-                slotProps={{ list: { 'aria-label': 'Trays in this project' } }}
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
+            <Button
+              size="small"
+              onClick={e => setProjectMenu(e.currentTarget)}
+              startIcon={<FolderOutlinedIcon fontSize="small" />}
+              endIcon={<ExpandMoreIcon fontSize="small" />}
+              aria-haspopup="menu"
+              sx={{ maxWidth: 220, '& .MuiButton-endIcon': { ml: 0.25 } }}
+            >
+              <Box
+                component="span"
+                sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
               >
-                {siblingTrays.map(tray => (
-                  <MenuItem
-                    key={tray.id}
-                    selected={tray.id === savedId}
-                    disabled={busy}
-                    onClick={() => { setTrayMenu(null); void load(tray.id) }}
-                  >
-                    {tray.name}
-                    <Typography
-                      variant="body2" color="text.secondary" component="span" sx={{ ml: 1 }}
-                    >
-                      {tray.pocketCount} pockets
-                    </Typography>
-                  </MenuItem>
-                ))}
-                <Divider />
-                <MenuItem
-                  component={RouterLink}
-                  to={`/projects/${owningProjectId}`}
-                  onClick={() => setTrayMenu(null)}
+                {owningProject?.projectName ?? 'Add to project'}
+              </Box>
+            </Button>
+            {owningProjectId && (
+              <Tooltip title="Edit the project — set, photos and coverage">
+                <IconButton
+                  size="small"
+                  aria-label="Edit project"
+                  onClick={() => navigate(`/projects/${owningProjectId}`)}
                 >
-                  Open the project
+                  <SettingsIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            )}
+          </Stack>
+          <Menu
+            open={!!projectMenu}
+            anchorEl={projectMenu}
+            onClose={() => setProjectMenu(null)}
+            slotProps={{ list: { 'aria-label': 'Project' } }}
+          >
+            {owningProjectId && siblingTrays.map(tray => (
+              <MenuItem
+                key={tray.id}
+                selected={tray.id === savedId}
+                disabled={busy}
+                onClick={() => { setProjectMenu(null); void load(tray.id) }}
+              >
+                {tray.name}
+                <Typography
+                  variant="body2" color="text.secondary" component="span" sx={{ ml: 1 }}
+                >
+                  {tray.pocketCount} pockets
+                </Typography>
+              </MenuItem>
+            ))}
+            {owningProjectId && <Divider />}
+            {projectList
+              .filter(p => p.id !== owningProjectId)
+              .map(p => (
+                <MenuItem key={p.id} disabled={busy} onClick={() => goToProject(p.id)}>
+                  {owningProjectId ? p.name : `Open ${p.name}`}
                 </MenuItem>
-              </Menu>
-            </>
-          )}
+              ))}
+            <MenuItem
+              disabled={busy || !savedId}
+              onClick={() => { setProjectMenu(null); setNewProjectName(''); setNewProjectOpen(true) }}
+            >
+              New project…
+              {!savedId && (
+                <Typography
+                  variant="body2" color="text.secondary" component="span" sx={{ ml: 1 }}
+                >
+                  save the tray first
+                </Typography>
+              )}
+            </MenuItem>
+            {owningProjectId && <Divider />}
+            {owningProjectId && (
+              <MenuItem disabled={busy} onClick={() => void removeFromProject()}>
+                Remove from project
+              </MenuItem>
+            )}
+          </Menu>
 
           <ToggleButtonGroup
             exclusive size="small" value={view} onChange={(_e, v) => v && patch({ view: v as CanvasMode })}
@@ -371,7 +454,7 @@ export default function KeycapTrayPage() {
             <ToggleButton value="3d">3D</ToggleButton>
           </ToggleButtonGroup>
 
-          <Stack direction="row" spacing={0.5}>
+          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
             <Tooltip title="Undo (⌘Z)"><span>
               <IconButton size="small" aria-label="Undo" disabled={!d.canUndo} onClick={d.undo}>
                 <UndoIcon fontSize="small" />
@@ -390,78 +473,21 @@ export default function KeycapTrayPage() {
                 <DeleteIcon fontSize="small" />
               </IconButton>
             </span></Tooltip>
-          </Stack>
-
-          <HoverTooltip title="How far a dragged or dropped pocket jumps between positions. 1u pitch lines pockets up key-to-key.">
-            <TextField
-              select size="small" label="Snap" value={snapMm}
-              onChange={e => patch({ snapMm: parseFloat(e.target.value) })}
-              sx={{ width: 104 }}
-            >
-              <MenuItem value={0}>Off</MenuItem>
-              {SNAP_STEPS_MM.map(v => (
-                <MenuItem key={v} value={v}>{v} mm</MenuItem>
-              ))}
-              <MenuItem value={19.05}>1u pitch</MenuItem>
-            </TextField>
-          </HoverTooltip>
-          <HoverTooltip title="Reference grid drawn on the canvas — purely visual, independent of Snap.">
-            <TextField
-              select size="small" label="Grid" value={gridMm}
-              onChange={e => patch({ gridMm: parseFloat(e.target.value) })}
-              sx={{ width: 96 }}
-            >
-              <MenuItem value={0}>Off</MenuItem>
-              <MenuItem value={2}>2 mm</MenuItem>
-              <MenuItem value={3}>3 mm</MenuItem>
-              <MenuItem value={4}>4 mm</MenuItem>
-              <MenuItem value={5}>5 mm</MenuItem>
-            </TextField>
-          </HoverTooltip>
-
-          <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>
-            <Button size="small" aria-pressed={showLabels} onClick={() => patch({ showLabels: !showLabels })}>
-              {showLabels ? 'Hide labels' : 'Show labels'}
-            </Button>
             <Tooltip title="Zoom and centre the view on the tray outline">
               <Button size="small" onClick={() => setFitToken(t => t + 1)}>Fit</Button>
             </Tooltip>
-            {target === 'print' && (
-              <Tooltip title="Outline of the printer build plate, from Plate W/D in Fabrication">
-                <Button size="small" aria-pressed={showPlate} onClick={() => patch({ showPlate: !showPlate })}>
-                  {showPlate ? 'Hide plate' : 'Show plate'}
-                </Button>
-              </Tooltip>
-            )}
-            <Tooltip title={`A dashed line ${bufferMm} mm inside the tray edge. Keep pockets clear of it for a durable rim; ${fab.minWallMm} mm matches the minimum wall used by the wall-thickness check.`}>
-              <Button size="small" aria-pressed={showBuffer} onClick={() => patch({ showBuffer: !showBuffer })}>
-                {showBuffer ? 'Hide buffer' : 'Show buffer'}
-              </Button>
-            </Tooltip>
-            <HoverTooltip title="Distance the dashed buffer guide sits inside the tray edge. Purely visual — a wider margin than the minimum wall gives pockets more breathing room from the rim.">
-              <TextField
-                select size="small" label="Buffer" value={bufferMm}
-                onChange={e => patch({ bufferMm: parseFloat(e.target.value) })}
-                disabled={!showBuffer}
-                sx={{ width: 104 }}
-              >
-                {BUFFER_STEPS_MM.map(v => (
-                  <MenuItem key={v} value={v}>
-                    {v === DEFAULT_FABRICATION.minWallMm ? `${v} mm · min wall` : `${v} mm`}
-                  </MenuItem>
-                ))}
-              </TextField>
-            </HoverTooltip>
           </Stack>
 
-          <Box sx={{ flex: 1, minWidth: 0 }} />
+          <Stack
+            direction="row" spacing={1}
+            sx={{ ml: 'auto', alignItems: 'center', flexWrap: 'wrap', rowGap: 1 }}
+          >
+            <ExportPanel
+              design={design} mesh={mesh} issues={issues}
+              target={target} onTarget={next => patch({ target: next })}
+            />
 
-          <ExportPanel
-            design={design} mesh={mesh} issues={issues}
-            target={target} onTarget={next => patch({ target: next })}
-          />
-
-          <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', rowGap: 1 }}>
+            <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', rowGap: 1 }}>
             <Button
               size="small" startIcon={<AddIcon />}
               disabled={busy}
@@ -502,6 +528,7 @@ export default function KeycapTrayPage() {
             >
               {hasUnsavedChanges ? 'Save changes' : 'Save'}
             </Button>
+            </Stack>
           </Stack>
         </Stack>
       </Paper>
@@ -566,6 +593,7 @@ export default function KeycapTrayPage() {
           <PropertiesPanel
             design={design} selected={selectedPockets} fab={fab}
             imperial={imperial} onImperial={next => patch({ imperial: next })}
+            view={settings} onView={patch}
             onProfile={p => { d.setProfile(p); setFitToken(t => t + 1) }} onSizing={d.setSizing}
             onDesign={mutate => d.replace(mutate)}
             onPocket={d.updatePocket} onFab={setFab}
@@ -615,6 +643,33 @@ export default function KeycapTrayPage() {
           ))}
         </DialogContent>
         <DialogActions><Button onClick={() => setOpenDialog(false)}>Close</Button></DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={newProjectOpen} onClose={() => setNewProjectOpen(false)} fullWidth maxWidth="xs"
+      >
+        <DialogTitle>New project</DialogTitle>
+        <DialogContent dividers>
+          <TextField
+            autoFocus fullWidth size="small" label="Name"
+            placeholder="GMK Olivia"
+            value={newProjectName}
+            onChange={e => setNewProjectName(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') void createLinkedProject() }}
+            helperText="The open tray is added to it. Its set can be filled in from the gear."
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setNewProjectOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            disabled={!newProjectName.trim() || busy}
+            startIcon={busy ? <CircularProgress size={14} color="inherit" /> : undefined}
+            onClick={() => void createLinkedProject()}
+          >
+            Create
+          </Button>
+        </DialogActions>
       </Dialog>
 
       <Snackbar

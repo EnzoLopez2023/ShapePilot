@@ -6,6 +6,8 @@ import type { PocketSizing } from '../geometry/shapes.ts'
 import { LIBRARY_SIZING, PYTHON_SIZING, PROFILE_PRESETS, profileToMulti } from '../model/presets.ts'
 import { multiBBox } from '../../../geometry/vec.ts'
 import { pocketAABB } from '../state/useTrayDesign.ts'
+import { BUFFER_STEPS_MM, SNAP_STEPS_MM } from '../state/viewSettings.ts'
+import type { ViewSettings } from '../state/viewSettings.ts'
 import type { FabricationSettings, Pocket, TrayDesign, TrayProfile } from '../model/types.ts'
 import LengthField from '../../../components/LengthField.tsx'
 import AngleField from '../../../components/AngleField.tsx'
@@ -19,6 +21,9 @@ export interface PropertiesPanelProps {
   fab: FabricationSettings
   imperial: boolean
   onImperial: (v: boolean) => void
+  /** Canvas view settings (snap, grid, the buffer guide, label/plate visibility). */
+  view: ViewSettings
+  onView: (patch: Partial<ViewSettings>) => void
   onProfile: (p: TrayProfile) => void
   onSizing: (s: PocketSizing) => void
   onDesign: (mutate: (d: TrayDesign) => TrayDesign) => void
@@ -30,9 +35,10 @@ export interface PropertiesPanelProps {
 
 export default function PropertiesPanel(props: PropertiesPanelProps) {
   const {
-    design, selected, fab, imperial, onImperial, onProfile, onSizing, onDesign, onPocket, onFab,
-    coverage,
+    design, selected, fab, imperial, onImperial, view, onView,
+    onProfile, onSizing, onDesign, onPocket, onFab, coverage,
   } = props
+  const { snapMm, gridMm, showLabels, showPlate, showBuffer, bufferMm, target } = view
 
   const heading = (t: string) => (
     <Typography variant="h3" component="h2">{t}</Typography>
@@ -80,6 +86,68 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
         </>
       )}
 
+      {/* Canvas view aids. Not part of the design -- they never leave the
+          browser -- but toggled often enough while laying a tray out that they
+          belong beside the work rather than crowding the toolbar. */}
+      {heading('View')}
+      <Stack direction="row" spacing={1}>
+        <HoverTooltip title="How far a dragged or dropped pocket jumps between positions. 1u pitch lines pockets up key-to-key.">
+          <TextField
+            select size="small" label="Snap" value={snapMm} fullWidth
+            onChange={e => onView({ snapMm: parseFloat(e.target.value) })}
+          >
+            <MenuItem value={0}>Off</MenuItem>
+            {SNAP_STEPS_MM.map(v => (
+              <MenuItem key={v} value={v}>{v} mm</MenuItem>
+            ))}
+            <MenuItem value={19.05}>1u pitch</MenuItem>
+          </TextField>
+        </HoverTooltip>
+        <HoverTooltip title="Reference grid drawn on the canvas — purely visual, independent of Snap.">
+          <TextField
+            select size="small" label="Grid" value={gridMm} fullWidth
+            onChange={e => onView({ gridMm: parseFloat(e.target.value) })}
+          >
+            <MenuItem value={0}>Off</MenuItem>
+            <MenuItem value={2}>2 mm</MenuItem>
+            <MenuItem value={3}>3 mm</MenuItem>
+            <MenuItem value={4}>4 mm</MenuItem>
+            <MenuItem value={5}>5 mm</MenuItem>
+          </TextField>
+        </HoverTooltip>
+      </Stack>
+      <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>
+        <Button size="small" aria-pressed={showLabels} onClick={() => onView({ showLabels: !showLabels })}>
+          {showLabels ? 'Hide labels' : 'Show labels'}
+        </Button>
+        {target === 'print' && (
+          <Tooltip title="Outline of the printer build plate, from Plate W/D in Fabrication">
+            <Button size="small" aria-pressed={showPlate} onClick={() => onView({ showPlate: !showPlate })}>
+              {showPlate ? 'Hide plate' : 'Show plate'}
+            </Button>
+          </Tooltip>
+        )}
+        <Tooltip title={`A dashed line ${bufferMm} mm inside the tray edge. Keep pockets clear of it for a durable rim; ${fab.minWallMm} mm matches the minimum wall used by the wall-thickness check.`}>
+          <Button size="small" aria-pressed={showBuffer} onClick={() => onView({ showBuffer: !showBuffer })}>
+            {showBuffer ? 'Hide buffer' : 'Show buffer'}
+          </Button>
+        </Tooltip>
+      </Stack>
+      <HoverTooltip title="Distance the dashed buffer guide sits inside the tray edge. Purely visual — a wider margin than the minimum wall gives pockets more breathing room from the rim.">
+        <TextField
+          select size="small" label="Buffer" value={bufferMm}
+          onChange={e => onView({ bufferMm: parseFloat(e.target.value) })}
+          disabled={!showBuffer}
+        >
+          {BUFFER_STEPS_MM.map(v => (
+            <MenuItem key={v} value={v}>
+              {v === fab.minWallMm ? `${v} mm · min wall` : `${v} mm`}
+            </MenuItem>
+          ))}
+        </TextField>
+      </HoverTooltip>
+
+      <Divider />
       <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
         {heading('Tray')}
         <Tooltip title="Show every length in millimetres or in fractional inches (nearest 1/32&quot;). Values are still stored in mm either way.">

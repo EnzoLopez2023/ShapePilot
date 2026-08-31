@@ -38,6 +38,13 @@ export const DEFAULT_VIEW_SETTINGS: ViewSettings = {
   target: 'print',
 }
 
+/** Snap steps offered in the View section: 0.5 mm through 5 mm in 0.5 mm
+ *  increments, plus the 1u key pitch. */
+export const SNAP_STEPS_MM = Array.from({ length: 10 }, (_, i) => (i + 1) * 0.5)
+
+/** Buffer guide distances, in mm inside the tray edge. */
+export const BUFFER_STEPS_MM = [1, 1.5, 1.8, 2, 2.5, 3, 3.5, 4, 5, 6, 8, 10]
+
 /** App-owned key, and one object rather than a key per tray, so the whole
  *  record can be pruned in one write. */
 const KEY = 'shapepilot:keycap-tray:view-settings'

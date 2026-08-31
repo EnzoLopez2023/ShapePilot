@@ -9,7 +9,6 @@ import type { SvgIconComponent } from '@mui/icons-material'
 import MenuRoundedIcon from '@mui/icons-material/MenuRounded'
 import MenuOpenRoundedIcon from '@mui/icons-material/MenuOpenRounded'
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded'
-import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import HomeRoundedIcon from '@mui/icons-material/HomeRounded'
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
 import ArchitectureRoundedIcon from '@mui/icons-material/ArchitectureRounded'
@@ -34,7 +33,6 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { to: '/', label: 'Home', icon: HomeRoundedIcon, end: true },
-  { to: '/projects', label: 'Projects', icon: FolderRoundedIcon },
   { to: '/keycap-tray', label: 'Keycap tray', icon: GridViewRoundedIcon },
   { to: '/shaper-designer', label: 'Shaper designer', icon: ArchitectureRoundedIcon },
   { to: '/bambu-designer', label: 'Bambu designer', icon: ViewInArRoundedIcon },
