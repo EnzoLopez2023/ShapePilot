@@ -71,6 +71,23 @@ function installFetchStub() {
     if (path === '/api/keycap-projects' && method === 'POST') return json(201, { id: '7' })
     if (path === '/api/keycap-projects/1' && method === 'GET') return json(200, state.project)
     if (path === '/api/keycap-projects/1' && method === 'PUT') return json(200, { ok: true })
+    if (/^\/api\/keycap-trays\/\d+$/.test(path)) {
+      const id = path.split('/').pop() as string
+      return json(200, {
+        id,
+        name: state.trays.find(t => t.id === id)?.name ?? 'Tray',
+        profile: { kind: 'rect', widthMm: 200, heightMm: 120, cornerRadiusMm: 4 },
+        sizing: { pitch: 19.05, widthOffset: -0.25, height: 18.8, cornerRadius: 1, cornerSegments: 16 },
+        floorThicknessMm: 2.4, pocketDepthMm: 10, engraveDepthMm: 0.4,
+        pockets: [
+          { id: 'a', units: 1, heightUnits: 1, x: 10, y: 10, rotationDeg: 0, isThrough: false,
+            labelMode: 'guide' },
+          { id: 'b', units: 6.25, heightUnits: 1, x: 40, y: 10, rotationDeg: 0, isThrough: false,
+            labelMode: 'guide' },
+        ],
+        createdAt: '2026-08-28 11:00:00', updatedAt: '2026-08-28 12:00:00', revision: 0,
+      })
+    }
     if (path.startsWith('/api/keycap-trays')) return json(200, state.trays)
     if (path.startsWith('/api/design-assets')) {
       return new Response(new Uint8Array([1, 2, 3]), { status: 200 })
@@ -182,12 +199,33 @@ test('a long pocket counts as the caps it holds, not as one cap', async () => {
   assert.ok(breakdown.getByText('1 still to place'))
 })
 
-test('the trays in the project are listed and open by URL', async () => {
+test('the project’s trays are drawn, and open by URL', async () => {
+  // A name and a pocket count are exactly what you cannot recognise a tray by,
+  // so the preview is the drawing.
   renderProject()
   await waitFor(() => expect(screen.getByText('Tray one')).toBeTruthy())
-  assert.match(screen.getByText(/29 pockets/).textContent ?? '', /29 pockets · updated/)
+  assert.ok(await screen.findByRole('img', { name: 'Tray one, 29 pockets' }))
   // The tray list is fetched scoped to this project, not filtered client-side.
   assert.ok(state.calls.some(c => c.path === '/api/keycap-trays?projectId=1'))
+  // And its geometry, which the summary does not carry.
+  await waitFor(() => expect(
+    state.calls.some(c => c.path === '/api/keycap-trays/4')).toBe(true))
+  assert.ok(screen.getByRole('button', { name: 'Open Tray one' }))
+})
+
+test('a tray whose geometry will not load is left out, not fatal', async () => {
+  // A preview is a convenience; it must never take the project page down.
+  // A non-numeric id the design stub will not serve, so this really does take
+  // the failure path rather than a contrived one.
+  state.trays = [
+    { id: '4', name: 'Tray one', pocketCount: 29, updatedAt: '2026-08-28 12:00:00' },
+    { id: 'broken', name: 'Broken tray', pocketCount: 2, updatedAt: '2026-08-28 12:00:00' },
+  ]
+  renderProject()
+  await waitFor(() => expect(screen.getByText('Tray one')).toBeTruthy())
+  assert.equal(screen.queryByText('Broken tray'), null)
+  // The rest of the project is untouched.
+  assert.ok(screen.getByRole('heading', { name: 'GMK Olivia' }))
 })
 
 test('editing a row marks the project unsaved and sends the whole list', async () => {

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import {
   Alert, Box, Button, Divider, MenuItem, Paper, Snackbar, Stack, TextField, Typography,
 } from '@mui/material'
+import { useMsal } from '@azure/msal-react'
+import { AUTH_ENABLED } from '../../auth/msal.ts'
 import { getSettings, putPreferences } from './preferences.ts'
 import type { AccountProfile, AppPreferences } from './preferences.ts'
 import { useThemeMode } from '../../theme/ThemeModeProvider.tsx'
@@ -13,6 +15,7 @@ const FIELD_WIDTH = 260
 
 export default function SettingsPage() {
   const { preference, setPreference } = useThemeMode()
+  const { instance } = useMsal()
   const [preferences, setPreferences] = useState<AppPreferences | null>(null)
   const [profile, setProfile] = useState<AccountProfile | null>(null)
   const [loading, setLoading] = useState(true)
@@ -142,6 +145,29 @@ export default function SettingsPage() {
               refused when NODE_ENV=production.
             </Alert>
           )}
+
+          <Divider />
+          <Box>
+            <Button
+              variant="outlined"
+              disabled={!AUTH_ENABLED}
+              onClick={() => {
+                // Redirect rather than popup, matching how signing in works, and
+                // it ends the session at Microsoft rather than only locally --
+                // clearing this browser alone would leave the next sign-in
+                // silently reusing the same account.
+                void instance.logoutRedirect({ account: instance.getActiveAccount() })
+              }}
+            >
+              Sign out
+            </Button>
+            {!AUTH_ENABLED && (
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                There is no session to end: this build runs with the development
+                authentication bypass.
+              </Typography>
+            )}
+          </Box>
         </Stack>
       </Paper>
 
