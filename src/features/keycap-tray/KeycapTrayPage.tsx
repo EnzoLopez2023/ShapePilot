@@ -14,7 +14,10 @@ import SaveIcon from '@mui/icons-material/SaveOutlined'
 import AddIcon from '@mui/icons-material/Add'
 import { buildTrayMesh } from './geometry/layers.ts'
 import { validateDesign } from './geometry/validate.ts'
-import type { Target } from './geometry/validate.ts'
+import {
+  DEFAULT_VIEW_SETTINGS, forgetViewSettings, loadViewSettings, saveViewSettings,
+} from './state/viewSettings.ts'
+import type { CanvasMode, ViewSettings } from './state/viewSettings.ts'
 import { DEFAULT_FABRICATION, paletteItemExtra } from './model/defaults.ts'
 import type { PaletteItem } from './model/defaults.ts'
 import type { FabricationSettings } from './model/types.ts'
@@ -31,8 +34,6 @@ import HoverTooltip from '../../components/HoverTooltip.tsx'
 import { useConfirm } from '../../components/ConfirmDialogProvider.tsx'
 import { EmptyState, LoadingState } from '../../components/LoadingState.tsx'
 import { formatUpdated } from '../keycap-projects/model/formatUpdated.ts'
-
-type Mode = '2d' | '3d'
 
 // three.js is a third of the bundle and the 2D layout is the default view, so
 // the viewer is only fetched when someone actually switches to 3D.
@@ -55,18 +56,17 @@ export default function KeycapTrayPage() {
   const d = useTrayDesign()
   const { design, selection } = d
 
-  const [view, setView] = useState<Mode>('2d')
   const [fab, setFab] = useState<FabricationSettings>(DEFAULT_FABRICATION)
-  const [snapMm, setSnapMm] = useState(0.5)
-  const [gridMm, setGridMm] = useState(5)
-  const [showLabels, setShowLabels] = useState(true)
-  const [showPlate, setShowPlate] = useState(false)
-  const [showBuffer, setShowBuffer] = useState(false)
-  // Lifted from ExportPanel: the build-plate controls only make sense for the
-  // 3D printer, so the toolbar needs to know the target too.
-  const [target, setTarget] = useState<Target>('print')
-  const [bufferMm, setBufferMm] = useState(DEFAULT_FABRICATION.minWallMm)
-  const [imperial, setImperial] = useState(false)
+  // One object rather than nine separate states, because it is remembered and
+  // restored as a unit: a tray comes back the way it was being looked at.
+  // `target` is here too -- lifted from ExportPanel, since the build-plate
+  // controls only make sense for the 3D printer and the toolbar needs to know.
+  const [settings, setSettings] = useState<ViewSettings>(DEFAULT_VIEW_SETTINGS)
+  const {
+    view, snapMm, gridMm, showLabels, showPlate, showBuffer, bufferMm, imperial, target,
+  } = settings
+  const patch = useCallback(
+    (next: Partial<ViewSettings>) => setSettings(current => ({ ...current, ...next })), [])
   const [designs, setDesigns] = useState<api.DesignSummary[]>([])
   const [savedId, setSavedId] = useState<string | null>(null)
   const [savedRevision, setSavedRevision] = useState<number | null>(null)
@@ -79,6 +79,13 @@ export default function KeycapTrayPage() {
   const [project, setProject] = useState<KeycapProject | null>(null)
   const [trayMenu, setTrayMenu] = useState<HTMLElement | null>(null)
   const loadGeneration = useRef(0)
+  // The tray id the address has already been answered for. Not "the tray in
+  // the editor": abandoning one with New answers the address too, and until
+  // the navigation commits the URL still names it. Comparing against `savedId`
+  // instead -- or clearing this on New -- put the abandoned tray straight back,
+  // because `load` is not referentially stable and the effect below re-runs on
+  // every render.
+  const answeredForUrl = useRef<string | null>(null)
   const designRevision = useRef(design.revision)
   designRevision.current = design.revision
   const hasUnsavedChanges = savedId !== null && savedRevision !== design.revision
@@ -151,6 +158,11 @@ export default function KeycapTrayPage() {
       const loaded = await api.getDesign(id)
       if (generation !== loadGeneration.current) return
       d.setDesign(loaded)
+      // How this tray was last being looked at. Applied here rather than in an
+      // effect on `savedId`, so it lands in the same commit as the design and
+      // there is no window where one tray's settings sit over another's.
+      setSettings(loadViewSettings(id, DEFAULT_VIEW_SETTINGS))
+      answeredForUrl.current = id
       setSavedId(id)
       setSavedRevision(0)
       setOpenDialog(false)
@@ -165,12 +177,19 @@ export default function KeycapTrayPage() {
     }
   }, [d, designId, navigate])
 
+  // Written on change rather than on unload: a browser tab closed by force
+  // still remembers, and the write is a few hundred bytes.
+  useEffect(() => {
+    if (savedId) saveViewSettings(savedId, settings)
+  }, [savedId, settings])
+
   // The URL is the source of truth for which tray is open, so a link from a
   // project, a reload and the back button all land on the same design.
   useEffect(() => {
-    if (!designId || designId === savedId) return
+    if (!designId) { answeredForUrl.current = null; return }
+    if (answeredForUrl.current === designId) return
     void load(designId)
-  }, [designId, savedId, load])
+  }, [designId, load])
 
   const clone = useCallback(async () => {
     if (!savedId) { setError('Save the design before cloning it.'); return }
@@ -193,11 +212,17 @@ export default function KeycapTrayPage() {
     setBusy(true)
     try {
       await api.deleteDesign(id)
+      // The tray is gone; remembering how it was being looked at would only
+      // hold a row in local storage for something nobody can open.
+      forgetViewSettings(id)
       if (id === savedId) {
+        // Address first, for the reason given on New.
+        if (designId) navigate('/keycap-tray')
+        answeredForUrl.current = designId ?? null
         d.setDesign(emptyDesign())
+        setSettings(DEFAULT_VIEW_SETTINGS)
         setSavedId(null)
         setSavedRevision(null)
-        if (designId) navigate('/keycap-tray')
       }
       await refresh()
       setToast('Deleted')
@@ -310,7 +335,7 @@ export default function KeycapTrayPage() {
           )}
 
           <ToggleButtonGroup
-            exclusive size="small" value={view} onChange={(_e, v) => v && setView(v)}
+            exclusive size="small" value={view} onChange={(_e, v) => v && patch({ view: v as CanvasMode })}
             aria-label="Canvas mode"
           >
             <ToggleButton value="2d">Layout</ToggleButton>
@@ -341,7 +366,7 @@ export default function KeycapTrayPage() {
           <HoverTooltip title="How far a dragged or dropped pocket jumps between positions. 1u pitch lines pockets up key-to-key.">
             <TextField
               select size="small" label="Snap" value={snapMm}
-              onChange={e => setSnapMm(parseFloat(e.target.value))}
+              onChange={e => patch({ snapMm: parseFloat(e.target.value) })}
               sx={{ width: 104 }}
             >
               <MenuItem value={0}>Off</MenuItem>
@@ -354,7 +379,7 @@ export default function KeycapTrayPage() {
           <HoverTooltip title="Reference grid drawn on the canvas — purely visual, independent of Snap.">
             <TextField
               select size="small" label="Grid" value={gridMm}
-              onChange={e => setGridMm(parseFloat(e.target.value))}
+              onChange={e => patch({ gridMm: parseFloat(e.target.value) })}
               sx={{ width: 96 }}
             >
               <MenuItem value={0}>Off</MenuItem>
@@ -366,7 +391,7 @@ export default function KeycapTrayPage() {
           </HoverTooltip>
 
           <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>
-            <Button size="small" aria-pressed={showLabels} onClick={() => setShowLabels(v => !v)}>
+            <Button size="small" aria-pressed={showLabels} onClick={() => patch({ showLabels: !showLabels })}>
               {showLabels ? 'Hide labels' : 'Show labels'}
             </Button>
             <Tooltip title="Zoom and centre the view on the tray outline">
@@ -374,20 +399,20 @@ export default function KeycapTrayPage() {
             </Tooltip>
             {target === 'print' && (
               <Tooltip title="Outline of the printer build plate, from Plate W/D in Fabrication">
-                <Button size="small" aria-pressed={showPlate} onClick={() => setShowPlate(v => !v)}>
+                <Button size="small" aria-pressed={showPlate} onClick={() => patch({ showPlate: !showPlate })}>
                   {showPlate ? 'Hide plate' : 'Show plate'}
                 </Button>
               </Tooltip>
             )}
             <Tooltip title={`A dashed line ${bufferMm} mm inside the tray edge. Keep pockets clear of it for a durable rim; ${fab.minWallMm} mm matches the minimum wall used by the wall-thickness check.`}>
-              <Button size="small" aria-pressed={showBuffer} onClick={() => setShowBuffer(v => !v)}>
+              <Button size="small" aria-pressed={showBuffer} onClick={() => patch({ showBuffer: !showBuffer })}>
                 {showBuffer ? 'Hide buffer' : 'Show buffer'}
               </Button>
             </Tooltip>
             <HoverTooltip title="Distance the dashed buffer guide sits inside the tray edge. Purely visual — a wider margin than the minimum wall gives pockets more breathing room from the rim.">
               <TextField
                 select size="small" label="Buffer" value={bufferMm}
-                onChange={e => setBufferMm(parseFloat(e.target.value))}
+                onChange={e => patch({ bufferMm: parseFloat(e.target.value) })}
                 disabled={!showBuffer}
                 sx={{ width: 104 }}
               >
@@ -404,7 +429,7 @@ export default function KeycapTrayPage() {
 
           <ExportPanel
             design={design} mesh={mesh} issues={issues}
-            target={target} onTarget={setTarget}
+            target={target} onTarget={next => patch({ target: next })}
           />
 
           <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', rowGap: 1 }}>
@@ -412,11 +437,19 @@ export default function KeycapTrayPage() {
               size="small" startIcon={<AddIcon />}
               disabled={busy}
               onClick={() => {
+                // The address is cleared first, and deliberately in the same
+                // handler as the rest: React batches them into one commit, so
+                // the effect that loads from the URL never sees a cleared
+                // `savedId` beside a URL that still names a tray -- which would
+                // read as "the URL wants a tray nobody has loaded" and put the
+                // one just abandoned straight back.
+                if (designId) navigate('/keycap-tray')
                 loadGeneration.current += 1
+                answeredForUrl.current = designId ?? null
                 d.setDesign(emptyDesign())
+                setSettings(DEFAULT_VIEW_SETTINGS)
                 setSavedId(null)
                 setSavedRevision(null)
-                if (designId) navigate('/keycap-tray')
               }}
             >
               New
@@ -503,7 +536,7 @@ export default function KeycapTrayPage() {
         <Paper sx={{ ...panel, order: { xs: 3, md: 0 } }}>
           <PropertiesPanel
             design={design} selected={selectedPockets} fab={fab}
-            imperial={imperial} onImperial={setImperial}
+            imperial={imperial} onImperial={next => patch({ imperial: next })}
             onProfile={p => { d.setProfile(p); setFitToken(t => t + 1) }} onSizing={d.setSizing}
             onDesign={mutate => d.replace(mutate)}
             onPocket={d.updatePocket} onFab={setFab}
