@@ -120,7 +120,8 @@ export function createApp(options: CreateAppOptions): Express {
   // One memoized store for both routes that need one, so a test injecting a
   // temporary directory reaches the assistant's photo reads as well.
   const store = assetStore(options.assetStore, config.assetStoreDir)
-  app.use('/api/design-assets', authenticated, createDesignAssetRouter({ repos, store }))
+  app.use('/api/design-assets', authenticated,
+    createDesignAssetRouter({ repos, store, logger: options.logger }))
   app.use('/api/ai', authenticated, createAiRouter({ repos, client: aiClient, store }))
   app.use('/api/settings', authenticated, createSettingsRouter(repos))
   app.use('/api/audit', authenticated, createAuditRouter(repos))
