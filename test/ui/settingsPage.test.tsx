@@ -18,7 +18,9 @@ vi.mock('../../src/auth/msal.ts', async (importOriginal) => ({
   AUTH_ENABLED: true,
 }))
 import SettingsPage from '../../src/features/settings/SettingsPage.tsx'
-import { SHIPPED_DESIGNER_DEFAULTS } from '../../src/features/settings/preferences.ts'
+import {
+  forgetDesignerDefaults, SHIPPED_DESIGNER_DEFAULTS,
+} from '../../src/features/settings/preferences.ts'
 import { ThemeModeProvider } from '../../src/theme/ThemeModeProvider.tsx'
 
 interface Saved { designerDefaults?: unknown }
@@ -69,6 +71,7 @@ const renderPage = () => render(
 beforeEach(() => {
   saved = []
   logoutCalls = []
+  forgetDesignerDefaults()
   vi.stubGlobal('fetch', async (input: RequestInfo | URL, init: RequestInit = {}) => {
     const path = String(input).replace(/^https?:\/\/[^/]+/, '')
     const method = (init.method ?? 'GET').toUpperCase()
@@ -141,4 +144,38 @@ test('the account section names who is signed in', async () => {
   const section = (await screen.findByRole('heading', { name: 'Account' })).parentElement!
   await waitFor(() => expect(within(section).getByText('Test Person')).toBeTruthy())
   assert.ok(within(section).getByText('t@example.invalid'))
+})
+
+test('saving a default is what the designers open with next, without a refetch', async () => {
+  // Every designer asks for these on mount and a tray cannot load until the
+  // answer arrives, so they are held for the session. Saving must refresh what
+  // is held, or a change would not take effect until a reload.
+  const user = userEvent.setup()
+  const { designerDefaults } = await import('../../src/features/settings/preferences.ts')
+
+  renderPage()
+  await waitFor(() => expect(screen.getByLabelText('Show plate')).toBeTruthy())
+  const before = await designerDefaults()
+  assert.equal(before.keycapTray.showPlate, false)
+
+  await user.click(screen.getByLabelText('Show plate'))
+  await waitFor(() => expect(saved.length).toBeGreaterThan(0))
+
+  const after = await designerDefaults()
+  assert.equal(after.keycapTray.showPlate, true)
+})
+
+test('defaults are not remembered across a failure', async () => {
+  // A designer opened while the network was down must pick up the real
+  // defaults on the next try, not fall back for the whole session.
+  const { designerDefaults } = await import('../../src/features/settings/preferences.ts')
+  vi.stubGlobal('fetch', async () => new Response(null, { status: 503 }))
+  assert.deepEqual(await designerDefaults(), SHIPPED_DESIGNER_DEFAULTS)
+
+  vi.stubGlobal('fetch', async () => new Response(JSON.stringify(settingsBody()), {
+    status: 200, headers: { 'content-type': 'application/json' },
+  }))
+  const recovered = await designerDefaults()
+  assert.deepEqual(recovered, SHIPPED_DESIGNER_DEFAULTS)
+  assert.ok(recovered)
 })

@@ -62,21 +62,42 @@ export interface SettingsResponse {
 
 export const getSettings = () => apiRequest<SettingsResponse>('/settings')
 
-export const putPreferences = (preferences: AppPreferences) =>
-  apiRequest<{ preferences: AppPreferences }>('/settings', { method: 'PUT', body: preferences })
+export const putPreferences = async (preferences: AppPreferences) => {
+  const result = await apiRequest<{ preferences: AppPreferences }>(
+    '/settings', { method: 'PUT', body: preferences })
+  // What was just saved is what the designers should open with next.
+  cachedDefaults = Promise.resolve(result.preferences.designerDefaults)
+  return result
+}
+
+let cachedDefaults: Promise<DesignerDefaults> | null = null
 
 /**
  * The designer defaults, or the shipped ones if settings cannot be read.
  *
  * A designer must open whatever the network did, so this never rejects: an
  * unreachable settings endpoint means the built-in defaults, not a broken page.
+ *
+ * Held for the session, because every designer asks on mount and a tray cannot
+ * load until the answer arrives -- paying a round trip for it each time made
+ * opening a tray measurably slower for a value that changes only when someone
+ * edits it on the settings page, which invalidates this itself.
  */
-export async function designerDefaults(): Promise<DesignerDefaults> {
-  try {
-    return (await getSettings()).preferences.designerDefaults ?? SHIPPED_DESIGNER_DEFAULTS
-  } catch {
-    return SHIPPED_DESIGNER_DEFAULTS
-  }
+export function designerDefaults(): Promise<DesignerDefaults> {
+  cachedDefaults ??= getSettings()
+    .then(result => result.preferences.designerDefaults ?? SHIPPED_DESIGNER_DEFAULTS)
+    .catch(() => {
+      // Not remembered: a designer opened while the network was down should
+      // pick up the real defaults on the next try, not for the whole session.
+      cachedDefaults = null
+      return SHIPPED_DESIGNER_DEFAULTS
+    })
+  return cachedDefaults
+}
+
+/** Drop the cached defaults. Exported for tests, which mount fresh pages. */
+export function forgetDesignerDefaults(): void {
+  cachedDefaults = null
 }
 
 /** Mirrors DEFAULT_DESIGNER_DEFAULTS in lib/db/repositories/settings.ts. The

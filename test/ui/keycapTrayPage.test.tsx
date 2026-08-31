@@ -8,7 +8,9 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { act, cleanup, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { SHIPPED_DESIGNER_DEFAULTS } from '../../src/features/settings/preferences.ts'
+import {
+  forgetDesignerDefaults, SHIPPED_DESIGNER_DEFAULTS,
+} from '../../src/features/settings/preferences.ts'
 import type { DesignerDefaults } from '../../src/features/settings/preferences.ts'
 import KeycapTrayPage from '../../src/features/keycap-tray/KeycapTrayPage.tsx'
 import { useTrayDesign, pocketExtent, pocketAABB } from '../../src/features/keycap-tray/state/useTrayDesign.ts'
@@ -166,6 +168,9 @@ beforeEach(() => {
   // Per-tray view settings live here, so a test that opens a tray must not
   // inherit how a previous test left it.
   localStorage.clear()
+  // The defaults are cached for the session, which is right for a browser and
+  // wrong for a suite where each test is its own session.
+  forgetDesignerDefaults()
   vi.stubGlobal('ResizeObserver', class {
     observe() {}
     unobserve() {}
