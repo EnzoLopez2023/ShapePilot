@@ -14,7 +14,7 @@ import {
 } from '@mui/material'
 import type { KeycapSetResponse } from '../../../services/ai.ts'
 import type { SetItem } from '../model/types.ts'
-import { setTotals, sizeLabel, sizeRows } from '../model/summary.ts'
+import { sizeLabel } from '../model/summary.ts'
 
 export interface ExtractionReviewDialogProps {
   open: boolean
@@ -38,8 +38,20 @@ export default function ExtractionReviewDialog(props: ExtractionReviewDialogProp
   const [applying, setApplying] = useState(false)
 
   const items: SetItem[] = proposal?.set.items ?? []
-  const rows = sizeRows(items, [])
-  const totals = setTotals(rows, items)
+  // A proposal has no tray behind it yet, so this is the plain tally of what
+  // was read -- not what has a home, which is the project page's question.
+  const bySize = new Map<string, { label: string; count: number; units: number }>()
+  for (const item of items) {
+    const label = sizeLabel(item.units, item.heightUnits ?? 1, item.shape)
+    const seen = bySize.get(label)
+    if (seen) seen.count += item.count ?? 1
+    else bySize.set(label, { label, count: item.count ?? 1, units: item.units })
+  }
+  const rows = [...bySize.values()].sort((a, b) => a.units - b.units)
+  const totals = {
+    caps: items.reduce((sum, i) => sum + (i.count ?? 1), 0),
+    entries: items.length,
+  }
 
   const apply = (mode: 'replace' | 'append') => {
     if (!proposal) return
@@ -79,12 +91,10 @@ export default function ExtractionReviewDialog(props: ExtractionReviewDialogProp
                 <Stack direction="row" spacing={0.75} sx={{ flexWrap: 'wrap', rowGap: 0.75 }}>
                   {rows.map(row => (
                     <Box
-                      key={row.key}
+                      key={row.label}
                       sx={{ border: 1, borderColor: 'divider', borderRadius: 2, px: 1, py: 0.5 }}
                     >
-                      <Typography variant="body2">
-                        {sizeLabel(row.units, row.heightUnits, row.shape)} × {row.owned}
-                      </Typography>
+                      <Typography variant="body2">{row.label} × {row.count}</Typography>
                     </Box>
                   ))}
                 </Stack>

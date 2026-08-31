@@ -20,6 +20,8 @@ import type { FabricationSettings } from './model/types.ts'
 import { emptyDesign } from './model/presets.ts'
 import { useTrayDesign } from './state/useTrayDesign.ts'
 import * as api from './service.ts'
+import * as projects from '../keycap-projects/service.ts'
+import type { KeycapProject } from '../keycap-projects/model/types.ts'
 import TrayCanvas from './components/TrayCanvas.tsx'
 import PocketPalette from './components/PocketPalette.tsx'
 import PropertiesPanel from './components/PropertiesPanel.tsx'
@@ -73,6 +75,7 @@ export default function KeycapTrayPage() {
   const [error, setError] = useState<string | null>(null)
   const [openDialog, setOpenDialog] = useState(false)
   const [fitToken, setFitToken] = useState(0)
+  const [project, setProject] = useState<KeycapProject | null>(null)
   const loadGeneration = useRef(0)
   const designRevision = useRef(design.revision)
   designRevision.current = design.revision
@@ -91,9 +94,24 @@ export default function KeycapTrayPage() {
 
   useEffect(() => { void refresh() }, [refresh])
 
-  // The project the open tray belongs to, taken from the list rather than
-  // fetched: the summary already carries it, and one request is enough.
-  const project = designs.find(s => s.id === savedId)
+  // The project the open tray belongs to, from the list: the summary already
+  // carries its name, so the header chip costs no extra request.
+  const owningProject = designs.find(s => s.id === savedId)
+  const owningProjectId = owningProject?.projectId ?? null
+
+  // The set and the *other* trays' pockets, for the coverage panel. This tray
+  // is excluded on purpose -- its pockets are read live from the design below,
+  // unsaved edits included, and counting the saved copy too would double them.
+  useEffect(() => {
+    if (!owningProjectId || !savedId) { setProject(null); return }
+    let cancelled = false
+    void projects.getProject(owningProjectId, savedId)
+      .then(result => { if (!cancelled) setProject(result) })
+      // A coverage panel that will not load is simply absent; the designer
+      // works without it and must not report someone else's failure.
+      .catch(() => { if (!cancelled) setProject(null) })
+    return () => { cancelled = true }
+  }, [owningProjectId, savedId, savedRevision])
 
   const selectedPockets = useMemo(
     () => design.pockets.filter(p => selection.has(p.id)), [design.pockets, selection])
@@ -237,13 +255,13 @@ export default function KeycapTrayPage() {
             {design.name}
           </Typography>
 
-          {project?.projectId && project.projectName && (
+          {owningProjectId && owningProject?.projectName && (
             <Chip
               size="small"
               component={RouterLink}
-              to={`/projects/${project.projectId}`}
+              to={`/projects/${owningProjectId}`}
               clickable
-              label={project.projectName}
+              label={owningProject.projectName}
               sx={{ maxWidth: 180 }}
             />
           )}
@@ -446,6 +464,14 @@ export default function KeycapTrayPage() {
             onProfile={p => { d.setProfile(p); setFitToken(t => t + 1) }} onSizing={d.setSizing}
             onDesign={mutate => d.replace(mutate)}
             onPocket={d.updatePocket} onFab={setFab}
+            coverage={project && owningProjectId && owningProject?.projectName
+              ? {
+                projectId: owningProjectId,
+                projectName: owningProject.projectName,
+                items: project.items,
+                otherTrays: project.coverage,
+              }
+              : undefined}
           />
         </Paper>
       </Box>

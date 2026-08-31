@@ -155,18 +155,31 @@ test('the breakdown reads the set by size, with the trays joined in', async () =
   renderProject()
   await waitFor(() => expect(screen.getByRole('heading', { name: 'GMK Olivia' })).toBeTruthy())
 
-  // 1 + 34 of 1u, and one 6.25u.
-  const summary = screen.getByText(/caps in .* rows/)
-  assert.match(summary.textContent ?? '', /36 caps in 3 rows/)
-  // 28 of the 35 1u caps have a pocket; the spacebar has none.
-  assert.match(summary.textContent ?? '', /28 placed/)
-  assert.match(summary.textContent ?? '', /8 left/)
+  // 35 1u caps (Esc is 1u, so it shares a trough like any other) and a spacebar.
+  const summary = screen.getByText(/caps · .* placed/)
+  assert.match(summary.textContent ?? '', /36 caps · 28 placed · 8 to go/)
 
   // Scoped to the breakdown: the size dropdowns in the editor below say '1u' too.
   const breakdown = within(screen.getByRole('list', { name: 'Breakdown by size' }))
   assert.ok(breakdown.getByText('1u'))
   assert.ok(breakdown.getByText('6.25u'))
   assert.ok(breakdown.getByText('7 still to place'))
+})
+
+test('a long pocket counts as the caps it holds, not as one cap', async () => {
+  // The whole reason coverage is an allocation and not a size-for-size join: a
+  // row of 1u caps merged into one 10u trough is still ten caps with a home.
+  state.project.coverage = [{ units: 10, heightUnits: 1, shape: null, pockets: 3 }]
+  renderProject()
+  await waitFor(() => expect(screen.getByRole('heading', { name: 'GMK Olivia' })).toBeTruthy())
+
+  // Three 10u troughs hold 30 of the 35 1u caps.
+  assert.match(screen.getByText(/caps · .* placed/).textContent ?? '', /36 caps · 30 placed/)
+  const breakdown = within(screen.getByRole('list', { name: 'Breakdown by size' }))
+  assert.ok(breakdown.getByText('5 still to place'))
+  // The spacebar is not one of them: it needs a pocket of its own size.
+  assert.ok(breakdown.getByText('6.25u'))
+  assert.ok(breakdown.getByText('1 still to place'))
 })
 
 test('the trays in the project are listed and open by URL', async () => {

@@ -10,6 +10,8 @@ import type { FabricationSettings, Pocket, TrayDesign, TrayProfile } from '../mo
 import LengthField from '../../../components/LengthField.tsx'
 import AngleField from '../../../components/AngleField.tsx'
 import HoverTooltip from '../../../components/HoverTooltip.tsx'
+import SetCoveragePanel from './SetCoveragePanel.tsx'
+import type { SetCoveragePanelProps } from './SetCoveragePanel.tsx'
 
 export interface PropertiesPanelProps {
   design: TrayDesign
@@ -22,11 +24,14 @@ export interface PropertiesPanelProps {
   onDesign: (mutate: (d: TrayDesign) => TrayDesign) => void
   onPocket: (id: string, patch: Partial<Pocket>) => void
   onFab: (f: FabricationSettings) => void
+  /** Absent when the tray belongs to no project, or the project has not loaded. */
+  coverage?: Omit<SetCoveragePanelProps, 'pockets' | 'sizing'>
 }
 
 export default function PropertiesPanel(props: PropertiesPanelProps) {
   const {
     design, selected, fab, imperial, onImperial, onProfile, onSizing, onDesign, onPocket, onFab,
+    coverage,
   } = props
 
   const heading = (t: string) => (
@@ -65,6 +70,16 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
 
   return (
     <Stack spacing={1.5} sx={{ height: '100%', minHeight: 0, overflowY: 'auto', p: 1.5 }}>
+      {/* First, because while a tray is being laid out the live question is
+          what is still homeless -- not what the floor thickness is. */}
+      {coverage && (
+        <>
+          {heading('Set coverage')}
+          <SetCoveragePanel {...coverage} pockets={design.pockets} sizing={design.sizing} />
+          <Divider />
+        </>
+      )}
+
       <Stack direction="row" sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
         {heading('Tray')}
         <Tooltip title="Show every length in millimetres or in fractional inches (nearest 1/32&quot;). Values are still stored in mm either way.">

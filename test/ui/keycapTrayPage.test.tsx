@@ -16,7 +16,15 @@ import { ConfirmDialogProvider } from '../../src/components/ConfirmDialogProvide
 import type { ReactElement } from 'react'
 
 interface StubState {
-  designs: { id: string; name: string; pocketCount: number; updatedAt: string; profileKind: string }[]
+  designs: {
+    id: string; name: string; pocketCount: number; updatedAt: string; profileKind: string
+    projectId?: string | null; projectName?: string | null
+  }[]
+  project?: {
+    id: string
+    items: { units: number; heightUnits?: number; count?: number; legend?: string }[]
+    coverage: { units: number; heightUnits: number; shape: string | null; pockets: number }[]
+  }
   library: { id: string; name: string; units: number }[]
   calls: { method: string; path: string; body?: unknown }[]
   failListWith?: number
@@ -39,6 +47,10 @@ function installFetchStub() {
         status, headers: { 'content-type': 'application/json' },
       })
 
+    if (path.startsWith('/api/keycap-projects/') && method === 'GET') {
+      if (!state.project) return json(404, { error: { code: 'not_found', message: 'no project' } })
+      return json(200, { ...state.project, name: 'Womier', photos: [] })
+    }
     if (path === '/api/keycap-trays' && method === 'GET') {
       if (state.failListWith) {
         return json(state.failListWith, {
@@ -725,4 +737,52 @@ describe('designer page', () => {
     assert.equal((screen.getByRole('button', { name: 'Flip' }) as HTMLButtonElement).disabled, true)
     assert.equal(screen.queryByRole('switch', { name: 'Mirror' }), null)
   })
+})
+
+test('the designer says what is left of the set, and a trough counts every cap in it', async () => {
+  // A set is cut across several trays, so this is a question about the project:
+  // the other trays come from the server and this one is read live, before
+  // anything is saved.
+  state.designs = [{
+    id: '1', name: 'Top tray', pocketCount: 0, updatedAt: '2026-08-28 12:00:00',
+    profileKind: 'preset', projectId: '9', projectName: 'Womier - Brown Grey',
+  }]
+  state.project = {
+    id: '9',
+    items: [
+      { units: 1, count: 20, legend: 'alphas' },
+      { units: 2.25, count: 1, legend: 'Enter' },
+    ],
+    // Another tray in the project already holds five 1u caps.
+    coverage: [{ units: 1, heightUnits: 1, shape: null, pockets: 5 }],
+  }
+
+  const user = userEvent.setup()
+  renderPage(<KeycapTrayPage />, '/keycap-tray/1')
+  await waitFor(() => expect(screen.getByRole('heading', { name: 'Set coverage' })).toBeTruthy())
+
+  // Five 1u pockets on the other tray, plus the one this tray already carries.
+  await waitFor(() => expect(screen.getByText(/6 of 21 placed/)).toBeTruthy())
+  assert.ok(screen.getByText(/14 more 1u caps need room/))
+  // The Enter has no home anywhere yet.
+  assert.ok(screen.getByText('2.25u × 1'))
+
+  // Drop one 10u pocket on this tray: ten more 1u caps have a home, live,
+  // before anything is saved.
+  await user.click(screen.getByRole('tab', { name: 'All 1u–13u' }))
+  await user.click(await screen.findByRole('button', { name: 'Add a 10u pocket' }))
+  await waitFor(() => expect(screen.getByText(/16 of 21 placed/)).toBeTruthy())
+  assert.ok(screen.getByText(/4 more 1u caps need room/))
+  // The Enter still needs a pocket of its own size; a trough will not do.
+  assert.ok(screen.getByText('2.25u × 1'))
+})
+
+test('a tray in no project shows no coverage panel', async () => {
+  state.designs = [{
+    id: '1', name: 'Loose tray', pocketCount: 0, updatedAt: '2026-08-28 12:00:00',
+    profileKind: 'preset', projectId: null, projectName: null,
+  }]
+  renderPage(<KeycapTrayPage />, '/keycap-tray/1')
+  await waitFor(() => expect(screen.getByRole('heading', { name: 'Tray' })).toBeTruthy())
+  assert.equal(screen.queryByRole('heading', { name: 'Set coverage' }), null)
 })

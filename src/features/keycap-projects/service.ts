@@ -31,7 +31,14 @@ const itemPayload = (i: SetItem) => ({
 
 export const listProjects = () => apiRequest<ProjectSummary[]>(base)
 
-export const getProject = (id: string) => apiRequest<KeycapProject>(`${base}/${id}`)
+/**
+ * `excludeTrayId` leaves one tray out of `coverage`, for the designer: it holds
+ * that tray's pockets itself, unsaved edits and all, and would otherwise count
+ * the stale saved copy on top of them.
+ */
+export const getProject = (id: string, excludeTrayId?: string) =>
+  apiRequest<KeycapProject>(
+    excludeTrayId ? `${base}/${id}?excludeTray=${encodeURIComponent(excludeTrayId)}` : `${base}/${id}`)
 
 export const createProject = (p: ProjectInput) =>
   apiRequest<{ id: string }>(base, { method: 'POST', body: payload(p) })
