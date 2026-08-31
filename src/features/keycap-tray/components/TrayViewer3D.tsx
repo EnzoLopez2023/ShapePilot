@@ -3,6 +3,9 @@ import { Box, useTheme } from '@mui/material'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import type { Mesh as TrayMesh } from '../../../geometry/mesh.ts'
+import {
+  addSolidLighting, buildEdges, disposeBody, edgeColourFor, solidMaterial,
+} from '../../../components/viewport3d/solidRender.ts'
 
 export interface TrayViewer3DProps {
   mesh: TrayMesh
@@ -44,13 +47,7 @@ export default function TrayViewer3D({ mesh }: TrayViewer3DProps) {
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.55))
-    const key = new THREE.DirectionalLight(0xffffff, 1.6)
-    key.position.set(180, -220, 320)
-    scene.add(key)
-    const fill = new THREE.DirectionalLight(0xffffff, 0.5)
-    fill.position.set(-200, 160, 140)
-    scene.add(fill)
+    addSolidLighting(scene)
 
     const resize = () => {
       const { clientWidth: w, clientHeight: h } = host
@@ -77,8 +74,7 @@ export default function TrayViewer3D({ mesh }: TrayViewer3DProps) {
       cancelAnimationFrame(state.raf)
       ro.disconnect()
       controls.dispose()
-      state.mesh?.geometry.dispose()
-      ;(state.mesh?.material as THREE.Material | undefined)?.dispose()
+      if (state.mesh) disposeBody(state.mesh)
       renderer.dispose()
       host.removeChild(renderer.domElement)
       stateRef.current = null
@@ -93,23 +89,20 @@ export default function TrayViewer3D({ mesh }: TrayViewer3DProps) {
 
     if (state.mesh) {
       state.scene.remove(state.mesh)
-      state.mesh.geometry.dispose()
-      ;(state.mesh.material as THREE.Material).dispose()
+      disposeBody(state.mesh)
       state.mesh = undefined
     }
 
     const geom = new THREE.BufferGeometry()
     geom.setAttribute('position', new THREE.BufferAttribute(mesh.positions, 3))
     geom.setIndex(new THREE.BufferAttribute(mesh.indices, 1))
-    geom.computeVertexNormals()
+    // Deliberately no computeVertexNormals -- see solidRender.solidMaterial.
+    // The mesher welds vertices, so averaging normals there would smooth the
+    // tray's flat top into the pocket walls.
 
-    const material = new THREE.MeshStandardMaterial({
-      color: dark ? 0xb9b0a2 : 0xd8d2c6,
-      roughness: 0.72,
-      metalness: 0.02,
-      side: THREE.FrontSide,
-    })
-    const obj = new THREE.Mesh(geom, material)
+    const obj = new THREE.Mesh(geom, solidMaterial({ color: dark ? 0xb9b0a2 : 0xd8d2c6 }))
+    const edges = buildEdges(geom, edgeColourFor(dark), mesh.triangleCount)
+    if (edges) obj.add(edges)
     state.scene.add(obj)
     state.mesh = obj
 

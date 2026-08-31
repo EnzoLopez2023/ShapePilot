@@ -227,8 +227,13 @@ Behaviours the three designers share, so moving between them teaches nothing new
   normals smooths across every sharp edge and shades a flat face like a curved
   one), an `EdgesGeometry` outline above 20 degrees so a tessellated cylinder
   does not draw as a wireframe, polygon offset so those lines do not stipple,
-  and deliberately soft lighting because the facets already separate the faces.
+  and lighting tuned for face separation rather than drama -- under flat shading
+  the normal is constant across a triangle, so no key light can produce a
+  gradient within a face, and contrast is what makes a flat plate readable.
   Selection recolours the outline, which reads better than a wash of emissive.
+  All of it lives in `src/components/viewport3d/solidRender.ts`, shared by the
+  keycap tray preview and the designer viewport so a part cannot change
+  appearance by being looked at on a different page.
 
 ## Per-pocket transform (keycap tray)
 
