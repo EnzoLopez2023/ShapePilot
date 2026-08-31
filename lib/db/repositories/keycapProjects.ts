@@ -130,14 +130,24 @@ export function createKeycapProjectRepository(db: SqliteDatabase): KeycapProject
 
   // Coverage is a GROUP BY over the project's pockets rather than a read of
   // every tray: the project page needs the totals, not the designs.
-  const selectCoverage = db.prepare<[number | bigint, string, string], CoverageQueryRow>(`
+  const COVERAGE_SQL = `
     SELECT p.units AS units, p.height_units AS height_units, p.shape AS shape,
            COUNT(p.id) AS pockets
       FROM keycap_tray_pockets p
       JOIN keycap_tray_designs d ON d.id = p.design_id
-     WHERE d.project_id = ? AND d.owner_tenant_id = ? AND d.owner_oid = ?
+     WHERE d.project_id = ? AND d.owner_tenant_id = ? AND d.owner_oid = ?`
+  const COVERAGE_GROUP = `
      GROUP BY p.units, p.height_units, p.shape
-     ORDER BY p.units, p.height_units`)
+     ORDER BY p.units, p.height_units`
+
+  const selectCoverage = db.prepare<[number | bigint, string, string], CoverageQueryRow>(
+    `${COVERAGE_SQL}${COVERAGE_GROUP}`)
+
+  // Written out rather than built by concatenation, so the SQL a caller runs is
+  // readable in full at the point it is written.
+  const selectCoverageExcluding = db.prepare<
+    [number | bigint, string, string, string], CoverageQueryRow
+  >(`${COVERAGE_SQL} AND d.id != ?${COVERAGE_GROUP}`)
 
   const insertProject = db.prepare(`
     INSERT INTO keycap_projects
@@ -214,9 +224,12 @@ export function createKeycapProjectRepository(db: SqliteDatabase): KeycapProject
       }))
     },
 
-    async get(owner, id) {
+    async get(owner, id, excludeTrayId) {
       const p = selectOwned.get(owner.tenantId, owner.oid, id)
       if (!p) return null
+      const coverageRows = excludeTrayId
+        ? selectCoverageExcluding.all(p.id, owner.tenantId, owner.oid, excludeTrayId)
+        : selectCoverage.all(p.id, owner.tenantId, owner.oid)
       return {
         id: String(p.id),
         name: p.name,
@@ -227,7 +240,7 @@ export function createKeycapProjectRepository(db: SqliteDatabase): KeycapProject
         colorway: p.colorway ?? undefined,
         items: selectItems.all(p.id).map(rowToItem),
         photos: selectPhotos.all(p.id).map(rowToPhoto),
-        coverage: selectCoverage.all(p.id, owner.tenantId, owner.oid)
+        coverage: coverageRows
           .map((r): CoverageRow => ({
             units: r.units,
             heightUnits: r.height_units,

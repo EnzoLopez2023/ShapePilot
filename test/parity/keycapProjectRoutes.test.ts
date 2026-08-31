@@ -217,6 +217,40 @@ describe('keycap project routes', () => {
     assert.equal(byUnits.get(6.25), 1)
   })
 
+  test('one tray can be left out of the coverage count', async () => {
+    // The designer holds the open tray's pockets in memory, unsaved edits
+    // included. Counting the saved copy on top of them would double every
+    // pocket on the tray being drawn.
+    const created = await post<{ id: string }>(BASE, projectPayload({ name: 'Excludable' }))
+    const first = await post<{ id: string }>(
+      TRAYS, trayPayload({ name: 'One', projectId: created.body.id }))
+    await post(TRAYS, trayPayload({
+      name: 'Two',
+      projectId: created.body.id,
+      pockets: [{ units: 1, x: 10, y: 10 }],
+    }))
+
+    const all = await get<Project>(`${BASE}/${created.body.id}`)
+    assert.equal(new Map(all.body.coverage.map(c => [c.units, c.pockets])).get(1), 3)
+
+    const without = await get<Project>(`${BASE}/${created.body.id}?excludeTray=${first.body.id}`)
+    const byUnits = new Map(without.body.coverage.map(c => [c.units, c.pockets]))
+    assert.equal(byUnits.get(1), 1, 'only the second tray remains')
+    assert.equal(byUnits.get(6.25), undefined, 'the excluded tray contributes nothing')
+
+    // Everything else about the project is unchanged by the exclusion.
+    assert.equal(without.body.items.length, all.body.items.length)
+  })
+
+  test('a malformed excludeTray is ignored rather than failing the read', async () => {
+    // It only narrows a count. A bad value must not cost someone their project.
+    const created = await post<{ id: string }>(BASE, projectPayload({ name: 'Tolerant' }))
+    await post(TRAYS, trayPayload({ projectId: created.body.id }))
+    const res = await get<Project>(`${BASE}/${created.body.id}?excludeTray=not-an-id`)
+    assert.equal(res.status, 200)
+    assert.equal(new Map(res.body.coverage.map(c => [c.units, c.pockets])).get(1), 2)
+  })
+
   test('trays can be listed by project, and the unassigned ones on their own', async () => {
     const created = await post<{ id: string }>(BASE, projectPayload({ name: 'Filterable' }))
     const inProject = await post<{ id: string }>(

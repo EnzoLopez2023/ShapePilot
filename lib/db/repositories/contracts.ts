@@ -332,7 +332,12 @@ export interface KeycapProjectInput {
 
 export interface KeycapProjectRepository {
   list(owner: Owner): Promise<KeycapProjectSummary[]>
-  get(owner: Owner, id: string): Promise<KeycapProjectRecord | null>
+  /**
+   * `excludeTrayId` leaves one tray out of `coverage`. The designer holds that
+   * tray's pockets in memory, unsaved edits and all, and counting the stale
+   * saved copy as well would double them.
+   */
+  get(owner: Owner, id: string, excludeTrayId?: string): Promise<KeycapProjectRecord | null>
   create(owner: Owner, input: KeycapProjectInput): Promise<{ id: string }>
   update(owner: Owner, id: string, input: KeycapProjectInput): Promise<boolean>
   /** Cascades items and photos; the project's trays survive, unassigned. */

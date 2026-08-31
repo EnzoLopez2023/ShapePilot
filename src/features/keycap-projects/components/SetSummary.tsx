@@ -1,23 +1,44 @@
 // The set read back as a breakdown, and how much of it already has a home.
 //
-// The inventory is edited as line items; this is the same data read the way a
-// person thinks about it -- 1u x 35, 1.25u x 5 -- with the project's trays
-// joined in beside it. Everything here is derived: model/summary.ts owns the
-// arithmetic and this only draws it.
+// The same allocation the designer's panel uses, so the two never disagree: a
+// named cap needs a pocket of its own size, and plain 1u caps share whatever
+// pocket width is left over -- which is what makes a 10u trough ten homes
+// rather than one.
 import { Box, LinearProgress, Stack, Tooltip, Typography } from '@mui/material'
+import { PYTHON_SIZING } from '../../keycap-tray/geometry/shapes.ts'
+import { allocateSet } from '../model/allocation.ts'
+import type { PocketShape } from '../model/allocation.ts'
 import type { CoverageRow, SetItem } from '../model/types.ts'
-import { setTotals, sizeLabel, sizeRows } from '../model/summary.ts'
 
 export interface SetSummaryProps {
   items: SetItem[]
   coverage: CoverageRow[]
 }
 
-export default function SetSummary({ items, coverage }: SetSummaryProps) {
-  const rows = sizeRows(items, coverage)
-  const totals = setTotals(rows, items)
+/** Coverage rows are counts; allocation wants one entry per pocket. */
+const expand = (coverage: readonly CoverageRow[]): PocketShape[] =>
+  coverage.flatMap(row => Array.from({ length: row.pockets }, () => ({
+    units: row.units,
+    heightUnits: row.heightUnits,
+    shape: row.shape,
+  })))
 
-  if (!rows.length) {
+interface Card {
+  key: string
+  label: string
+  owned: number
+  placed: number
+  left: number
+  note?: string
+}
+
+export default function SetSummary({ items, coverage }: SetSummaryProps) {
+  // A project spans trays that could each carry their own sizing; the default
+  // is the reference here, and the difference between presets is a fraction of
+  // a millimetre -- far too little to change how many caps fit across a pocket.
+  const result = allocateSet(items, expand(coverage), PYTHON_SIZING)
+
+  if (!result.owned) {
     return (
       <Typography variant="body2" color="text.secondary">
         Add caps below, or read them off a photo, and the breakdown appears here.
@@ -25,28 +46,42 @@ export default function SetSummary({ items, coverage }: SetSummaryProps) {
     )
   }
 
-  const placedPercent = totals.caps ? Math.round((totals.placed / totals.caps) * 100) : 0
+  const cards: Card[] = []
+  if (result.oneUnit.owned) {
+    cards.push({
+      key: '1u',
+      label: '1u',
+      owned: result.oneUnit.owned,
+      placed: result.oneUnit.placed,
+      left: result.oneUnit.left,
+      note: result.oneUnit.spare > 0 ? `${result.oneUnit.spare} spare slots` : undefined,
+    })
+  }
+  for (const row of result.rows) {
+    cards.push({
+      key: row.key,
+      label: row.label,
+      owned: row.owned,
+      placed: row.placed,
+      left: row.left,
+    })
+  }
+
+  const percent = Math.round((result.placed / result.owned) * 100)
 
   return (
     <Stack spacing={1.25}>
       <Box>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-          {totals.caps} {totals.caps === 1 ? 'cap' : 'caps'} in {totals.entries}{' '}
-          {totals.entries === 1 ? 'row' : 'rows'}
-          {' · '}{totals.placed} placed{totals.remaining > 0 && ` · ${totals.remaining} left`}
+          {result.owned} {result.owned === 1 ? 'cap' : 'caps'}
+          {' · '}{result.placed} placed
+          {result.left > 0 && ` · ${result.left} to go`}
         </Typography>
         <LinearProgress
           variant="determinate"
-          value={placedPercent}
-          aria-label={`${placedPercent}% of the set has a pocket`}
-          // MUI tints the track with the accent, which reads as a filled bar
-          // at a glance -- an empty set would look half placed. The track is
-          // neutral so the only accent on it is real progress.
-          sx={{
-            height: 6,
-            borderRadius: 3,
-            bgcolor: 'action.hover',
-          }}
+          value={percent}
+          aria-label={`${percent}% of the set has a pocket`}
+          sx={{ height: 6, borderRadius: 3, bgcolor: 'action.hover' }}
         />
       </Box>
 
@@ -60,32 +95,25 @@ export default function SetSummary({ items, coverage }: SetSummaryProps) {
           gap: 0.75,
         }}
       >
-        {rows.map(row => (
+        {cards.map(card => (
           <Box
-            key={row.key}
+            key={card.key}
             component="li"
             sx={{
               border: 1, borderColor: 'divider', borderRadius: 2,
               px: 1, py: 0.75, minWidth: 0,
             }}
           >
-            <Typography variant="h3" component="p">
-              {sizeLabel(row.units, row.heightUnits, row.shape)}
-            </Typography>
+            <Typography variant="h3" component="p">{card.label}</Typography>
             <Typography variant="body2" color="text.secondary">
-              {row.owned} owned · {Math.min(row.placed, row.owned)} placed
+              {card.owned} owned · {card.placed} placed
             </Typography>
-            {row.remaining > 0 && (
-              <Typography variant="body2">{row.remaining} still to place</Typography>
+            {card.left > 0 && (
+              <Typography variant="body2">{card.left} still to place</Typography>
             )}
-            {row.overflow > 0 && (
-              // A pocket with no cap behind it is worth saying out loud: either
-              // the tray is for a set this project no longer describes, or the
-              // inventory is short a row.
-              <Tooltip title="These trays have more pockets this size than the set has caps.">
-                <Typography variant="body2" color="warning.main">
-                  {row.overflow} spare {row.overflow === 1 ? 'pocket' : 'pockets'}
-                </Typography>
+            {card.note && (
+              <Tooltip title="Pocket width left over after every cap that needs its own pocket has one.">
+                <Typography variant="body2" color="text.secondary">{card.note}</Typography>
               </Tooltip>
             )}
           </Box>

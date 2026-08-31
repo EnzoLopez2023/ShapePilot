@@ -28,6 +28,9 @@ const asyncRoute = (handler: Handler) =>
 
 const pathId = (value: string | string[]): string => (Array.isArray(value) ? value[0] : value)
 
+/** Row ids are integers in SQLite and strings on the wire. */
+const ROW_ID = /^[0-9]{1,19}$/
+
 export function createKeycapProjectRouter(repos: Repositories): Router {
   const router = Router()
   const { keycapProjects, designAssets, audit } = repos
@@ -56,7 +59,13 @@ export function createKeycapProjectRouter(repos: Repositories): Router {
   }))
 
   router.get('/:id', asyncRoute(async (req, res) => {
-    const project = await keycapProjects.get(ownerOf(req), pathId(req.params.id))
+    // `?excludeTray=` leaves one tray out of the coverage count. The designer
+    // holds that tray's pockets in memory, unsaved edits included, and adding
+    // the stale saved copy on top would count them twice.
+    const raw = req.query.excludeTray
+    const excludeTrayId = typeof raw === 'string' && ROW_ID.test(raw) ? raw : undefined
+    const project = await keycapProjects.get(
+      ownerOf(req), pathId(req.params.id), excludeTrayId)
     if (!project) throw ApiError.notFound('project not found')
     res.json(project)
   }))
