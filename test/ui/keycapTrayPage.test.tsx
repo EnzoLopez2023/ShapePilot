@@ -148,6 +148,9 @@ beforeEach(() => {
     calls: [],
   }
   installFetchStub()
+  // Per-tray view settings live here, so a test that opens a tray must not
+  // inherit how a previous test left it.
+  localStorage.clear()
   vi.stubGlobal('ResizeObserver', class {
     observe() {}
     unobserve() {}
@@ -814,4 +817,60 @@ test('a project’s trays are switchable from the designer', async () => {
   // Switching loads that tray, and the URL follows so the back button works.
   await waitFor(() => expect(
     state.calls.some(c => c.method === 'GET' && c.path === '/api/keycap-trays/2')).toBe(true))
+})
+
+test('a tray comes back the way it was last being looked at', async () => {
+  // Snap, grid and the buffer guide are how someone was working on a tray, not
+  // facts about it -- but retyping four dropdowns on every open is a tax.
+  state.designs = [
+    { id: '1', name: 'Top tray', pocketCount: 1, updatedAt: '2026-08-28 12:00:00',
+      profileKind: 'preset' },
+    { id: '2', name: 'Middle tray', pocketCount: 1, updatedAt: '2026-08-28 12:00:00',
+      profileKind: 'preset' },
+  ]
+  const user = userEvent.setup()
+  const first = renderPage(<KeycapTrayPage />, '/keycap-tray/1')
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Hide labels' })).toBeTruthy())
+
+  await user.click(screen.getByRole('button', { name: 'Hide labels' }))
+  await user.click(screen.getByRole('button', { name: 'Show buffer' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Hide buffer' })).toBeTruthy())
+  first.unmount()
+
+  // A different tray is unaffected: each is remembered on its own.
+  const second = renderPage(<KeycapTrayPage />, '/keycap-tray/2')
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Hide labels' })).toBeTruthy())
+  assert.ok(screen.getByRole('button', { name: 'Show buffer' }))
+  second.unmount()
+
+  // Reopening the first brings its settings back.
+  renderPage(<KeycapTrayPage />, '/keycap-tray/1')
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Show labels' })).toBeTruthy())
+  assert.ok(screen.getByRole('button', { name: 'Hide buffer' }))
+})
+
+test('New starts from the defaults rather than the last tray’s settings', async () => {
+  state.designs = [{
+    id: '1', name: 'Top tray', pocketCount: 1, updatedAt: '2026-08-28 12:00:00',
+    profileKind: 'preset',
+  }]
+  const user = userEvent.setup()
+  renderPage(<KeycapTrayPage />, '/keycap-tray/1')
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Hide labels' })).toBeTruthy())
+  await user.click(screen.getByRole('button', { name: 'Hide labels' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Show labels' })).toBeTruthy())
+
+  await user.click(screen.getByRole('button', { name: 'New' }))
+  // A fresh tray is not the previous one's working state carried over -- and
+  // it really is a fresh tray: clearing the address and the loaded design in
+  // one commit is what stops the URL effect putting the old one straight back.
+  // A fresh tray is not the previous one's working state carried over -- and it
+  // really is a fresh tray. Clearing `savedId` used to look like "the address
+  // names a tray nobody has loaded", which put the abandoned one straight back.
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Hide labels' })).toBeTruthy())
+  assert.notEqual(screen.getByRole('heading', { level: 1 }).textContent, 'Top tray')
+  assert.equal(
+    state.calls.filter(c => c.method === 'GET' && c.path === '/api/keycap-trays/1').length, 1,
+    'New must not reload the tray it just abandoned',
+  )
 })
