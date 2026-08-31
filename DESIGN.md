@@ -293,6 +293,14 @@ base ring, local coords, origin (0,0), bbox w0×h0   (w0,h0 = UN-rotated extents
 - **A pocket with no cap behind it is spare, not negative.** Coverage that
   exceeds the inventory reads as "spare pockets" rather than a negative
   remainder, because it is a real state worth seeing.
+- **A named cap needs a pocket of its own size; only plain 1u caps share.**
+  `allocation.ts` matches every non-1u cap against a pocket of exactly its
+  size, height and shape *first*, then hands what is left to 1u caps as trough
+  capacity. The order is what makes a 2.25u pocket read as the Enter's home
+  rather than as two 1u slots.
+- **An ISO Enter always gets a pocket of its own.** Never merged into a trough,
+  and never a trough itself — its footprint is an L, so loose caps would not sit
+  in a row across it. Both halves are asserted.
 - **The assistant proposes an inventory; the person applies it.** A reading is
   reviewed in a dialog, applied to the draft, and only saved by Save — the same
   rule as the design copilot. Rows it produced are marked until they are edited.
