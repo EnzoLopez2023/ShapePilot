@@ -18,6 +18,7 @@ import {
   DEFAULT_VIEW_SETTINGS, forgetViewSettings, loadViewSettings, saveViewSettings,
 } from './state/viewSettings.ts'
 import type { CanvasMode, ViewSettings } from './state/viewSettings.ts'
+import { designerDefaults } from '../settings/preferences.ts'
 import { DEFAULT_FABRICATION, paletteItemExtra } from './model/defaults.ts'
 import type { PaletteItem } from './model/defaults.ts'
 import type { FabricationSettings } from './model/types.ts'
@@ -62,6 +63,17 @@ export default function KeycapTrayPage() {
   // `target` is here too -- lifted from ExportPanel, since the build-plate
   // controls only make sense for the 3D printer and the toolbar needs to know.
   const [settings, setSettings] = useState<ViewSettings>(DEFAULT_VIEW_SETTINGS)
+  // What a tray with nothing remembered opens with, from the settings page.
+  // Held in a ref as well as state: `load` reads it without having to be
+  // rebuilt every time it changes, which would retrigger the URL effect.
+  const [baseline, setBaseline] = useState<ViewSettings>(DEFAULT_VIEW_SETTINGS)
+  const baselineRef = useRef(baseline)
+  baselineRef.current = baseline
+  // Nothing loads until the baseline is known, so a tray opened from a URL
+  // cannot fall back to the shipped defaults just because the preferences
+  // request had not landed yet. `designerDefaults` never rejects, so this
+  // always resolves.
+  const [baselineReady, setBaselineReady] = useState(false)
   const {
     view, snapMm, gridMm, showLabels, showPlate, showBuffer, bufferMm, imperial, target,
   } = settings
@@ -102,6 +114,22 @@ export default function KeycapTrayPage() {
   }, [])
 
   useEffect(() => { void refresh() }, [refresh])
+
+  // The settings page decides how a designer opens. Applied to the current
+  // state only while nothing is loaded and untouched -- a tray already open,
+  // or edits already made, are not overwritten by a preference arriving late.
+  useEffect(() => {
+    let cancelled = false
+    void designerDefaults().then(defaults => {
+      if (cancelled) return
+      setBaseline(defaults.keycapTray)
+      // Only while nothing is loaded and untouched: a preference arriving late
+      // must not overwrite a tray already open or edits already made.
+      setSettings(current => (current === DEFAULT_VIEW_SETTINGS ? defaults.keycapTray : current))
+      setBaselineReady(true)
+    })
+    return () => { cancelled = true }
+  }, [])
 
   // The project the open tray belongs to, from the list: the summary already
   // carries its name, so the header chip costs no extra request.
@@ -161,7 +189,7 @@ export default function KeycapTrayPage() {
       // How this tray was last being looked at. Applied here rather than in an
       // effect on `savedId`, so it lands in the same commit as the design and
       // there is no window where one tray's settings sit over another's.
-      setSettings(loadViewSettings(id, DEFAULT_VIEW_SETTINGS))
+      setSettings(loadViewSettings(id, baselineRef.current))
       answeredForUrl.current = id
       setSavedId(id)
       setSavedRevision(0)
@@ -186,10 +214,11 @@ export default function KeycapTrayPage() {
   // The URL is the source of truth for which tray is open, so a link from a
   // project, a reload and the back button all land on the same design.
   useEffect(() => {
+    if (!baselineReady) return
     if (!designId) { answeredForUrl.current = null; return }
     if (answeredForUrl.current === designId) return
     void load(designId)
-  }, [designId, load])
+  }, [designId, load, baselineReady])
 
   const clone = useCallback(async () => {
     if (!savedId) { setError('Save the design before cloning it.'); return }
@@ -220,7 +249,7 @@ export default function KeycapTrayPage() {
         if (designId) navigate('/keycap-tray')
         answeredForUrl.current = designId ?? null
         d.setDesign(emptyDesign())
-        setSettings(DEFAULT_VIEW_SETTINGS)
+        setSettings(baselineRef.current)
         setSavedId(null)
         setSavedRevision(null)
       }
@@ -447,7 +476,7 @@ export default function KeycapTrayPage() {
                 loadGeneration.current += 1
                 answeredForUrl.current = designId ?? null
                 d.setDesign(emptyDesign())
-                setSettings(DEFAULT_VIEW_SETTINGS)
+                setSettings(baselineRef.current)
                 setSavedId(null)
                 setSavedRevision(null)
               }}

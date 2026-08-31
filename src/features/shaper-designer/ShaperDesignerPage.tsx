@@ -36,6 +36,7 @@ import ShapePalette from './components/ShapePalette.tsx'
 import type { PaletteKind } from './components/paletteEntries.ts'
 import ImportButton from './components/ImportButton.tsx'
 import { conflictingPocketDepths, sceneCutDrawing } from './cutDrawing.ts'
+import { designerDefaults } from '../settings/preferences.ts'
 
 const SNAP_OPTIONS = [0, 0.5, 1, 5, 10]
 const GRID_OPTIONS = [0, 5, 10, 25]
@@ -49,6 +50,18 @@ export default function ShaperDesignerPage() {
   const [imperial, setImperial] = useState(false)
   const [snapMm, setSnapMm] = useState(1)
   const [gridMm, setGridMm] = useState(10)
+  // How this designer opens, from the settings page. Applied once, on mount,
+  // before anything has been touched.
+  useEffect(() => {
+    let cancelled = false
+    void designerDefaults().then(defaults => {
+      if (cancelled) return
+      setImperial(defaults.shaper.imperial)
+      setSnapMm(defaults.shaper.snapMm)
+      setGridMm(defaults.shaper.gridMm)
+    })
+    return () => { cancelled = true }
+  }, [])
   const [fitToken, setFitToken] = useState(0)
   const [openDialog, setOpenDialog] = useState(false)
   const [saveAsOpen, setSaveAsOpen] = useState(false)

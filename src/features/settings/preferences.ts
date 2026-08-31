@@ -2,10 +2,48 @@ import { apiRequest } from '../../services/http.ts'
 
 export type ThemePreference = 'light' | 'dark' | 'system'
 
+/**
+ * How a designer opens before anyone touches it. One shape per designer rather
+ * than one shared shape: a keycap tray has a build plate and a buffer guide,
+ * the Bambu designer has a gizmo and a solid/hole mode, and offering either
+ * one the other's controls would be offering a setting that does nothing.
+ */
+export interface KeycapTrayDefaults {
+  view: '2d' | '3d'
+  snapMm: number
+  gridMm: number
+  showLabels: boolean
+  showPlate: boolean
+  showBuffer: boolean
+  bufferMm: number
+  imperial: boolean
+  target: 'print' | 'cnc'
+}
+
+export interface ShaperDefaults {
+  imperial: boolean
+  snapMm: number
+  gridMm: number
+}
+
+export interface BambuDefaults {
+  imperial: boolean
+  snapMm: number
+  gizmo: 'translate' | 'rotate' | 'scale'
+  addMode: 'solid' | 'hole'
+}
+
+export interface DesignerDefaults {
+  keycapTray: KeycapTrayDefaults
+  shaper: ShaperDefaults
+  bambu: BambuDefaults
+}
+
 export interface AppPreferences {
   themeMode: ThemePreference
   units: 'mm' | 'in'
   reducedMotion: 'system' | 'reduce' | 'no-preference'
+  designerDefaults: DesignerDefaults
 }
 
 export interface AccountProfile {
@@ -26,3 +64,35 @@ export const getSettings = () => apiRequest<SettingsResponse>('/settings')
 
 export const putPreferences = (preferences: AppPreferences) =>
   apiRequest<{ preferences: AppPreferences }>('/settings', { method: 'PUT', body: preferences })
+
+/**
+ * The designer defaults, or the shipped ones if settings cannot be read.
+ *
+ * A designer must open whatever the network did, so this never rejects: an
+ * unreachable settings endpoint means the built-in defaults, not a broken page.
+ */
+export async function designerDefaults(): Promise<DesignerDefaults> {
+  try {
+    return (await getSettings()).preferences.designerDefaults ?? SHIPPED_DESIGNER_DEFAULTS
+  } catch {
+    return SHIPPED_DESIGNER_DEFAULTS
+  }
+}
+
+/** Mirrors DEFAULT_DESIGNER_DEFAULTS in lib/db/repositories/settings.ts. The
+ *  server is the authority; this is the fallback when it cannot be asked. */
+export const SHIPPED_DESIGNER_DEFAULTS: DesignerDefaults = {
+  keycapTray: {
+    view: '2d',
+    snapMm: 0.5,
+    gridMm: 5,
+    showLabels: true,
+    showPlate: false,
+    showBuffer: false,
+    bufferMm: 1.8,
+    imperial: false,
+    target: 'print',
+  },
+  shaper: { imperial: false, snapMm: 1, gridMm: 10 },
+  bambu: { imperial: false, snapMm: 1, gizmo: 'translate', addMode: 'solid' },
+}

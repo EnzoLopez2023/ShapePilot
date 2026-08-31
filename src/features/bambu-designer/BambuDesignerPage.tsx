@@ -45,6 +45,7 @@ import { alignDeltas, combinedBounds, meshBounds, mirrorTransform } from './alig
 import type { AlignEdge, Axis, Bounds } from './align.ts'
 import { checkPrint, worstSeverity } from './printChecks.ts'
 import { useSceneMeshes } from './useSceneMeshes.ts'
+import { designerDefaults } from '../settings/preferences.ts'
 
 const SNAP_OPTIONS = [0, 0.5, 1, 5]
 const AXES: { axis: Axis; label: string }[] = [
@@ -65,6 +66,19 @@ export default function BambuDesignerPage() {
   const [snapMm, setSnapMm] = useState(1)
   const [gizmo, setGizmo] = useState<GizmoMode>('translate')
   const [addMode, setAddMode] = useState<ObjectMode>('solid')
+  // How this designer opens, from the settings page. Applied once, on mount,
+  // before anything has been touched.
+  useEffect(() => {
+    let cancelled = false
+    void designerDefaults().then(defaults => {
+      if (cancelled) return
+      setImperial(defaults.bambu.imperial)
+      setSnapMm(defaults.bambu.snapMm)
+      setGizmo(defaults.bambu.gizmo)
+      setAddMode(defaults.bambu.addMode)
+    })
+    return () => { cancelled = true }
+  }, [])
   const [fitToken, setFitToken] = useState(0)
   const [openDialog, setOpenDialog] = useState(false)
   const [saveAsOpen, setSaveAsOpen] = useState(false)
