@@ -26,6 +26,7 @@ import SetItemsTable from './components/SetItemsTable.tsx'
 import SetSummary from './components/SetSummary.tsx'
 import PhotoPanel from './components/PhotoPanel.tsx'
 import ExtractionReviewDialog from './components/ExtractionReviewDialog.tsx'
+import TrayPreviews from './components/TrayPreviews.tsx'
 import type { SetDetails } from './components/ExtractionReviewDialog.tsx'
 import type { KeycapProject, SetItem } from './model/types.ts'
 import { formatUpdated } from './model/formatUpdated.ts'
@@ -294,60 +295,6 @@ export default function ProjectPage() {
             <SetItemsTable items={draft.items} onChange={items => edit({ items })} />
           </Paper>
 
-          <Paper sx={{ p: 1.5 }}>
-            <Stack
-              direction="row" spacing={1}
-              sx={{ alignItems: 'center', mb: 1, flexWrap: 'wrap', rowGap: 1 }}
-            >
-              <Typography variant="h2" component="h2">Trays</Typography>
-              <Box sx={{ flex: 1, minWidth: 0 }} />
-              <Button
-                size="small" startIcon={<AddIcon />} disabled={busy}
-                onClick={() => void newTray()}
-              >
-                New tray
-              </Button>
-            </Stack>
-
-            {!trayList.length
-              ? (
-                <EmptyState
-                  title="No trays yet"
-                  description="Cut a tray for this set and it appears here."
-                />
-              )
-              : (
-                <Stack spacing={0.5}>
-                  {trayList.map(tray => (
-                    <Stack
-                      key={tray.id}
-                      direction="row" alignItems="center" spacing={1}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => navigate(`/keycap-tray/${tray.id}`)}
-                      onKeyDown={e => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault()
-                          navigate(`/keycap-tray/${tray.id}`)
-                        }
-                      }}
-                      sx={{
-                        p: 1, borderRadius: 2, cursor: 'pointer',
-                        border: 1, borderColor: 'divider',
-                        '&:hover': { bgcolor: 'action.hover' },
-                      }}
-                    >
-                      <Box sx={{ flex: 1, minWidth: 0 }}>
-                        <Typography sx={{ fontWeight: 600 }}>{tray.name}</Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          {tray.pocketCount} pockets · updated {formatUpdated(tray.updatedAt)}
-                        </Typography>
-                      </Box>
-                    </Stack>
-                  ))}
-                </Stack>
-              )}
-          </Paper>
         </Stack>
 
         <Paper sx={{ p: 1.5, minWidth: 0 }}>
@@ -364,6 +311,32 @@ export default function ProjectPage() {
                 onRemove={removePhoto}
                 onRead={readPhotos}
                 onError={setError}
+              />
+            )}
+
+          {/* Under the photos, answering the question they raise: this is the
+              set, and these are the trays cut for it. A name and a pocket
+              count are exactly what you cannot recognise a tray by. */}
+          <Divider sx={{ my: 1.5 }} />
+          <Stack
+            direction="row" spacing={1}
+            sx={{ alignItems: 'center', mb: 1, flexWrap: 'wrap', rowGap: 1 }}
+          >
+            <Typography variant="h2" component="h2">Trays</Typography>
+            <Box sx={{ flex: 1, minWidth: 0 }} />
+            <Button
+              size="small" startIcon={<AddIcon />} disabled={busy}
+              onClick={() => void newTray()}
+            >
+              New tray
+            </Button>
+          </Stack>
+          {trayList.length
+            ? <TrayPreviews trays={trayList} />
+            : (
+              <EmptyState
+                title="No trays yet"
+                description="Cut a tray for this set and it appears here."
               />
             )}
         </Paper>
