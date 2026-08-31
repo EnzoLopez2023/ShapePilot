@@ -209,9 +209,30 @@ repository, and outside the application's own disk. The filesystem adapter
 ships now; a Blob adapter can be added without the database or any feature
 module gaining an Azure dependency.
 
-The store holds two kinds of thing, on identical terms: imported geometry, and
-reference photographs of a keycap set. Both are content-addressed, owner-scoped
-and outside the backup manifest; neither is ever the design.
+There are **two** stores, and the split is the point.
+
+`lib/recovery/artifactStore.ts` holds backup bundles. Its guarantees follow
+from what restore needs: a root pinned by file descriptor, exclusive
+publication through `renameat2(RENAME_NOREPLACE)`, and a check at every step
+that the file is still the file that was written. Those rest on a local POSIX
+filesystem.
+
+`lib/assets/assetStore.ts` holds imported geometry and reference photographs of
+a keycap set. It writes by path — `mkdir -p`, an exclusive staging name,
+`rename` into place — and decides idempotence by comparing the **stored
+bytes**, not inode identity.
+
+Assets went through the recovery store once, and could not be written at all on
+App Service: production keeps `/home/data` on Azure Files, where inode numbers
+are synthesized, mode is a fixed representation and the server rewrites
+timestamps on close, so the identity invariants simply do not hold. They were
+never needed here. Recovery-grade integrity is right for a bundle a restore
+depends on and wrong for bytes that are allowed to vanish, and conflating the
+two cost a feature rather than protecting one. `workshop.nintek.com` and Prism
+store user files on the same mount the same ordinary way.
+
+What assets keep is what earns its place: content-addressed, owner-scoped keys,
+so a hash names bytes and never acts as a bearer token.
 
 Imported assets are **deliberately not authoritative.** The recovery model has
 exactly one authority: a restored backup is a single self-describing,
@@ -235,8 +256,11 @@ That trade has not been taken; the parametric document is the design.
   `app/routes.tsx`, a repository contract in `lib/db/repositories/`, and one
   append-only migration. Do not widen an existing table for an unrelated
   feature.
-- **Persisted binary artifacts.** Implement `ArtifactStore` for Blob and store
-  the object key plus its hash in SQLite. Never store bytes in the database.
+- **Persisted binary artifacts.** Implement `ArtifactStore` (backups) or
+  `AssetStore` (assets) for Blob and store the object key plus its hash in
+  SQLite. Never store bytes in the database. Pick by what the bytes are: if a
+  restore depends on them, they belong behind the guard; if losing one degrades
+  to "re-attach this file", they do not.
 - **The AI design copilot.** Delivered. It emits a typed `ShapeProgram`
   (`lib/contracts/shapeProgram.ts`) that is validated server-side and again in
   the browser, previewed, and applied through a single `replace` call so an

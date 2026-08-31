@@ -14,8 +14,8 @@ import type { Repositories, SetItemInput } from '../../lib/db/repositories/contr
 import { isImageAssetFormat } from '../../lib/db/repositories/contracts.ts'
 import type { ShapeProgram } from '../../lib/contracts/shapeProgram.ts'
 import { ShapeProgramError, validateShapeProgram } from '../../lib/contracts/shapeProgram.ts'
-import type { ArtifactStore } from '../../lib/recovery/artifactStore.ts'
-import { ArtifactStoreError } from '../../lib/recovery/artifactStore.ts'
+import type { AssetStore } from '../../lib/assets/assetStore.ts'
+import { AssetStoreError, assetKey } from '../../lib/assets/assetStore.ts'
 import { ApiError } from '../errors/ApiError.ts'
 import { ownerOf } from '../auth/requireAuth.ts'
 import type { FoundryClient, FoundryContent } from '../ai/foundryClient.ts'
@@ -227,7 +227,7 @@ export interface AiRouterOptions {
    *  the feature as unavailable rather than the app failing to start. */
   client: FoundryClient | null
   /** Resolved on first use, exactly as the design-asset route resolves it. */
-  store: () => ArtifactStore
+  store: () => AssetStore
 }
 
 export function createAiRouter({ repos, client, store }: AiRouterOptions): Router {
@@ -349,11 +349,11 @@ export function createAiRouter({ repos, client, store }: AiRouterOptions): Route
       }
       let bytes: Uint8Array
       try {
-        bytes = await store().get(`${owner.tenantId}/${owner.oid}/${hash}`)
+        bytes = await store().get(assetKey(owner, hash))
       } catch (cause) {
         // Metadata without bytes is a real state, since assets sit outside the
         // backup manifest. It reads as absent, so the client re-uploads.
-        if (cause instanceof ArtifactStoreError) throw ApiError.notFound('photo not found')
+        if (cause instanceof AssetStoreError) throw ApiError.notFound('photo not found')
         throw cause
       }
       content.push({

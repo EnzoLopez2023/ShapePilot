@@ -20,7 +20,7 @@ import type { AppConfig } from '../../server/config.ts'
 import type { RawClaims } from '../../server/auth/claims.ts'
 import type { TokenVerifier } from '../../server/auth/verifyToken.ts'
 import type { FoundryClient } from '../../server/ai/foundryClient.ts'
-import type { ArtifactStore } from '../../lib/recovery/artifactStore.ts'
+import type { AssetStore } from '../../lib/assets/assetStore.ts'
 import { ApiError } from '../../server/errors/ApiError.ts'
 
 export const TEST_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '.tmp')
@@ -111,7 +111,7 @@ export interface StartServerOptions {
   /** Stubbed so the suite never calls -- or pays for -- the real deployment. */
   aiClient?: FoundryClient | null
   /** A throwaway store, so asset tests never touch a real artifact root. */
-  assetStore?: ArtifactStore
+  assetStore?: AssetStore
   label?: string
 }
 

@@ -14,7 +14,7 @@ import {
   OTHER_OID, startTestServer, stubVerifier, validClaims,
 } from '../helpers/server.ts'
 import type { TestServer } from '../helpers/server.ts'
-import { createFilesystemArtifactStore } from '../../lib/recovery/artifactStore.ts'
+import { createFilesystemAssetStore } from '../../lib/assets/assetStore.ts'
 
 const OWNER_TOKEN = 'owner-token'
 const OTHER_TOKEN = 'other-token'
@@ -108,7 +108,7 @@ describe('keycap project routes', () => {
         [OWNER_TOKEN]: validClaims(),
         [OTHER_TOKEN]: validClaims({ oid: OTHER_OID }),
       }),
-      assetStore: createFilesystemArtifactStore(root),
+      assetStore: createFilesystemAssetStore(root),
     })
   })
 

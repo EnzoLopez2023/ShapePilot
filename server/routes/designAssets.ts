@@ -13,8 +13,8 @@ import { Router, raw } from 'express'
 import type { NextFunction, Request, Response } from 'express'
 import type { DesignAssetFormat, Repositories } from '../../lib/db/repositories/contracts.ts'
 import { DESIGN_ASSET_FORMATS } from '../../lib/db/repositories/contracts.ts'
-import type { ArtifactStore } from '../../lib/recovery/artifactStore.ts'
-import { ArtifactStoreError } from '../../lib/recovery/artifactStore.ts'
+import type { AssetStore } from '../../lib/assets/assetStore.ts'
+import { AssetStoreError, assetKey } from '../../lib/assets/assetStore.ts'
 import { ApiError } from '../errors/ApiError.ts'
 import { ownerOf } from '../auth/requireAuth.ts'
 
@@ -37,10 +37,6 @@ const asyncRoute = (handler: Handler) =>
 
 const pathParam = (value: string | string[]): string => (Array.isArray(value) ? value[0] : value)
 
-/** Owner-scoped so two accounts holding identical bytes never share an object. */
-const objectKey = (owner: { tenantId: string; oid: string }, hash: string): string =>
-  `${owner.tenantId}/${owner.oid}/${hash}`
-
 export interface AssetRouterOptions {
   repos: Repositories
   /** Matches the error middleware's logger; silenced in tests. */
@@ -51,7 +47,7 @@ export interface AssetRouterOptions {
    * servers, and a fresh deployment before the first import -- should not need
    * the directory to exist yet.
    */
-  store: () => ArtifactStore
+  store: () => AssetStore
 }
 
 export function createDesignAssetRouter(
@@ -77,12 +73,12 @@ export function createDesignAssetRouter(
 
     let bytes: Uint8Array
     try {
-      bytes = await store().get(objectKey(owner, hash))
+      bytes = await store().get(assetKey(owner, hash))
     } catch (cause) {
       // Metadata without bytes is a real state, since assets are deliberately
       // outside the backup manifest. It reads as absent so the client falls
       // back to asking for the file again.
-      if (cause instanceof ArtifactStoreError) throw ApiError.notFound('asset not found')
+      if (cause instanceof AssetStoreError) throw ApiError.notFound('asset not found')
       throw cause
     }
 
@@ -123,40 +119,27 @@ export function createDesignAssetRouter(
       const format = assetFormat(req.query.format)
       const filename = assetFilename(req.query.filename)
 
-      // The store creates exclusively -- right for backup bundles, which must
-      // never be overwritten. Assets are content-addressed, so the same hash is
-      // by definition the same bytes, and re-importing a file is an ordinary
-      // thing to do. An object that is already there is success, and the write
-      // is skipped rather than allowed to fail as a conflict.
-      const key = objectKey(owner, hash)
+      // One call: the asset store decides idempotence by comparing the stored
+      // bytes, so re-importing a file needs no listing and no conditional. The
+      // hash above already proved the body is what it claims to be.
       try {
-        const present = await store().list(`${owner.tenantId}/${owner.oid}`)
-        if (!present.includes(key)) await store().put(key, body)
+        await store().put(assetKey(owner, hash), body)
       } catch (cause) {
-        // A store that cannot be acquired or written to is a real operational
-        // state -- a directory that is not there, a mount that refuses the
-        // syscalls the guard uses -- and it is not the caller's fault. It says
-        // so, with the store's own code, instead of collapsing to a bare 500
-        // that leaves nothing to act on. Assets are non-authoritative by
-        // design, so this fails one upload rather than the app.
-        if (cause instanceof ArtifactStoreError) {
-          // The error middleware logs only *unexpected* failures, so turning
-          // this into a typed ApiError would silence the one line that says
-          // which syscall the store refused. It is logged here instead.
-          log('Artifact store refused a design-asset write:', cause)
+        // A store that cannot be written to is a real operational state -- a
+        // directory that is not there, a full disk, a mount gone away -- and
+        // it is not the caller's fault. It says so with the store's own code
+        // rather than collapsing to a bare 500 that leaves nothing to act on.
+        // Assets are non-authoritative by design, so this fails one upload
+        // rather than the app.
+        if (cause instanceof AssetStoreError) {
+          // The error middleware logs only *unexpected* failures, so a typed
+          // ApiError would silence the reason entirely. Logged here instead,
+          // where the message -- which names the path -- can be seen by an
+          // operator without being handed to the caller.
+          log('The asset store refused a design-asset write:', cause)
           throw new ApiError(503, 'asset_store_unavailable',
             'the file store is not available; the design itself is unaffected',
-            {
-              reason: cause.code,
-              // Safe to hand back for this code alone: an ARTIFACT_OPERATION_FAILED
-              // message is the guard's own stderr, which is a fixed English
-              // string plus `strerror(errno)` and carries no path or user data.
-              // ARTIFACT_ROOT_INVALID's message embeds an fs error that does
-              // name the path, so it stays server-side.
-              ...(cause.code === 'ARTIFACT_OPERATION_FAILED'
-                ? { refusal: cause.message.slice(0, 200) }
-                : {}),
-            })
+            { reason: cause.code })
         }
         throw cause
       }

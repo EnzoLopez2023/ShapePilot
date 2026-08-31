@@ -13,8 +13,8 @@ import {
   OTHER_OID, startTestServer, stubVerifier, validClaims,
 } from '../helpers/server.ts'
 import type { TestServer } from '../helpers/server.ts'
-import { ArtifactStoreError, createFilesystemArtifactStore } from '../../lib/recovery/artifactStore.ts'
-import type { ArtifactStore } from '../../lib/recovery/artifactStore.ts'
+import { AssetStoreError, createFilesystemAssetStore } from '../../lib/assets/assetStore.ts'
+import type { AssetStore } from '../../lib/assets/assetStore.ts'
 
 const OWNER_TOKEN = 'owner-token'
 const OTHER_TOKEN = 'other-token'
@@ -37,7 +37,7 @@ describe('design asset routes', () => {
         [OWNER_TOKEN]: validClaims(),
         [OTHER_TOKEN]: validClaims({ oid: OTHER_OID }),
       }),
-      assetStore: createFilesystemArtifactStore(root),
+      assetStore: createFilesystemAssetStore(root),
     })
   })
 
@@ -56,21 +56,21 @@ describe('design asset routes', () => {
   const get = (hash: string, token = OWNER_TOKEN) =>
     fetch(`${server.baseUrl}${BASE}/${hash}`, { headers: { authorization: `Bearer ${token}` } })
 
-  test('a store that cannot be written to is a typed 503, not a bare 500', async () => {
-    // A directory that is not there, or a mount that refuses the syscalls the
-    // guard uses, is an operational state the caller can act on -- and it must
-    // not read as "the request was wrong" or as an unexplained failure. The
-    // real store is acquired lazily on first use, so this is exactly how a
-    // broken one surfaces: on an upload, not at startup.
+  test('a store that will not take a write is a typed 503, not a bare 500', async () => {
+    // A directory that is not there, a full disk, a mount gone away: an
+    // operational state the caller can act on, which must read as neither
+    // "the request was wrong" nor an unexplained failure.
     const refuse = (): never => {
-      throw new ArtifactStoreError(
-        'ARTIFACT_OPERATION_FAILED', 'cannot sync artifact directory: Invalid argument')
+      throw new AssetStoreError(
+        'ASSET_WRITE_FAILED',
+        "could not store the asset: EACCES: permission denied, mkdir '/home/data/assets/t'",
+      )
     }
     const brokenStore = {
       description: 'a store that refuses everything',
-      put: refuse, putFile: refuse, putBundle: refuse, get: refuse,
-      fetchToFile: refuse, fetchToFileAt: refuse, list: refuse,
-    } as unknown as ArtifactStore
+      put: refuse,
+      get: refuse,
+    } as unknown as AssetStore
 
     const broken = await startTestServer({
       label: 'assets-broken-store',
@@ -89,57 +89,18 @@ describe('design asset routes', () => {
           body: new Uint8Array(bytes),
         })
       assert.equal(res.status, 503)
-      const body = await res.json() as {
-        error: { code: string; message: string; details?: { reason?: string; refusal?: string } }
+      const raw = await res.text()
+      const body = JSON.parse(raw) as {
+        error: { code: string; message: string; details?: { reason?: string } }
       }
       assert.equal(body.error.code, 'asset_store_unavailable')
-      assert.equal(body.error.details?.reason, 'ARTIFACT_OPERATION_FAILED')
-      // The guard's own refusal comes back for this code: it is a fixed string
-      // plus strerror, so it names the syscall without naming a path.
-      assert.equal(body.error.details?.refusal, 'cannot sync artifact directory: Invalid argument')
+      assert.equal(body.error.details?.reason, 'ASSET_WRITE_FAILED')
       // The design is not implicated: assets are deliberately not authoritative.
       assert.match(body.error.message, /the design itself is unaffected/)
-    } finally { await broken.close() }
-  })
-
-  test('a root that names a path keeps that path server-side', async () => {
-    // ARTIFACT_ROOT_INVALID's message embeds an fs error that names the
-    // directory. The reason code is enough for a caller; the path is not
-    // theirs to see, and the error middleware exists to keep it that way.
-    const refuse = (): never => {
-      throw new ArtifactStoreError(
-        'ARTIFACT_ROOT_INVALID',
-        "could not acquire the artifact store root: ENOENT: no such file or directory, "
-        + "open '/home/data/assets'",
-      )
-    }
-    const brokenStore = {
-      description: 'a store with no root',
-      put: refuse, putFile: refuse, putBundle: refuse, get: refuse,
-      fetchToFile: refuse, fetchToFileAt: refuse, list: refuse,
-    } as unknown as ArtifactStore
-
-    const broken = await startTestServer({
-      label: 'assets-missing-root',
-      verifier: stubVerifier({ [OWNER_TOKEN]: validClaims() }),
-      assetStore: brokenStore,
-    })
-    try {
-      const bytes = Buffer.from('anything at all')
-      const res = await fetch(
-        `${broken.baseUrl}${BASE}/${sha256(bytes)}?filename=a.jpg&format=jpeg`, {
-          method: 'PUT',
-          headers: {
-            authorization: `Bearer ${OWNER_TOKEN}`,
-            'content-type': 'application/octet-stream',
-          },
-          body: new Uint8Array(bytes),
-        })
-      assert.equal(res.status, 503)
-      const raw = await res.text()
-      assert.match(raw, /ARTIFACT_ROOT_INVALID/)
+      // The store's own message names a directory. A filesystem layout is not
+      // the caller's to see; it is logged for an operator instead.
       assert.ok(!raw.includes('/home/data'), 'a filesystem path must not reach the caller')
-      assert.ok(!raw.includes('ENOENT'), 'the fs error must not reach the caller')
+      assert.ok(!raw.includes('EACCES'), 'the fs error must not reach the caller')
     } finally { await broken.close() }
   })
 
