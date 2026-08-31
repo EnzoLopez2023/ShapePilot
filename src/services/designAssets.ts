@@ -3,8 +3,7 @@
 // Bytes, not JSON, so these do not go through `apiRequest` -- they carry a raw
 // body and need their own, much larger budget. Everything else about them
 // matches: same-origin `/api`, same bearer token, same typed error envelope.
-import { accessToken } from './http.ts'
-import { ApiRequestError } from './errors.ts'
+import { accessToken, parseError } from './http.ts'
 import type { ImportFormat } from '../model/document.ts'
 
 /**
@@ -51,7 +50,7 @@ export const listAssets = (): Promise<AssetRecord[]> =>
     const response = await fetch(base, {
       headers: await authHeaders(), credentials: 'same-origin', signal,
     })
-    if (!response.ok) throw new ApiRequestError(response.status, 'request_failed', 'could not list assets')
+    if (!response.ok) throw await parseError(response)
     return await response.json() as AssetRecord[]
   })
 
@@ -63,7 +62,7 @@ export const fetchAsset = (hash: string): Promise<ArrayBuffer | null> =>
       headers: await authHeaders(), credentials: 'same-origin', signal,
     })
     if (response.status === 404) return null
-    if (!response.ok) throw new ApiRequestError(response.status, 'request_failed', 'could not fetch the file')
+    if (!response.ok) throw await parseError(response)
     return await response.arrayBuffer()
   })
 
@@ -79,8 +78,6 @@ export const uploadAsset = (
       credentials: 'same-origin',
       signal,
     })
-    if (!response.ok) {
-      throw new ApiRequestError(response.status, 'request_failed', 'could not upload the file')
-    }
+    if (!response.ok) throw await parseError(response)
     return await response.json() as AssetRecord
   })

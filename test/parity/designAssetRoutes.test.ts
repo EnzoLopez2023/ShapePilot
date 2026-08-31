@@ -13,7 +13,8 @@ import {
   OTHER_OID, startTestServer, stubVerifier, validClaims,
 } from '../helpers/server.ts'
 import type { TestServer } from '../helpers/server.ts'
-import { createFilesystemArtifactStore } from '../../lib/recovery/artifactStore.ts'
+import { ArtifactStoreError, createFilesystemArtifactStore } from '../../lib/recovery/artifactStore.ts'
+import type { ArtifactStore } from '../../lib/recovery/artifactStore.ts'
 
 const OWNER_TOKEN = 'owner-token'
 const OTHER_TOKEN = 'other-token'
@@ -54,6 +55,48 @@ describe('design asset routes', () => {
 
   const get = (hash: string, token = OWNER_TOKEN) =>
     fetch(`${server.baseUrl}${BASE}/${hash}`, { headers: { authorization: `Bearer ${token}` } })
+
+  test('a store that cannot be written to is a typed 503, not a bare 500', async () => {
+    // A directory that is not there, or a mount that refuses the syscalls the
+    // guard uses, is an operational state the caller can act on -- and it must
+    // not read as "the request was wrong" or as an unexplained failure. The
+    // real store is acquired lazily on first use, so this is exactly how a
+    // broken one surfaces: on an upload, not at startup.
+    const refuse = (): never => {
+      throw new ArtifactStoreError('ARTIFACT_ROOT_INVALID', 'could not acquire the root')
+    }
+    const brokenStore = {
+      description: 'a store that refuses everything',
+      put: refuse, putFile: refuse, putBundle: refuse, get: refuse,
+      fetchToFile: refuse, fetchToFileAt: refuse, list: refuse,
+    } as unknown as ArtifactStore
+
+    const broken = await startTestServer({
+      label: 'assets-broken-store',
+      verifier: stubVerifier({ [OWNER_TOKEN]: validClaims() }),
+      assetStore: brokenStore,
+    })
+    try {
+      const bytes = Buffer.from('anything at all')
+      const res = await fetch(
+        `${broken.baseUrl}${BASE}/${sha256(bytes)}?filename=a.jpg&format=jpeg`, {
+          method: 'PUT',
+          headers: {
+            authorization: `Bearer ${OWNER_TOKEN}`,
+            'content-type': 'application/octet-stream',
+          },
+          body: new Uint8Array(bytes),
+        })
+      assert.equal(res.status, 503)
+      const body = await res.json() as {
+        error: { code: string; message: string; details?: { reason?: string } }
+      }
+      assert.equal(body.error.code, 'asset_store_unavailable')
+      assert.equal(body.error.details?.reason, 'ARTIFACT_ROOT_INVALID')
+      // The design is not implicated: assets are deliberately not authoritative.
+      assert.match(body.error.message, /the design itself is unaffected/)
+    } finally { await broken.close() }
+  })
 
   test('a photograph is an asset like any other', async () => {
     // Reference photos -- a picture of a keycap set -- share this route with
