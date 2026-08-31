@@ -134,6 +134,33 @@ const backupOptions = (fixture: Fixture) => ({
 })
 
 describe('artifact store', () => {
+  test('a refused put names the step that refused it', async () => {
+    // Every step of a put used to report one message printed with whatever
+    // errno happened to hold -- and both `descend` and `staging_directory`
+    // reach the write through a normal mkdirat that returned EEXIST, so an
+    // unrelated failure reported "File exists". A reason that names the wrong
+    // cause is worse than no reason: it sends the reader somewhere else.
+    const store = createFilesystemArtifactStore(scratchDir('store-refusal'))
+    const key = 'tenant/owner/object'
+    await store.put(key, new TextEncoder().encode('first'))
+
+    // Publication is exclusive by design, so the same key twice is a real
+    // refusal -- and now it says which step refused.
+    await assert.rejects(
+      () => store.put(key, new TextEncoder().encode('second')),
+      (error: Error & { code?: string }) => {
+        assert.equal(error.code, 'ARTIFACT_OPERATION_FAILED')
+        assert.match(error.message, /cannot publish the artifact object/)
+        assert.match(error.message, /File exists/)
+        return true
+      },
+    )
+
+    // The first object is untouched: a refused publication changes nothing.
+    assert.equal(new TextDecoder().decode(await store.get(key)), 'first')
+  })
+
+
   test('keys are relative and cannot traverse out of the root', () => {
     const root = scratchDir('store')
     const store = createFilesystemArtifactStore(root)
