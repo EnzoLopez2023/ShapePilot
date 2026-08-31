@@ -324,6 +324,61 @@ static int bundle_path_matches(
     && current.st_ino == owned_bundle->st_ino;
 }
 
+/**
+ * Which fields of two stat snapshots disagree, as a short field list.
+ *
+ * An identity check that only says "these differ" is not actionable: on a
+ * local filesystem every field is stable, but a network mount may legitimately
+ * report a different inode, a fixed mode, or a timestamp the server rewrote on
+ * close. Naming the field is the difference between a fix and a guess. Field
+ * names only -- no values, no paths -- so this is safe to hand back.
+ */
+static const char *snapshot_difference(const struct stat *left, const struct stat *right) {
+  static char detail[160];
+  size_t used = 0;
+  detail[0] = '\0';
+  const char *names[6];
+  int count = 0;
+  if (left->st_dev != right->st_dev) names[count++] = "dev";
+  if (left->st_ino != right->st_ino) names[count++] = "ino";
+  if (left->st_size != right->st_size) names[count++] = "size";
+  if (left->st_mode != right->st_mode) names[count++] = "mode";
+#ifdef __APPLE__
+  if (left->st_mtimespec.tv_sec != right->st_mtimespec.tv_sec
+      || left->st_mtimespec.tv_nsec != right->st_mtimespec.tv_nsec) names[count++] = "mtime";
+  if (left->st_ctimespec.tv_sec != right->st_ctimespec.tv_sec
+      || left->st_ctimespec.tv_nsec != right->st_ctimespec.tv_nsec) names[count++] = "ctime";
+#else
+  if (left->st_mtim.tv_sec != right->st_mtim.tv_sec
+      || left->st_mtim.tv_nsec != right->st_mtim.tv_nsec) names[count++] = "mtime";
+  if (left->st_ctim.tv_sec != right->st_ctim.tv_sec
+      || left->st_ctim.tv_nsec != right->st_ctim.tv_nsec) names[count++] = "ctime";
+#endif
+  for (int index = 0; index < count && used + 1 < sizeof(detail); ++index) {
+    int written = snprintf(
+      detail + used,
+      sizeof(detail) - used,
+      "%s%s",
+      used ? "," : "",
+      names[index]
+    );
+    if (written < 0) break;
+    used += (size_t)written;
+  }
+  return count ? detail : "type";
+}
+
+/** The message for an identity failure, naming the fields that disagreed. */
+static const char *identity_refusal(
+  const char *what,
+  const struct stat *left,
+  const struct stat *right
+) {
+  static char message[256];
+  snprintf(message, sizeof(message), "%s (%s)", what, snapshot_difference(left, right));
+  return message;
+}
+
 static int same_file_snapshot(const struct stat *left, const struct stat *right) {
   if (left->st_dev != right->st_dev || left->st_ino != right->st_ino
       || left->st_size != right->st_size || left->st_mode != right->st_mode) return 0;
@@ -660,10 +715,17 @@ static void put_object(int root_fd, const char *key, unsigned long long expected
     why = "the artifact write was not committed";
   }
   int published = 0;
-  if (!failed && !file_path_matches(staging_fd, temporary, &owned)) {
-    failed = 1;
-    why = "the staged artifact object changed identity before publication";
-    errno = 0;
+  if (!failed) {
+    struct stat staged;
+    if (fstatat(staging_fd, temporary, &staged, AT_SYMLINK_NOFOLLOW) != 0) {
+      failed = 1;
+      why = "cannot stat the staged artifact object";
+    } else if (!S_ISREG(staged.st_mode) || !same_file_snapshot(&staged, &owned)) {
+      failed = 1;
+      why = identity_refusal(
+        "the staged artifact object changed identity before publication", &staged, &owned);
+      errno = 0;
+    }
   }
   if (!failed && publish_no_replace(staging_fd, temporary, parent_fd, leaf) != 0) {
     failed = 1;
@@ -679,7 +741,9 @@ static void put_object(int root_fd, const char *key, unsigned long long expected
     } else if (!S_ISREG(published_snapshot.st_mode)
         || !same_published_file(&published_snapshot, &owned)) {
       failed = 1;
-      why = "the published artifact object does not match what was written";
+      why = identity_refusal(
+        "the published artifact object does not match what was written",
+        &published_snapshot, &owned);
       errno = 0;
     } else {
       owned = published_snapshot;

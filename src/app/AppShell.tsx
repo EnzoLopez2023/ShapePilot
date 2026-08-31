@@ -14,6 +14,7 @@ import TuneRoundedIcon from '@mui/icons-material/TuneRounded'
 import AdminPanelSettingsRoundedIcon from '@mui/icons-material/AdminPanelSettingsRounded'
 import { EASE_IOS, GLASS, SHADOW } from '../theme/theme.ts'
 import { getSettings } from '../features/settings/preferences.ts'
+import { formatBuildStamp, useBuildStamp } from './buildStamp.ts'
 
 interface NavItem {
   to: string
@@ -221,6 +222,7 @@ function SidebarBody({
 }) {
   const theme = useTheme()
   const glass = GLASS[theme.palette.mode]
+  const stamp = useBuildStamp()
 
   return (
     <Stack sx={{ height: '100%', px: collapsed ? 1 : 1.5, py: 2, gap: 2 }}>
@@ -316,6 +318,34 @@ function SidebarBody({
           ) : row
         })}
       </Stack>
+
+      {/* Pushed to the bottom, so which build is live is answerable at a
+          glance without opening a console or asking the API. Absent until it
+          loads, and absent for good if it never does: a stamp is a
+          convenience and must never look like a failure. */}
+      <Box sx={{ flex: 1, minHeight: 0 }} />
+      {stamp && (
+        <Tooltip
+          title={`ShapePilot ${formatBuildStamp(stamp)}`}
+          placement={collapsed ? 'right' : 'top'}
+        >
+          <Typography
+            variant="body2"
+            component="p"
+            sx={{
+              px: collapsed ? 0 : 1.5,
+              color: 'text.secondary',
+              fontSize: '0.6875rem',
+              textAlign: collapsed ? 'center' : 'left',
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {collapsed ? stamp.build : formatBuildStamp(stamp)}
+          </Typography>
+        </Tooltip>
+      )}
     </Stack>
   )
 }

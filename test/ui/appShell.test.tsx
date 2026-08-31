@@ -27,6 +27,11 @@ const renderAt = (path: string, role: 'user' | 'admin' = 'user') => {
         status: 200, headers: { 'content-type': 'application/json' },
       })
     }
+    if (url.includes('/version.json')) {
+      return new Response(JSON.stringify({
+        app: 'shapepilot', version: '0.1.0', build: '412', commit: 'a1b2c3d4e5f6',
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }
     return new Response(JSON.stringify({ ok: true }), {
       status: 202, headers: { 'content-type': 'application/json' },
     })
@@ -138,4 +143,39 @@ test('each designer route renders exactly one main and one h1', async () => {
     assert.equal(screen.getAllByRole('heading', { level: 1 }).length, 1, path)
     cleanup()
   }
+})
+
+test('the sidebar names the build that is running', async () => {
+  renderAt('/keycap-tray')
+  // Which build is live has to be answerable at a glance -- during a deploy it
+  // is the difference between "the fix is not working" and "the fix is not there".
+  await waitFor(() => expect(screen.getByText('0.1.0 · build 412 · a1b2c3d')).toBeTruthy())
+})
+
+test('a build stamp that will not load is absent, not an error', async () => {
+  vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
+    const url = typeof input === 'string' ? input : String(input)
+    if (url.includes('/version.json')) return new Response(null, { status: 503 })
+    if (url.includes('/api/settings')) {
+      return new Response(JSON.stringify(settingsResponse('user')), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      })
+    }
+    return new Response(JSON.stringify({ ok: true }), { status: 202 })
+  })
+  render(
+    <ThemeModeProvider initialPreference="light">
+      <MemoryRouter initialEntries={['/keycap-tray']}>
+        <Routes>
+          <Route element={<AppShell />}>
+            <Route path="/keycap-tray" element={<h1>Designer stub</h1>} />
+          </Route>
+        </Routes>
+      </MemoryRouter>
+    </ThemeModeProvider>,
+  )
+  await waitFor(() => expect(screen.getByRole('link', { name: 'Keycap tray' })).toBeTruthy())
+  // The nav still works and nothing claims to have failed.
+  assert.equal(screen.queryByText(/build /), null)
+  assert.equal(screen.queryByRole('alert'), null)
 })
