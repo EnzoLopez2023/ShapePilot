@@ -8,7 +8,16 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MsalProvider } from '@azure/msal-react'
 import { AppShell } from '../../src/app/AppShell.tsx'
+
+// The repo's own .env.local sets VITE_AUTH_MODE=development, which correctly
+// disables sign-out -- the dev bypass has no session to end. The behaviour
+// worth pinning is the deployed one, so auth is forced on here.
+vi.mock('../../src/auth/msal.ts', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  AUTH_ENABLED: true,
+}))
 import { ThemeModeProvider } from '../../src/theme/ThemeModeProvider.tsx'
 
 const settingsResponse = (role: 'user' | 'admin') => ({
@@ -19,7 +28,31 @@ const settingsResponse = (role: 'user' | 'admin') => ({
   },
 })
 
+const logger = {
+  clone: () => logger,
+  verbose: () => {}, info: () => {}, warning: () => {}, error: () => {}, trace: () => {},
+}
+
+let logoutCalls: unknown[] = []
+
+/** Only what the shell touches: an active account and a redirect sign-out. */
+const stubMsal = () => ({
+  getActiveAccount: () => ({ homeAccountId: 'a', environment: 'e', tenantId: 't',
+    username: 'maker@example.invalid', localAccountId: 'o' }),
+  logoutRedirect: (request: unknown) => { logoutCalls.push(request); return Promise.resolve() },
+  addEventCallback: () => null,
+  removeEventCallback: () => {},
+  initialize: () => Promise.resolve(),
+  getAllAccounts: () => [],
+  setActiveAccount: () => {},
+  enableAccountStorageEvents: () => {},
+  disableAccountStorageEvents: () => {},
+  getLogger: () => logger,
+  initializeWrapperLibrary: () => {},
+})
+
 const renderAt = (path: string, role: 'user' | 'admin' = 'user') => {
+  logoutCalls = []
   vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : String(input)
     if (url.includes('/api/settings')) {
@@ -40,9 +73,11 @@ const renderAt = (path: string, role: 'user' | 'admin' = 'user') => {
 
   return render(
     <ThemeModeProvider initialPreference="light">
+      <MsalProvider instance={stubMsal() as never}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route element={<AppShell />}>
+            <Route path="/" element={<h1>Home stub</h1>} />
             <Route path="/projects" element={<h1>Projects stub</h1>} />
             <Route path="/keycap-tray" element={<h1>Designer stub</h1>} />
             <Route path="/shaper-designer" element={<h1>Shaper stub</h1>} />
@@ -54,6 +89,7 @@ const renderAt = (path: string, role: 'user' | 'admin' = 'user') => {
           </Route>
         </Routes>
       </MemoryRouter>
+      </MsalProvider>
     </ThemeModeProvider>,
   )
 }
@@ -111,6 +147,7 @@ test('the active section is marked for assistive technology and sighted users', 
 
 test('every designer has its own nav entry and its own address', async () => {
   const sections: [string, string][] = [
+    ['/', 'Home'],
     ['/projects', 'Projects'],
     ['/keycap-tray', 'Keycap tray'],
     ['/shaper-designer', 'Shaper designer'],
@@ -132,7 +169,7 @@ test('the nav marks only the current section as current', async () => {
 
   const current = screen.getByRole('link', { name: 'Bambu designer' })
   assert.equal(current.getAttribute('aria-current'), 'page')
-  for (const other of ['Projects', 'Keycap tray', 'Shaper designer', 'AI playground']) {
+  for (const other of ['Home', 'Projects', 'Keycap tray', 'Shaper designer', 'AI playground']) {
     assert.notEqual(screen.getByRole('link', { name: other }).getAttribute('aria-current'), 'page')
   }
 })
@@ -181,4 +218,24 @@ test('a build stamp that will not load is absent, not an error', async () => {
   // The nav still works and nothing claims to have failed.
   assert.equal(screen.queryByText(/build /), null)
   assert.equal(screen.queryByRole('alert'), null)
+})
+
+test('the sidebar names who is signed in, and offers the way out', async () => {
+  renderAt('/keycap-tray')
+  await waitFor(() => expect(screen.getByText('Test')).toBeTruthy())
+  assert.ok(screen.getByText('t@example.invalid'))
+
+  await userEvent.click(screen.getByRole('button', { name: 'Sign out' }))
+  // Redirect, not a local cache clear: ending it only in this browser would
+  // leave the next sign-in silently reusing the same account.
+  assert.equal(logoutCalls.length, 1)
+})
+
+test('Home is only active on Home, not on every route beneath it', async () => {
+  // `/` prefix-matches everything, so without an exact match the Home row would
+  // read as current on every page in the app.
+  renderAt('/settings')
+  await waitFor(() => expect(screen.getByRole('link', { name: 'Settings' })).toBeTruthy())
+  assert.notEqual(screen.getByRole('link', { name: 'Home' }).getAttribute('aria-current'), 'page')
+  assert.equal(screen.getByRole('link', { name: 'Settings' }).getAttribute('aria-current'), 'page')
 })

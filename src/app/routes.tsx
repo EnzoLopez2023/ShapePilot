@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Route, Routes } from 'react-router-dom'
 import { Box, Button, Stack, Typography } from '@mui/material'
 import { Link } from 'react-router-dom'
 import { AppShell } from './AppShell.tsx'
@@ -8,6 +8,7 @@ import { LoadingState } from '../components/LoadingState.tsx'
 
 // Real URL routing with lazy feature boundaries. There is no global conditional
 // view switch: each section is its own route and its own chunk.
+const HomePage = lazy(() => import('../features/home/HomePage.tsx'))
 const KeycapTrayPage = lazy(() => import('../features/keycap-tray/KeycapTrayPage.tsx'))
 const ProjectsPage = lazy(() => import('../features/keycap-projects/ProjectsPage.tsx'))
 const ProjectPage = lazy(() => import('../features/keycap-projects/ProjectPage.tsx'))
@@ -24,8 +25,8 @@ function NotFound() {
       <Typography color="text.secondary">
         That address does not match anything in ShapePilot.
       </Typography>
-      <Button component={Link} to="/keycap-tray" variant="contained">
-        Go to the keycap tray designer
+      <Button component={Link} to="/" variant="contained">
+        Go to the workshop
       </Button>
     </Stack>
   )
@@ -36,7 +37,14 @@ export function AppRoutes() {
     <AuditProvider>
       <Routes>
         <Route element={<AppShell />}>
-          <Route index element={<Navigate to="/keycap-tray" replace />} />
+          <Route
+            index
+            element={(
+              <Suspense fallback={<LoadingState label="Opening the workshop…" />}>
+                <HomePage />
+              </Suspense>
+            )}
+          />
           <Route
             path="/keycap-tray"
             element={
