@@ -27,6 +27,31 @@ export interface PocketShape {
   units: number
   heightUnits: number
   shape: 'rect' | 'iso-enter' | null
+  /** Degrees about the footprint centre; a quarter turn swaps the two sides. */
+  rotationDeg?: number
+}
+
+/** Within half a degree of a quarter turn is a quarter turn, not a tilt. */
+const QUARTER_TURN_TOLERANCE = 0.5
+
+/**
+ * A pocket's footprint as it actually sits on the tray.
+ *
+ * Tilting a 2u pocket on its side makes it 1u wide and 2u tall -- the same
+ * footprint as a pocket authored 1u x 2, to within a fifth of a millimetre --
+ * so it holds a two-row numpad Enter and must be counted as one. Reading the
+ * stored `units` alone would say the tray still needs a pocket it already has.
+ *
+ * Only a quarter turn swaps the sides. Any other angle leaves the footprint's
+ * own width and height unchanged; what rotates is where it sits, which
+ * allocation does not care about.
+ */
+export function effectiveSize(pocket: PocketShape): { units: number; heightUnits: number } {
+  const turn = ((pocket.rotationDeg ?? 0) % 180 + 180) % 180
+  const quarter = Math.abs(turn - 90) <= QUARTER_TURN_TOLERANCE
+  return quarter
+    ? { units: pocket.heightUnits, heightUnits: pocket.units }
+    : { units: pocket.units, heightUnits: pocket.heightUnits }
 }
 
 const sizeKey = (units: number, heightUnits: number, shape?: string | null): string =>
@@ -51,7 +76,12 @@ export function troughCapacity(pocket: PocketShape, sizing: PocketSizing): numbe
   if (pocket.shape === 'iso-enter') return 0
   const single = pocketWidth(1, sizing)
   if (single <= 0) return 0
-  return Math.max(0, Math.floor(pocketWidth(pocket.units, sizing) / single))
+  // Along the footprint's long side as it sits: a 2u pocket on its side is a
+  // column of two 1u caps just as surely as it was a row of two.
+  const { units, heightUnits } = effectiveSize(pocket)
+  const across = Math.floor(pocketWidth(units, sizing) / single)
+  const down = Math.max(1, Math.floor(heightUnits))
+  return Math.max(0, across * down)
 }
 
 export interface AllocationRow {
@@ -131,8 +161,10 @@ export function allocateSet(
   // -- pass one: a named cap needs a pocket of exactly its size --------------
   const available = new Map<string, number>()
   for (const pocket of pockets) {
-    const key = sizeKey(pocket.units, pocket.heightUnits, pocket.shape)
-    available.set(key, (available.get(key) ?? 0) + 1)
+    const size = effectiveSize(pocket)
+    available.set(
+      sizeKey(size.units, size.heightUnits, pocket.shape),
+      (available.get(sizeKey(size.units, size.heightUnits, pocket.shape)) ?? 0) + 1)
   }
 
   for (const row of named.values()) {
@@ -148,7 +180,8 @@ export function allocateSet(
   let slots = 0
   const spent = new Map(available)
   for (const pocket of pockets) {
-    const key = sizeKey(pocket.units, pocket.heightUnits, pocket.shape)
+    const size = effectiveSize(pocket)
+    const key = sizeKey(size.units, size.heightUnits, pocket.shape)
     const remaining = spent.get(key) ?? 0
     if (remaining <= 0) continue
     spent.set(key, remaining - 1)

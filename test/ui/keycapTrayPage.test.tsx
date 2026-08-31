@@ -786,3 +786,32 @@ test('a tray in no project shows no coverage panel', async () => {
   await waitFor(() => expect(screen.getByRole('heading', { name: 'Tray' })).toBeTruthy())
   assert.equal(screen.queryByRole('heading', { name: 'Set coverage' }), null)
 })
+
+test('a project’s trays are switchable from the designer', async () => {
+  // A set is laid out across several trays at once, so moving between them is
+  // part of the work -- and the list is already in hand, so it costs nothing.
+  state.designs = [
+    { id: '1', name: 'Top tray', pocketCount: 3, updatedAt: '2026-08-28 12:00:00',
+      profileKind: 'preset', projectId: '9', projectName: 'Womier' },
+    { id: '2', name: 'Middle tray', pocketCount: 29, updatedAt: '2026-08-28 12:00:00',
+      profileKind: 'preset', projectId: '9', projectName: 'Womier' },
+    { id: '3', name: 'Someone else’s tray', pocketCount: 1, updatedAt: '2026-08-28 12:00:00',
+      profileKind: 'preset', projectId: null, projectName: null },
+  ]
+  const user = userEvent.setup()
+  renderPage(<KeycapTrayPage />, '/keycap-tray/1')
+
+  const chip = await screen.findByRole('button', { name: /Womier — switch tray/ })
+  await user.click(chip)
+
+  const menu = await screen.findByRole('menu', { name: 'Trays in this project' })
+  assert.ok(within(menu).getByRole('menuitem', { name: /Top tray/ }))
+  assert.ok(within(menu).getByRole('menuitem', { name: /Middle tray/ }))
+  // Only this project's trays; a loose tray is not in the set being laid out.
+  assert.equal(within(menu).queryByRole('menuitem', { name: /Someone else/ }), null)
+
+  await user.click(within(menu).getByRole('menuitem', { name: /Middle tray/ }))
+  // Switching loads that tray, and the URL follows so the back button works.
+  await waitFor(() => expect(
+    state.calls.some(c => c.method === 'GET' && c.path === '/api/keycap-trays/2')).toBe(true))
+})

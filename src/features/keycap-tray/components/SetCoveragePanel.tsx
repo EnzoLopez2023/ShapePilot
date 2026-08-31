@@ -29,6 +29,7 @@ const expand = (coverage: readonly CoverageRow[]): PocketShape[] =>
     units: row.units,
     heightUnits: row.heightUnits,
     shape: row.shape,
+    rotationDeg: row.rotationDeg ?? 0,
   })))
 
 export default function SetCoveragePanel(props: SetCoveragePanelProps) {
@@ -38,6 +39,7 @@ export default function SetCoveragePanel(props: SetCoveragePanelProps) {
     units: p.units,
     heightUnits: p.heightUnits ?? 1,
     shape: p.shape ?? null,
+    rotationDeg: p.rotationDeg ?? 0,
   }))
   const result = allocateSet(items, [...expand(otherTrays), ...live], sizing)
 

@@ -286,6 +286,8 @@ export interface CoverageRow {
   units: number
   heightUnits: number
   shape: 'rect' | 'iso-enter' | null
+  /** A quarter turn swaps a pocket's sides, so it is part of its footprint. */
+  rotationDeg: number
   pockets: number
 }
 
