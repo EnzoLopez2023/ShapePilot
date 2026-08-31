@@ -7,6 +7,16 @@ import { accessToken } from './http.ts'
 import { ApiRequestError } from './errors.ts'
 import type { ImportFormat } from '../model/document.ts'
 
+/**
+ * Reference photographs -- a picture of a keycap set -- rather than geometry.
+ * Kept apart from `ImportFormat` on purpose: `importFile` must keep refusing
+ * images, so only the photo uploader ever names one of these.
+ */
+export type ImageFormat = 'png' | 'jpeg' | 'webp'
+
+/** Everything the asset store accepts. */
+export type AssetFormat = ImportFormat | ImageFormat
+
 const base = '/api/design-assets'
 
 /** Generous: a 60 MB STL over a slow link is a real case, and failing it
@@ -16,7 +26,7 @@ const TRANSFER_TIMEOUT_MS = 180_000
 export interface AssetRecord {
   hash: string
   filename: string
-  format: ImportFormat
+  format: AssetFormat
   byteLength: number
   createdAt: string
 }
@@ -58,7 +68,7 @@ export const fetchAsset = (hash: string): Promise<ArrayBuffer | null> =>
   })
 
 export const uploadAsset = (
-  hash: string, bytes: ArrayBuffer, filename: string, format: ImportFormat,
+  hash: string, bytes: ArrayBuffer, filename: string, format: AssetFormat,
 ): Promise<AssetRecord> =>
   withTimeout(async signal => {
     const query = new URLSearchParams({ filename, format })

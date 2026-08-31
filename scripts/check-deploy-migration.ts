@@ -50,6 +50,12 @@ const ROLLBACK_COMPATIBLE_LEDGER = [
     name: 'design assets',
     checksum: '9c0980e90616e1feb6472810d01e372d48216c5935b33a73617e88241621dc41',
   },
+  {
+    ordinal: 4,
+    id: '005-keycap-projects',
+    name: 'keycap projects',
+    checksum: '02153a8d3de7b95e1076b191cf270d74bfc410639fcee65143ba4ea05b0c477f',
+  },
 ] as const
 
 const REQUIRED_TABLES = [
@@ -60,6 +66,9 @@ const REQUIRED_TABLES = [
   'design_assets',
   'design_documents',
   'keycap_pocket_library',
+  'keycap_project_photos',
+  'keycap_projects',
+  'keycap_set_items',
   'keycap_tray_designs',
   'keycap_tray_pockets',
   'legacy_import_rows',

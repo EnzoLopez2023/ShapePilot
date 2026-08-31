@@ -37,6 +37,7 @@ const renderAt = (path: string, role: 'user' | 'admin' = 'user') => {
       <MemoryRouter initialEntries={[path]}>
         <Routes>
           <Route element={<AppShell />}>
+            <Route path="/projects" element={<h1>Projects stub</h1>} />
             <Route path="/keycap-tray" element={<h1>Designer stub</h1>} />
             <Route path="/shaper-designer" element={<h1>Shaper stub</h1>} />
             <Route path="/bambu-designer" element={<h1>Bambu stub</h1>} />
@@ -104,6 +105,7 @@ test('the active section is marked for assistive technology and sighted users', 
 
 test('every designer has its own nav entry and its own address', async () => {
   const sections: [string, string][] = [
+    ['/projects', 'Projects'],
     ['/keycap-tray', 'Keycap tray'],
     ['/shaper-designer', 'Shaper designer'],
     ['/bambu-designer', 'Bambu designer'],
@@ -124,7 +126,7 @@ test('the nav marks only the current section as current', async () => {
 
   const current = screen.getByRole('link', { name: 'Bambu designer' })
   assert.equal(current.getAttribute('aria-current'), 'page')
-  for (const other of ['Keycap tray', 'Shaper designer', 'AI playground']) {
+  for (const other of ['Projects', 'Keycap tray', 'Shaper designer', 'AI playground']) {
     assert.notEqual(screen.getByRole('link', { name: other }).getAttribute('aria-current'), 'page')
   }
 })

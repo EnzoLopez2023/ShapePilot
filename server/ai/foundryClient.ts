@@ -25,9 +25,25 @@ export interface FoundryClient {
   respondJson(input: FoundryRequest): Promise<FoundryResponse>
 }
 
+/**
+ * The Responses API's structured content form. A plain string is still the
+ * common case and stays supported unchanged; this exists so a turn can carry
+ * images, which a string cannot express.
+ */
+export type FoundryContent =
+  | { type: 'input_text'; text: string }
+  // `detail` is required by the SDK's own type rather than optional; 'auto'
+  // is the value that lets the service pick the resolution it needs.
+  | { type: 'input_image'; image_url: string; detail: 'auto' | 'low' | 'high' }
+
+export interface FoundryMessage {
+  role: 'user'
+  content: FoundryContent[]
+}
+
 export interface FoundryRequest {
   instructions: string
-  input: string
+  input: string | FoundryMessage[]
   schemaName: string
   schema: Record<string, unknown>
   maxOutputTokens?: number

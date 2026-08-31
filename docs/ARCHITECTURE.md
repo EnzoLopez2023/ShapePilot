@@ -209,6 +209,10 @@ repository, and outside the application's own disk. The filesystem adapter
 ships now; a Blob adapter can be added without the database or any feature
 module gaining an Azure dependency.
 
+The store holds two kinds of thing, on identical terms: imported geometry, and
+reference photographs of a keycap set. Both are content-addressed, owner-scoped
+and outside the backup manifest; neither is ever the design.
+
 Imported assets are **deliberately not authoritative.** The recovery model has
 exactly one authority: a restored backup is a single self-describing,
 hash-verified SQLite file, and every stage re-derives its identity from the
@@ -216,7 +220,10 @@ bytes in front of it. Assets sit outside that. A missing one is an ordinary
 state — the object reports as detached and can be re-attached — so a restored
 database can never carry a broken reference. `design_assets` stores metadata
 only, keyed by content hash and scoped by `(tenant_id, oid)`, because a hash
-must never act as a bearer token.
+must never act as a bearer token. `keycap_project_photos` names a hash from that
+table but is deliberately not a foreign key into it, for the same reason: the
+route proves the hash is owned at write time, and a photo whose bytes have gone
+missing leaves the project readable.
 
 Making assets first-class would mean a manifest that bundles, hashes and
 verifies them alongside the database, plus collection of unreferenced ones.

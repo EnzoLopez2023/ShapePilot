@@ -43,6 +43,8 @@ export interface Pocket {
 
 export interface TrayDesign {
   id: string
+  /** The keycap project this tray is cut for; null while it stands alone. */
+  projectId?: string | null
   name: string
   notes?: string
   profile: TrayProfile

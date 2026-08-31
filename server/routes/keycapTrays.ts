@@ -33,7 +33,7 @@ const pathId = (value: string | string[]): string => (Array.isArray(value) ? val
 
 export function createKeycapTrayRouter(repos: Repositories): Router {
   const router = Router()
-  const { keycapTrays, audit } = repos
+  const { keycapTrays, keycapProjects, audit } = repos
 
   const note = (
     req: { method: string; path: string; requestId?: string },
@@ -54,8 +54,29 @@ export function createKeycapTrayRouter(repos: Repositories): Router {
     }).catch(() => { /* audit must never break a response */ })
   }
 
+  /**
+   * A tray may only be linked to a project the caller owns. The foreign key
+   * proves the project exists; it cannot prove whose it is, so the check is
+   * here. Called before the write so a rejected link is a 400, not a row.
+   */
+  const requireOwnedProject = async (
+    owner: { tenantId: string; oid: string }, projectId: string | null | undefined,
+  ): Promise<void> => {
+    if (!projectId) return
+    const project = await keycapProjects.get(owner, projectId)
+    if (!project) throw ApiError.badRequest('project not found', { field: 'projectId' })
+  }
+
   router.get('/', asyncRoute(async (req, res) => {
-    res.json(await keycapTrays.listDesigns(ownerOf(req)))
+    // `?projectId=` selects one project and `?projectId=none` the unassigned
+    // trays, which is what the "add an existing tray" picker lists.
+    const raw = req.query.projectId
+    const filter = raw === undefined
+      ? undefined
+      : raw === 'none'
+        ? null
+        : String(raw)
+    res.json(await keycapTrays.listDesigns(ownerOf(req), filter))
   }))
 
   // The library routes must be declared before the /:id routes below: Express
@@ -97,6 +118,7 @@ export function createKeycapTrayRouter(repos: Repositories): Router {
   router.post('/', asyncRoute(async (req, res) => {
     const owner = ownerOf(req)
     const input = validateTrayDesignInput(req.body ?? {})
+    await requireOwnedProject(owner, input.projectId)
     try {
       const created = await keycapTrays.createDesign(owner, input)
       note(req, owner, 'design_created', created.id)
@@ -110,6 +132,7 @@ export function createKeycapTrayRouter(repos: Repositories): Router {
   router.put('/:id', asyncRoute(async (req, res) => {
     const owner = ownerOf(req)
     const input = validateTrayDesignInput(req.body ?? {})
+    await requireOwnedProject(owner, input.projectId)
     try {
       const updated = await keycapTrays.updateDesign(owner, pathId(req.params.id), input)
       if (!updated) throw ApiError.notFound('design not found')

@@ -33,3 +33,44 @@ export const requestShape = (body: ShapeRequest) =>
     // budget in http.ts is too tight for one.
     timeoutMs: 120_000,
   })
+
+/** A row of the inventory as the model read it off a photograph. */
+export interface ReadSetItem {
+  legend?: string
+  units: number
+  heightUnits?: number
+  shape?: 'rect' | 'iso-enter'
+  count?: number
+  group?: string
+  color?: string
+  source: 'photo'
+}
+
+export interface KeycapSetResponse {
+  set: {
+    setName?: string
+    manufacturer?: string
+    capProfile?: string
+    colorway?: string
+    items: ReadSetItem[]
+  }
+  /** What the model found hard to read, in its own words. Worth showing. */
+  notes: string
+  usage: ShapeUsage
+}
+
+/**
+ * Read a keycap set out of photographs already uploaded to the asset store.
+ *
+ * Only hashes cross the wire: the bytes went up through the asset route, and
+ * the server reads them back itself. The answer is a proposal -- nothing is
+ * saved until the person applies it.
+ */
+export const readKeycapSet = (hashes: string[], hint?: string) =>
+  apiRequest<KeycapSetResponse>('/ai/keycap-set', {
+    method: 'POST',
+    body: { hashes, hint },
+    // Several photographs through a vision model is the slowest call the app
+    // makes; the design turn's own budget is the floor, not the ceiling.
+    timeoutMs: 150_000,
+  })

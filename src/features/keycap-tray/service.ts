@@ -11,6 +11,9 @@ import { PYTHON_SIZING } from './geometry/shapes.ts'
 
 export interface DesignSummary {
   id: string
+  projectId: string | null
+  /** Denormalised by the server so a picker can name the project. */
+  projectName: string | null
   name: string
   notes?: string
   profileKind: TrayProfile['kind']
@@ -31,8 +34,11 @@ export interface LibraryPocket {
 
 const base = '/keycap-trays'
 
-const payload = (d: TrayDesign) => ({
+const payload = (d: TrayDesign, projectId?: string | null) => ({
   name: d.name,
+  // Absent leaves the tray's project link alone, which is what an ordinary
+  // save from the designer means; `null` unassigns it.
+  projectId: projectId === undefined ? d.projectId : projectId,
   notes: d.notes,
   profile: d.profile,
   sizing: d.sizing,
@@ -42,7 +48,10 @@ const payload = (d: TrayDesign) => ({
   pockets: d.pockets,
 })
 
-export const listDesigns = () => apiRequest<DesignSummary[]>(base)
+/** `projectId` selects one project; `'none'` the trays without one. */
+export const listDesigns = (projectId?: string | 'none') =>
+  apiRequest<DesignSummary[]>(
+    projectId ? `${base}?projectId=${encodeURIComponent(projectId)}` : base)
 
 export const hydrateDesignSizing = (design: TrayDesign): TrayDesign =>
   Object.keys(design.sizing).length === 0
@@ -52,11 +61,11 @@ export const hydrateDesignSizing = (design: TrayDesign): TrayDesign =>
 export const getDesign = async (id: string): Promise<TrayDesign> =>
   hydrateDesignSizing(await apiRequest<TrayDesign>(`${base}/${id}`))
 
-export const createDesign = (d: TrayDesign) =>
-  apiRequest<{ id: string }>(base, { method: 'POST', body: payload(d) })
+export const createDesign = (d: TrayDesign, projectId?: string | null) =>
+  apiRequest<{ id: string }>(base, { method: 'POST', body: payload(d, projectId) })
 
-export const updateDesign = (id: string, d: TrayDesign) =>
-  apiRequest<{ ok: true }>(`${base}/${id}`, { method: 'PUT', body: payload(d) })
+export const updateDesign = (id: string, d: TrayDesign, projectId?: string | null) =>
+  apiRequest<{ ok: true }>(`${base}/${id}`, { method: 'PUT', body: payload(d, projectId) })
 
 export const cloneDesign = (id: string, name?: string) =>
   apiRequest<{ id: string }>(`${base}/${id}/clone`, { method: 'POST', body: { name } })

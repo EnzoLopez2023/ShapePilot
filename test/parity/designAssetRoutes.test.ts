@@ -55,6 +55,28 @@ describe('design asset routes', () => {
   const get = (hash: string, token = OWNER_TOKEN) =>
     fetch(`${server.baseUrl}${BASE}/${hash}`, { headers: { authorization: `Bearer ${token}` } })
 
+  test('a photograph is an asset like any other', async () => {
+    // Reference photos -- a picture of a keycap set -- share this route with
+    // imported geometry: same content addressing, same owner scoping, same
+    // deliberate absence from the backup manifest.
+    for (const format of ['png', 'jpeg', 'webp']) {
+      const bytes = Buffer.from(`pretend ${format} bytes`)
+      const hash = sha256(bytes)
+      const stored = await put(hash, bytes, OWNER_TOKEN, `filename=set.${format}&format=${format}`)
+      assert.equal(stored.status, 201, format)
+
+      const read = await get(hash)
+      assert.equal(read.status, 200)
+      assert.deepEqual(Buffer.from(await read.arrayBuffer()), bytes)
+    }
+  })
+
+  test('a format the store does not accept is a typed 400', async () => {
+    const bytes = Buffer.from('a movie, probably')
+    const res = await put(sha256(bytes), bytes, OWNER_TOKEN, 'filename=a.mp4&format=mp4')
+    assert.equal(res.status, 400)
+  })
+
   test('a file round-trips byte for byte', async () => {
     const stored = await put(HASH, CONTENT)
     assert.equal(stored.status, 201)
