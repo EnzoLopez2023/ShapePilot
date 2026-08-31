@@ -613,35 +613,94 @@ static void put_object(int root_fd, const char *key, unsigned long long expected
   int target = create_temporary(staging_fd, temporary, sizeof(temporary));
   struct stat owned;
   if (fstat(target, &owned) != 0) fail("cannot identify created artifact object");
+
+  // Every step below used to funnel into one message printed with whatever
+  // errno happened to hold. Both `descend` and `staging_directory` reach here
+  // through a perfectly normal mkdirat that returned EEXIST, so that residue
+  // reported "File exists" for failures that had nothing to do with an
+  // existing file. errno is cleared, and each step says which one it was:
+  // "Success" now means an invariant was violated rather than a syscall
+  // refused, which is exactly the distinction a reader needs.
+  errno = 0;
+  const char *why = NULL;
   unsigned long long copied = 0;
-  int failed = copy_fd(STDIN_FILENO, target, &copied) != 0 || copied != expected_bytes
-    || fsync(target) != 0;
+  int failed = 0;
+  if (copy_fd(STDIN_FILENO, target, &copied) != 0 || copied != expected_bytes) {
+    failed = 1;
+    why = "cannot copy the artifact object";
+  }
+  if (!failed && fsync(target) != 0) {
+    failed = 1;
+    why = "cannot sync the artifact object";
+  }
   struct stat completed;
-  if (!failed && (fstat(target, &completed) != 0
-      || !S_ISREG(completed.st_mode)
-      || completed.st_dev != owned.st_dev
-      || completed.st_ino != owned.st_ino
-      || completed.st_size < 0
-      || (unsigned long long)completed.st_size != expected_bytes)) failed = 1;
-  else if (!failed) owned = completed;
-  if (close(target) != 0) failed = 1;
+  if (!failed) {
+    if (fstat(target, &completed) != 0) {
+      failed = 1;
+      why = "cannot restat the written artifact object";
+    } else if (!S_ISREG(completed.st_mode)
+        || completed.st_dev != owned.st_dev
+        || completed.st_ino != owned.st_ino
+        || completed.st_size < 0
+        || (unsigned long long)completed.st_size != expected_bytes) {
+      failed = 1;
+      why = "the artifact object changed identity while it was written";
+      errno = 0;
+    } else {
+      owned = completed;
+    }
+  }
+  if (close(target) != 0) {
+    if (!failed) why = "cannot close the artifact object";
+    failed = 1;
+  }
   unsigned char decision = 0;
-  if (!failed && (read(4, &decision, 1) != 1 || decision != 'C')) failed = 1;
+  if (!failed && (read(4, &decision, 1) != 1 || decision != 'C')) {
+    failed = 1;
+    why = "the artifact write was not committed";
+  }
   int published = 0;
-  if (!failed && !file_path_matches(staging_fd, temporary, &owned)) failed = 1;
-  if (!failed && publish_no_replace(staging_fd, temporary, parent_fd, leaf) != 0) failed = 1;
-  else if (!failed) published = 1;
+  if (!failed && !file_path_matches(staging_fd, temporary, &owned)) {
+    failed = 1;
+    why = "the staged artifact object changed identity before publication";
+    errno = 0;
+  }
+  if (!failed && publish_no_replace(staging_fd, temporary, parent_fd, leaf) != 0) {
+    failed = 1;
+    why = "cannot publish the artifact object";
+  } else if (!failed) {
+    published = 1;
+  }
   struct stat published_snapshot;
-  if (!failed && (fstatat(parent_fd, leaf, &published_snapshot, AT_SYMLINK_NOFOLLOW) != 0
-      || !S_ISREG(published_snapshot.st_mode)
-      || !same_published_file(&published_snapshot, &owned))) failed = 1;
-  else if (!failed) owned = published_snapshot;
-  if (!failed && fsync(parent_fd) != 0) failed = 1;
-  if (!failed && !file_path_matches(parent_fd, leaf, &owned)) failed = 1;
+  if (!failed) {
+    if (fstatat(parent_fd, leaf, &published_snapshot, AT_SYMLINK_NOFOLLOW) != 0) {
+      failed = 1;
+      why = "cannot stat the published artifact object";
+    } else if (!S_ISREG(published_snapshot.st_mode)
+        || !same_published_file(&published_snapshot, &owned)) {
+      failed = 1;
+      why = "the published artifact object does not match what was written";
+      errno = 0;
+    } else {
+      owned = published_snapshot;
+    }
+  }
+  if (!failed && fsync(parent_fd) != 0) {
+    failed = 1;
+    why = "cannot sync the artifact parent directory";
+  }
+  if (!failed && !file_path_matches(parent_fd, leaf, &owned)) {
+    failed = 1;
+    why = "the published artifact object changed identity after it was synced";
+    errno = 0;
+  }
   if (failed) {
+    int refusal = errno;
     cleanup_owned(published ? parent_fd : staging_fd, published ? leaf : temporary, &owned);
     (void)fsync(parent_fd);
-    fail("cannot write artifact object");
+    // Restored, so cleanup's own syscalls cannot overwrite the reason.
+    errno = refusal;
+    fail(why ? why : "cannot write artifact object");
   }
   // The final parent has already been synced, so publication is durable. A
   // staging-directory sync failure can at worst resurrect the unpublished name
