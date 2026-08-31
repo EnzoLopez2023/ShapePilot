@@ -13,7 +13,7 @@ import { join } from 'node:path'
 import { afterAll, beforeAll, describe, test } from 'vitest'
 import { startTestServer, stubVerifier, validClaims } from '../helpers/server.ts'
 import type { TestServer } from '../helpers/server.ts'
-import { createFilesystemArtifactStore } from '../../lib/recovery/artifactStore.ts'
+import { createFilesystemAssetStore } from '../../lib/assets/assetStore.ts'
 import type { FoundryClient, FoundryRequest } from '../../server/ai/foundryClient.ts'
 
 const TOKEN = 'owner-token'
@@ -267,7 +267,7 @@ describe('reading a keycap set out of photographs', () => {
       label: `ai-photos-${Math.random().toString(36).slice(2, 8)}`,
       verifier: stubVerifier({ [TOKEN]: validClaims() }),
       aiClient: stubClient(text, seen),
-      assetStore: createFilesystemArtifactStore(root),
+      assetStore: createFilesystemAssetStore(root),
     })
   }
 

@@ -17,11 +17,11 @@ import { createTokenVerifier } from './auth/verifyToken.ts'
 import { createErrorMiddleware, notFoundHandler } from './errors/errorMiddleware.ts'
 import { createAdminRouter } from './routes/admin.ts'
 import { createAuditAdminRouter, createAuditRouter } from './routes/audit.ts'
-import type { ArtifactStore } from '../lib/recovery/artifactStore.ts'
+import type { AssetStore } from '../lib/assets/assetStore.ts'
 import type { FoundryClient } from './ai/foundryClient.ts'
 import { createFoundryClient } from './ai/foundryClient.ts'
 import { createAiRouter } from './routes/ai.ts'
-import { createFilesystemArtifactStore } from '../lib/recovery/artifactStore.ts'
+import { createFilesystemAssetStore } from '../lib/assets/assetStore.ts'
 import { createDesignAssetRouter } from './routes/designAssets.ts'
 import { createDesignDocumentRouter } from './routes/designDocuments.ts'
 import { createHealthRouter } from './routes/health.ts'
@@ -44,7 +44,7 @@ export interface CreateAppOptions {
    *  null when the Foundry resource is not configured. */
   aiClient?: FoundryClient | null
   /** Injectable for tests; defaults to the filesystem store at config.assetStoreDir. */
-  assetStore?: ArtifactStore
+  assetStore?: AssetStore
   logger?: (message: string, error: unknown) => void
 }
 
@@ -55,13 +55,13 @@ const JSON_LIMIT = '2mb'
  * storage validation creates this directory up front; creating it here as well
  * is what lets a development or test server work without one.
  */
-function assetStore(injected: ArtifactStore | undefined, dir: string): () => ArtifactStore {
+function assetStore(injected: AssetStore | undefined, dir: string): () => AssetStore {
   if (injected) return () => injected
-  let store: ArtifactStore | null = null
+  let store: AssetStore | null = null
   return () => {
     if (!store) {
       mkdirSync(dir, { recursive: true, mode: 0o700 })
-      store = createFilesystemArtifactStore(dir)
+      store = createFilesystemAssetStore(dir)
     }
     return store
   }
