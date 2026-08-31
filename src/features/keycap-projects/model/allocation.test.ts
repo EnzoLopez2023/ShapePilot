@@ -107,11 +107,33 @@ describe('allocateSet', () => {
     expect(both.left).toBe(0)
   })
 
-  test('height and shape are part of a named cap’s identity', () => {
+  test('height is part of a named cap’s identity', () => {
     // A two-row numpad Enter is not served by a 1u-tall pocket of the same width.
     const items = [cap(2, 1, { heightUnits: 2, legend: 'Enter' })]
     expect(allocateSet(items, [pocket(2)], PYTHON_SIZING).left).toBe(1)
     expect(allocateSet(items, [pocket(2, { heightUnits: 2 })], PYTHON_SIZING).left).toBe(0)
+  })
+
+  test('an ISO Enter always gets a pocket of its own', () => {
+    const iso = [cap(1.5, 1, { shape: 'iso-enter', legend: 'Enter' })]
+
+    // Not a rectangular pocket of the same width, however much room is in it.
+    expect(allocateSet(iso, [pocket(1.5)], PYTHON_SIZING).left).toBe(1)
+    expect(allocateSet(iso, [pocket(13)], PYTHON_SIZING).left).toBe(1)
+    // Only its own shape will do.
+    expect(allocateSet(iso, [pocket(1.5, { shape: 'iso-enter' })], PYTHON_SIZING).left).toBe(0)
+
+    // And the pocket is not a trough either: its footprint is an L, so loose 1u
+    // caps would not sit in a row across it.
+    const withCaps = allocateSet(
+      [cap(1, 4)], [pocket(1.5, { shape: 'iso-enter' })], PYTHON_SIZING)
+    expect(withCaps.oneUnit).toMatchObject({ owned: 4, slots: 0, placed: 0, left: 4 })
+
+    // Both together: the Enter is housed and the 1u caps are still homeless.
+    const both = allocateSet(
+      [...iso, cap(1, 4)], [pocket(1.5, { shape: 'iso-enter' })], PYTHON_SIZING)
+    expect(both.rows[0]).toMatchObject({ shape: 'iso-enter', placed: 1, left: 0 })
+    expect(both.oneUnit.left).toBe(4)
   })
 
   test('an empty set and an empty tray are both simply zero', () => {
