@@ -148,7 +148,6 @@ test('the active section is marked for assistive technology and sighted users', 
 test('every designer has its own nav entry and its own address', async () => {
   const sections: [string, string][] = [
     ['/', 'Home'],
-    ['/projects', 'Projects'],
     ['/keycap-tray', 'Keycap tray'],
     ['/shaper-designer', 'Shaper designer'],
     ['/bambu-designer', 'Bambu designer'],
@@ -169,9 +168,11 @@ test('the nav marks only the current section as current', async () => {
 
   const current = screen.getByRole('link', { name: 'Bambu designer' })
   assert.equal(current.getAttribute('aria-current'), 'page')
-  for (const other of ['Home', 'Projects', 'Keycap tray', 'Shaper designer', 'AI playground']) {
+  for (const other of ['Home', 'Keycap tray', 'Shaper designer', 'AI playground']) {
     assert.notEqual(screen.getByRole('link', { name: other }).getAttribute('aria-current'), 'page')
   }
+  // Projects is no longer a top-level section: it lives inside the keycap designer.
+  assert.equal(screen.queryByRole('link', { name: 'Projects' }), null)
 })
 
 test('each designer route renders exactly one main and one h1', async () => {

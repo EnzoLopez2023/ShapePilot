@@ -29,6 +29,7 @@ interface StubState {
     items: { units: number; heightUnits?: number; count?: number; legend?: string }[]
     coverage: { units: number; heightUnits: number; shape: string | null; pockets: number }[]
   }
+  projectList?: { id: string; name: string }[]
   library: { id: string; name: string; units: number }[]
   calls: { method: string; path: string; body?: unknown }[]
   designerDefaults?: DesignerDefaults
@@ -52,6 +53,9 @@ function installFetchStub() {
         status, headers: { 'content-type': 'application/json' },
       })
 
+    if (path === '/api/keycap-projects' && method === 'GET') {
+      return json(200, state.projectList ?? [])
+    }
     if (path.startsWith('/api/keycap-projects/') && method === 'GET') {
       if (!state.project) return json(404, { error: { code: 'not_found', message: 'no project' } })
       return json(200, { ...state.project, name: 'Womier', photos: [] })
@@ -824,10 +828,10 @@ test('a project’s trays are switchable from the designer', async () => {
   const user = userEvent.setup()
   renderPage(<KeycapTrayPage />, '/keycap-tray/1')
 
-  const chip = await screen.findByRole('button', { name: /Womier — switch tray/ })
-  await user.click(chip)
+  const projectButton = await screen.findByRole('button', { name: /Womier/ })
+  await user.click(projectButton)
 
-  const menu = await screen.findByRole('menu', { name: 'Trays in this project' })
+  const menu = await screen.findByRole('menu', { name: 'Project' })
   assert.ok(within(menu).getByRole('menuitem', { name: /Top tray/ }))
   assert.ok(within(menu).getByRole('menuitem', { name: /Middle tray/ }))
   // Only this project's trays; a loose tray is not in the set being laid out.
