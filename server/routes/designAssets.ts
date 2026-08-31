@@ -122,8 +122,23 @@ export function createDesignAssetRouter({ repos, store }: AssetRouterOptions): R
       // thing to do. An object that is already there is success, and the write
       // is skipped rather than allowed to fail as a conflict.
       const key = objectKey(owner, hash)
-      const present = await store().list(`${owner.tenantId}/${owner.oid}`)
-      if (!present.includes(key)) await store().put(key, body)
+      try {
+        const present = await store().list(`${owner.tenantId}/${owner.oid}`)
+        if (!present.includes(key)) await store().put(key, body)
+      } catch (cause) {
+        // A store that cannot be acquired or written to is a real operational
+        // state -- a directory that is not there, a mount that refuses the
+        // syscalls the guard uses -- and it is not the caller's fault. It says
+        // so, with the store's own code, instead of collapsing to a bare 500
+        // that leaves nothing to act on. Assets are non-authoritative by
+        // design, so this fails one upload rather than the app.
+        if (cause instanceof ArtifactStoreError) {
+          throw new ApiError(503, 'asset_store_unavailable',
+            'the file store is not available; the design itself is unaffected',
+            { reason: cause.code })
+        }
+        throw cause
+      }
 
       const record = await designAssets.record(owner, {
         hash, filename, format, byteLength: body.byteLength,

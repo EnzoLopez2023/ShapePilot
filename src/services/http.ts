@@ -35,7 +35,13 @@ const TIMEOUT_MS = 20_000
 /** Nothing should hold a request open longer than this, whatever it asks for. */
 const MAX_TIMEOUT_MS = 180_000
 
-async function parseError(response: Response): Promise<ApiRequestError> {
+/**
+ * Exported so the routes that carry raw bytes -- which cannot go through
+ * `apiRequest` -- report a failure the same way everything else does. A
+ * hand-written message there would hide the server's own, which is the only
+ * one that says what actually went wrong.
+ */
+export async function parseError(response: Response): Promise<ApiRequestError> {
   const fallback = `${response.status} ${response.statusText}`.trim()
   try {
     const payload = await response.json() as {
