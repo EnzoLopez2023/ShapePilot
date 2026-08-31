@@ -21,6 +21,7 @@ const expand = (coverage: readonly CoverageRow[]): PocketShape[] =>
     units: row.units,
     heightUnits: row.heightUnits,
     shape: row.shape,
+    rotationDeg: row.rotationDeg ?? 0,
   })))
 
 interface Card {

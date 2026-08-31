@@ -62,6 +62,7 @@ interface CoverageQueryRow {
   units: number
   height_units: number
   shape: 'rect' | 'iso-enter' | null
+  rotation_deg: number
   pockets: number
 }
 
@@ -132,12 +133,15 @@ export function createKeycapProjectRepository(db: SqliteDatabase): KeycapProject
   // every tray: the project page needs the totals, not the designs.
   const COVERAGE_SQL = `
     SELECT p.units AS units, p.height_units AS height_units, p.shape AS shape,
-           COUNT(p.id) AS pockets
+           p.rotation_deg AS rotation_deg, COUNT(p.id) AS pockets
       FROM keycap_tray_pockets p
       JOIN keycap_tray_designs d ON d.id = p.design_id
      WHERE d.project_id = ? AND d.owner_tenant_id = ? AND d.owner_oid = ?`
+  // Rotation is part of the grouping because a quarter turn swaps a pocket's
+  // sides: a 2u pocket on its side holds what a 1u x 2 pocket holds. The client
+  // normalises, so one function decides that for saved and unsaved pockets alike.
   const COVERAGE_GROUP = `
-     GROUP BY p.units, p.height_units, p.shape
+     GROUP BY p.units, p.height_units, p.shape, p.rotation_deg
      ORDER BY p.units, p.height_units`
 
   const selectCoverage = db.prepare<[number | bigint, string, string], CoverageQueryRow>(
@@ -245,6 +249,7 @@ export function createKeycapProjectRepository(db: SqliteDatabase): KeycapProject
             units: r.units,
             heightUnits: r.height_units,
             shape: r.shape,
+            rotationDeg: r.rotation_deg ?? 0,
             pockets: r.pockets,
           })),
         createdAt: p.created_at,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { allocateSet, troughCapacity } from './allocation.ts'
+import { allocateSet, effectiveSize, troughCapacity } from './allocation.ts'
 import type { PocketShape } from './allocation.ts'
 import { PYTHON_SIZING } from '../../keycap-tray/geometry/shapes.ts'
 import type { SetItem } from './types.ts'
@@ -139,5 +139,49 @@ describe('allocateSet', () => {
   test('an empty set and an empty tray are both simply zero', () => {
     expect(allocateSet([], TOP_TRAY, PYTHON_SIZING)).toMatchObject({ owned: 0, left: 0 })
     expect(allocateSet([cap(1, 5)], [], PYTHON_SIZING)).toMatchObject({ owned: 5, left: 5 })
+  })
+})
+
+describe('rotation', () => {
+  test('a quarter turn swaps a pocket’s sides', () => {
+    expect(effectiveSize(pocket(2))).toEqual({ units: 2, heightUnits: 1 })
+    expect(effectiveSize(pocket(2, { rotationDeg: 90 }))).toEqual({ units: 1, heightUnits: 2 })
+    expect(effectiveSize(pocket(2, { rotationDeg: 270 }))).toEqual({ units: 1, heightUnits: 2 })
+    // Half a turn is the same footprint the other way up.
+    expect(effectiveSize(pocket(2, { rotationDeg: 180 }))).toEqual({ units: 2, heightUnits: 1 })
+  })
+
+  test('a tilt that is not a quarter turn leaves the footprint alone', () => {
+    // What rotates is where it sits, which allocation does not care about.
+    expect(effectiveSize(pocket(2, { rotationDeg: 45 }))).toEqual({ units: 2, heightUnits: 1 })
+    expect(effectiveSize(pocket(2, { rotationDeg: 12 }))).toEqual({ units: 2, heightUnits: 1 })
+  })
+
+  test('a 2u pocket on its side houses a two-row cap', () => {
+    // Drawn as a 2u and tilted, it is 1u wide and 2u tall -- the same footprint
+    // as a pocket authored 1u x 2, so it holds the numpad Enter.
+    const numpadEnter = [cap(1, 3, { heightUnits: 2, legend: 'Enter' })]
+    const upright = allocateSet(numpadEnter, [pocket(2), pocket(2), pocket(2)], PYTHON_SIZING)
+    expect(upright.left).toBe(3)
+
+    const tilted = allocateSet(
+      numpadEnter,
+      Array.from({ length: 3 }, () => pocket(2, { rotationDeg: 90 })),
+      PYTHON_SIZING,
+    )
+    expect(tilted.left).toBe(0)
+    expect(tilted.rows[0]).toMatchObject({ owned: 3, placed: 3, left: 0 })
+  })
+
+  test('a tilted trough still holds the caps that fit down it', () => {
+    // A column of two is as good as a row of two.
+    expect(troughCapacity(pocket(2, { rotationDeg: 90 }), PYTHON_SIZING)).toBe(2)
+    expect(troughCapacity(pocket(10, { rotationDeg: 90 }), PYTHON_SIZING)).toBe(10)
+  })
+
+  test('a tall pocket holds a column of caps, not one', () => {
+    // Surplus only: a two-row Enter claims its own pocket first.
+    expect(troughCapacity(pocket(1, { heightUnits: 2 }), PYTHON_SIZING)).toBe(2)
+    expect(troughCapacity(pocket(3, { heightUnits: 2 }), PYTHON_SIZING)).toBe(6)
   })
 })

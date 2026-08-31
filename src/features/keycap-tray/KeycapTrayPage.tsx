@@ -2,9 +2,10 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom'
 import {
   Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
-  DialogTitle, IconButton, MenuItem, Paper, Snackbar, Stack, TextField, ToggleButton,
-  ToggleButtonGroup, Tooltip, Typography,
+  DialogTitle, Divider, IconButton, Menu, MenuItem, Paper, Snackbar, Stack, TextField,
+  ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMoreRounded'
 import RedoIcon from '@mui/icons-material/Redo'
 import UndoIcon from '@mui/icons-material/Undo'
 import DeleteIcon from '@mui/icons-material/DeleteOutline'
@@ -76,6 +77,7 @@ export default function KeycapTrayPage() {
   const [openDialog, setOpenDialog] = useState(false)
   const [fitToken, setFitToken] = useState(0)
   const [project, setProject] = useState<KeycapProject | null>(null)
+  const [trayMenu, setTrayMenu] = useState<HTMLElement | null>(null)
   const loadGeneration = useRef(0)
   const designRevision = useRef(design.revision)
   designRevision.current = design.revision
@@ -98,6 +100,12 @@ export default function KeycapTrayPage() {
   // carries its name, so the header chip costs no extra request.
   const owningProject = designs.find(s => s.id === savedId)
   const owningProjectId = owningProject?.projectId ?? null
+
+  // Already in hand from the list, so switching between a project's trays costs
+  // nothing extra -- and a set is laid out across several of them at once.
+  const siblingTrays = owningProjectId
+    ? designs.filter(s => s.projectId === owningProjectId)
+    : []
 
   // The set and the *other* trays' pockets, for the coverage panel. This tray
   // is excluded on purpose -- its pockets are read live from the design below,
@@ -256,14 +264,49 @@ export default function KeycapTrayPage() {
           </Typography>
 
           {owningProjectId && owningProject?.projectName && (
-            <Chip
-              size="small"
-              component={RouterLink}
-              to={`/projects/${owningProjectId}`}
-              clickable
-              label={owningProject.projectName}
-              sx={{ maxWidth: 180 }}
-            />
+            <>
+              <Chip
+                size="small"
+                clickable
+                onClick={e => setTrayMenu(e.currentTarget)}
+                label={owningProject.projectName}
+                deleteIcon={<ExpandMoreIcon />}
+                onDelete={e => setTrayMenu(e.currentTarget.parentElement)}
+                aria-haspopup="menu"
+                aria-label={`${owningProject.projectName} — switch tray`}
+                sx={{ maxWidth: 220 }}
+              />
+              <Menu
+                open={!!trayMenu}
+                anchorEl={trayMenu}
+                onClose={() => setTrayMenu(null)}
+                slotProps={{ list: { 'aria-label': 'Trays in this project' } }}
+              >
+                {siblingTrays.map(tray => (
+                  <MenuItem
+                    key={tray.id}
+                    selected={tray.id === savedId}
+                    disabled={busy}
+                    onClick={() => { setTrayMenu(null); void load(tray.id) }}
+                  >
+                    {tray.name}
+                    <Typography
+                      variant="body2" color="text.secondary" component="span" sx={{ ml: 1 }}
+                    >
+                      {tray.pocketCount} pockets
+                    </Typography>
+                  </MenuItem>
+                ))}
+                <Divider />
+                <MenuItem
+                  component={RouterLink}
+                  to={`/projects/${owningProjectId}`}
+                  onClick={() => setTrayMenu(null)}
+                >
+                  Open the project
+                </MenuItem>
+              </Menu>
+            </>
           )}
 
           <ToggleButtonGroup
