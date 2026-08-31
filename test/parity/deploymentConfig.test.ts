@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, describe, test } from 'vitest'
 import {
   assertProductionBuildIdentity,
@@ -11,6 +12,7 @@ import { ConfigError, loadConfig } from '../../server/config.ts'
 import { validateProductionStorage } from '../../server/storage.ts'
 import { TEST_AUDIENCE, TEST_TENANT } from '../helpers/server.ts'
 
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const roots: string[] = []
 const TEST_CLIENT_ID = '11112222-3333-4444-5555-666677778888'
 afterEach(() => {
@@ -214,5 +216,38 @@ describe('AI configuration', () => {
       () => withRoot({ ...FOUNDRY, AZURE_AI_FOUNDRY_ENDPOINT: 'http://insecure.example/' }),
       ConfigError,
     )
+  })
+})
+
+describe('build identity', () => {
+  test('the version file carries a release the app can quote', () => {
+    // Major.Minor.Fix plus a counter, both set by hand when a release is cut.
+    const identity = JSON.parse(
+      readFileSync(resolve(REPO_ROOT, 'version.json'), 'utf8'),
+    ) as Record<string, string>
+    assert.match(identity.version, /^\d+\.\d+\.\d+$/)
+    assert.match(identity.buildNumber, /^\d+$/)
+  })
+
+  test('the run identity and the release counter are threaded separately', () => {
+    // BUILD_ID has to be unique per attempt so an image tag and a seed marker
+    // name one build and no other; a release counter must not be, or it could
+    // not be read aloud. They are different values and travel as different
+    // build args.
+    const workflow = readFileSync(resolve(REPO_ROOT, '.github/workflows/ci.yml'), 'utf8')
+    const dockerfile = readFileSync(resolve(REPO_ROOT, 'Dockerfile'), 'utf8')
+
+    assert.match(workflow, /BUILD_NUMBER: \$\{\{ github\.run_number \}\}/)
+    assert.match(workflow, /BUILD_NUMBER=\$\(\( GITHUB_RUN_NUMBER - BUILD_NUMBER_BASELINE \)\)/)
+    assert.match(dockerfile, /^ARG BUILD_NUMBER$/m)
+
+    // Both image builds get it, or a deploy would fail at the stamp step.
+    const passes = workflow.match(/--build-arg "BUILD_NUMBER=\$BUILD_NUMBER"/g) ?? []
+    assert.equal(passes.length, 2, 'every docker build must pass the release counter')
+
+    // The counter is derived, never committed back: a job that can push to main
+    // is a far larger grant than a build number is worth, and this one holds
+    // deploy credentials.
+    assert.ok(!/contents: write/.test(workflow), 'no job may gain write access to the repository')
   })
 })

@@ -19,8 +19,16 @@ export interface SourceLineage {
 
 export interface BuildIdentity {
   app: string
+  /** Major.Minor.Fix, set by hand when a release is cut. */
   version: string
+  /**
+   * The run that produced this image, `<run-id>-<run-attempt>`. Unique per
+   * attempt, which is what makes an image tag and a seed marker identify one
+   * build and no other. Not meant to be read aloud.
+   */
   build: string
+  /** The release counter a person quotes: "2.5.3 build 4". */
+  buildNumber: string
   commit: string
   builtAt: string
   sourceLineage: SourceLineage
@@ -36,6 +44,7 @@ function readVersionFile(): BuildIdentity {
   if (!parsed.app
     || !parsed.version
     || !parsed.build
+    || !parsed.buildNumber
     || !parsed.commit
     || !parsed.builtAt
     || !parsed.sourceLineage?.commit) {

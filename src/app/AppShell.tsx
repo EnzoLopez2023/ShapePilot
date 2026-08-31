@@ -342,7 +342,7 @@ function SidebarBody({
               textOverflow: 'ellipsis',
             }}
           >
-            {collapsed ? stamp.build : formatBuildStamp(stamp)}
+            {collapsed ? (stamp.buildNumber || stamp.build) : formatBuildStamp(stamp)}
           </Typography>
         </Tooltip>
       )}
