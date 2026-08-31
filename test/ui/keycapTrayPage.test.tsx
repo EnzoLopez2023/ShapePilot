@@ -8,6 +8,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { act, cleanup, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { SHIPPED_DESIGNER_DEFAULTS } from '../../src/features/settings/preferences.ts'
+import type { DesignerDefaults } from '../../src/features/settings/preferences.ts'
 import KeycapTrayPage from '../../src/features/keycap-tray/KeycapTrayPage.tsx'
 import { useTrayDesign, pocketExtent, pocketAABB } from '../../src/features/keycap-tray/state/useTrayDesign.ts'
 import { PYTHON_SIZING } from '../../src/features/keycap-tray/geometry/shapes.ts'
@@ -27,6 +29,7 @@ interface StubState {
   }
   library: { id: string; name: string; units: number }[]
   calls: { method: string; path: string; body?: unknown }[]
+  designerDefaults?: DesignerDefaults
   failListWith?: number
   createGate?: Promise<void>
   loadGate?: Promise<void>
@@ -121,6 +124,18 @@ function installFetchStub() {
       return json(200, { ok: true })
     }
     if (path === '/api/audit/events') return json(202, { ok: true })
+    if (path === '/api/settings') {
+      return json(200, {
+        preferences: {
+          themeMode: 'light', units: 'mm', reducedMotion: 'system',
+          designerDefaults: state.designerDefaults ?? SHIPPED_DESIGNER_DEFAULTS,
+        },
+        profile: {
+          tenantId: 't', oid: 'o', displayName: null, email: null,
+          role: 'user', authSource: 'development',
+        },
+      })
+    }
     return json(404, { error: { code: 'not_found', message: 'no stub' } })
   })
 }
@@ -873,4 +888,44 @@ test('New starts from the defaults rather than the last tray’s settings', asyn
     state.calls.filter(c => c.method === 'GET' && c.path === '/api/keycap-trays/1').length, 1,
     'New must not reload the tray it just abandoned',
   )
+})
+
+test('a new tray opens the way the settings page says', async () => {
+  // Defaults belong to the designer, not to any one tray: a tray that has been
+  // worked on before comes back the way it was left instead.
+  state.designerDefaults = {
+    ...SHIPPED_DESIGNER_DEFAULTS,
+    keycapTray: {
+      ...SHIPPED_DESIGNER_DEFAULTS.keycapTray,
+      showLabels: false,
+      showBuffer: true,
+      snapMm: 19.05,
+    },
+  }
+  renderPage()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Show labels' })).toBeTruthy())
+  assert.ok(screen.getByRole('button', { name: 'Hide buffer' }))
+  assert.equal(screen.getByRole('combobox', { name: 'Snap' }).textContent, '1u pitch')
+})
+
+test('a remembered tray beats the settings defaults', async () => {
+  state.designerDefaults = {
+    ...SHIPPED_DESIGNER_DEFAULTS,
+    keycapTray: { ...SHIPPED_DESIGNER_DEFAULTS.keycapTray, showLabels: false },
+  }
+  state.designs = [{
+    id: '1', name: 'Top tray', pocketCount: 1, updatedAt: '2026-08-28 12:00:00',
+    profileKind: 'preset',
+  }]
+  const user = userEvent.setup()
+  const first = renderPage(<KeycapTrayPage />, '/keycap-tray/1')
+  // Opens from the default -- labels off.
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Show labels' })).toBeTruthy())
+  await user.click(screen.getByRole('button', { name: 'Show labels' }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Hide labels' })).toBeTruthy())
+  first.unmount()
+
+  // Reopened, the tray's own memory wins over the designer default.
+  renderPage(<KeycapTrayPage />, '/keycap-tray/1')
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Hide labels' })).toBeTruthy())
 })

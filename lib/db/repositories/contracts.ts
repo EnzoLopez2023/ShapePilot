@@ -38,10 +38,51 @@ export interface MembershipRepository {
   setRole(owner: Owner, role: AppRole): Promise<Membership | null>
 }
 
+/**
+ * How a designer opens before anyone touches it.
+ *
+ * One shape per designer rather than one shared shape, because the settings
+ * are not the same question: a keycap tray has a build plate and a buffer
+ * guide, the Bambu designer has a gizmo and a solid/hole mode, and offering
+ * either one the other's controls would be offering a setting that does
+ * nothing.
+ */
+export interface KeycapTrayDefaults {
+  view: '2d' | '3d'
+  snapMm: number
+  gridMm: number
+  showLabels: boolean
+  showPlate: boolean
+  showBuffer: boolean
+  bufferMm: number
+  imperial: boolean
+  target: 'print' | 'cnc'
+}
+
+export interface ShaperDefaults {
+  imperial: boolean
+  snapMm: number
+  gridMm: number
+}
+
+export interface BambuDefaults {
+  imperial: boolean
+  snapMm: number
+  gizmo: 'translate' | 'rotate' | 'scale'
+  addMode: 'solid' | 'hole'
+}
+
+export interface DesignerDefaults {
+  keycapTray: KeycapTrayDefaults
+  shaper: ShaperDefaults
+  bambu: BambuDefaults
+}
+
 export interface AppPreferences {
   themeMode: 'light' | 'dark' | 'system'
   units: 'mm' | 'in'
   reducedMotion: 'system' | 'reduce' | 'no-preference'
+  designerDefaults: DesignerDefaults
 }
 
 export interface SettingsRepository {

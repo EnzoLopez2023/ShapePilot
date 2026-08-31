@@ -6,6 +6,7 @@ import { getSettings, putPreferences } from './preferences.ts'
 import type { AccountProfile, AppPreferences } from './preferences.ts'
 import { useThemeMode } from '../../theme/ThemeModeProvider.tsx'
 import { ErrorState, LoadingState } from '../../components/LoadingState.tsx'
+import DesignerDefaultsPanel from './DesignerDefaultsPanel.tsx'
 import { errorMessage } from '../../services/errors.ts'
 
 const FIELD_WIDTH = 260
@@ -92,6 +93,15 @@ export default function SettingsPage() {
             <MenuItem value="no-preference">Allow motion</MenuItem>
           </TextField>
         </Stack>
+      </Paper>
+
+      <Paper sx={{ p: 2 }}>
+        {preferences && (
+          <DesignerDefaultsPanel
+            defaults={preferences.designerDefaults}
+            onChange={next => void update({ designerDefaults: next })}
+          />
+        )}
       </Paper>
 
       <Paper sx={{ p: 2 }}>
