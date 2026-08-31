@@ -1,0 +1,114 @@
+/*
+ * The home page's motion.
+ *
+ * DESIGN.md recorded "no bespoke keyframes" for the workbench, and that rule
+ * still holds where it was written: a technical drawing must not move while it
+ * is being read. The home page is not a drawing surface. It is the one screen
+ * whose job is to orient rather than to be worked in, so it carries the app's
+ * only authored motion -- declared here, in CSS, so the global
+ * prefers-reduced-motion rule in MuiCssBaseline disables all of it without a
+ * second code path.
+ *
+ * One authored moment: the workshop assembles itself once, the way a drawing
+ * is built up. Everything after that is a response to the pointer.
+ */
+
+@media (prefers-reduced-motion: no-preference) {
+  /* The entrance. Each region arrives from an already-visible default, so a
+     failed animation leaves a correct page rather than an empty one. */
+  .sp-rise {
+    animation: sp-rise 620ms cubic-bezier(0.32, 0.72, 0, 1) backwards;
+  }
+
+  @keyframes sp-rise {
+    from {
+      opacity: 0;
+      transform: translate3d(0, 14px, 0);
+      filter: blur(6px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+      filter: none;
+    }
+  }
+
+  /* The hero's drawing draws itself, the way a plotter would. */
+  .sp-plot [data-part] {
+    stroke-dasharray: var(--sp-len, 2000);
+    stroke-dashoffset: var(--sp-len, 2000);
+    animation: sp-plot 1100ms cubic-bezier(0.32, 0.72, 0, 1) forwards;
+  }
+
+  @keyframes sp-plot {
+    to { stroke-dashoffset: 0; }
+  }
+
+  /* Pockets dropping into the tray on the keycap card. */
+  .sp-card .drop {
+    animation: sp-drop 520ms cubic-bezier(0.32, 0.72, 0, 1) backwards;
+  }
+
+  @keyframes sp-drop {
+    from { opacity: 0; transform: translate3d(0, -7px, 0); }
+    to { opacity: 1; transform: none; }
+  }
+
+  /* Hovering runs the bit around the tool path, and pushes the on-line
+     scribe apart so the three cut kinds separate. */
+  .sp-card .offset {
+    transition: transform 420ms cubic-bezier(0.32, 0.72, 0, 1), opacity 300ms ease-out;
+    transform-origin: 83px 52px;
+  }
+  .sp-card:hover .offset-out,
+  .sp-card:focus-visible .offset-out { transform: scale(1.04); }
+  .sp-card:hover .offset-in,
+  .sp-card:focus-visible .offset-in { opacity: 0.35; }
+
+  .sp-card .bit { opacity: 0; transition: opacity 300ms ease-out; }
+  .sp-card:hover .bit,
+  .sp-card:focus-visible .bit {
+    opacity: 1;
+    offset-path: path('M44 14 H122 A18 18 0 0 1 140 32 V72 A18 18 0 0 1 122 90 H44 A18 18 0 0 1 26 72 V32 A18 18 0 0 1 44 14 Z');
+    animation: sp-run 3200ms linear infinite;
+  }
+
+  @keyframes sp-run {
+    from { offset-distance: 0%; }
+    to { offset-distance: 100%; }
+  }
+
+  /* The hole sinks into the solid. */
+  .sp-card .hole {
+    transition: transform 420ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .sp-card:hover .hole,
+  .sp-card:focus-visible .hole { transform: translate3d(0, 7px, 0); }
+
+  /* The prompt resolves into the part it describes. */
+  .sp-card .prompt {
+    transition: opacity 380ms ease-out;
+  }
+  .sp-card .resolved {
+    transition: transform 520ms cubic-bezier(0.32, 0.72, 0, 1), opacity 380ms ease-out;
+    transform-origin: 88px 72px;
+    opacity: 0.55;
+    transform: scale(0.94);
+  }
+  .sp-card:hover .prompt,
+  .sp-card:focus-visible .prompt { opacity: 0.35; }
+  .sp-card:hover .resolved,
+  .sp-card:focus-visible .resolved { opacity: 1; transform: none; }
+}
+
+/* Not inside the motion query: the lift is the affordance, and a card that
+   cannot say it is interactive is broken rather than merely still. */
+.sp-card {
+  transition: border-color 200ms ease-in-out, background-color 200ms ease-in-out;
+}
+
+/* Counts are compared down a column, so their digits must not shift width. */
+.sp-figure {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}

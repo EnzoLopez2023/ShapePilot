@@ -149,8 +149,23 @@ Two-layer rule.
 2. User-controlled: `Settings → Motion` lets the user pick `system`, `reduce`,
    or `no-preference` regardless of the OS.
 
-There is no motion design system beyond MUI's own defaults for menus, dialogs,
-and snackbars. There are no bespoke keyframes and no scroll-driven effects.
+Beyond MUI's own defaults for menus, dialogs and snackbars, authored motion
+exists in exactly one place: `src/features/home/home.css`. Every working
+surface stays still — a technical drawing must not move while it is being read,
+and that rule is unchanged where it was written.
+
+The home page is the exception because it is the one screen whose job is to
+orient rather than to be worked in. Its motion is a single authored moment
+(the page assembles itself once, regions rising from an already-visible
+default) plus pointer responses on the four path cards, and each response is
+the thing that designer actually does: a pocket drops into a tray, a bit runs
+the Origin's tool path, a hole sinks into a solid, a prompt resolves into
+geometry. All of it is declared in CSS inside
+`@media (prefers-reduced-motion: no-preference)`, so the global rule above
+disables it without a second code path and a failed animation leaves a correct
+page rather than an empty one.
+
+There are no scroll-driven effects anywhere.
 
 ### Selection colour
 
@@ -305,6 +320,26 @@ base ring, local coords, origin (0,0), bbox w0×h0   (w0,h0 = UN-rotated extents
   reviewed in a dialog, applied to the draft, and only saved by Save — the same
   rule as the design copilot. Rows it produced are marked until they are edited.
 
+## Home
+
+- **Two questions, in the order a maker asks them.** What was I doing, and what
+  am I doing now. The hero is the most recently touched tray or document, drawn
+  at size with one Resume action on it; the four ways in follow.
+- **The counts are a title block, not the point.** Projects, trays, pockets,
+  caps and objects sit in one bordered band between the hero and the paths —
+  the way a drawing carries its own measurements. Not framed figures, which
+  would make the numbers the achievement rather than the work.
+- **The path cards show what they make.** The keycap card draws a real Systainer
+  outline with real pockets, through the same `profileToMulti` and `pocketRing`
+  the designer and the exporter use, so the picture cannot drift from the
+  product. The other three are authored in the same hand — one stroke weight,
+  fabrication-drawing vocabulary, hatching for removed material.
+- **The lead card lays out along its width.** The keycap tray takes the wide
+  cell at `lg` and places its drawing beside its name rather than above it, so
+  the extra width is used rather than padded around a small shape.
+- **An empty workshop invites.** No hero to resume and no counts worth reading;
+  the four ways in are the whole page.
+
 ## Named rules
 
 - **One hairline, one radius, one accent.** BORDER=1, RADIUS=14 (iOS squircle),
@@ -348,6 +383,12 @@ base ring, local coords, origin (0,0), bbox w0×h0   (w0,h0 = UN-rotated extents
   owns the segment map. Copying a URL and using the back button both work.
 - **Last-resort recovery is a rendered surface.** `AppErrorBoundary` shows a
   reload path; a render failure does not leave the operator on a blank page.
+- **The sidebar ends with who, then what.** The signed-in account and its
+  sign-out sit above the build stamp, one hairline apart: one is about the
+  person, the other about the deployment. Collapsed to the rail, both reduce to
+  an avatar and an icon with tooltips. Sign-out is a redirect, matching
+  sign-in — ending the session only in this browser would leave the next
+  sign-in silently reusing the same account.
 
 ## Measured quality floor
 
