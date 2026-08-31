@@ -43,6 +43,8 @@ const objectKey = (owner: { tenantId: string; oid: string }, hash: string): stri
 
 export interface AssetRouterOptions {
   repos: Repositories
+  /** Matches the error middleware's logger; silenced in tests. */
+  logger?: (message: string, error: unknown) => void
   /**
    * Resolved on first use, not at construction. The filesystem adapter acquires
    * its root eagerly, and an app that never stores an asset -- most test
@@ -52,9 +54,14 @@ export interface AssetRouterOptions {
   store: () => ArtifactStore
 }
 
-export function createDesignAssetRouter({ repos, store }: AssetRouterOptions): Router {
+export function createDesignAssetRouter(
+  { repos, store, logger }: AssetRouterOptions,
+): Router {
   const router = Router()
   const { designAssets, audit } = repos
+  const log = logger ?? ((message: string, error: unknown) => {
+    console.error(message, error instanceof Error ? error.message : error)
+  })
 
   router.get('/', asyncRoute(async (req, res) => {
     res.json(await designAssets.list(ownerOf(req)))
@@ -133,9 +140,23 @@ export function createDesignAssetRouter({ repos, store }: AssetRouterOptions): R
         // that leaves nothing to act on. Assets are non-authoritative by
         // design, so this fails one upload rather than the app.
         if (cause instanceof ArtifactStoreError) {
+          // The error middleware logs only *unexpected* failures, so turning
+          // this into a typed ApiError would silence the one line that says
+          // which syscall the store refused. It is logged here instead.
+          log('Artifact store refused a design-asset write:', cause)
           throw new ApiError(503, 'asset_store_unavailable',
             'the file store is not available; the design itself is unaffected',
-            { reason: cause.code })
+            {
+              reason: cause.code,
+              // Safe to hand back for this code alone: an ARTIFACT_OPERATION_FAILED
+              // message is the guard's own stderr, which is a fixed English
+              // string plus `strerror(errno)` and carries no path or user data.
+              // ARTIFACT_ROOT_INVALID's message embeds an fs error that does
+              // name the path, so it stays server-side.
+              ...(cause.code === 'ARTIFACT_OPERATION_FAILED'
+                ? { refusal: cause.message.slice(0, 200) }
+                : {}),
+            })
         }
         throw cause
       }
