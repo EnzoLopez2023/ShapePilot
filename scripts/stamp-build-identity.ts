@@ -7,6 +7,7 @@ const path = join(root, 'version.json')
 const identity = JSON.parse(readFileSync(path, 'utf8')) as BuildIdentity
 const commit = process.env.BUILD_SHA?.trim() ?? ''
 const build = process.env.BUILD_ID?.trim() ?? ''
+const buildNumber = process.env.BUILD_NUMBER?.trim() ?? ''
 const builtAt = process.env.BUILD_TIMESTAMP?.trim() ?? ''
 const clientId = process.env.VITE_AZURE_CLIENT_ID?.trim()
   || process.env.VITE_ENTRA_CLIENT_ID?.trim()
@@ -22,6 +23,11 @@ if (!/^[0-9a-f]{40}$/.test(commit)) {
 }
 if (!/^[0-9]+-[0-9]+$/.test(build)) {
   throw new Error('BUILD_ID must be <run-id>-<run-attempt>')
+}
+// The counter a person quotes, kept apart from BUILD_ID: that one has to be
+// unique per attempt to name an image, and a release number should not be.
+if (!/^[0-9]{1,9}$/.test(buildNumber)) {
+  throw new Error('BUILD_NUMBER must be a positive whole number')
 }
 const timestamp = new Date(builtAt)
 if (!Number.isFinite(timestamp.valueOf()) || timestamp.toISOString() !== builtAt) {
@@ -40,6 +46,7 @@ if (!/^api:\/\/[^/]+\/[A-Za-z0-9._-]+$/.test(apiScope)) {
 const stamped: BuildIdentity = {
   ...identity,
   build,
+  buildNumber,
   commit,
   builtAt,
 }

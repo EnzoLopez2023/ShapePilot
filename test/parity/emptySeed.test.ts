@@ -31,8 +31,9 @@ afterEach(() => {
 
 const identity: BuildIdentity = {
   app: 'shapepilot',
-  version: '0.1.0',
+  version: '2.5.3',
   build: '12345-1',
+  buildNumber: '4',
   commit: 'a'.repeat(40),
   builtAt: '2026-08-29T00:00:00.000Z',
   sourceLineage: {

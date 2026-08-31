@@ -19,6 +19,9 @@ WORKDIR /app
 
 ARG BUILD_SHA
 ARG BUILD_ID
+# The number a person says out loud. BUILD_ID stays the unique run identity that
+# names the image; this is the release counter shown in the app.
+ARG BUILD_NUMBER
 ARG BUILD_TIMESTAMP
 ARG VITE_AZURE_CLIENT_ID
 ARG VITE_AZURE_TENANT_ID

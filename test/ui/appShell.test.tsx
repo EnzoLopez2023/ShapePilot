@@ -29,7 +29,8 @@ const renderAt = (path: string, role: 'user' | 'admin' = 'user') => {
     }
     if (url.includes('/version.json')) {
       return new Response(JSON.stringify({
-        app: 'shapepilot', version: '0.1.0', build: '412', commit: 'a1b2c3d4e5f6',
+        app: 'shapepilot', version: '2.5.3', build: '33410527399-1', buildNumber: '4',
+        commit: 'a1b2c3d4e5f6',
       }), { status: 200, headers: { 'content-type': 'application/json' } })
     }
     return new Response(JSON.stringify({ ok: true }), {
@@ -149,7 +150,9 @@ test('the sidebar names the build that is running', async () => {
   renderAt('/keycap-tray')
   // Which build is live has to be answerable at a glance -- during a deploy it
   // is the difference between "the fix is not working" and "the fix is not there".
-  await waitFor(() => expect(screen.getByText('0.1.0 · build 412 · a1b2c3d')).toBeTruthy())
+  // The release counter, not the run identity: `build` is unique per attempt so
+  // an image tag names one build, which makes it useless to read aloud.
+  await waitFor(() => expect(screen.getByText('2.5.3 · build 4 · a1b2c3d')).toBeTruthy())
 })
 
 test('a build stamp that will not load is absent, not an error', async () => {

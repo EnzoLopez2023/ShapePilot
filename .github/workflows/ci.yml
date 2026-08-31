@@ -97,6 +97,7 @@ jobs:
       CONTAINER: shapepilot-ci-${{ github.run_id }}-${{ github.run_attempt }}
       VOLUME: shapepilot-ci-${{ github.run_id }}-${{ github.run_attempt }}
       BUILD_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+      BUILD_NUMBER: ${{ github.run_number }}
       TEST_TENANT_ID: 52188f12-db6b-46c6-88ff-08c802f0ed3b
       TEST_CLIENT_ID: 11112222-3333-4444-5555-666677778888
     steps:
@@ -114,6 +115,7 @@ jobs:
           docker build --pull \
             --build-arg "BUILD_SHA=$GITHUB_SHA" \
             --build-arg "BUILD_ID=$BUILD_ID" \
+            --build-arg "BUILD_NUMBER=$BUILD_NUMBER" \
             --build-arg "BUILD_TIMESTAMP=$commit_timestamp" \
             --build-arg "VITE_AZURE_CLIENT_ID=$TEST_CLIENT_ID" \
             --build-arg "VITE_AZURE_TENANT_ID=$TEST_TENANT_ID" \
@@ -240,6 +242,10 @@ jobs:
     if: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 180
+    env:
+      # The workflow run number that preceded build 1, so the release counter
+      # shown in the app reads 4 on the run after ShapePilot 2.5.3 was cut.
+      BUILD_NUMBER_BASELINE: 37
     permissions:
       contents: read
       id-token: write
@@ -688,6 +694,12 @@ jobs:
         run: |
           set -euo pipefail
           BUILD_ID="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          # The release counter shown in the app. Derived from the workflow's own
+          # monotonic run number rather than committed back to the repository:
+          # a job that can push to main is a far larger grant than a build
+          # number is worth, and this pipeline holds deploy credentials.
+          # BUILD_NUMBER_BASELINE is the run number that preceded build 1.
+          BUILD_NUMBER=$(( GITHUB_RUN_NUMBER - BUILD_NUMBER_BASELINE ))
           candidate_tag="$GITHUB_SHA-$BUILD_ID"
           candidate="$ACR_LOGIN_SERVER/$IMAGE_REPOSITORY:$candidate_tag"
           commit_timestamp="$(
@@ -713,6 +725,7 @@ jobs:
             --tag "$candidate" \
             --build-arg "BUILD_SHA=$GITHUB_SHA" \
             --build-arg "BUILD_ID=$BUILD_ID" \
+            --build-arg "BUILD_NUMBER=$BUILD_NUMBER" \
             --build-arg "BUILD_TIMESTAMP=$commit_timestamp" \
             --build-arg "VITE_AZURE_CLIENT_ID=$VITE_AZURE_CLIENT_ID" \
             --build-arg "VITE_AZURE_TENANT_ID=$VITE_AZURE_TENANT_ID" \

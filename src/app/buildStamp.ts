@@ -9,6 +9,8 @@ import { useEffect, useState } from 'react'
 
 export interface BuildStamp {
   version: string
+  /** The release counter a person quotes; `build` is the run that produced it. */
+  buildNumber?: string
   build: string
   /** Full commit sha; the UI shows the first seven. */
   commit: string
@@ -34,10 +36,13 @@ export function useBuildStamp(): BuildStamp | null {
   return stamp
 }
 
-/** `0.1.0 · build 412 · a1b2c3d`, or the parts that exist. */
+/** `2.5.3 · build 4 · a1b2c3d`, or the parts that exist. */
 export function formatBuildStamp(stamp: BuildStamp): string {
   const parts = [stamp.version]
-  if (stamp.build) parts.push(`build ${stamp.build}`)
+  // The release counter, not the run identity: `build` is unique per attempt so
+  // that an image tag names one build, which makes it unreadable out loud.
+  const counter = stamp.buildNumber || stamp.build
+  if (counter) parts.push(`build ${counter}`)
   // 'development' is what an unstamped local build carries; a sha is not.
   if (stamp.commit && stamp.commit !== 'development') parts.push(stamp.commit.slice(0, 7))
   else if (stamp.commit) parts.push(stamp.commit)
