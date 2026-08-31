@@ -19,6 +19,15 @@ adds three more, sharing one scene document so a design can move between them:
 - **AI Imagination Playground** — describe a part, get geometry, keep talking to
   refine it, then save it or hand it to either designer.
 
+Wave 3 adds **keycap projects**. A collection grows one set at a time and no two
+sets hold the same caps, so the set — not the tray — is what a person is
+actually working from. A project names one set, records what it contains as
+line items (a legend, a width in u, a count), holds photographs of it, and owns
+the trays cut for it. The assistant reads those photographs and *proposes* the
+inventory; it never writes one. The project then shows what is already placed
+across its trays against what the set holds, which is the question a half-cut
+set raises: what still needs a home.
+
 A person opens ShapePilot to lay something out, check whether the result can
 actually be printed or cut, and export a file their machine accepts. Everything
 downstream of that — geometry, validation, STL/3MF/SVG/DXF — happens in the
@@ -42,6 +51,12 @@ These hold regardless of what the product grows into.
   the CNC may be perfectly fine on the printer. Nothing is silently corrected.
 - **The mesh must be watertight.** A slicer that "repairs" a leaky mesh distorts
   the pockets. Non-manifold output is an error, not a warning.
+- **A keycap set is described once, per project.** Trays link to a project;
+  deleting a project unassigns its trays rather than destroying them, because
+  the design outlives the description of the caps it was cut for.
+- **The assistant proposes an inventory, it does not write one.** Reading a
+  photograph produces rows a person reviews and edits before anything is saved —
+  the same rule the design copilot ships under.
 - **One account owns a design.** `(tenant_id, oid)` is the only authorization
   key. Email and display name are for humans to read, never for the server to
   trust.
@@ -60,13 +75,14 @@ Named here so that their absence is a decision rather than an oversight.
 - Material and tooling profiles beyond the current fabrication fields. Machine
   profiles now exist for the printers and the Origin.
 - Server-side geometry, collaboration, multi-instance operation, and PostgreSQL.
-- **Imported files covered by backup.** They are stored server-side behind the
-  artifact store and travel between devices, but they are deliberately *not*
-  authoritative: the backup manifest describes one SQLite file, and an asset
-  that goes missing degrades to "re-attach this file" rather than breaking the
-  document. Making them first-class would mean a manifest that covers them,
-  verifies them on restore, and garbage-collects unreferenced ones. The
-  parametric document is the design; an imported mesh is a reference.
+- **Imported files and set photos covered by backup.** They are stored
+  server-side behind the artifact store and travel between devices, but they are
+  deliberately *not* authoritative: the backup manifest describes one SQLite
+  file, and an asset that goes missing degrades to "re-attach this file" rather
+  than breaking the document or the project. Making them first-class would mean
+  a manifest that covers them, verifies them on restore, and garbage-collects
+  unreferenced ones. The parametric document is the design; an imported mesh and
+  a photograph of a keycap set are both references.
 - Sketch constraints, fillets and chamfers, and boolean history editing beyond
   the group tree.
 - Slicing. ShapePilot exports a mesh; Bambu Studio slices it.

@@ -8,6 +8,7 @@ server stores design parameters and nothing else.
 
 | | |
 | --- | --- |
+| **Keycap Projects** | One keycap set per project: its cap inventory, photos of it read by the assistant, and the trays cut for it. |
 | **Keycap Tray Designer** | Lay out keycap pockets in a tray profile. STL, 3MF, SVG, DXF. |
 | **Shaper Designer** | 2D design for the Shaper Origin: shapes, text, the five Origin cut types. Imports SVG, DXF, STL. |
 | **Bambu Designer** | Tinkercad-style 3D modelling for the Bambu Lab X2D: solids and holes resolved by grouping, align, mirror. Imports STL, OBJ, 3MF, SVG. |

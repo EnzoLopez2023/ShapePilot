@@ -116,6 +116,8 @@ export interface PocketRecord {
 
 export interface TrayDesignRecord {
   id: string
+  /** The keycap project this tray is cut for, or null when it stands alone. */
+  projectId: string | null
   name: string
   notes?: string
   profile: { kind: TrayProfileKind } & Record<string, unknown>
@@ -131,6 +133,9 @@ export interface TrayDesignRecord {
 
 export interface TrayDesignSummary {
   id: string
+  projectId: string | null
+  /** Denormalised for the picker, which shows the project beside the tray. */
+  projectName: string | null
   name: string
   notes?: string
   profileKind: TrayProfileKind
@@ -142,6 +147,8 @@ export interface TrayDesignSummary {
 /** The write payload; matches what the client sends. */
 export interface TrayDesignInput {
   name: string
+  /** Null unassigns; undefined on update leaves the current link alone. */
+  projectId?: string | null
   notes?: string | null
   profile: { kind?: unknown } & Record<string, unknown>
   sizing?: unknown
@@ -189,7 +196,11 @@ export interface LibraryPocketInput {
 }
 
 export interface KeycapTrayRepository {
-  listDesigns(owner: Owner): Promise<TrayDesignSummary[]>
+  /**
+   * `projectId` filters: a string selects one project, `null` selects the
+   * unassigned trays, and omitting it returns everything.
+   */
+  listDesigns(owner: Owner, projectId?: string | null): Promise<TrayDesignSummary[]>
   getDesign(owner: Owner, id: string): Promise<TrayDesignRecord | null>
   createDesign(owner: Owner, input: TrayDesignInput): Promise<{ id: string }>
   updateDesign(owner: Owner, id: string, input: TrayDesignInput): Promise<boolean>
@@ -216,6 +227,126 @@ export class InvalidProfileError extends Error {
   }
 }
 
+
+
+// -- Keycap projects ----------------------------------------------------------
+// A project is one keycap set: what it holds, photographs of it, and the trays
+// cut for it. The set is stored as line items rather than a size histogram, so
+// the 1u(35) / 1.25u(5) breakdown is an aggregate the client derives and the
+// legends -- the part a photo actually shows -- survive.
+
+export type SetItemSource = 'manual' | 'photo'
+
+export const SET_ITEM_SOURCES: readonly SetItemSource[] = ['manual', 'photo']
+
+export interface SetItemRecord {
+  id: string
+  /** The cap's printed legend, when it has one. Blanks and modifiers may not. */
+  legend?: string
+  /** Cap width in u, the same vocabulary as a pocket. */
+  units: number
+  heightUnits: number
+  shape?: 'rect' | 'iso-enter'
+  /** How many identical caps this row stands for. */
+  count: number
+  /** 'Function keys', 'Numpad', 'Modifiers' -- free text, grouped in the UI. */
+  group?: string
+  color?: string
+  source: SetItemSource
+}
+
+export interface SetItemInput {
+  legend?: string | null
+  units: number
+  heightUnits?: number
+  shape?: 'rect' | 'iso-enter' | null
+  count?: number
+  group?: string | null
+  color?: string | null
+  source?: SetItemSource
+}
+
+export interface ProjectPhotoRecord {
+  hash: string
+  caption?: string
+  createdAt: string
+}
+
+export interface ProjectPhotoInput {
+  hash: string
+  caption?: string | null
+}
+
+/**
+ * How many pockets of each size the project's trays already hold. Computed in
+ * SQL rather than by reading every tray, and joined against the set items by
+ * the same `(units, heightUnits, shape)` key the client groups on.
+ */
+export interface CoverageRow {
+  units: number
+  heightUnits: number
+  shape: 'rect' | 'iso-enter' | null
+  pockets: number
+}
+
+export interface KeycapProjectRecord {
+  id: string
+  name: string
+  notes?: string
+  setName?: string
+  manufacturer?: string
+  /** Cherry, SA, DSA -- the cap sculpt, not the tray outline. */
+  capProfile?: string
+  colorway?: string
+  items: SetItemRecord[]
+  photos: ProjectPhotoRecord[]
+  coverage: CoverageRow[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface KeycapProjectSummary {
+  id: string
+  name: string
+  setName?: string
+  capProfile?: string
+  colorway?: string
+  /** Sum of `count` across the set items, not the number of rows. */
+  capCount: number
+  trayCount: number
+  photoCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface KeycapProjectInput {
+  name: string
+  notes?: string | null
+  setName?: string | null
+  manufacturer?: string | null
+  capProfile?: string | null
+  colorway?: string | null
+  /** Replaces the whole set on update, the way pockets replace on a tray. */
+  items?: SetItemInput[]
+}
+
+export interface KeycapProjectRepository {
+  list(owner: Owner): Promise<KeycapProjectSummary[]>
+  get(owner: Owner, id: string): Promise<KeycapProjectRecord | null>
+  create(owner: Owner, input: KeycapProjectInput): Promise<{ id: string }>
+  update(owner: Owner, id: string, input: KeycapProjectInput): Promise<boolean>
+  /** Cascades items and photos; the project's trays survive, unassigned. */
+  remove(owner: Owner, id: string): Promise<boolean>
+  addPhoto(owner: Owner, id: string, photo: ProjectPhotoInput): Promise<boolean>
+  removePhoto(owner: Owner, id: string, hash: string): Promise<boolean>
+}
+
+export class TooManyPhotosError extends Error {
+  constructor(limit: number) {
+    super(`a project holds at most ${limit} photos`)
+    this.name = 'TooManyPhotosError'
+  }
+}
 
 // -- Design documents ---------------------------------------------------------
 // Shared by the Shaper, Bambu and Playground sub-apps. The scene tree crosses
@@ -274,10 +405,26 @@ export interface DesignDocumentRepository {
 // owner has which content hash, so a lookup can be scoped by owner rather than
 // letting a hash act as a bearer token for anyone who guesses it.
 
-export type DesignAssetFormat = 'stl' | 'obj' | 'svg' | 'dxf' | '3mf'
+export type DesignAssetFormat =
+  | 'stl' | 'obj' | 'svg' | 'dxf' | '3mf'
+  | 'png' | 'jpeg' | 'webp'
 
 export const DESIGN_ASSET_FORMATS: readonly DesignAssetFormat[] =
-  ['stl', 'obj', 'svg', 'dxf', '3mf']
+  ['stl', 'obj', 'svg', 'dxf', '3mf', 'png', 'jpeg', 'webp']
+
+/**
+ * Reference photographs rather than geometry -- a picture of a keycap set,
+ * read by the assistant to propose that set's inventory. They live here rather
+ * than in a table of their own because everything that makes the asset store
+ * the right home for imported bytes is true of them too: content-addressed,
+ * owner-scoped, out of the backup manifest, and safe to lose. `importFile` in
+ * src/import/index.ts still refuses them; only the photo uploader offers them.
+ */
+export const IMAGE_ASSET_FORMATS: readonly DesignAssetFormat[] =
+  ['png', 'jpeg', 'webp']
+
+export const isImageAssetFormat = (format: string): format is DesignAssetFormat =>
+  (IMAGE_ASSET_FORMATS as readonly string[]).includes(format)
 
 export interface DesignAssetRecord {
   hash: string
@@ -306,6 +453,7 @@ export interface Repositories {
   settings: SettingsRepository
   audit: AuditRepository
   keycapTrays: KeycapTrayRepository
+  keycapProjects: KeycapProjectRepository
   designDocuments: DesignDocumentRepository
   designAssets: DesignAssetRepository
 }

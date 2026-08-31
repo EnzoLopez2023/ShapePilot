@@ -38,6 +38,7 @@ const POCKET_COLUMNS = `
 
 interface DesignRow {
   id: number | bigint
+  project_id: number | bigint | null
   name: string
   notes: string | null
   profile_kind: string
@@ -52,6 +53,7 @@ interface DesignRow {
 
 interface SummaryRow extends DesignRow {
   pocket_count: number
+  project_name: string | null
 }
 
 interface PocketRow {
@@ -103,6 +105,7 @@ const rowToPocket = (r: PocketRow): PocketRecord => ({
 
 const rowToDesign = (d: DesignRow, pockets: PocketRecord[]): TrayDesignRecord => ({
   id: String(d.id),
+  projectId: d.project_id === null ? null : String(d.project_id),
   name: d.name,
   notes: d.notes ?? undefined,
   profile: {
@@ -175,7 +178,7 @@ export function createKeycapTrayRepository(db: SqliteDatabase): KeycapTrayReposi
             @shape, @mirror_x)`)
 
   const selectOwnedDesign = db.prepare<[string, string, string], DesignRow>(`
-    SELECT id, name, notes, profile_kind, profile_json, sizing_json,
+    SELECT id, project_id, name, notes, profile_kind, profile_json, sizing_json,
            floor_mm, depth_mm, engrave_mm, created_at, updated_at
       FROM keycap_tray_designs
      WHERE owner_tenant_id = ? AND owner_oid = ? AND id = ?`)
@@ -185,9 +188,9 @@ export function createKeycapTrayRepository(db: SqliteDatabase): KeycapTrayReposi
 
   const insertDesign = db.prepare(`
     INSERT INTO keycap_tray_designs
-      (owner_tenant_id, owner_oid, name, notes, profile_kind, profile_json, sizing_json,
-       floor_mm, depth_mm, engrave_mm)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      (owner_tenant_id, owner_oid, project_id, name, notes, profile_kind, profile_json,
+       sizing_json, floor_mm, depth_mm, engrave_mm)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 
   const deletePockets = db.prepare('DELETE FROM keycap_tray_pockets WHERE design_id = ?')
 
@@ -199,7 +202,7 @@ export function createKeycapTrayRepository(db: SqliteDatabase): KeycapTrayReposi
   const createTx = db.transaction(
     (owner: Owner, input: TrayDesignInput, profile: { kind: string; json: string }) => {
       const info = insertDesign.run(
-        owner.tenantId, owner.oid,
+        owner.tenantId, owner.oid, input.projectId ?? null,
         input.name, input.notes ?? null, profile.kind, profile.json,
         JSON.stringify(input.sizing ?? {}),
         input.floorThicknessMm ?? 2.4, input.pocketDepthMm ?? 10, input.engraveDepthMm ?? 0.4)
@@ -219,12 +222,21 @@ export function createKeycapTrayRepository(db: SqliteDatabase): KeycapTrayReposi
         JSON.stringify(input.sizing ?? {}),
         input.floorThicknessMm ?? 2.4, input.pocketDepthMm ?? 10, input.engraveDepthMm ?? 0.4,
         owner.tenantId, owner.oid, id)
+      // Written separately so an absent `projectId` leaves the link untouched:
+      // the designer saves a tray without knowing which project owns it, and a
+      // default would silently unassign it on every save.
+      if (input.projectId !== undefined) {
+        db.prepare(`
+          UPDATE keycap_tray_designs SET project_id = ?
+           WHERE owner_tenant_id = ? AND owner_oid = ? AND id = ?`).run(
+          input.projectId, owner.tenantId, owner.oid, id)
+      }
       replacePockets(idOf(db, owner, id), input.pockets ?? [])
     })
 
   const cloneTx = db.transaction((owner: Owner, source: DesignRow, name: string) => {
     const info = insertDesign.run(
-      owner.tenantId, owner.oid,
+      owner.tenantId, owner.oid, source.project_id,
       name, source.notes, source.profile_kind, source.profile_json, source.sizing_json,
       source.floor_mm, source.depth_mm, source.engrave_mm)
     db.prepare(`
@@ -235,16 +247,28 @@ export function createKeycapTrayRepository(db: SqliteDatabase): KeycapTrayReposi
   })
 
   return {
-    async listDesigns(owner) {
-      const rows = db.prepare<[string, string], SummaryRow>(`
-        SELECT d.*, COUNT(p.id) AS pocket_count
+    async listDesigns(owner, projectId) {
+      // Three filters, one statement each rather than a built-up string: the
+      // SQL a route runs should be readable in full at the point it is written.
+      const filter = projectId === undefined
+        ? ''
+        : projectId === null
+          ? 'AND d.project_id IS NULL'
+          : 'AND d.project_id = ?'
+      const params: (string | null)[] = [owner.tenantId, owner.oid]
+      if (typeof projectId === 'string') params.push(projectId)
+      const rows = db.prepare<(string | null)[], SummaryRow>(`
+        SELECT d.*, COUNT(p.id) AS pocket_count, k.name AS project_name
           FROM keycap_tray_designs d
           LEFT JOIN keycap_tray_pockets p ON p.design_id = d.id
-         WHERE d.owner_tenant_id = ? AND d.owner_oid = ?
+          LEFT JOIN keycap_projects k ON k.id = d.project_id
+         WHERE d.owner_tenant_id = ? AND d.owner_oid = ? ${filter}
          GROUP BY d.id
-         ORDER BY d.updated_at DESC`).all(owner.tenantId, owner.oid)
+         ORDER BY d.updated_at DESC`).all(...params)
       return rows.map((r): TrayDesignSummary => ({
         id: String(r.id),
+        projectId: r.project_id === null ? null : String(r.project_id),
+        projectName: r.project_name,
         name: r.name,
         notes: r.notes ?? undefined,
         profileKind: r.profile_kind as TrayProfileKind,

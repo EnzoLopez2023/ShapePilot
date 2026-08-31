@@ -3,6 +3,7 @@ import type { Repositories } from './contracts.ts'
 import { createAuditRepository } from './audit.ts'
 import { createDesignAssetRepository } from './designAssets.ts'
 import { createDesignDocumentRepository } from './designDocuments.ts'
+import { createKeycapProjectRepository } from './keycapProjects.ts'
 import { createKeycapTrayRepository } from './keycapTrays.ts'
 import { createMembershipRepository } from './memberships.ts'
 import { createSettingsRepository } from './settings.ts'
@@ -13,6 +14,7 @@ export const createRepositories = (database: AppDatabase): Repositories => ({
   settings: createSettingsRepository(database.handle),
   audit: createAuditRepository(database.handle),
   keycapTrays: createKeycapTrayRepository(database.handle),
+  keycapProjects: createKeycapProjectRepository(database.handle),
   designDocuments: createDesignDocumentRepository(database.handle),
   designAssets: createDesignAssetRepository(database.handle),
 })

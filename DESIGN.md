@@ -273,6 +273,30 @@ base ring, local coords, origin (0,0), bbox w0×h0   (w0,h0 = UN-rotated extents
   `mesh.test.ts`). Hardening the T-junction epsilons for non-axis-aligned
   geometry is follow-up work.
 
+## Keycap projects
+
+- **A project page is not a workbench.** DESIGN.md records the
+  `220px / 1fr / 312px` grid for a canvas with panels either side of it.
+  `ProjectPage` has no canvas, so it uses two columns —
+  `minmax(0, 1fr) 360px`, gap `1.5` — with the set and its trays on the left
+  and photographs on the right. This is the same departure the Playground
+  already makes, for the same reason.
+- **The set is edited as rows and read as a breakdown.** `SetItemsTable` edits
+  line items; `SetSummary` shows the aggregate. Neither computes the other:
+  `model/summary.ts` owns the arithmetic and is tested on its own.
+- **Rows are grouped for reading, never reordered while typing.**
+  `groupItems` keeps the order groups first appear, so an edit lands on the row
+  under the cursor.
+- **A quantity can be emptied.** Clamping on every keystroke makes a number
+  field impossible to retype, so `QuantityField` holds its own text and commits
+  only a value that parses, falling back on blur.
+- **A pocket with no cap behind it is spare, not negative.** Coverage that
+  exceeds the inventory reads as "spare pockets" rather than a negative
+  remainder, because it is a real state worth seeing.
+- **The assistant proposes an inventory; the person applies it.** A reading is
+  reviewed in a dialog, applied to the draft, and only saved by Save — the same
+  rule as the design copilot. Rows it produced are marked until they are edited.
+
 ## Named rules
 
 - **One hairline, one radius, one accent.** BORDER=1, RADIUS=14 (iOS squircle),

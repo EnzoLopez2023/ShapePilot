@@ -6,6 +6,7 @@ import type { SvgIconComponent } from '@mui/icons-material'
 import MenuRoundedIcon from '@mui/icons-material/MenuRounded'
 import MenuOpenRoundedIcon from '@mui/icons-material/MenuOpenRounded'
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded'
+import FolderRoundedIcon from '@mui/icons-material/FolderRounded'
 import ArchitectureRoundedIcon from '@mui/icons-material/ArchitectureRounded'
 import ViewInArRoundedIcon from '@mui/icons-material/ViewInArRounded'
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
@@ -22,6 +23,7 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
+  { to: '/projects', label: 'Projects', icon: FolderRoundedIcon },
   { to: '/keycap-tray', label: 'Keycap tray', icon: GridViewRoundedIcon },
   { to: '/shaper-designer', label: 'Shaper designer', icon: ArchitectureRoundedIcon },
   { to: '/bambu-designer', label: 'Bambu designer', icon: ViewInArRoundedIcon },

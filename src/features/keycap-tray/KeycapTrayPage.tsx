@@ -1,6 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom'
 import {
-  Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent,
+  Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent,
   DialogTitle, IconButton, MenuItem, Paper, Snackbar, Stack, TextField, ToggleButton,
   ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material'
@@ -26,6 +27,7 @@ import ExportPanel from './components/ExportPanel.tsx'
 import HoverTooltip from '../../components/HoverTooltip.tsx'
 import { useConfirm } from '../../components/ConfirmDialogProvider.tsx'
 import { EmptyState, LoadingState } from '../../components/LoadingState.tsx'
+import { formatUpdated } from '../keycap-projects/model/formatUpdated.ts'
 
 type Mode = '2d' | '3d'
 
@@ -45,6 +47,8 @@ const BUFFER_STEPS_MM = [1, 1.5, 1.8, 2, 2.5, 3, 3.5, 4, 5, 6, 8, 10]
 
 export default function KeycapTrayPage() {
   const confirm = useConfirm()
+  const { designId } = useParams()
+  const navigate = useNavigate()
   const d = useTrayDesign()
   const { design, selection } = d
 
@@ -87,6 +91,10 @@ export default function KeycapTrayPage() {
 
   useEffect(() => { void refresh() }, [refresh])
 
+  // The project the open tray belongs to, taken from the list rather than
+  // fetched: the summary already carries it, and one request is enough.
+  const project = designs.find(s => s.id === savedId)
+
   const selectedPockets = useMemo(
     () => design.pockets.filter(p => selection.has(p.id)), [design.pockets, selection])
 
@@ -121,12 +129,22 @@ export default function KeycapTrayPage() {
       setSavedRevision(0)
       setOpenDialog(false)
       setFitToken(t => t + 1)
+      // Guarded, so the effect that loads *from* the URL does not push a
+      // duplicate history entry on its way back here.
+      if (designId !== id) navigate(`/keycap-tray/${id}`)
     } catch (e) {
       if (generation === loadGeneration.current) setError((e as Error).message)
     } finally {
       if (generation === loadGeneration.current) setBusy(false)
     }
-  }, [d])
+  }, [d, designId, navigate])
+
+  // The URL is the source of truth for which tray is open, so a link from a
+  // project, a reload and the back button all land on the same design.
+  useEffect(() => {
+    if (!designId || designId === savedId) return
+    void load(designId)
+  }, [designId, savedId, load])
 
   const clone = useCallback(async () => {
     if (!savedId) { setError('Save the design before cloning it.'); return }
@@ -153,11 +171,12 @@ export default function KeycapTrayPage() {
         d.setDesign(emptyDesign())
         setSavedId(null)
         setSavedRevision(null)
+        if (designId) navigate('/keycap-tray')
       }
       await refresh()
       setToast('Deleted')
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
-  }, [savedId, d, refresh, confirm])
+  }, [savedId, d, refresh, confirm, designId, navigate])
 
   // Delete / undo / redo while the canvas has focus.
   useEffect(() => {
@@ -217,6 +236,17 @@ export default function KeycapTrayPage() {
           >
             {design.name}
           </Typography>
+
+          {project?.projectId && project.projectName && (
+            <Chip
+              size="small"
+              component={RouterLink}
+              to={`/projects/${project.projectId}`}
+              clickable
+              label={project.projectName}
+              sx={{ maxWidth: 180 }}
+            />
+          )}
 
           <ToggleButtonGroup
             exclusive size="small" value={view} onChange={(_e, v) => v && setView(v)}
@@ -325,6 +355,7 @@ export default function KeycapTrayPage() {
                 d.setDesign(emptyDesign())
                 setSavedId(null)
                 setSavedRevision(null)
+                if (designId) navigate('/keycap-tray')
               }}
             >
               New
@@ -437,7 +468,8 @@ export default function KeycapTrayPage() {
               <Box sx={{ flex: 1, minWidth: 0 }}>
                 <Typography sx={{ fontWeight: 600 }}>{s.name}</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  {s.pocketCount} pockets · updated {s.updatedAt}
+                  {s.projectName && `${s.projectName} · `}
+                  {s.pocketCount} pockets · updated {formatUpdated(s.updatedAt)}
                 </Typography>
               </Box>
               <Button size="small" disabled={busy} onClick={() => void load(s.id)}>Open</Button>

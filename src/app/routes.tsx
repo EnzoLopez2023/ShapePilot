@@ -9,6 +9,8 @@ import { LoadingState } from '../components/LoadingState.tsx'
 // Real URL routing with lazy feature boundaries. There is no global conditional
 // view switch: each section is its own route and its own chunk.
 const KeycapTrayPage = lazy(() => import('../features/keycap-tray/KeycapTrayPage.tsx'))
+const ProjectsPage = lazy(() => import('../features/keycap-projects/ProjectsPage.tsx'))
+const ProjectPage = lazy(() => import('../features/keycap-projects/ProjectPage.tsx'))
 const ShaperDesignerPage = lazy(() => import('../features/shaper-designer/ShaperDesignerPage.tsx'))
 const BambuDesignerPage = lazy(() => import('../features/bambu-designer/BambuDesignerPage.tsx'))
 const PlaygroundPage = lazy(() => import('../features/playground/PlaygroundPage.tsx'))
@@ -43,6 +45,35 @@ export function AppRoutes() {
                   <KeycapTrayPage />
                 </Suspense>
               </Box>
+            }
+          />
+          {/* The designer addresses one saved tray, so a project can link
+              straight to it and the back button works. The bare path is still
+              the scratch designer. */}
+          <Route
+            path="/keycap-tray/:designId"
+            element={
+              <Box sx={{ flex: 1, minHeight: 0 }}>
+                <Suspense fallback={<LoadingState label="Loading the designer…" />}>
+                  <KeycapTrayPage />
+                </Suspense>
+              </Box>
+            }
+          />
+          <Route
+            path="/projects"
+            element={
+              <Suspense fallback={<LoadingState label="Loading your projects…" />}>
+                <ProjectsPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/projects/:projectId"
+            element={
+              <Suspense fallback={<LoadingState label="Loading the project…" />}>
+                <ProjectPage />
+              </Suspense>
             }
           />
           <Route

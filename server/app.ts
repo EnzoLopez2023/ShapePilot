@@ -25,6 +25,7 @@ import { createFilesystemArtifactStore } from '../lib/recovery/artifactStore.ts'
 import { createDesignAssetRouter } from './routes/designAssets.ts'
 import { createDesignDocumentRouter } from './routes/designDocuments.ts'
 import { createHealthRouter } from './routes/health.ts'
+import { createKeycapProjectRouter } from './routes/keycapProjects.ts'
 import { createKeycapTrayRouter } from './routes/keycapTrays.ts'
 import { createSettingsRouter } from './routes/settings.ts'
 import { createVersionRouter } from './routes/version.ts'
@@ -111,15 +112,16 @@ export function createApp(options: CreateAppOptions): Express {
   const adminOnly = requireRole('admin', repos.memberships)
 
   app.use('/api/keycap-trays', authenticated, createKeycapTrayRouter(repos))
+  app.use('/api/keycap-projects', authenticated, createKeycapProjectRouter(repos))
   app.use('/api/design-documents', authenticated, createDesignDocumentRouter(repos))
   // Asset bytes never touch express.json, which only parses application/json;
   // an octet-stream body passes straight through to this route's own raw
   // parser, which has its own much larger limit.
-  app.use('/api/design-assets', authenticated, createDesignAssetRouter({
-    repos,
-    store: assetStore(options.assetStore, config.assetStoreDir),
-  }))
-  app.use('/api/ai', authenticated, createAiRouter({ repos, client: aiClient }))
+  // One memoized store for both routes that need one, so a test injecting a
+  // temporary directory reaches the assistant's photo reads as well.
+  const store = assetStore(options.assetStore, config.assetStoreDir)
+  app.use('/api/design-assets', authenticated, createDesignAssetRouter({ repos, store }))
+  app.use('/api/ai', authenticated, createAiRouter({ repos, client: aiClient, store }))
   app.use('/api/settings', authenticated, createSettingsRouter(repos))
   app.use('/api/audit', authenticated, createAuditRouter(repos))
   app.use('/api/admin/audit', authenticated, adminOnly, createAuditAdminRouter(repos))

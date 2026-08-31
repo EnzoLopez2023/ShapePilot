@@ -232,6 +232,85 @@ export const DESIGN_ASSET_STATEMENTS: readonly string[] = [
   ON design_assets (owner_tenant_id, owner_oid, hash)`,
 ]
 
+/**
+ * Keycap projects: one keycap set, the caps it holds, photos of it, and the
+ * trays cut for it.
+ *
+ * A project is the level at which a *set* is described, because that is the
+ * level at which sets differ: two Systainer trays cut for the same set share
+ * one inventory, and the same tray outline cut for a different set does not.
+ *
+ * `keycap_set_items` is one row per distinct cap rather than a size histogram.
+ * The 1u(35) / 1.25u(5) breakdown a person wants to read is an aggregate over
+ * these rows, and storing the aggregate instead would throw away the legends --
+ * which are the part a photo actually shows, and the part that can later seed a
+ * pocket label.
+ *
+ * `keycap_project_photos.hash` names a row in `design_assets` but is
+ * deliberately NOT a foreign key into it. Assets are non-authoritative (see
+ * docs/ARCHITECTURE.md, "The artifact-store boundary"): the route proves the
+ * hash is owned at write time, and a photo whose bytes have gone missing
+ * degrades to "re-attach this file" rather than making the project unreadable.
+ */
+export const KEYCAP_PROJECT_STATEMENTS: readonly string[] = [
+  `CREATE TABLE keycap_projects (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_tenant_id TEXT    NOT NULL,
+  owner_oid       TEXT    NOT NULL,
+  name            TEXT    NOT NULL,
+  notes           TEXT,
+  set_name        TEXT,
+  manufacturer    TEXT,
+  cap_profile     TEXT,
+  colorway        TEXT,
+  created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+)`,
+  `CREATE INDEX idx_keycap_projects_owner
+  ON keycap_projects (owner_tenant_id, owner_oid, updated_at DESC)`,
+
+  // Items inherit ownership through project_id, exactly as pockets do through
+  // design_id. `cap_count` rather than `count`: the latter is a SQL function
+  // name and reads as one in every query that touches it.
+  `CREATE TABLE keycap_set_items (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id   INTEGER NOT NULL REFERENCES keycap_projects (id) ON DELETE CASCADE,
+  legend       TEXT,
+  units        REAL    NOT NULL DEFAULT 1,
+  height_units REAL    NOT NULL DEFAULT 1,
+  shape        TEXT,
+  cap_count    INTEGER NOT NULL DEFAULT 1,
+  group_name   TEXT,
+  color        TEXT,
+  source       TEXT    NOT NULL DEFAULT 'manual',
+  sort_order   INTEGER NOT NULL DEFAULT 0
+)`,
+  `CREATE INDEX idx_keycap_set_items_project
+  ON keycap_set_items (project_id, sort_order)`,
+
+  `CREATE TABLE keycap_project_photos (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id INTEGER NOT NULL REFERENCES keycap_projects (id) ON DELETE CASCADE,
+  hash       TEXT    NOT NULL,
+  caption    TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT    NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (project_id, hash)
+)`,
+
+  // A tray belongs to at most one project, so this is a column rather than a
+  // join table. SQLite allows ADD COLUMN to carry a REFERENCES clause only when
+  // the default is NULL -- which is also the migration behaviour wanted here:
+  // every tray that already exists lands unassigned.
+  //
+  // ON DELETE SET NULL, not CASCADE: deleting the description of a keycap set
+  // must never destroy the designs cut for it.
+  `ALTER TABLE keycap_tray_designs
+  ADD COLUMN project_id INTEGER REFERENCES keycap_projects (id) ON DELETE SET NULL`,
+  `CREATE INDEX idx_keycap_designs_project
+  ON keycap_tray_designs (project_id, updated_at DESC)`,
+]
+
 /** Tables ShapePilot owns and reconciles. Order is the reconciliation order. */
 export const OWNED_LEGACY_TABLES = [
   'keycap_tray_designs',

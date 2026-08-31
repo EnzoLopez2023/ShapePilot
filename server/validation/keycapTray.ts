@@ -499,9 +499,26 @@ function validatePockets(value: unknown, sizing: PocketSizing): PocketInput[] | 
 // -- entry points -------------------------------------------------------------
 
 const DESIGN_KEYS = [
-  'name', 'notes', 'profile', 'sizing', 'floorThicknessMm', 'pocketDepthMm',
+  'name', 'projectId', 'notes', 'profile', 'sizing', 'floorThicknessMm', 'pocketDepthMm',
   'engraveDepthMm', 'pockets',
 ] as const
+
+/** Row ids are integers in SQLite and strings on the wire. */
+const ROW_ID = /^[0-9]{1,19}$/
+
+/**
+ * Three distinct meanings, all of them wanted:
+ *   * absent   -- leave the tray's project link exactly as it is
+ *   * `null`   -- unassign it
+ *   * an id    -- link it, once the route has proved the caller owns that project
+ */
+function validateProjectId(value: unknown): string | null | undefined {
+  if (value === undefined) return undefined
+  if (value === null) return null
+  const id = requireString(value, 'projectId', 19)
+  if (!ROW_ID.test(id)) bad('projectId', 'projectId must be a project id')
+  return id
+}
 
 /**
  * Validate a create or update body completely. Field order matters: `name` and
@@ -535,8 +552,11 @@ export function validateTrayDesignInput(value: unknown): TrayDesignInput {
 
   const pockets = validatePockets(body.pockets, sizing.effective)
 
+  const projectId = validateProjectId(body.projectId)
+
   // Rebuilt rather than passed through, so nothing unvalidated survives.
   const input: TrayDesignInput = { name, profile }
+  if (projectId !== undefined) input.projectId = projectId
   if (notes !== undefined) input.notes = notes
   if (sizing.stored !== undefined) input.sizing = sizing.stored
   if (floorThicknessMm !== undefined) input.floorThicknessMm = floorThicknessMm

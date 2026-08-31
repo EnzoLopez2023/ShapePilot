@@ -2,6 +2,15 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "api",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "NODE_ENV=development SHAPEPILOT_DEV_AUTH=1 SHAPEPILOT_ENTRA_TENANT_ID=52188f12-db6b-46c6-88ff-08c802f0ed3b SHAPEPILOT_API_AUDIENCE=api://shapepilot-dev exec node --watch server/index.ts"
+      ],
+      "port": 8080
+    },
+    {
       "name": "landing-preview",
       "runtimeExecutable": "npx",
       "runtimeArgs": [

@@ -7,6 +7,7 @@ import assert from 'node:assert/strict'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { act, cleanup, render, renderHook, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import KeycapTrayPage from '../../src/features/keycap-tray/KeycapTrayPage.tsx'
 import { useTrayDesign, pocketExtent, pocketAABB } from '../../src/features/keycap-tray/state/useTrayDesign.ts'
 import { PYTHON_SIZING } from '../../src/features/keycap-tray/geometry/shapes.ts'
@@ -112,9 +113,19 @@ function installFetchStub() {
   })
 }
 
-const renderPage = (ui: ReactElement = <KeycapTrayPage />) => render(
+/** The designer reads the open tray's id out of the URL, so it needs a router
+ *  even when the test is only about the canvas. */
+const renderPage = (ui: ReactElement = <KeycapTrayPage />, route = '/keycap-tray') => render(
   <ThemeModeProvider initialPreference="light">
-    <ConfirmDialogProvider>{ui}</ConfirmDialogProvider>
+    <ConfirmDialogProvider>
+      <MemoryRouter initialEntries={[route]}>
+        <Routes>
+          <Route path="/keycap-tray" element={ui} />
+          <Route path="/keycap-tray/:designId" element={ui} />
+          <Route path="*" element={ui} />
+        </Routes>
+      </MemoryRouter>
+    </ConfirmDialogProvider>
   </ThemeModeProvider>,
 )
 

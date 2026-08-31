@@ -6,9 +6,14 @@
 // bad answer from the model becomes a typed error rather than reaching the
 // browser.
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterAll, beforeAll, describe, test } from 'vitest'
 import { startTestServer, stubVerifier, validClaims } from '../helpers/server.ts'
 import type { TestServer } from '../helpers/server.ts'
+import { createFilesystemArtifactStore } from '../../lib/recovery/artifactStore.ts'
 import type { FoundryClient, FoundryRequest } from '../../server/ai/foundryClient.ts'
 
 const TOKEN = 'owner-token'
@@ -40,6 +45,16 @@ function stubClient(text: string, recorded: Recorded[] = []): FoundryClient {
 
 const answer = (over: Record<string, unknown> = {}) =>
   JSON.stringify({ ...validProgram, notes: 'made a box', ...over })
+
+/** `input` is a plain string for /shape and structured content for /keycap-set;
+ *  the assertions below only care about the text that reached the model. */
+const textOf = (request: FoundryRequest): string =>
+  typeof request.input === 'string'
+    ? request.input
+    : request.input
+      .flatMap(m => m.content)
+      .map(c => (c.type === 'input_text' ? c.text : `[image ${c.image_url.slice(0, 30)}]`))
+      .join('\n')
 
 describe('ai routes', () => {
   let server: TestServer
@@ -85,8 +100,8 @@ describe('ai routes', () => {
     await post({ prompt: 'add a hole', program: validProgram })
     assert.match(recorded[0].request.instructions, /MODIFYING an existing program/)
     // The current program must reach the model, or an edit cannot be targeted.
-    assert.match(recorded[0].request.input, /Current program/)
-    assert.match(recorded[0].request.input, /"id":"body"/)
+    assert.match(textOf(recorded[0].request), /Current program/)
+    assert.match(textOf(recorded[0].request), /"id":"body"/)
   })
 
   test('the bambu context names the machine it is designing for', async () => {
@@ -100,7 +115,7 @@ describe('ai routes', () => {
     recorded.length = 0
     const history = Array.from({ length: 40 }, (_, i) => ({ role: 'user', text: `turn ${i}` }))
     await post({ prompt: 'continue', history })
-    const input = recorded[0].request.input
+    const input = textOf(recorded[0].request)
     assert.match(input, /turn 39/)
     // Only the last 20 turns are sent; the design state itself rides in the
     // program, not the transcript.
@@ -221,5 +236,184 @@ describe('ai routes when Foundry is not configured', () => {
     })
     assert.equal(res.status, 503)
     assert.equal(res.body.error.code, 'ai_unavailable')
+  })
+})
+
+
+describe('reading a keycap set out of photographs', () => {
+  const KEYCAP = `${BASE}/keycap-set`
+  const PHOTO = Buffer.from('pretend this is a jpeg; the route never decodes it')
+  const PHOTO_HASH = createHash('sha256').update(PHOTO).digest('hex')
+  const STL = Buffer.from('solid x\nendsolid\n')
+  const STL_HASH = createHash('sha256').update(STL).digest('hex')
+
+  const validSet = {
+    setName: 'Olivia', manufacturer: 'GMK', capProfile: 'Cherry', colorway: 'grey and tan',
+    notes: 'The bottom row was partly out of frame.',
+    items: [
+      { legend: 'Esc', units: 1, count: 1, group: 'Modifiers' },
+      { units: 1, count: 34, group: 'Alphas' },
+      { legend: 'Space', units: 6.25, count: 1 },
+    ],
+  }
+
+  let server: TestServer
+  let root: string
+  const seen: Recorded[] = []
+
+  const startWith = async (text: string) => {
+    root = mkdtempSync(join(tmpdir(), 'shapepilot-ai-photos-'))
+    server = await startTestServer({
+      label: `ai-photos-${Math.random().toString(36).slice(2, 8)}`,
+      verifier: stubVerifier({ [TOKEN]: validClaims() }),
+      aiClient: stubClient(text, seen),
+      assetStore: createFilesystemArtifactStore(root),
+    })
+  }
+
+  const stop = async () => {
+    await server.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+
+  const upload = (bytes: Buffer, hash: string, format: string, name: string) =>
+    fetch(`${server.baseUrl}/api/design-assets/${hash}?filename=${name}&format=${format}`, {
+      method: 'PUT',
+      headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/octet-stream' },
+      body: new Uint8Array(bytes),
+    })
+
+  const read = (body: unknown) =>
+    server.fetchJson<Record<string, unknown>>(KEYCAP, {
+      method: 'POST', token: TOKEN, body: JSON.stringify(body),
+    })
+
+  test('photos reach the model as images and come back as a proposal', async () => {
+    await startWith(JSON.stringify(validSet))
+    try {
+      seen.length = 0
+      await upload(PHOTO, PHOTO_HASH, 'jpeg', 'set.jpg')
+
+      const res = await read({ hashes: [PHOTO_HASH], hint: 'base kit only' })
+      assert.equal(res.status, 200)
+
+      const set = res.body.set as { setName: string; items: { source: string }[] }
+      assert.equal(set.setName, 'Olivia')
+      assert.equal(set.items.length, 3)
+      // Marked as read from a photo, so the editor can show which rows are the
+      // model's and which the person has since touched.
+      assert.ok(set.items.every(i => i.source === 'photo'))
+      assert.equal(res.body.notes, 'The bottom row was partly out of frame.')
+      assert.deepEqual(res.body.usage, { inputTokens: 10, outputTokens: 20, totalTokens: 30 })
+
+      // The bytes went as an image, not as text, and the hint travelled with them.
+      const input = seen[0].request.input
+      assert.ok(Array.isArray(input), 'a photo turn must use structured content')
+      const parts = input.flatMap(m => m.content)
+      assert.equal(parts.filter(p => p.type === 'input_image').length, 1)
+      const image = parts.find(p => p.type === 'input_image')
+      assert.match(image!.image_url, /^data:image\/jpeg;base64,/)
+      assert.match(textOf(seen[0].request), /base kit only/)
+    } finally { await stop() }
+  })
+
+  test('a photo is only readable by the account that uploaded it', async () => {
+    await startWith(JSON.stringify(validSet))
+    try {
+      // Never uploaded at all: metadata is owner-scoped, so an unknown hash and
+      // someone else's hash are the same answer.
+      const res = await read({ hashes: ['a'.repeat(64)] })
+      assert.equal(res.status, 404)
+    } finally { await stop() }
+  })
+
+  test('geometry is not a photograph', async () => {
+    await startWith(JSON.stringify(validSet))
+    try {
+      await upload(STL, STL_HASH, 'stl', 'part.stl')
+      const res = await read({ hashes: [STL_HASH] })
+      assert.equal(res.status, 400)
+      assert.match((res.body.error as { message: string }).message, /not an image/)
+    } finally { await stop() }
+  })
+
+  test('a malformed request is a typed 400 naming the field', async () => {
+    await startWith(JSON.stringify(validSet))
+    try {
+      const cases: [unknown, string][] = [
+        [{}, 'hashes'],
+        [{ hashes: [] }, 'hashes'],
+        [{ hashes: ['nope'] }, 'hashes'],
+        [{ hashes: Array.from({ length: 7 }, (_, i) => String(i).repeat(64).slice(0, 64)) },
+          'hashes'],
+        [{ hashes: ['a'.repeat(64)], hint: 'x'.repeat(600) }, 'hint'],
+        [{ hashes: ['a'.repeat(64)], rogue: 1 }, 'body'],
+      ]
+      for (const [body, field] of cases) {
+        const res = await read(body)
+        assert.equal(res.status, 400, `expected 400 for ${field}`)
+        assert.equal((res.body.error as { details?: { field?: string } }).details?.field, field)
+      }
+    } finally { await stop() }
+  })
+
+  test('the same photo twice is sent once', async () => {
+    await startWith(JSON.stringify(validSet))
+    try {
+      seen.length = 0
+      await upload(PHOTO, PHOTO_HASH, 'jpeg', 'set.jpg')
+      await read({ hashes: [PHOTO_HASH, PHOTO_HASH] })
+      const input = seen[0].request.input
+      assert.ok(Array.isArray(input))
+      assert.equal(input.flatMap(m => m.content).filter(p => p.type === 'input_image').length, 1)
+    } finally { await stop() }
+  })
+
+  test('photo reading has its own, much smaller rate limit', async () => {
+    await startWith(JSON.stringify(validSet))
+    try {
+      await upload(PHOTO, PHOTO_HASH, 'jpeg', 'set.jpg')
+      const statuses: number[] = []
+      for (let i = 0; i < 12; i++) {
+        statuses.push((await read({ hashes: [PHOTO_HASH] })).status)
+      }
+      const limited = statuses.indexOf(429)
+      // Six per minute, well inside the twenty a text turn is allowed.
+      assert.equal(limited, 6)
+    } finally { await stop() }
+  })
+
+  test('non-JSON from the model is a typed 502, not a crash', async () => {
+    await startWith('this is not json')
+    try {
+      await upload(PHOTO, PHOTO_HASH, 'jpeg', 'set.jpg')
+      const res = await read({ hashes: [PHOTO_HASH] })
+      assert.equal(res.status, 502)
+      assert.equal((res.body.error as { code: string }).code, 'ai_malformed')
+    } finally { await stop() }
+  })
+
+  test('a well-formed but impossible inventory is refused, not passed on', async () => {
+    // A 6.25u Escape key is valid JSON and valid against the schema. The same
+    // validator the PUT route runs is what catches it.
+    await startWith(JSON.stringify({
+      notes: '', items: [{ legend: 'Esc', units: 1.3, count: 1 }],
+    }))
+    try {
+      await upload(PHOTO, PHOTO_HASH, 'jpeg', 'set.jpg')
+      const res = await read({ hashes: [PHOTO_HASH] })
+      assert.equal(res.status, 502)
+      assert.equal((res.body.error as { code: string }).code, 'ai_invalid_set')
+    } finally { await stop() }
+  })
+
+  test('the route requires authentication', async () => {
+    await startWith(JSON.stringify(validSet))
+    try {
+      const res = await server.fetchJson(KEYCAP, {
+        method: 'POST', body: JSON.stringify({ hashes: ['a'.repeat(64)] }),
+      })
+      assert.equal(res.status, 401)
+    } finally { await stop() }
   })
 })
