@@ -619,6 +619,21 @@ describe('validation the wire cannot express', () => {
     assert.deepEqual(validateCloneRequest({ name: 'Copy' }), { name: 'Copy' })
   })
 
+  test('a clone may name a destination project, or null to unassign the copy', () => {
+    assert.deepEqual(validateCloneRequest({ projectId: '42' }), { projectId: '42' })
+    assert.deepEqual(validateCloneRequest({ projectId: null }), { projectId: null })
+    assert.deepEqual(
+      validateCloneRequest({ name: 'Copy', projectId: '42' }), { name: 'Copy', projectId: '42' })
+    assert.throws(
+      () => validateCloneRequest({ projectId: 'not-an-id' }),
+      (error: unknown) => error instanceof ApiError
+        && (error.details as { field?: string }).field === 'projectId')
+    assert.throws(
+      () => validateCloneRequest({ rename: 'x' }),
+      (error: unknown) => error instanceof ApiError
+        && (error.details as { field?: string }).field === 'body.rename')
+  })
+
   test('the accepted preset ids are exactly the ones the client ships', () => {
     // Read as text rather than imported: the browser bundle and the server are
     // separate TypeScript projects, and this file is in the server one.

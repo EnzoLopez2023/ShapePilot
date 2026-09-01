@@ -148,8 +148,12 @@ export function createKeycapTrayRouter(repos: Repositories): Router {
   router.post('/:id/clone', asyncRoute(async (req, res) => {
     const owner = ownerOf(req)
     const requested = validateCloneRequest(req.body ?? {})
+    // A copy dropped into another project may only land in one the caller owns,
+    // for the same reason a design write is checked: the foreign key proves the
+    // project exists, not whose it is.
+    await requireOwnedProject(owner, requested.projectId ?? undefined)
     const created = await keycapTrays.cloneDesign(
-      owner, pathId(req.params.id), requested.name)
+      owner, pathId(req.params.id), requested.name, requested.projectId)
     if (!created) throw ApiError.notFound('design not found')
     note(req, owner, 'design_cloned', created.id)
     res.status(201).json(created)

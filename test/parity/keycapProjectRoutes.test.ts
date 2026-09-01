@@ -267,6 +267,46 @@ describe('keycap project routes', () => {
     assert.equal(unassigned.body.find(t => t.id === loose.body.id)?.projectName, null)
   })
 
+  test('a tray can be cloned straight into another project', async () => {
+    const source = await post<{ id: string }>(BASE, projectPayload({ name: 'Source set' }))
+    const dest = await post<{ id: string }>(BASE, projectPayload({ name: 'Destination set' }))
+    const tray = await post<{ id: string }>(
+      TRAYS, trayPayload({ name: 'Top tray', projectId: source.body.id }))
+
+    const cloned = await post<{ id: string }>(`${TRAYS}/${tray.body.id}/clone`, {
+      name: 'Top tray (moved)', projectId: dest.body.id,
+    })
+    assert.equal(cloned.status, 201)
+
+    const copy = await get<{ projectId: string | null; name: string; pockets: unknown[] }>(
+      `${TRAYS}/${cloned.body.id}`)
+    assert.equal(copy.body.projectId, dest.body.id)
+    assert.equal(copy.body.name, 'Top tray (moved)')
+    assert.equal(copy.body.pockets.length, 3)
+
+    // The original is untouched, still in its own set.
+    const original = await get<{ projectId: string | null }>(`${TRAYS}/${tray.body.id}`)
+    assert.equal(original.body.projectId, source.body.id)
+
+    // Absent projectId still keeps the copy in the source's project.
+    const sameSet = await post<{ id: string }>(`${TRAYS}/${tray.body.id}/clone`, {})
+    const sameCopy = await get<{ projectId: string | null }>(`${TRAYS}/${sameSet.body.id}`)
+    assert.equal(sameCopy.body.projectId, source.body.id)
+  })
+
+  test('a clone cannot be dropped into a project the caller does not own', async () => {
+    const theirs = await post<{ id: string }>(BASE, { name: 'Theirs' }, OTHER_TOKEN)
+    const tray = await post<{ id: string }>(TRAYS, trayPayload({ name: 'Mine' }))
+
+    const attempt = await post<{ error: { details?: { field?: string } } }>(
+      `${TRAYS}/${tray.body.id}/clone`, { projectId: theirs.body.id })
+    assert.equal(attempt.status, 400)
+    assert.equal(attempt.body.error.details?.field, 'projectId')
+
+    const missing = await post(`${TRAYS}/${tray.body.id}/clone`, { projectId: '999999' })
+    assert.equal(missing.status, 400)
+  })
+
   test('a tray can be linked and unlinked without disturbing its pockets', async () => {
     const created = await post<{ id: string }>(BASE, projectPayload({ name: 'Linkable' }))
     const tray = await post<{ id: string }>(TRAYS, trayPayload({ name: 'Movable' }))

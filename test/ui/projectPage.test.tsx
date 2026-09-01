@@ -71,6 +71,10 @@ function installFetchStub() {
     if (path === '/api/keycap-projects' && method === 'POST') return json(201, { id: '7' })
     if (path === '/api/keycap-projects/1' && method === 'GET') return json(200, state.project)
     if (path === '/api/keycap-projects/1' && method === 'PUT') return json(200, { ok: true })
+    if (/^\/api\/keycap-trays\/\d+\/clone$/.test(path) && method === 'POST') {
+      return json(201, { id: '99' })
+    }
+    if (/^\/api\/keycap-trays\/\d+$/.test(path) && method === 'DELETE') return json(200, { ok: true })
     if (/^\/api\/keycap-trays\/\d+$/.test(path)) {
       const id = path.split('/').pop() as string
       return json(200, {
@@ -211,6 +215,48 @@ test('the project’s trays are drawn, and open by URL', async () => {
   await waitFor(() => expect(
     state.calls.some(c => c.path === '/api/keycap-trays/4')).toBe(true))
   assert.ok(screen.getByRole('button', { name: 'Open Tray one' }))
+})
+
+test('a tray can be deleted from its card, after confirming', async () => {
+  const user = userEvent.setup()
+  renderProject()
+  await waitFor(() => expect(screen.getByText('Tray one')).toBeTruthy())
+
+  await user.click(screen.getByRole('button', { name: 'More actions for Tray one' }))
+  await user.click(await screen.findByRole('menuitem', { name: /Delete tray/ }))
+
+  // The one confirm dialog, destructive.
+  await user.click(await screen.findByRole('button', { name: 'Delete' }))
+
+  await waitFor(() => expect(state.calls.some(
+    c => c.method === 'DELETE' && c.path === '/api/keycap-trays/4')).toBe(true))
+  // The project is re-pulled afterwards.
+  assert.ok(state.calls.filter(c => c.path === '/api/keycap-trays?projectId=1').length >= 2)
+})
+
+test('a tray can be duplicated into another set', async () => {
+  const user = userEvent.setup()
+  state.projects = [
+    { id: '1', name: 'GMK Olivia', capCount: 36, trayCount: 1, photoCount: 2,
+      updatedAt: '2026-08-28 12:00:00' },
+    { id: '2', name: 'GMK Botanical', capCount: 12, trayCount: 0, photoCount: 0,
+      updatedAt: '2026-08-27 12:00:00' },
+  ]
+  renderProject()
+  await waitFor(() => expect(screen.getByText('Tray one')).toBeTruthy())
+
+  await user.click(screen.getByRole('button', { name: 'More actions for Tray one' }))
+  await user.click(await screen.findByRole('menuitem', { name: /Duplicate into set/ }))
+
+  // The destination defaults to the first set that is not this one.
+  await user.click(await screen.findByRole('button', { name: 'Duplicate' }))
+
+  await waitFor(() => {
+    const clone = state.calls.find(
+      c => c.method === 'POST' && c.path === '/api/keycap-trays/4/clone')
+    expect(clone).toBeTruthy()
+    assert.deepEqual((clone!.body as { projectId?: string }).projectId, '2')
+  })
 })
 
 test('a tray whose geometry will not load is left out, not fatal', async () => {

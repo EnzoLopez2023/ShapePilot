@@ -234,9 +234,12 @@ export function createKeycapTrayRepository(db: SqliteDatabase): KeycapTrayReposi
       replacePockets(idOf(db, owner, id), input.pockets ?? [])
     })
 
-  const cloneTx = db.transaction((owner: Owner, source: DesignRow, name: string) => {
+  const cloneTx = db.transaction((
+    owner: Owner, source: DesignRow, name: string,
+    projectId: number | bigint | string | null,
+  ) => {
     const info = insertDesign.run(
-      owner.tenantId, owner.oid, source.project_id,
+      owner.tenantId, owner.oid, projectId,
       name, source.notes, source.profile_kind, source.profile_json, source.sizing_json,
       source.floor_mm, source.depth_mm, source.engrave_mm)
     db.prepare(`
@@ -297,10 +300,13 @@ export function createKeycapTrayRepository(db: SqliteDatabase): KeycapTrayReposi
       return true
     },
 
-    async cloneDesign(owner, id, name) {
+    async cloneDesign(owner, id, name, projectId) {
       const src = selectOwnedDesign.get(owner.tenantId, owner.oid, id)
       if (!src) return null
-      return { id: String(cloneTx(owner, src, name || `${src.name} (copy)`)) }
+      // Absent leaves the copy in the source's project; `null` unassigns it; an
+      // id moves it, the route having already checked the caller owns that one.
+      const target = projectId === undefined ? src.project_id : projectId
+      return { id: String(cloneTx(owner, src, name || `${src.name} (copy)`, target)) }
     },
 
     async deleteDesign(owner, id) {
