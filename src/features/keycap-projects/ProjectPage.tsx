@@ -207,13 +207,13 @@ export default function ProjectPage() {
       // has no query-param state to reconcile.
       const seed = emptyDesign()
       const { id } = await trays.createDesign(
-        { ...seed, name: `${project?.name ?? 'Tray'} — new tray` }, projectId)
+        { ...seed, name: `Tray ${trayList.length + 1}` }, projectId)
       navigate(`/keycap-tray/${id}`)
     } catch (cause) {
       setError(errorMessage(cause))
       setBusy(false)
     }
-  }, [project, projectId, navigate])
+  }, [trayList.length, projectId, navigate])
 
   if (loading) return <LoadingState label="Loading the project…" />
   if (error && !project) return <ErrorState message={error} onRetry={() => void load()} />
