@@ -8,6 +8,19 @@ const ALERT_RESOURCE_TYPES = [
   'Microsoft.Insights/scheduledQueryRules',
   'microsoft.alertsmanagement/smartDetectorAlertRules',
 ] as const
+const METRIC_ALERT_RESOURCE_TYPE = ALERT_RESOURCE_TYPES[0]
+const SHAPEPILOT_RESOURCE_PATH =
+  `/resourcegroups/${RESOURCE_GROUP}/providers/microsoft.web/sites/${WEBAPP}`.toLowerCase()
+const RESOURCE_CRITERIA_KEYS = new Set([
+  '_resourceid',
+  'appname',
+  'resource',
+  'resourceid',
+  'resourcename',
+  'resourceuri',
+  'sitename',
+  'webappname',
+])
 const ALLOWED_PHASES = new Set([
   'image-publication',
   'predeploy',
@@ -69,6 +82,109 @@ function azJson(args: string[]): unknown {
   return JSON.parse(output) as unknown
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function targetsShapePilotResource(value: string): boolean {
+  const normalized = value.toLowerCase().replace(/\/+$/, '')
+  return normalized === WEBAPP.toLowerCase()
+    || normalized.endsWith(SHAPEPILOT_RESOURCE_PATH)
+    || normalized.includes(`${SHAPEPILOT_RESOURCE_PATH}/`)
+}
+
+function criteriaTargetsShapePilot(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some(criteriaTargetsShapePilot)
+  }
+  if (!isRecord(value)) return false
+
+  if ('values' in value) {
+    if (typeof value.name !== 'string'
+      || typeof value.operator !== 'string'
+      || !Array.isArray(value.values)
+      || !value.values.every((candidate) => typeof candidate === 'string')) {
+      throw new Error('Azure CLI returned a metric alert with invalid criteria dimensions')
+    }
+    const operator = value.operator.toLowerCase()
+    if (operator !== 'include' && operator !== 'exclude') {
+      throw new Error('Azure CLI returned a metric alert with an invalid dimension operator')
+    }
+    if (operator === 'include' && value.values.some(targetsShapePilotResource)) return true
+  }
+
+  return Object.entries(value).some(([key, candidate]) => {
+    if (RESOURCE_CRITERIA_KEYS.has(key.toLowerCase())) {
+      if (typeof candidate === 'string') return targetsShapePilotResource(candidate)
+      if (Array.isArray(candidate)) {
+        return candidate.some(
+          (entry) => typeof entry === 'string' && targetsShapePilotResource(entry),
+        )
+      }
+    }
+    return criteriaTargetsShapePilot(candidate)
+  })
+}
+
+function validateMetricCriterion(value: unknown): void {
+  if (!isRecord(value)
+    || typeof value.metricName !== 'string'
+    || value.metricName.length === 0
+    || typeof value.operator !== 'string'
+    || value.operator.length === 0
+    || typeof value.timeAggregation !== 'string'
+    || value.timeAggregation.length === 0) {
+    throw new Error('Azure CLI returned an invalid metric alert criterion')
+  }
+  if ('dimensions' in value) {
+    if (!Array.isArray(value.dimensions)
+      || !value.dimensions.every((dimension) =>
+        isRecord(dimension)
+        && typeof dimension.name === 'string'
+        && typeof dimension.operator === 'string'
+        && Array.isArray(dimension.values)
+        && dimension.values.every((candidate) => typeof candidate === 'string'))) {
+      throw new Error('Azure CLI returned a metric alert with invalid criteria dimensions')
+    }
+  }
+}
+
+function metricAlertTargetsShapePilot(resource: unknown): boolean {
+  if (!isRecord(resource) || !isRecord(resource.properties)) {
+    throw new Error('Azure CLI returned an invalid Microsoft.Insights/metricAlerts resource')
+  }
+  const { criteria, scopes } = resource.properties
+  if (!Array.isArray(scopes)
+    || scopes.length === 0
+    || !scopes.every((scope) => typeof scope === 'string' && scope.length > 0)) {
+    throw new Error('Azure CLI returned a metric alert with invalid scopes')
+  }
+  if (!isRecord(criteria)) {
+    throw new Error('Azure CLI returned a metric alert with invalid criteria')
+  }
+  let hasMetricCriteria = false
+  if ('allOf' in criteria) {
+    if (!Array.isArray(criteria.allOf) || criteria.allOf.length === 0) {
+      throw new Error('Azure CLI returned a metric alert with invalid criteria')
+    }
+    criteria.allOf.forEach(validateMetricCriterion)
+    hasMetricCriteria = true
+  }
+  const hasWebTestCriteria =
+    typeof criteria.componentId === 'string' && typeof criteria.webTestId === 'string'
+  if (!hasMetricCriteria && !hasWebTestCriteria) {
+    throw new Error('Azure CLI returned a metric alert with unsupported criteria')
+  }
+  return scopes.some(targetsShapePilotResource) || criteriaTargetsShapePilot(criteria)
+}
+
+function metricAlertDetails(resource: unknown): unknown {
+  if (!isRecord(resource) || typeof resource.id !== 'string' || resource.id.length === 0) {
+    throw new Error('Azure CLI returned a metric alert without a resource ID')
+  }
+  return azJson(['resource', 'show', '--ids', resource.id])
+}
+
 function alertCounts(resourceGroup: string): Record<string, number> {
   const counts: Record<string, number> = {}
   for (const resourceType of ALERT_RESOURCE_TYPES) {
@@ -81,7 +197,10 @@ function alertCounts(resourceGroup: string): Record<string, number> {
       throw new Error(`Azure CLI returned invalid ${resourceType} resources`)
     }
     counts[resourceType] = resources.length
-    if (resources.length !== 0) {
+    const ownedResourceCount = resourceType === METRIC_ALERT_RESOURCE_TYPE
+      ? resources.map(metricAlertDetails).filter(metricAlertTargetsShapePilot).length
+      : resources.length
+    if (ownedResourceCount !== 0) {
       throw new Error(`owner invariant requires zero ${resourceType} resources`)
     }
   }
