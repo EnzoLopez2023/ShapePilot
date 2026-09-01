@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="320mm" height="290mm"
+     viewBox="0 0 320 290">
+  <title>Interlocking EL</title>
+  <desc>The interlocking-EL brand mark. Uniform 28 mm stroke, round terminals. 1 unit = 1 mm.</desc>
+
+  <g fill="none" stroke="#141210" stroke-width="28"
+     stroke-linecap="round" stroke-linejoin="round">
+    <!-- left half: a bracket open to the right; the bottom bar is shorter than the top -->
+    <path d="M 180 65 H 62 V 188 H 142"/>
+    <!-- right half: the same form turned 180deg; its bar reaches into the mouth,
+         then drops down the right edge and feet out below -->
+    <path d="M 116 126 H 188 V 224 H 254"/>
+  </g>
+</svg>

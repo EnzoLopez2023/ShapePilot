@@ -417,3 +417,135 @@ describe('reading a keycap set out of photographs', () => {
     } finally { await stop() }
   })
 })
+
+describe('tracing a photo to vector paths', () => {
+  const VECTOR = `${BASE}/vector`
+  const PHOTO = Buffer.from('pretend this is a jpeg of a logo; the route never decodes it')
+  const PHOTO_HASH = createHash('sha256').update(PHOTO).digest('hex')
+  const STL = Buffer.from('solid y\nendsolid\n')
+  const STL_HASH = createHash('sha256').update(STL).digest('hex')
+
+  const validDrawing = {
+    version: 1, units: 'mm', widthMm: 40, heightMm: 30,
+    notes: 'Traced the monogram; the caption was too small to keep.',
+    paths: [{
+      id: 'monogram', name: 'Monogram', fill: '#101010',
+      commands: [
+        { cmd: 'M', to: [0, 0] },
+        { cmd: 'L', to: [20, 0] },
+        { cmd: 'C', c1: [24, 4], c2: [24, 10], to: [20, 14] },
+        { cmd: 'L', to: [0, 14] },
+        { cmd: 'Z' },
+      ],
+    }],
+  }
+
+  let server: TestServer
+  let root: string
+  const seen: Recorded[] = []
+
+  const startWith = async (text: string) => {
+    root = mkdtempSync(join(tmpdir(), 'shapepilot-ai-trace-'))
+    server = await startTestServer({
+      label: `ai-trace-${Math.random().toString(36).slice(2, 8)}`,
+      verifier: stubVerifier({ [TOKEN]: validClaims() }),
+      aiClient: stubClient(text, seen),
+      assetStore: createFilesystemAssetStore(root),
+    })
+  }
+
+  const stop = async () => {
+    await server.close()
+    rmSync(root, { recursive: true, force: true })
+  }
+
+  const upload = (bytes: Buffer, hash: string, format: string, name: string) =>
+    fetch(`${server.baseUrl}/api/design-assets/${hash}?filename=${name}&format=${format}`, {
+      method: 'PUT',
+      headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/octet-stream' },
+      body: new Uint8Array(bytes),
+    })
+
+  const post = (body: unknown) =>
+    server.fetchJson<Record<string, unknown>>(VECTOR, {
+      method: 'POST', token: TOKEN, body: JSON.stringify(body),
+    })
+
+  test('a photo reaches the model as an image and comes back as a validated drawing', async () => {
+    await startWith(JSON.stringify(validDrawing))
+    try {
+      seen.length = 0
+      await upload(PHOTO, PHOTO_HASH, 'jpeg', 'logo.jpg')
+
+      const res = await post({ hashes: [PHOTO_HASH], hint: 'just the monogram' })
+      assert.equal(res.status, 200)
+
+      const drawing = res.body.drawing as { paths: { id: string }[]; widthMm: number }
+      assert.equal(drawing.paths.length, 1)
+      assert.equal(drawing.paths[0].id, 'monogram')
+      assert.equal(drawing.widthMm, 40)
+      assert.equal(res.body.notes, 'Traced the monogram; the caption was too small to keep.')
+      assert.deepEqual(res.body.usage, { inputTokens: 10, outputTokens: 20, totalTokens: 30 })
+
+      const input = seen[0].request.input
+      assert.ok(Array.isArray(input), 'a photo turn must use structured content')
+      const parts = input.flatMap(m => m.content)
+      assert.equal(parts.filter(p => p.type === 'input_image').length, 1)
+      assert.match(parts.find(p => p.type === 'input_image')!.image_url, /^data:image\/jpeg;base64,/)
+      assert.match(textOf(seen[0].request), /just the monogram/)
+    } finally { await stop() }
+  })
+
+  test('an unknown hash is a 404, not a leak of another account', async () => {
+    await startWith(JSON.stringify(validDrawing))
+    try {
+      const res = await post({ hashes: ['b'.repeat(64)] })
+      assert.equal(res.status, 404)
+    } finally { await stop() }
+  })
+
+  test('geometry is not a photograph', async () => {
+    await startWith(JSON.stringify(validDrawing))
+    try {
+      await upload(STL, STL_HASH, 'stl', 'part.stl')
+      const res = await post({ hashes: [STL_HASH] })
+      assert.equal(res.status, 400)
+      assert.equal((res.body.error as { details?: { field?: string } }).details?.field, 'hashes')
+    } finally { await stop() }
+  })
+
+  test('non-JSON from the model is a typed 502, not a crash', async () => {
+    await startWith('definitely not json')
+    try {
+      await upload(PHOTO, PHOTO_HASH, 'jpeg', 'logo.jpg')
+      const res = await post({ hashes: [PHOTO_HASH] })
+      assert.equal(res.status, 502)
+      assert.equal((res.body.error as { code: string }).code, 'ai_malformed')
+    } finally { await stop() }
+  })
+
+  test('a well-formed but unusable drawing is refused, not passed on', async () => {
+    // Valid JSON, valid against the schema, but the first command of a subpath
+    // is not M -- the contract validator the browser also runs catches it.
+    await startWith(JSON.stringify({
+      version: 1, units: 'mm', widthMm: 10, heightMm: 10, notes: '',
+      paths: [{ id: 'p', name: 'P', commands: [{ cmd: 'L', to: [1, 1] }] }],
+    }))
+    try {
+      await upload(PHOTO, PHOTO_HASH, 'jpeg', 'logo.jpg')
+      const res = await post({ hashes: [PHOTO_HASH] })
+      assert.equal(res.status, 502)
+      assert.equal((res.body.error as { code: string }).code, 'ai_invalid_drawing')
+    } finally { await stop() }
+  })
+
+  test('the route requires authentication', async () => {
+    await startWith(JSON.stringify(validDrawing))
+    try {
+      const res = await server.fetchJson(VECTOR, {
+        method: 'POST', body: JSON.stringify({ hashes: ['a'.repeat(64)] }),
+      })
+      assert.equal(res.status, 401)
+    } finally { await stop() }
+  })
+})
