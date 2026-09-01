@@ -35,6 +35,7 @@
     "lib/contracts",
     "test/ui",
     "test/parity/referenceGeometry.test.ts",
+    "scripts/icon-assets.ts",
     "vite.config.ts",
     "eslint.config.js"
   ]
