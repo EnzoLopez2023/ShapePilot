@@ -29,13 +29,14 @@ interface StubState {
     items: { units: number; heightUnits?: number; count?: number; legend?: string }[]
     coverage: { units: number; heightUnits: number; shape: string | null; pockets: number }[]
   }
-  projectList?: { id: string; name: string }[]
+  projectList?: { id: string; name: string; trayCount?: number; updatedAt?: string }[]
   library: { id: string; name: string; units: number }[]
   calls: { method: string; path: string; body?: unknown }[]
   designerDefaults?: DesignerDefaults
   failListWith?: number
   createGate?: Promise<void>
   loadGate?: Promise<void>
+  updateGate?: Promise<void>
 }
 
 let state: StubState
@@ -56,6 +57,9 @@ function installFetchStub() {
     if (path === '/api/keycap-projects' && method === 'GET') {
       return json(200, state.projectList ?? [])
     }
+    if (path === '/api/keycap-projects' && method === 'POST') {
+      return json(201, { id: 'p-new' })
+    }
     if (path.startsWith('/api/keycap-projects/') && method === 'GET') {
       if (!state.project) return json(404, { error: { code: 'not_found', message: 'no project' } })
       return json(200, { ...state.project, name: 'Womier', photos: [] })
@@ -71,14 +75,19 @@ function installFetchStub() {
     if (path === '/api/keycap-trays' && method === 'POST') {
       await state.createGate
       const id = String(state.designs.length + 1)
-      const created = body as { name: string; pockets?: unknown[] }
+      const created = body as { name: string; projectId?: string | null; pockets?: unknown[] }
       state.designs = [...state.designs, {
         id, name: created.name, pocketCount: created.pockets?.length ?? 0,
         updatedAt: '2026-08-28 12:00:00', profileKind: 'preset',
+        projectId: created.projectId ?? null,
+        projectName: created.projectId ? 'Womier' : null,
       }]
       return json(201, { id })
     }
-    if (/^\/api\/keycap-trays\/\d+$/.test(path) && method === 'PUT') return json(200, { ok: true })
+    if (/^\/api\/keycap-trays\/\d+$/.test(path) && method === 'PUT') {
+      await state.updateGate
+      return json(200, { ok: true })
+    }
     if (/^\/api\/keycap-trays\/\d+$/.test(path) && method === 'DELETE') {
       const id = path.split('/').pop()
       state.designs = state.designs.filter(d => d.id !== id)
@@ -87,15 +96,18 @@ function installFetchStub() {
     if (/^\/api\/keycap-trays\/\d+$/.test(path) && method === 'GET') {
       await state.loadGate
       const id = path.split('/').pop() as string
+      const summary = state.designs.find(d => d.id === id)
+      const pocketCount = summary?.pocketCount ?? 0
       return json(200, {
-        id, name: state.designs.find(d => d.id === id)?.name ?? 'Loaded',
+        id, name: summary?.name ?? 'Loaded',
+        projectId: summary?.projectId ?? null,
         profile: { kind: 'preset', id: 'systainer-s76-plain' },
         sizing: { ...PYTHON_SIZING },
         floorThicknessMm: 2.4, pocketDepthMm: 10, engraveDepthMm: 0.4,
-        pockets: [{
-          id: 'p1', units: 1, heightUnits: 1, x: 10, y: 10, rotationDeg: 0,
-          isThrough: false, label: 'loaded pocket', labelMode: 'guide',
-        }],
+        pockets: Array.from({ length: pocketCount }, (_, i) => ({
+          id: `p${i + 1}`, units: 1, heightUnits: 1, x: 10 + i * 20, y: 10, rotationDeg: 0,
+          isThrough: false, label: `pocket ${i + 1}`, labelMode: 'guide',
+        })),
         createdAt: '2026-08-28 11:00:00', updatedAt: '2026-08-28 12:00:00', revision: 0,
       })
     }
@@ -161,6 +173,28 @@ const renderPage = (ui: ReactElement = <KeycapTrayPage />, route = '/keycap-tray
     </ConfirmDialogProvider>
   </ThemeModeProvider>,
 )
+
+/** The designer with a tray open -- the working state, now that a tray only
+ *  exists inside a project. Seeds one project-linked tray unless the test set
+ *  up its own `state.designs`. */
+const renderWorkbench = (route = '/keycap-tray/1') => {
+  if (!state.designs.some(d => d.id === '1')) {
+    state.designs = [
+      {
+        id: '1', name: 'Untitled tray', pocketCount: 0, updatedAt: '2026-08-28 12:00:00',
+        profileKind: 'preset', projectId: '9', projectName: 'Womier',
+      },
+      ...state.designs,
+    ]
+  }
+  return renderPage(<KeycapTrayPage />, route)
+}
+
+/** Resolves once the tray in the URL has finished loading -- Clone flips on
+ *  when `savedId` is set and `busy` clears, so it is a clean "load done" gate
+ *  before clicking a `disabled={busy}` toolbar action. */
+const awaitTrayLoaded = () => waitFor(() => expect(
+  (screen.getByRole('button', { name: 'Clone' }) as HTMLButtonElement).disabled).toBe(false))
 
 beforeEach(() => {
   state = {
@@ -291,7 +325,7 @@ describe('tray design state', () => {
 
 describe('designer page', () => {
   test('it renders the workbench with an accessible canvas and panels', async () => {
-    renderPage()
+    renderWorkbench()
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
     assert.ok(screen.getByRole('heading', { name: 'Pockets' }))
     assert.ok(screen.getByRole('heading', { name: 'Tray' }))
@@ -300,19 +334,17 @@ describe('designer page', () => {
   })
 
   test('undo, redo and delete are disabled until there is something to act on', async () => {
-    renderPage()
+    renderWorkbench()
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
     for (const name of ['Undo', 'Redo', 'Delete selected pockets']) {
       assert.equal(
         (screen.getByRole('button', { name }) as HTMLButtonElement).disabled, true, name)
     }
-    assert.equal(
-      (screen.getByRole('button', { name: 'Clone' }) as HTMLButtonElement).disabled, true)
   })
 
   test('adding a pocket from the palette updates the status line and enables undo', async () => {
     const user = userEvent.setup()
-    renderPage()
+    renderWorkbench()
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
     assert.ok(screen.getByText(/^0 pockets/))
 
@@ -325,66 +357,66 @@ describe('designer page', () => {
     await waitFor(() => expect(screen.getByText(/^0 pockets/)).toBeTruthy())
   })
 
-  test('saving posts the design and then updates it, and cloning is enabled after save', async () => {
+  test('saving a project tray issues an update, and clone is available', async () => {
     const user = userEvent.setup()
-    renderPage()
+    renderWorkbench()
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
+    // A saved tray can be cloned once it has loaded -- there is no unsaved
+    // scratch state to guard against any more.
+    await awaitTrayLoaded()
 
+    await user.click(await screen.findByRole('button', { name: 'Add a 1u pocket' }))
     await user.click(screen.getByRole('button', { name: /^Save/ }))
     await waitFor(() => expect(
-      state.calls.some(c => c.method === 'POST' && c.path === '/api/keycap-trays')).toBe(true))
-    await waitFor(() => expect(
-      (screen.getByRole('button', { name: 'Clone' }) as HTMLButtonElement).disabled).toBe(false))
-
-    await user.click(screen.getByRole('button', { name: /^Save/ }))
-    await waitFor(() => expect(
-      state.calls.some(c => c.method === 'PUT' && c.path.startsWith('/api/keycap-trays/'))).toBe(true))
+      state.calls.some(c => c.method === 'PUT' && c.path === '/api/keycap-trays/1')).toBe(true))
+    assert.ok(!state.calls.some(c => c.method === 'POST' && c.path === '/api/keycap-trays'))
   })
 
-  test('document-switching actions stay disabled while a create is in flight', async () => {
+  test('adding a tray to the project stays disabled while the create is in flight', async () => {
     let releaseCreate: () => void = () => {}
     state.createGate = new Promise<void>((resolveCreate) => { releaseCreate = resolveCreate })
     const user = userEvent.setup()
-    renderPage()
+    renderWorkbench()
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
+    await awaitTrayLoaded()
 
-    await user.click(screen.getByRole('button', { name: /^Save/ }))
+    await user.click(screen.getByRole('button', { name: 'New tray' }))
     await waitFor(() => expect(
       state.calls.some(c => c.method === 'POST' && c.path === '/api/keycap-trays')).toBe(true))
-    for (const name of ['New', 'Open', 'Clone']) {
-      assert.equal((screen.getByRole('button', { name }) as HTMLButtonElement).disabled, true)
+    for (const name of ['New tray', 'Open', 'Clone']) {
+      assert.equal((screen.getByRole('button', { name }) as HTMLButtonElement).disabled, true, name)
     }
 
     releaseCreate()
     await waitFor(() => expect(
-      (screen.getByRole('button', { name: 'New' }) as HTMLButtonElement).disabled).toBe(false))
+      (screen.getByRole('button', { name: 'New tray' }) as HTMLButtonElement).disabled).toBe(false))
     assert.equal(
-      (screen.getByRole('button', { name: 'Clone' }) as HTMLButtonElement).disabled,
-      false,
-    )
+      (screen.getByRole('button', { name: 'Clone' }) as HTMLButtonElement).disabled, false)
   })
 
   test('edits made during save remain explicitly unsaved', async () => {
-    let releaseCreate: () => void = () => {}
-    state.createGate = new Promise<void>((resolveCreate) => { releaseCreate = resolveCreate })
+    let releaseUpdate: () => void = () => {}
+    state.updateGate = new Promise<void>((resolveUpdate) => { releaseUpdate = resolveUpdate })
     const user = userEvent.setup()
-    renderPage()
+    renderWorkbench()
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
+    await awaitTrayLoaded()
 
+    await user.click(await screen.findByRole('button', { name: 'Add a 1u pocket' }))
     await user.click(screen.getByRole('button', { name: /^Save/ }))
     await waitFor(() => expect(
-      state.calls.some(c => c.method === 'POST' && c.path === '/api/keycap-trays')).toBe(true))
-    await user.click(await screen.findByRole('button', { name: 'Add a 1u pocket' }))
-    releaseCreate()
+      state.calls.some(c => c.method === 'PUT' && c.path === '/api/keycap-trays/1')).toBe(true))
+    await user.click(await screen.findByRole('button', { name: 'Add a 2u pocket' }))
+    releaseUpdate()
 
     assert.ok(await screen.findByText('Saved earlier changes — newer edits are still unsaved'))
     assert.ok(screen.getByRole('button', { name: 'Save changes' }))
-    assert.ok(screen.getByText(/^1 pockets/))
+    assert.ok(screen.getByText(/^2 pockets/))
   })
 
   test('tabbing through rounded imperial values does not rewrite millimetres', async () => {
     const user = userEvent.setup()
-    renderPage()
+    renderWorkbench()
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
     await user.click(screen.getByRole('button', { name: 'in' }))
     const floor = screen.getByRole('textbox', { name: 'Floor' }) as HTMLInputElement
@@ -393,83 +425,71 @@ describe('designer page', () => {
     await user.tab()
     await user.click(screen.getByRole('button', { name: /^Save/ }))
     await waitFor(() => expect(
-      state.calls.some(c => c.method === 'POST' && c.path === '/api/keycap-trays')).toBe(true))
-    const create = state.calls.find(c => c.method === 'POST' && c.path === '/api/keycap-trays')
-    assert.equal((create?.body as { floorThicknessMm?: number }).floorThicknessMm, 2.4)
-  })
-
-  test('the open dialog shows an empty state when nothing is saved', async () => {
-    const user = userEvent.setup()
-    renderPage()
-    await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
-
-    await user.click(screen.getByRole('button', { name: 'Open' }))
-    const dialog = await screen.findByRole('dialog')
-    assert.ok(within(dialog).getByText('No saved trays yet'))
+      state.calls.some(c => c.method === 'PUT' && c.path === '/api/keycap-trays/1')).toBe(true))
+    const update = state.calls.find(c => c.method === 'PUT' && c.path === '/api/keycap-trays/1')
+    assert.equal((update?.body as { floorThicknessMm?: number }).floorThicknessMm, 2.4)
   })
 
   test('the open dialog lists a saved tray and loads it into the canvas', async () => {
     const user = userEvent.setup()
-    state.designs = [{
-      id: '1', name: 'Saved tray', pocketCount: 1, updatedAt: '2026-08-28 12:00:00',
-      profileKind: 'preset',
-    }]
-    renderPage()
+    state.designs = [
+      { id: '1', name: 'Saved tray', pocketCount: 1, updatedAt: '2026-08-28 12:00:00',
+        profileKind: 'preset', projectId: '9', projectName: 'Womier' },
+      { id: '2', name: 'Start tray', pocketCount: 0, updatedAt: '2026-08-28 12:00:00',
+        profileKind: 'preset', projectId: '9', projectName: 'Womier' },
+    ]
+    renderPage(<KeycapTrayPage />, '/keycap-tray/2')
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
+    assert.ok(screen.getByText(/^0 pockets/))
 
     await user.click(screen.getByRole('button', { name: 'Open' }))
     const dialog = await screen.findByRole('dialog')
     assert.ok(await within(dialog).findByText('Saved tray'))
-    await user.click(await within(dialog).findByRole('button', { name: 'Open' }))
+    await user.click((await within(dialog).findAllByRole('button', { name: 'Open' }))[0])
 
     await waitFor(() => expect(screen.getByText(/^1 pockets/)).toBeTruthy())
   })
 
-  test('saved-tray actions stay disabled while a load is in flight', async () => {
-    let releaseLoad: () => void = () => {}
-    state.loadGate = new Promise<void>((resolveLoad) => { releaseLoad = resolveLoad })
+  test('open actions stay disabled while a load is in flight', async () => {
     state.designs = [
-      {
-        id: '1', name: 'First tray', pocketCount: 1, updatedAt: '2026-08-28 12:00:00',
-        profileKind: 'preset',
-      },
-      {
-        id: '2', name: 'Second tray', pocketCount: 1, updatedAt: '2026-08-28 12:00:00',
-        profileKind: 'preset',
-      },
+      { id: '1', name: 'First tray', pocketCount: 0, updatedAt: '2026-08-28 12:00:00',
+        profileKind: 'preset', projectId: '9', projectName: 'Womier' },
+      { id: '2', name: 'Second tray', pocketCount: 0, updatedAt: '2026-08-28 12:00:00',
+        profileKind: 'preset', projectId: '9', projectName: 'Womier' },
     ]
     const user = userEvent.setup()
-    renderPage()
+    renderPage(<KeycapTrayPage />, '/keycap-tray/1')
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
+    await awaitTrayLoaded()
+
+    let releaseLoad: () => void = () => {}
+    state.loadGate = new Promise<void>((resolveLoad) => { releaseLoad = resolveLoad })
+
     await user.click(screen.getByRole('button', { name: 'Open' }))
     const dialog = await screen.findByRole('dialog')
-    const openButtons = await within(dialog).findAllByRole('button', { name: 'Open' })
-    await user.click(openButtons[0])
+    const openButtons = within(dialog).getAllByRole('button', { name: 'Open' })
+    await user.click(openButtons[1])
     await waitFor(() => expect(
-      state.calls.some(call => call.path === '/api/keycap-trays/1')).toBe(true))
+      state.calls.some(call => call.path === '/api/keycap-trays/2')).toBe(true))
     for (const button of within(dialog).getAllByRole('button', { name: 'Open' })) {
       assert.equal((button as HTMLButtonElement).disabled, true)
     }
     assert.equal(
-      (within(dialog).getByRole('button', { name: 'Delete Second tray' }) as HTMLButtonElement)
+      (within(dialog).getByRole('button', { name: 'Delete First tray' }) as HTMLButtonElement)
         .disabled,
       true,
     )
     releaseLoad()
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-    assert.equal(
-      state.calls.some(call => call.path === '/api/keycap-trays/2'),
-      false,
-    )
   })
 
   test('deleting a saved tray asks for confirmation first', async () => {
     const user = userEvent.setup()
     state.designs = [{
       id: '1', name: 'Doomed tray', pocketCount: 0, updatedAt: '2026-08-28 12:00:00',
-      profileKind: 'preset',
+      profileKind: 'preset', projectId: '9', projectName: 'Womier',
     }]
-    renderPage()
+    renderPage(<KeycapTrayPage />, '/keycap-tray/1')
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
 
     await user.click(screen.getByRole('button', { name: 'Open' }))
@@ -494,7 +514,7 @@ describe('designer page', () => {
 
   test('the unit toggle switches the length fields between mm and inches', async () => {
     const user = userEvent.setup()
-    renderPage()
+    renderWorkbench()
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
 
     const floor = screen.getByRole('textbox', { name: 'Floor' }) as HTMLInputElement
@@ -511,7 +531,7 @@ describe('designer page', () => {
 
   test('an invalid length is rejected and the field falls back to the old value', async () => {
     const user = userEvent.setup()
-    renderPage()
+    renderWorkbench()
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
 
     const depth = screen.getAllByRole('textbox', { name: 'Depth' })[0] as HTMLInputElement
@@ -524,7 +544,7 @@ describe('designer page', () => {
 
   test('the export target switches between the printer and the CNC formats', async () => {
     const user = userEvent.setup()
-    renderPage()
+    renderWorkbench()
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
 
     assert.ok(screen.getByRole('button', { name: 'STL' }))
@@ -551,7 +571,7 @@ describe('designer page', () => {
       return element
     })
 
-    renderPage()
+    renderWorkbench()
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
     await user.click(screen.getByRole('button', { name: 'STL' }))
 
@@ -563,7 +583,7 @@ describe('designer page', () => {
 
   test('the pocket palette filters, pins and unpins', async () => {
     const user = userEvent.setup()
-    renderPage()
+    renderWorkbench()
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
 
     assert.ok(screen.getByRole('button', { name: 'Add a 6.25u pocket' }))
@@ -580,7 +600,7 @@ describe('designer page', () => {
 
   test('the custom tab lists the seeded library pocket and can delete it', async () => {
     const user = userEvent.setup()
-    renderPage()
+    renderWorkbench()
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
 
     await user.click(screen.getByRole('tab', { name: 'Custom' }))
@@ -594,7 +614,7 @@ describe('designer page', () => {
 
   test('the 14 mm seed is created once, only when the library is empty', async () => {
     state.library = []
-    renderPage()
+    renderWorkbench()
     await waitFor(() => expect(
       state.calls.some(c => c.method === 'POST'
         && c.path === '/api/keycap-trays/library/pockets')).toBe(true))
@@ -606,7 +626,7 @@ describe('designer page', () => {
 
   test('a custom pocket can be defined by exact dimensions', async () => {
     const user = userEvent.setup()
-    renderPage()
+    renderWorkbench()
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
 
     await user.click(screen.getByRole('tab', { name: 'Custom' }))
@@ -626,7 +646,7 @@ describe('designer page', () => {
   })
 
   test('the snap and grid controls are labelled', async () => {
-    renderPage()
+    renderWorkbench()
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
     assert.ok(screen.getByRole('combobox', { name: 'Snap' }))
     assert.ok(screen.getByRole('combobox', { name: 'Grid' }))
@@ -634,7 +654,7 @@ describe('designer page', () => {
 
   test('snap offers 0.5 mm steps through 5 mm plus the key pitch', async () => {
     const user = userEvent.setup()
-    renderPage()
+    renderWorkbench()
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
 
     await user.click(screen.getByRole('combobox', { name: 'Snap' }))
@@ -647,7 +667,7 @@ describe('designer page', () => {
 
   test('the buffer distance dropdown is gated on Show buffer', async () => {
     const user = userEvent.setup()
-    renderPage()
+    renderWorkbench()
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
 
     const buffer = screen.getByRole('combobox', { name: 'Buffer' })
@@ -664,7 +684,7 @@ describe('designer page', () => {
 
   test('the plate, buffer and label toggles report their pressed state', async () => {
     const user = userEvent.setup()
-    renderPage()
+    renderWorkbench()
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
 
     const plate = screen.getByRole('button', { name: 'Show plate' })
@@ -681,7 +701,7 @@ describe('designer page', () => {
 
   test('the plate control is hidden for the Shaper Origin (CNC) target', async () => {
     const user = userEvent.setup()
-    renderPage()
+    renderWorkbench()
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
 
     assert.ok(screen.getByRole('button', { name: 'Show plate' }))
@@ -696,7 +716,7 @@ describe('designer page', () => {
 
   test('the selected pocket shows four rotate handles on the canvas', async () => {
     const user = userEvent.setup()
-    const { container } = renderPage()
+    const { container } = renderWorkbench()
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
 
     assert.equal(container.querySelectorAll('[aria-label="Rotate pocket"]').length, 0)
@@ -714,7 +734,7 @@ describe('designer page', () => {
 
   test('the Angle field rotates the selected pocket and normalises the value', async () => {
     const user = userEvent.setup()
-    renderPage()
+    renderWorkbench()
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
     await user.click(await screen.findByRole('button', { name: 'Add a 1u pocket' }))
 
@@ -726,15 +746,15 @@ describe('designer page', () => {
 
     await user.click(screen.getByRole('button', { name: /^Save/ }))
     await waitFor(() => {
-      const post = state.calls.find(c => c.method === 'POST' && c.path === '/api/keycap-trays')
-      const pocket = (post?.body as { pockets: { rotationDeg: number }[] }).pockets[0]
+      const put = state.calls.find(c => c.method === 'PUT' && c.path === '/api/keycap-trays/1')
+      const pocket = (put?.body as { pockets: { rotationDeg: number }[] }).pockets[0]
       assert.equal(pocket.rotationDeg, 40)
     })
   })
 
   test('Mirror and Flip toggle the ISO Enter shape, not its position', async () => {
     const user = userEvent.setup()
-    renderPage()
+    renderWorkbench()
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
     await user.click(await screen.findByRole('button', { name: 'Add a ISO Enter pocket' }))
 
@@ -743,8 +763,8 @@ describe('designer page', () => {
 
     await user.click(screen.getByRole('button', { name: /^Save/ }))
     await waitFor(() => {
-      const post = state.calls.find(c => c.method === 'POST' && c.path === '/api/keycap-trays')
-      const pocket = (post?.body as {
+      const put = state.calls.find(c => c.method === 'PUT' && c.path === '/api/keycap-trays/1')
+      const pocket = (put?.body as {
         pockets: { mirrorX?: boolean; flipY?: boolean; x: number; y: number }[]
       }).pockets[0]
       assert.equal(pocket.mirrorX, true)
@@ -756,7 +776,7 @@ describe('designer page', () => {
 
   test('Mirror and Flip are disabled for a rectangular pocket', async () => {
     const user = userEvent.setup()
-    renderPage()
+    renderWorkbench()
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
     await user.click(await screen.findByRole('button', { name: 'Add a 1u pocket' }))
 
@@ -766,12 +786,86 @@ describe('designer page', () => {
   })
 })
 
+describe('project gate', () => {
+  test('with no tray open, the canvas area offers a project instead of a blank tray', async () => {
+    state.projectList = [{ id: '9', name: 'Womier', trayCount: 2, updatedAt: '2026-08-28 12:00:00' }]
+    renderPage()
+    assert.ok(await screen.findByRole('button', { name: 'New project' }))
+    assert.ok(await screen.findByRole('button', { name: /Womier/ }))
+    assert.equal(screen.getByRole('heading', { level: 1 }).textContent, 'Keycap tray')
+    // No workbench: no canvas, no palette, no Save.
+    assert.equal(screen.queryByRole('application'), null)
+    assert.equal(screen.queryByRole('heading', { name: 'Pockets' }), null)
+    assert.equal(screen.queryByRole('button', { name: /^Save/ }), null)
+  })
+
+  test('creating a project from the gate posts it with a first tray', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: 'New project' }))
+    const dialog = await screen.findByRole('dialog', { name: 'New project' })
+    await user.type(within(dialog).getByRole('textbox', { name: 'Name' }), 'GMK Olivia')
+    await user.click(within(dialog).getByRole('button', { name: 'Create' }))
+
+    await waitFor(() => expect(
+      state.calls.some(c => c.method === 'POST' && c.path === '/api/keycap-projects')).toBe(true))
+    await waitFor(() => {
+      const tray = state.calls.find(c => c.method === 'POST' && c.path === '/api/keycap-trays')
+      assert.ok(tray, 'the project gets a first tray')
+      assert.equal((tray.body as { name: string; projectId: string }).name, 'Tray 1')
+      assert.equal((tray.body as { name: string; projectId: string }).projectId, 'p-new')
+    })
+  })
+
+  test('opening a project from the gate loads its most recently edited tray', async () => {
+    state.projectList = [{ id: '9', name: 'Womier', trayCount: 2, updatedAt: '2026-08-28 12:00:00' }]
+    state.designs = [
+      { id: '1', name: 'Older tray', pocketCount: 0, updatedAt: '2026-08-01 09:00:00',
+        profileKind: 'preset', projectId: '9', projectName: 'Womier' },
+      { id: '2', name: 'Newer tray', pocketCount: 0, updatedAt: '2026-08-28 18:00:00',
+        profileKind: 'preset', projectId: '9', projectName: 'Womier' },
+    ]
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: /Womier/ }))
+    await waitFor(() => expect(
+      state.calls.some(c => c.method === 'GET' && c.path === '/api/keycap-trays/2')).toBe(true))
+  })
+
+  test('the toolbar New button adds a tray to the current project', async () => {
+    const user = userEvent.setup()
+    renderWorkbench()
+    await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
+    await awaitTrayLoaded()
+
+    await user.click(screen.getByRole('button', { name: 'New tray' }))
+    await waitFor(() => {
+      const tray = state.calls.find(c => c.method === 'POST' && c.path === '/api/keycap-trays')
+      assert.ok(tray)
+      assert.equal((tray.body as { name: string; projectId: string }).projectId, '9')
+      assert.equal((tray.body as { name: string; projectId: string }).name, 'Tray 2')
+    })
+  })
+
+  test('the project menu no longer offers attach or detach', async () => {
+    const user = userEvent.setup()
+    renderWorkbench()
+    await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
+
+    await user.click(await screen.findByRole('button', { name: /Womier/ }))
+    const menu = await screen.findByRole('menu', { name: 'Project' })
+    assert.ok(within(menu).getByRole('menuitem', { name: /New tray in this project/ }))
+    assert.equal(within(menu).queryByRole('menuitem', { name: /Add to project/ }), null)
+    assert.equal(within(menu).queryByRole('menuitem', { name: /Remove from project/ }), null)
+  })
+})
+
 test('the designer says what is left of the set, and a trough counts every cap in it', async () => {
   // A set is cut across several trays, so this is a question about the project:
   // the other trays come from the server and this one is read live, before
   // anything is saved.
   state.designs = [{
-    id: '1', name: 'Top tray', pocketCount: 0, updatedAt: '2026-08-28 12:00:00',
+    id: '1', name: 'Top tray', pocketCount: 1, updatedAt: '2026-08-28 12:00:00',
     profileKind: 'preset', projectId: '9', projectName: 'Womier - Brown Grey',
   }]
   state.project = {
@@ -873,33 +967,28 @@ test('a tray comes back the way it was last being looked at', async () => {
   assert.ok(screen.getByRole('button', { name: 'Hide buffer' }))
 })
 
-test('New starts from the defaults rather than the last tray’s settings', async () => {
+test('a new tray in the project opens fresh, not the last tray’s working state', async () => {
   state.designs = [{
     id: '1', name: 'Top tray', pocketCount: 1, updatedAt: '2026-08-28 12:00:00',
-    profileKind: 'preset',
+    profileKind: 'preset', projectId: '9', projectName: 'Womier',
   }]
   const user = userEvent.setup()
   renderPage(<KeycapTrayPage />, '/keycap-tray/1')
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Hide labels' })).toBeTruthy())
+  await waitFor(() => expect(
+    (screen.getByRole('button', { name: 'Clone' }) as HTMLButtonElement).disabled).toBe(false))
   await user.click(screen.getByRole('button', { name: 'Hide labels' }))
   await waitFor(() => expect(screen.getByRole('button', { name: 'Show labels' })).toBeTruthy())
 
-  await user.click(screen.getByRole('button', { name: 'New' }))
-  // A fresh tray is not the previous one's working state carried over -- and
-  // it really is a fresh tray: clearing the address and the loaded design in
-  // one commit is what stops the URL effect putting the old one straight back.
-  // A fresh tray is not the previous one's working state carried over -- and it
-  // really is a fresh tray. Clearing `savedId` used to look like "the address
-  // names a tray nobody has loaded", which put the abandoned one straight back.
+  await user.click(screen.getByRole('button', { name: 'New tray' }))
+  // The new tray is created in the same project and opened. It starts from the
+  // designer defaults -- labels shown -- not the toggled state of Top tray.
+  await waitFor(() => expect(
+    state.calls.some(c => c.method === 'GET' && c.path === '/api/keycap-trays/2')).toBe(true))
   await waitFor(() => expect(screen.getByRole('button', { name: 'Hide labels' })).toBeTruthy())
   assert.notEqual(screen.getByRole('heading', { level: 1 }).textContent, 'Top tray')
-  assert.equal(
-    state.calls.filter(c => c.method === 'GET' && c.path === '/api/keycap-trays/1').length, 1,
-    'New must not reload the tray it just abandoned',
-  )
 })
 
-test('a new tray opens the way the settings page says', async () => {
+test('a tray with nothing remembered opens the way the settings page says', async () => {
   // Defaults belong to the designer, not to any one tray: a tray that has been
   // worked on before comes back the way it was left instead.
   state.designerDefaults = {
@@ -911,7 +1000,11 @@ test('a new tray opens the way the settings page says', async () => {
       snapMm: 19.05,
     },
   }
-  renderPage()
+  state.designs = [{
+    id: '1', name: 'Fresh tray', pocketCount: 0, updatedAt: '2026-08-28 12:00:00',
+    profileKind: 'preset', projectId: '9', projectName: 'Womier',
+  }]
+  renderPage(<KeycapTrayPage />, '/keycap-tray/1')
   await waitFor(() => expect(screen.getByRole('button', { name: 'Show labels' })).toBeTruthy())
   assert.ok(screen.getByRole('button', { name: 'Hide buffer' }))
   assert.equal(screen.getByRole('combobox', { name: 'Snap' }).textContent, '1u pitch')

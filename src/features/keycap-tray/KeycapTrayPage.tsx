@@ -33,6 +33,7 @@ import TrayCanvas from './components/TrayCanvas.tsx'
 import PocketPalette from './components/PocketPalette.tsx'
 import PropertiesPanel from './components/PropertiesPanel.tsx'
 import ExportPanel from './components/ExportPanel.tsx'
+import ProjectGate from './components/ProjectGate.tsx'
 import { useConfirm } from '../../components/ConfirmDialogProvider.tsx'
 import { EmptyState, LoadingState } from '../../components/LoadingState.tsx'
 import { formatUpdated } from '../keycap-projects/model/formatUpdated.ts'
@@ -122,6 +123,12 @@ export default function KeycapTrayPage() {
 
   useEffect(() => { void refreshProjects() }, [refreshProjects])
 
+  // Landing on the gate (no tray in the URL): re-pull both lists so a project
+  // or tray made elsewhere shows up, and so "open" lands on the newest tray.
+  useEffect(() => {
+    if (!designId) { void refresh(); void refreshProjects() }
+  }, [designId, refresh, refreshProjects])
+
   // The settings page decides how a designer opens. Applied to the current
   // state only while nothing is loaded and untouched -- a tray already open,
   // or edits already made, are not overwritten by a preference arriving late.
@@ -202,6 +209,9 @@ export default function KeycapTrayPage() {
       setSavedRevision(0)
       setOpenDialog(false)
       setFitToken(t => t + 1)
+      // Keep the summary list current so the header names the right project --
+      // a tray just cloned or created is not in the list the page loaded with.
+      void refresh()
       // Guarded, so the effect that loads *from* the URL does not push a
       // duplicate history entry on its way back here.
       if (designId !== id) navigate(`/keycap-tray/${id}`)
@@ -210,7 +220,7 @@ export default function KeycapTrayPage() {
     } finally {
       if (generation === loadGeneration.current) setBusy(false)
     }
-  }, [d, designId, navigate])
+  }, [d, designId, navigate, refresh])
 
   // Written on change rather than on unload: a browser tab closed by force
   // still remembers, and the write is a few hundred bytes.
@@ -276,38 +286,41 @@ export default function KeycapTrayPage() {
     navigate(trays.length ? `/keycap-tray/${trays[0].id}` : `/projects/${id}`)
   }, [designs, navigate])
 
-  // Start a project from the open tray and link the tray to it in one step,
-  // staying in the designer -- the gear is right there to fill in the set.
-  const createLinkedProject = useCallback(async () => {
+  // A tray only exists inside a project, so a new project is created with its
+  // first tray already cut. The project page is where the set gets described,
+  // so that is where this lands.
+  const createProjectWithTray = useCallback(async () => {
     const trimmed = newProjectName.trim()
-    if (!trimmed || !savedId) return
+    if (!trimmed) return
     setBusy(true)
     try {
       const { id } = await projects.createProject({ name: trimmed })
-      await api.updateDesign(savedId, design, id)
-      d.replace(x => ({ ...x, projectId: id }))
+      try {
+        await api.createDesign({ ...emptyDesign(), name: 'Tray 1' }, id)
+      } catch {
+        // The project exists; its tray can be added from the project page.
+        setToast('Project created — add a tray from the project page')
+      }
       setNewProjectOpen(false)
       setNewProjectName('')
       setProjectMenu(null)
-      await refresh()
-      await refreshProjects()
-      setToast('Project created')
+      navigate(`/projects/${id}`)
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
-  }, [newProjectName, savedId, design, d, refresh, refreshProjects])
+  }, [newProjectName, navigate])
 
-  // Unlink the tray from its project. The tray and its pockets are untouched --
-  // only the association goes.
-  const removeFromProject = useCallback(async () => {
-    if (!savedId) return
+  // Another tray for the project the open one belongs to. A set is laid out
+  // across several trays, so this is the ordinary "New".
+  const newTrayInProject = useCallback(async () => {
+    if (!owningProjectId) { navigate('/keycap-tray'); return }
     setProjectMenu(null)
     setBusy(true)
     try {
-      await api.updateDesign(savedId, design, null)
-      d.replace(x => ({ ...x, projectId: null }))
-      await refresh()
-      setToast('Removed from project')
+      const seed = { ...emptyDesign(), name: `Tray ${siblingTrays.length + 1}` }
+      const { id } = await api.createDesign(seed, owningProjectId)
+      await load(id)
+      setToast('New tray added to the project')
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
-  }, [savedId, design, d, refresh])
+  }, [owningProjectId, siblingTrays.length, load, navigate])
 
   // Delete / undo / redo while the canvas has focus.
   useEffect(() => {
@@ -346,6 +359,9 @@ export default function KeycapTrayPage() {
       }}
     >
       <Paper component="header" sx={{ px: 1.5, py: 1 }}>
+        {!designId ? (
+          <Typography variant="h3" component="h1">Keycap tray</Typography>
+        ) : (
         <Stack
           direction="row"
           spacing={1}
@@ -381,7 +397,7 @@ export default function KeycapTrayPage() {
                 component="span"
                 sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
               >
-                {owningProject?.projectName ?? 'Add to project'}
+                {owningProject?.projectName ?? 'No project'}
               </Box>
             </Button>
             {owningProjectId && (
@@ -417,6 +433,11 @@ export default function KeycapTrayPage() {
                 </Typography>
               </MenuItem>
             ))}
+            {owningProjectId && (
+              <MenuItem disabled={busy} onClick={() => void newTrayInProject()}>
+                New tray in this project
+              </MenuItem>
+            )}
             {owningProjectId && <Divider />}
             {projectList
               .filter(p => p.id !== owningProjectId)
@@ -426,24 +447,11 @@ export default function KeycapTrayPage() {
                 </MenuItem>
               ))}
             <MenuItem
-              disabled={busy || !savedId}
+              disabled={busy}
               onClick={() => { setProjectMenu(null); setNewProjectName(''); setNewProjectOpen(true) }}
             >
               New project…
-              {!savedId && (
-                <Typography
-                  variant="body2" color="text.secondary" component="span" sx={{ ml: 1 }}
-                >
-                  save the tray first
-                </Typography>
-              )}
             </MenuItem>
-            {owningProjectId && <Divider />}
-            {owningProjectId && (
-              <MenuItem disabled={busy} onClick={() => void removeFromProject()}>
-                Remove from project
-              </MenuItem>
-            )}
           </Menu>
 
           <ToggleButtonGroup
@@ -491,23 +499,9 @@ export default function KeycapTrayPage() {
             <Button
               size="small" startIcon={<AddIcon />}
               disabled={busy}
-              onClick={() => {
-                // The address is cleared first, and deliberately in the same
-                // handler as the rest: React batches them into one commit, so
-                // the effect that loads from the URL never sees a cleared
-                // `savedId` beside a URL that still names a tray -- which would
-                // read as "the URL wants a tray nobody has loaded" and put the
-                // one just abandoned straight back.
-                if (designId) navigate('/keycap-tray')
-                loadGeneration.current += 1
-                answeredForUrl.current = designId ?? null
-                d.setDesign(emptyDesign())
-                setSettings(baselineRef.current)
-                setSavedId(null)
-                setSavedRevision(null)
-              }}
+              onClick={() => void newTrayInProject()}
             >
-              New
+              New tray
             </Button>
             <Button
               size="small"
@@ -531,8 +525,17 @@ export default function KeycapTrayPage() {
             </Stack>
           </Stack>
         </Stack>
+        )}
       </Paper>
 
+      {!designId ? (
+        <ProjectGate
+          projects={projectList}
+          busy={busy}
+          onNewProject={() => { setNewProjectName(''); setNewProjectOpen(true) }}
+          onOpenProject={goToProject}
+        />
+      ) : (
       <Box
         sx={{
           display: 'grid',
@@ -608,8 +611,12 @@ export default function KeycapTrayPage() {
           />
         </Paper>
       </Box>
+      )}
 
-      <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={!!designId && openDialog}
+        onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth
+      >
         <DialogTitle>Saved trays</DialogTitle>
         <DialogContent dividers>
           {listLoading && <LoadingState label="Loading your saved trays…" fill={false} />}
@@ -655,8 +662,8 @@ export default function KeycapTrayPage() {
             placeholder="GMK Olivia"
             value={newProjectName}
             onChange={e => setNewProjectName(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') void createLinkedProject() }}
-            helperText="The open tray is added to it. Its set can be filled in from the gear."
+            onKeyDown={e => { if (e.key === 'Enter') void createProjectWithTray() }}
+            helperText="Opens the project page with its first tray ready and photos to upload."
           />
         </DialogContent>
         <DialogActions>
@@ -665,7 +672,7 @@ export default function KeycapTrayPage() {
             variant="contained"
             disabled={!newProjectName.trim() || busy}
             startIcon={busy ? <CircularProgress size={14} color="inherit" /> : undefined}
-            onClick={() => void createLinkedProject()}
+            onClick={() => void createProjectWithTray()}
           >
             Create
           </Button>
