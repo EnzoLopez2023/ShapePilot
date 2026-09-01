@@ -21,11 +21,19 @@ import { useDocumentLifecycle } from '../../components/designer/useDocumentLifec
 import ObjectTree from '../../components/designer/ObjectTree.tsx'
 import Viewport3D from '../../components/viewport3d/Viewport3D.tsx'
 import type { ViewportPart } from '../../components/viewport3d/Viewport3D.tsx'
+import Canvas2D from '../../components/canvas2d/Canvas2D.tsx'
+import type { CanvasShape } from '../../components/canvas2d/Canvas2D.tsx'
 import { EmptyState } from '../../components/LoadingState.tsx'
+import { compileObject } from '../../geometry/sceneShapes.ts'
 import { evaluateProgram } from '../../csg/evaluate.ts'
 import { programFromScene } from '../../csg/fromScene.ts'
 import { resolveAssets } from '../../import/assets.ts'
 import { programToObjects } from '../../csg/toScene.ts'
+import { writePlainSvg } from '../../export/plainSvg.ts'
+import PhotoSourcePanel from './PhotoSourcePanel.tsx'
+import VectorPreview from './VectorPreview.tsx'
+import { useVectorTrace } from './useVectorTrace.ts'
+import { vectorDrawingToPathObjects } from './vectorToPaths.ts'
 import { useSceneMeshes } from '../bambu-designer/useSceneMeshes.ts'
 import { checkPrint, worstSeverity } from '../bambu-designer/printChecks.ts'
 import { BAMBU_X2D } from '../../model/machines.ts'
@@ -50,6 +58,7 @@ export default function PlaygroundPage() {
   const doc = useDesignDocument('playground')
   const lifecycle = useDocumentLifecycle({ kind: 'playground', doc: doc.doc, setDoc: doc.setDoc })
   const assistant = useAiDesigner('playground')
+  const trace = useVectorTrace()
 
   const [fitToken, setFitToken] = useState(0)
   const [openDialog, setOpenDialog] = useState(false)
@@ -58,6 +67,10 @@ export default function PlaygroundPage() {
   const [previewMesh, setPreviewMesh] = useState<Mesh | null>(null)
 
   const objects = doc.doc.objects
+
+  // A design traced from a photo is entirely 2D paths; that flips the whole
+  // page from the 3D viewport to the 2D canvas and turns on the SVG export.
+  const twoD = objects.length > 0 && objects.every(o => o.type === 'path')
 
   useEffect(() => {
     let cancelled = false
@@ -72,6 +85,21 @@ export default function PlaygroundPage() {
 
   const currentProgram = useMemo(
     () => programFromScene(objects, { textOutlines }), [objects, textOutlines])
+
+  // The 2D canvas draws compiled outlines, same as the Shaper designer does.
+  const canvasShapes = useMemo<CanvasShape[]>(
+    () => !twoD ? [] : objects
+      .filter(o => o.visible)
+      .map(o => ({
+        id: o.id,
+        name: o.name,
+        polygons: compileObject(o, { textOutlines }),
+        mode: o.mode,
+        cutType: o.cut?.type,
+        locked: o.locked,
+      }))
+      .filter(s => s.polygons.length),
+    [twoD, objects, textOutlines])
 
   // A proposal is rendered as a ghost beside the current model, so the change
   // is visible before it is accepted rather than after.
@@ -122,6 +150,43 @@ export default function PlaygroundPage() {
     assistant.accept()
     setFitToken(t => t + 1)
   }, [assistant, doc])
+
+  const applyTrace = useCallback(() => {
+    const pending = trace.proposal
+    if (!pending) return
+    const next = vectorDrawingToPathObjects(pending.drawing)
+    // Same shape as applyProposal: geometry and transcript land in one replace,
+    // so the whole trace is a single undo step.
+    const transcript: ChatTurn[] = [
+      ...assistant.turns,
+      {
+        id: crypto.randomUUID(), role: 'user',
+        text: 'Trace this photo to vector', at: new Date().toISOString(),
+      },
+      {
+        id: crypto.randomUUID(), role: 'assistant',
+        text: pending.notes, at: new Date().toISOString(),
+        summary: `traced ${next.length} ${next.length === 1 ? 'path' : 'paths'} from a photo`,
+      },
+    ]
+    doc.replace(d => ({ ...d, objects: next, chat: transcript }))
+    assistant.setTurns(transcript)
+    trace.discard()
+    setFitToken(t => t + 1)
+  }, [trace, assistant, doc])
+
+  const exportSvg = useCallback(() => {
+    if (!canvasShapes.length) {
+      lifecycle.setError('There is nothing to export yet.')
+      return
+    }
+    const colourOf = new Map(objects.map(o => [o.id, o.color]))
+    const svg = writePlainSvg(
+      canvasShapes.map(s => ({ polygons: s.polygons, fill: colourOf.get(s.id) })),
+      { name: doc.doc.name },
+    )
+    triggerDownload(svg, `${safeFilename(doc.doc.name)}.svg`, 'image/svg+xml')
+  }, [canvasShapes, objects, doc.doc.name, lifecycle])
 
   const exportMesh = useCallback(async (format: 'stl' | '3mf') => {
     if (!currentProgram.parts.length) {
@@ -197,6 +262,9 @@ export default function PlaygroundPage() {
             >
               Continue in Bambu
             </Button>
+            <Button size="small" disabled={!twoD} onClick={exportSvg}>
+              SVG
+            </Button>
             <Button size="small" disabled={!objects.length} onClick={() => void exportMesh('stl')}>
               STL
             </Button>
@@ -265,6 +333,26 @@ export default function PlaygroundPage() {
                 </Stack>
               )}
 
+              {assistant.available !== false && (
+                <>
+                  <Divider />
+                  <PhotoSourcePanel
+                    available={trace.available === true}
+                    busy={trace.busy}
+                    onTrace={(hashes, hint) => void trace.trace(hashes, hint || undefined)}
+                    onError={lifecycle.setError}
+                  />
+                  {trace.error && (
+                    <Alert
+                      severity="error" variant="outlined"
+                      onClose={() => trace.setError(null)}
+                    >
+                      {trace.error}
+                    </Alert>
+                  )}
+                </>
+              )}
+
               {objects.length > 0 && (
                 <>
                   <Divider />
@@ -299,7 +387,35 @@ export default function PlaygroundPage() {
               bgcolor: 'background.default',
             }}
           >
-            {objects.length || previewMesh ? (
+            {trace.proposal ? (
+              <VectorPreview
+                drawing={trace.proposal.drawing}
+                notes={trace.proposal.notes}
+                onApply={applyTrace}
+                onDiscard={trace.discard}
+              />
+            ) : twoD ? (
+              <Canvas2D
+                shapes={canvasShapes}
+                objects={objects}
+                selection={doc.selection}
+                gridMm={0}
+                snapMm={1}
+                fitToken={fitToken}
+                emptyHint="Trace a photo to see it here."
+                onSelect={(id, additive) => doc.toggleSelection(id, additive)}
+                onClearSelection={doc.clearSelection}
+                onMove={(ids, dx, dy) => doc.moveObjects(ids, dx, dy)}
+                onRotate={(id, deg) => {
+                  const object = findObject(objects, id)
+                  if (!object) return
+                  const [rx, ry] = object.transform.rotationDeg
+                  doc.updateObject(id, {
+                    transform: { ...object.transform, rotationDeg: [rx, ry, deg] },
+                  })
+                }}
+              />
+            ) : objects.length || previewMesh ? (
               <Viewport3D
                 parts={viewportParts}
                 selection={doc.selection}
@@ -331,24 +447,28 @@ export default function PlaygroundPage() {
               <Box sx={{ display: 'grid', placeItems: 'center', height: '100%' }}>
                 <EmptyState
                   title="Nothing here yet"
-                  description="Describe what you want to make and it will appear here."
+                  description="Describe what you want to make, or trace a photo, and it will appear here."
                 />
               </Box>
             )}
-            <Stack
-              aria-live="polite"
-              sx={{
-                position: 'absolute', left: 12, bottom: 10, pointerEvents: 'none',
-                color: 'text.secondary', fontSize: '0.75rem',
-              }}
-            >
-              <span>
-                {previewMesh
-                  ? 'Previewing a proposed change'
-                  : `${objects.length} ${objects.length === 1 ? 'part' : 'parts'}`}
-                {evaluating && ' · building…'}
-              </span>
-            </Stack>
+            {!trace.proposal && (
+              <Stack
+                aria-live="polite"
+                sx={{
+                  position: 'absolute', left: 12, bottom: 10, pointerEvents: 'none',
+                  color: 'text.secondary', fontSize: '0.75rem',
+                }}
+              >
+                <span>
+                  {previewMesh
+                    ? 'Previewing a proposed change'
+                    : twoD
+                      ? `${objects.length} ${objects.length === 1 ? 'path' : 'paths'} · 2D`
+                      : `${objects.length} ${objects.length === 1 ? 'part' : 'parts'}`}
+                  {evaluating && ' · building…'}
+                </span>
+              </Stack>
+            )}
           </Paper>
         </Box>
       </Box>

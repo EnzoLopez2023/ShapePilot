@@ -14,6 +14,8 @@ import type { Repositories, SetItemInput } from '../../lib/db/repositories/contr
 import { isImageAssetFormat } from '../../lib/db/repositories/contracts.ts'
 import type { ShapeProgram } from '../../lib/contracts/shapeProgram.ts'
 import { ShapeProgramError, validateShapeProgram } from '../../lib/contracts/shapeProgram.ts'
+import type { VectorDrawing } from '../../lib/contracts/vectorDrawing.ts'
+import { VectorDrawingError, validateVectorDrawing } from '../../lib/contracts/vectorDrawing.ts'
 import type { AssetStore } from '../../lib/assets/assetStore.ts'
 import { AssetStoreError, assetKey } from '../../lib/assets/assetStore.ts'
 import { ApiError } from '../errors/ApiError.ts'
@@ -24,6 +26,7 @@ import {
   SHAPE_PROGRAM_SCHEMA,
 } from '../ai/shapeProgramSchema.ts'
 import { KEYCAP_SET_INSTRUCTIONS, KEYCAP_SET_SCHEMA } from '../ai/keycapSetSchema.ts'
+import { VECTOR_DRAWING_INSTRUCTIONS, VECTOR_DRAWING_SCHEMA } from '../ai/vectorDrawingSchema.ts'
 import { validateSetItems } from '../validation/keycapProject.ts'
 
 type Handler = (req: Request, res: Response) => Promise<void>
@@ -177,7 +180,7 @@ function buildInput(request: ShapeRequest): string {
   return sections.join('\n\n')
 }
 
-interface KeycapSetRequest {
+interface PhotoRequest {
   hashes: string[]
   hint: string
 }
@@ -185,7 +188,9 @@ interface KeycapSetRequest {
 /** A content hash names bytes in the asset store; anything else is not one. */
 const HEX64 = /^[0-9a-f]{64}$/
 
-function parseKeycapSetRequest(body: unknown): KeycapSetRequest {
+/** The body both vision routes take: a handful of already-uploaded photos named
+ *  by content hash, and an optional free-text hint. */
+function parsePhotoRequest(body: unknown): PhotoRequest {
   if (typeof body !== 'object' || body === null || Array.isArray(body)) {
     bad('body', 'body must be an object')
   }
@@ -235,6 +240,39 @@ export function createAiRouter({ repos, client, store }: AiRouterOptions): Route
   const { audit, designAssets } = repos
   const takeToken = createRateLimiter(RATE_MAX_CALLS)
   const takeVisionToken = createRateLimiter(RATE_MAX_VISION_CALLS)
+
+  /**
+   * Turn a list of already-uploaded photo hashes into `input_image` content.
+   * Owner-scoped, so a hash belonging to someone else is simply not found, and
+   * an asset that is not an image is refused before it reaches the model.
+   */
+  const loadPhotoImages = async (
+    owner: ReturnType<typeof ownerOf>, hashes: readonly string[],
+  ): Promise<FoundryContent[]> => {
+    const images: FoundryContent[] = []
+    for (const hash of hashes) {
+      const asset = await designAssets.find(owner, hash)
+      if (!asset) throw ApiError.notFound('photo not found')
+      if (!isImageAssetFormat(asset.format)) {
+        throw ApiError.badRequest('that asset is not an image', { field: 'hashes' })
+      }
+      let bytes: Uint8Array
+      try {
+        bytes = await store().get(assetKey(owner, hash))
+      } catch (cause) {
+        // Metadata without bytes is a real state, since assets sit outside the
+        // backup manifest. It reads as absent, so the client re-uploads.
+        if (cause instanceof AssetStoreError) throw ApiError.notFound('photo not found')
+        throw cause
+      }
+      images.push({
+        type: 'input_image',
+        image_url: `data:image/${asset.format};base64,${Buffer.from(bytes).toString('base64')}`,
+        detail: 'auto',
+      })
+    }
+    return images
+  }
 
   router.get('/status', (_req, res) => {
     res.json({ available: client !== null })
@@ -332,36 +370,17 @@ export function createAiRouter({ repos, client, store }: AiRouterOptions): Route
         `at most ${RATE_MAX_VISION_CALLS} photo readings per minute`)
     }
 
-    const request = parseKeycapSetRequest(req.body ?? {})
+    const request = parsePhotoRequest(req.body ?? {})
 
-    const content: FoundryContent[] = [{
-      type: 'input_text',
-      text: request.hint
-        ? `Read these photographs of a keycap set.\n\nFrom the owner: ${request.hint}`
-        : 'Read these photographs of a keycap set.',
-    }]
-    for (const hash of request.hashes) {
-      // Owner-scoped, so a hash belonging to someone else is simply not found.
-      const asset = await designAssets.find(owner, hash)
-      if (!asset) throw ApiError.notFound('photo not found')
-      if (!isImageAssetFormat(asset.format)) {
-        throw ApiError.badRequest('that asset is not an image', { field: 'hashes' })
-      }
-      let bytes: Uint8Array
-      try {
-        bytes = await store().get(assetKey(owner, hash))
-      } catch (cause) {
-        // Metadata without bytes is a real state, since assets sit outside the
-        // backup manifest. It reads as absent, so the client re-uploads.
-        if (cause instanceof AssetStoreError) throw ApiError.notFound('photo not found')
-        throw cause
-      }
-      content.push({
-        type: 'input_image',
-        image_url: `data:image/${asset.format};base64,${Buffer.from(bytes).toString('base64')}`,
-        detail: 'auto',
-      })
-    }
+    const content: FoundryContent[] = [
+      {
+        type: 'input_text',
+        text: request.hint
+          ? `Read these photographs of a keycap set.\n\nFrom the owner: ${request.hint}`
+          : 'Read these photographs of a keycap set.',
+      },
+      ...await loadPhotoImages(owner, request.hashes),
+    ]
 
     const answer = await client.respondJson({
       instructions: KEYCAP_SET_INSTRUCTIONS,
@@ -422,6 +441,86 @@ export function createAiRouter({ repos, client, store }: AiRouterOptions): Route
         items: items.map(item => ({ ...item, source: 'photo' as const })),
       },
       notes: text(fields.notes) ?? '',
+      usage: answer.usage,
+    })
+  }))
+
+  /**
+   * Trace artwork -- a logo, a monogram -- out of a photograph into vector
+   * paths. Same shape as /keycap-set: the bytes were uploaded through
+   * PUT /api/design-assets/:hash and are read back here, and the answer is a
+   * proposal the browser previews and the person applies. Nothing is written.
+   */
+  router.post('/vector', asyncRoute(async (req, res) => {
+    if (!client) {
+      throw new ApiError(503, 'ai_unavailable', 'the design assistant is not configured')
+    }
+    const owner = ownerOf(req)
+    if (!takeVisionToken(`${owner.tenantId}:${owner.oid}`, Date.now())) {
+      throw new ApiError(429, 'rate_limited',
+        `at most ${RATE_MAX_VISION_CALLS} photo readings per minute`)
+    }
+
+    const request = parsePhotoRequest(req.body ?? {})
+
+    const content: FoundryContent[] = [
+      {
+        type: 'input_text',
+        text: request.hint
+          ? `Trace the artwork in this photograph.\n\nFrom the owner: ${request.hint}`
+          : 'Trace the artwork in this photograph.',
+      },
+      ...await loadPhotoImages(owner, request.hashes),
+    ]
+
+    const answer = await client.respondJson({
+      instructions: VECTOR_DRAWING_INSTRUCTIONS,
+      input: [{ role: 'user', content }],
+      schemaName: 'vector_drawing',
+      schema: VECTOR_DRAWING_SCHEMA,
+    })
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(answer.text)
+    } catch {
+      throw new ApiError(502, 'ai_malformed', 'the model returned something that is not JSON')
+    }
+
+    const { notes, ...drawingFields } = parsed as Record<string, unknown>
+    let drawing: VectorDrawing
+    try {
+      // Structured output guarantees the shape, not that the paths describe a
+      // drawable shape, so the same validator the browser uses runs here first.
+      drawing = validateVectorDrawing(drawingFields)
+    } catch (cause) {
+      if (cause instanceof VectorDrawingError) {
+        throw new ApiError(502, 'ai_invalid_drawing',
+          `the model produced an unusable drawing (${cause.message})`, { field: cause.field })
+      }
+      throw cause
+    }
+
+    void audit.record({
+      owner,
+      category: 'ai',
+      action: 'vector_traced',
+      outcome: 'success',
+      httpMethod: req.method,
+      httpPath: req.path,
+      httpStatus: 200,
+      requestId: req.requestId ?? null,
+      subject: client.deployment,
+      detail: JSON.stringify({
+        photos: request.hashes.length,
+        paths: drawing.paths.length,
+        usage: answer.usage,
+      }),
+    }).catch(() => { /* audit must never break a response */ })
+
+    res.json({
+      drawing,
+      notes: typeof notes === 'string' ? notes : '',
       usage: answer.usage,
     })
   }))

@@ -1,6 +1,7 @@
 // The AI design API client.
 import { apiRequest } from './http.ts'
 import type { ShapeProgram } from '../../lib/contracts/shapeProgram.ts'
+import type { VectorDrawing } from '../../lib/contracts/vectorDrawing.ts'
 
 export interface ShapeUsage {
   inputTokens: number
@@ -72,5 +73,25 @@ export const readKeycapSet = (hashes: string[], hint?: string) =>
     body: { hashes, hint },
     // Several photographs through a vision model is the slowest call the app
     // makes; the design turn's own budget is the floor, not the ceiling.
+    timeoutMs: 150_000,
+  })
+
+export interface VectorDrawingResponse {
+  drawing: VectorDrawing
+  /** One or two sentences describing what the model traced and the size it chose. */
+  notes: string
+  usage: ShapeUsage
+}
+
+/**
+ * Trace artwork out of a photograph already uploaded to the asset store. Only
+ * hashes cross the wire; the server reads the bytes back itself. The answer is
+ * a proposal -- nothing is saved until the person applies it.
+ */
+export const traceVector = (hashes: string[], hint?: string) =>
+  apiRequest<VectorDrawingResponse>('/ai/vector', {
+    method: 'POST',
+    body: { hashes, hint },
+    // A vision turn, same class of latency as reading a keycap set.
     timeoutMs: 150_000,
   })

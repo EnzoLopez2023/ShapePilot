@@ -18,7 +18,7 @@ import { fetchAsset, uploadAsset } from '../../../services/designAssets.ts'
 import { hashBytes } from '../../../import/assetStore.ts'
 import { errorMessage } from '../../../services/errors.ts'
 import { EmptyState } from '../../../components/LoadingState.tsx'
-import { MAX_PHOTO_BYTES, PHOTO_ACCEPT, preparePhoto } from '../photos/downscale.ts'
+import { MAX_PHOTO_BYTES, PHOTO_ACCEPT, preparePhoto } from '../../../import/preparePhoto.ts'
 import type { ProjectPhoto } from '../model/types.ts'
 
 /** Matches the server's own cap; see LIMITS.maxPhotos in

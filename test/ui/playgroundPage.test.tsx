@@ -16,6 +16,40 @@ vi.mock('../../src/components/viewport3d/Viewport3D.tsx', () => ({
     <div data-testid="viewport" data-parts={parts.length} />,
 }))
 
+vi.mock('../../src/components/canvas2d/Canvas2D.tsx', () => ({
+  default: ({ shapes }: { shapes: { id: string }[] }) =>
+    <div data-testid="canvas2d" data-shapes={shapes.length} />,
+}))
+
+// jsdom has no createImageBitmap, so the panel's encoder is stubbed at the
+// module boundary -- the same choice the keycap project page test makes.
+vi.mock('../../src/import/preparePhoto.ts', () => ({
+  PHOTO_ACCEPT: 'image/*',
+  MAX_PHOTO_BYTES: 1_000_000,
+  preparePhoto: async () => ({
+    bytes: new TextEncoder().encode('fake-jpeg').buffer,
+    format: 'jpeg', filename: 'logo.jpg', width: 120, height: 90,
+  }),
+}))
+
+const vectorResponse = {
+  drawing: {
+    version: 1, units: 'mm', widthMm: 40, heightMm: 30,
+    paths: [{
+      id: 'monogram', name: 'Monogram', fill: '#101010',
+      commands: [
+        { cmd: 'M', to: [0, 0] },
+        { cmd: 'L', to: [20, 0] },
+        { cmd: 'L', to: [20, 14] },
+        { cmd: 'L', to: [0, 14] },
+        { cmd: 'Z' },
+      ],
+    }],
+  },
+  notes: 'Traced the monogram.',
+  usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
+}
+
 const { default: PlaygroundPage } =
   await import('../../src/features/playground/PlaygroundPage.tsx')
 
@@ -44,9 +78,16 @@ const renderPage = () => render(
   </ThemeModeProvider>,
 )
 
+let vectorCalls: unknown[] = []
+const realCreateObjectURL = globalThis.URL.createObjectURL
+const realRevokeObjectURL = globalThis.URL.revokeObjectURL
+
 beforeEach(() => {
   aiAvailable = true
   shapeCalls = []
+  vectorCalls = []
+  globalThis.URL.createObjectURL = () => 'blob:mock'
+  globalThis.URL.revokeObjectURL = () => {}
   vi.stubGlobal('ResizeObserver', class {
     observe() {} unobserve() {} disconnect() {}
   })
@@ -60,12 +101,31 @@ beforeEach(() => {
       shapeCalls.push(JSON.parse(String(init?.body ?? '{}')))
       return json(shapeResponse)
     }
+    if (url.includes('/api/ai/vector')) {
+      vectorCalls.push(JSON.parse(String(init?.body ?? '{}')))
+      return json(vectorResponse)
+    }
+    if (url.includes('/api/design-assets/')) return json({ ok: true })
     if (url.includes('/api/design-documents')) return json([])
     return json({ ok: true })
   })
 })
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+  globalThis.URL.createObjectURL = realCreateObjectURL
+  globalThis.URL.revokeObjectURL = realRevokeObjectURL
+})
+
+/** Pick a photo and run the trace, leaving a proposal on screen. */
+const traceAPhoto = async (user: ReturnType<typeof userEvent.setup>) => {
+  const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement
+  await user.upload(fileInput, new File(['x'], 'logo.png', { type: 'image/png' }))
+  const traceButton = await screen.findByRole('button', { name: /Trace to vector/ })
+  await waitFor(() => expect(traceButton.hasAttribute('disabled')).toBe(false))
+  await user.click(traceButton)
+}
 
 test('the page has one h1 and offers example prompts before any conversation', async () => {
   renderPage()
@@ -169,4 +229,54 @@ test('an unavailable assistant is reported, not hidden', async () => {
   aiAvailable = false
   renderPage()
   await waitFor(() => expect(screen.getByText(/not configured for this deployment/)).toBeTruthy())
+})
+
+test('tracing a photo produces a drawing proposal that is not applied on its own', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Add a photo' })).toBeTruthy())
+
+  await traceAPhoto(user)
+
+  await waitFor(() => expect(screen.getByText('Proposed drawing')).toBeTruthy())
+  assert.ok(screen.getByText(vectorResponse.notes))
+  assert.ok(screen.getByRole('button', { name: 'Apply' }))
+  assert.ok(screen.getByRole('button', { name: 'Discard' }))
+  // Only hashes crossed the wire.
+  assert.deepEqual((vectorCalls[0] as { hashes: string[] }).hashes.length, 1)
+  // Nothing has reached the document.
+  assert.equal(screen.queryByRole('list', { name: 'Objects' }), null)
+  assert.ok(screen.getByRole('button', { name: 'SVG' }).hasAttribute('disabled'))
+})
+
+test('applying a trace puts path objects in the document and switches to the 2D canvas', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Add a photo' })).toBeTruthy())
+  await traceAPhoto(user)
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Apply' })).toBeTruthy())
+
+  await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+  const tree = await screen.findByRole('list', { name: 'Objects' })
+  assert.ok(within(tree).getByText('Monogram'))
+  // The 3D viewport gave way to the 2D canvas, and SVG export is now live.
+  assert.ok(screen.getByTestId('canvas2d'))
+  assert.equal(screen.queryByTestId('viewport'), null)
+  assert.equal(screen.getByRole('button', { name: 'SVG' }).hasAttribute('disabled'), false)
+  assert.equal(screen.queryByText('Proposed drawing'), null)
+})
+
+test('discarding a trace leaves the document untouched', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Add a photo' })).toBeTruthy())
+  await traceAPhoto(user)
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Discard' })).toBeTruthy())
+
+  await user.click(screen.getByRole('button', { name: 'Discard' }))
+
+  assert.equal(screen.queryByText('Proposed drawing'), null)
+  assert.equal(screen.queryByRole('list', { name: 'Objects' }), null)
+  await waitFor(() => expect(screen.getByText('Nothing here yet')).toBeTruthy())
 })

@@ -1,16 +1,17 @@
 // Preparing a photograph for upload.
 //
-// A phone photo of a keycap tray is 3-5 MB and 4032 px wide. Neither the
-// artifact store nor the model needs that: the assistant reads legends and
-// relative widths, both of which survive a long edge of 1600 px comfortably,
-// and the browser only ever shows the picture in a thumbnail strip.
+// A phone photo is 3-5 MB and 4032 px wide. Neither the artifact store nor the
+// model needs that: the assistant reads legends, relative widths and artwork
+// outlines, all of which survive a long edge of 1600 px comfortably, and the
+// browser only ever shows the picture in a thumbnail strip.
 //
 // This is the one place that decides image encoding. Everything downstream --
 // the hash, the upload, the data URL the server builds -- follows from what
-// comes out of here.
-import type { ImageFormat } from '../../../services/designAssets.ts'
+// comes out of here. Two callers: the keycap project photo panel and the
+// Playground's photo-to-vector panel.
+import type { ImageFormat } from '../services/designAssets.ts'
 
-/** Long edge, in pixels. Legends stay readable well below this. */
+/** Long edge, in pixels. Legends and outlines stay readable well below this. */
 const MAX_EDGE = 1600
 
 /** JPEG, in the 0-1 range canvas.toBlob uses. */
@@ -82,7 +83,7 @@ export async function preparePhoto(file: File): Promise<PreparedPhoto> {
 }
 
 /** `createImageBitmap` is the only decoder here; jsdom has neither, so the
- *  tests that exercise the panel stub the upload rather than the canvas. */
+ *  tests that exercise a photo panel stub this module rather than the canvas. */
 const decode = (file: File): Promise<ImageBitmap> => createImageBitmap(file)
 
 /** The stored name should describe the bytes that were stored, not the ones
