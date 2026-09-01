@@ -87,7 +87,7 @@ requireCondition(
     && deploymentSafety.includes('smartDetectorAlertRules')
     && deploymentSafety.includes("'/version.json'")
     && deploymentSafety.includes("'/api/version'"),
-  'deployment safety must use direct endpoints and preserve the zero-alert invariant',
+  'deployment safety must use direct endpoints and preserve the owned-alert invariant',
 )
 const deploymentRbac = read('scripts/check-deploy-rbac.ts')
 requireCondition(
