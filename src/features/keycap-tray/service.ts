@@ -67,8 +67,15 @@ export const createDesign = (d: TrayDesign, projectId?: string | null) =>
 export const updateDesign = (id: string, d: TrayDesign, projectId?: string | null) =>
   apiRequest<{ ok: true }>(`${base}/${id}`, { method: 'PUT', body: payload(d, projectId) })
 
-export const cloneDesign = (id: string, name?: string) =>
-  apiRequest<{ id: string }>(`${base}/${id}/clone`, { method: 'POST', body: { name } })
+/**
+ * `projectId` retargets the copy: omit it to keep the source's project, pass a
+ * project id to move the copy there, or `null` to leave it unassigned.
+ */
+export const cloneDesign = (id: string, name?: string, projectId?: string | null) =>
+  apiRequest<{ id: string }>(`${base}/${id}/clone`, {
+    method: 'POST',
+    body: projectId === undefined ? { name } : { name, projectId },
+  })
 
 export const deleteDesign = (id: string) =>
   apiRequest<{ ok: true }>(`${base}/${id}`, { method: 'DELETE' })

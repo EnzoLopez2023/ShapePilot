@@ -603,11 +603,23 @@ export function validateLibraryPocketInput(value: unknown): LibraryPocketInput {
   }
 }
 
-/** The clone body carries an optional replacement name and nothing else. */
-export function validateCloneRequest(value: unknown): { name?: string } {
+/**
+ * The clone body carries an optional replacement name and an optional target
+ * project. `projectId` has the same three meanings as on a design write: absent
+ * keeps the source's project, `null` unassigns the copy, an id moves it (the
+ * route then proves the caller owns that project).
+ */
+export function validateCloneRequest(value: unknown): { name?: string; projectId?: string | null } {
   const body = requireObject(value ?? {}, 'body')
-  rejectUnknownKeys(body, ['name'], 'body')
-  if (absent(body.name)) return {}
-  const name = requireString(body.name, 'name', LIMITS.nameMaxLength)
-  return name.trim() === '' ? {} : { name }
+  rejectUnknownKeys(body, ['name', 'projectId'], 'body')
+  const result: { name?: string; projectId?: string | null } = {}
+  if (!absent(body.name)) {
+    const name = requireString(body.name, 'name', LIMITS.nameMaxLength)
+    if (name.trim() !== '') result.name = name
+  }
+  if ('projectId' in body) {
+    const projectId = validateProjectId(body.projectId)
+    if (projectId !== undefined) result.projectId = projectId
+  }
+  return result
 }

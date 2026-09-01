@@ -332,7 +332,16 @@ export default function ProjectPage() {
             </Button>
           </Stack>
           {trayList.length
-            ? <TrayPreviews trays={trayList} />
+            ? (
+              <TrayPreviews
+                trays={trayList}
+                currentProjectId={projectId}
+                currentProjectName={draft.name.trim() || project.name}
+                onChanged={() => void load()}
+                onToast={setToast}
+                onError={setError}
+              />
+            )
             : (
               <EmptyState
                 title="No trays yet"

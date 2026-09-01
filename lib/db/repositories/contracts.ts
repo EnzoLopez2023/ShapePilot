@@ -245,7 +245,14 @@ export interface KeycapTrayRepository {
   getDesign(owner: Owner, id: string): Promise<TrayDesignRecord | null>
   createDesign(owner: Owner, input: TrayDesignInput): Promise<{ id: string }>
   updateDesign(owner: Owner, id: string, input: TrayDesignInput): Promise<boolean>
-  cloneDesign(owner: Owner, id: string, name?: string): Promise<{ id: string } | null>
+  /**
+   * `projectId` retargets the copy: omitting it keeps the source's project,
+   * `null` leaves the copy unassigned, and a string moves it to that project
+   * (the route has already proved the caller owns it).
+   */
+  cloneDesign(
+    owner: Owner, id: string, name?: string, projectId?: string | null,
+  ): Promise<{ id: string } | null>
   deleteDesign(owner: Owner, id: string): Promise<boolean>
   listLibraryPockets(owner: Owner): Promise<LibraryPocketRecord[]>
   createLibraryPocket(owner: Owner, input: LibraryPocketInput): Promise<{ id: string }>
