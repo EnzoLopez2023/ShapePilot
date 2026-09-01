@@ -1,13 +1,14 @@
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+import { PWA_ICONS, PWA_INCLUDE_ASSETS } from './scripts/icon-assets.ts'
 
 // `injectRegister` only rewrites index.html during dev/build, so the plugin is
 // inert in the Vitest run (the component suites never load index.html).
 const pwa = VitePWA({
   registerType: 'autoUpdate',
   injectRegister: 'auto',
-  includeAssets: ['favicon.ico', 'apple-touch-icon.png'],
+  includeAssets: [...PWA_INCLUDE_ASSETS],
   manifest: {
     name: 'ShapePilot',
     short_name: 'ShapePilot',
@@ -20,10 +21,7 @@ const pwa = VitePWA({
     orientation: 'any',
     background_color: '#131a2c',
     theme_color: '#131a2c',
-    icons: [
-      { src: '/pwa-192x192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
-      { src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
-    ],
+    icons: PWA_ICONS.map((icon) => ({ ...icon })),
   },
   workbox: {
     globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
