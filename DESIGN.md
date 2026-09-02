@@ -340,6 +340,29 @@ base ring, local coords, origin (0,0), bbox w0×h0   (w0,h0 = UN-rotated extents
 - **An empty workshop invites.** No hero to resume and no counts worth reading;
   the four ways in are the whole page.
 
+## Page backdrops
+
+The two screens whose job is to orient rather than to be worked in — the Home
+page (`/`) and the keycap-tray project gate (`/keycap-tray`, before a tray is
+open) — carry a full-bleed photograph under a palette-matched veil. This is the
+one place the workbench borrows the nintek-family landing move; it is scoped by
+exact path in `AppShell`, so an open tray (`/keycap-tray/:id`) is a working
+surface and keeps its plain ground.
+
+- **Assets.** `public/backgrounds/home.jpg` and `.../keycap-tray.jpg`,
+  `1536×1024`, regenerated deliberately from prompts by
+  `scripts/generate-backgrounds.ts` (`npm run bg:generate`) against the shared
+  Azure Foundry `gpt-image-2` deployment. They are identity assets, not stock
+  slots, and are not checked in CI.
+- **The veil is matched, not fixed.** `PageBackdrop` mixes a 135° gradient from
+  `background.default` at `0.7 → 0.9` alpha (light) / `0.86 → 0.96` (dark), so
+  one asset serves both modes and a bare heading over it still clears its
+  contrast target.
+- **The image sits beneath, never inside.** The backdrop is a `zIndex: 0` layer
+  inside `<main>`; content rides a `zIndex: 1` sibling. Working surfaces stay
+  opaque `Paper` and float on it — the photograph is environmental, never a
+  card texture.
+
 ## Named rules
 
 - **One hairline, one radius, one accent.** BORDER=1, RADIUS=14 (iOS squircle),

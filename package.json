@@ -16,6 +16,7 @@
     "postinstall": "npm run build:native",
     "icons:generate": "node scripts/generate-icons.ts",
     "check:icons": "node scripts/generate-icons.ts --check",
+    "bg:generate": "node scripts/generate-backgrounds.ts",
     "preview": "vite preview",
     "start": "node scripts/start-production.ts",
     "stamp:build": "node scripts/stamp-build-identity.ts",
