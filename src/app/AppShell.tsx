@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useMsal } from '@azure/msal-react'
 import {
   Avatar, Box, Drawer, IconButton, Stack, Tooltip, Typography, useMediaQuery,
@@ -17,6 +17,7 @@ import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded'
 import AdminPanelSettingsRoundedIcon from '@mui/icons-material/AdminPanelSettingsRounded'
 import { EASE_IOS, GLASS, SHADOW } from '../theme/theme.ts'
+import { PageBackdrop } from '../components/PageBackdrop.tsx'
 import { getSettings } from '../features/settings/preferences.ts'
 import type { AccountProfile } from '../features/settings/preferences.ts'
 import { AUTH_ENABLED } from '../auth/msal.ts'
@@ -45,6 +46,14 @@ const SIDEBAR_WIDTH = 260
 const SIDEBAR_WIDTH_COLLAPSED = 76
 const COLLAPSE_KEY = 'shapepilot:nav-collapsed'
 
+// The two screens that orient rather than get worked in carry a full-bleed
+// photograph under a matched veil. Matched on the exact path: an open tray
+// (`/keycap-tray/:id`) is a working surface and keeps its plain ground.
+const PAGE_BACKDROPS: Record<string, string> = {
+  '/': 'home',
+  '/keycap-tray': 'keycap-tray',
+}
+
 const readCollapsed = (): boolean => {
   try {
     return localStorage.getItem(COLLAPSE_KEY) === '1'
@@ -63,6 +72,8 @@ const readCollapsed = (): boolean => {
 export function AppShell() {
   const theme = useTheme()
   const { instance } = useMsal()
+  const { pathname } = useLocation()
+  const backdrop = PAGE_BACKDROPS[pathname]
   const glass = GLASS[theme.palette.mode]
   const shadow = SHADOW[theme.palette.mode]
   // `defaultMatches: true` keeps the permanent sidebar (and its single
@@ -217,6 +228,7 @@ export function AppShell() {
           component="main"
           id="main"
           sx={{
+            position: 'relative',
             flex: 1,
             minHeight: 0,
             overflowY: 'auto',
@@ -226,7 +238,19 @@ export function AppShell() {
             flexDirection: 'column',
           }}
         >
-          <Outlet />
+          {backdrop && <PageBackdrop name={backdrop} />}
+          <Box
+            sx={{
+              position: 'relative',
+              zIndex: 1,
+              flex: 1,
+              minHeight: 0,
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+          >
+            <Outlet />
+          </Box>
         </Box>
       </Box>
     </Box>
