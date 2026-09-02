@@ -150,9 +150,10 @@ for (const workflowFile of workflowFiles) {
     )
   }
 }
-const continuedSteps = ciWorkflow
+const continuedStepBlocks = ciWorkflow
   .split(/(?=^\s{6}- name: )/m)
   .filter((step) => /^\s{8}continue-on-error:\s*true\s*$/m.test(step))
+const continuedSteps = continuedStepBlocks
   .map((step) => /^\s{6}- name: (.+)$/m.exec(step)?.[1] ?? '<unnamed>')
   .sort()
 const allowedContinuedSteps = [
@@ -165,6 +166,10 @@ const allowedContinuedSteps = [
 requireCondition(
   JSON.stringify(continuedSteps) === JSON.stringify(allowedContinuedSteps),
   `only diagnostic producers and uploads may continue on error: ${continuedSteps.join(', ')}`,
+)
+requireCondition(
+  continuedStepBlocks.every((step) => /^\s{8}timeout-minutes:\s*[1-9][0-9]*\s*$/m.test(step)),
+  'every non-blocking external diagnostic producer and upload must have a step timeout',
 )
 
 if (failures.length > 0) {

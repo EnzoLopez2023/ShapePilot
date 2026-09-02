@@ -103,29 +103,40 @@ describe('deployment-diagnostics-v1 vendoring', () => {
 })
 
 describe('ShapePilot diagnostic reports', () => {
-  test('writes a real migration compatibility report without running on import', () => {
+  test('records a deterministic migration finding without gating', () => {
     const directory = mkdtempSync(join(tmpdir(), 'shapepilot-deployment-precheck-'))
     const reportPath = join(directory, 'migration.json')
+    const recordsPath = join(directory, 'records.jsonl')
     try {
       const result = spawnSync(process.execPath, [
-        'scripts/check-deployment-preconditions.ts',
-        'migration',
-        '--profile', 'sqlite-one-worker',
-        '--initial', 'false',
+        'scripts/deployment-diagnostic.mjs',
+        'run',
+        '--check', 'migration-compatibility-precheck',
+        '--category', 'migration-precondition',
+        '--phase', 'pre-activation',
         '--report', reportPath,
+        '--report-format', 'generic-json',
+        '--records', recordsPath,
+        '--',
+        process.execPath,
+        '-e',
+        `require('node:fs').writeFileSync(process.argv[1], '${
+          JSON.stringify({ ok: false, detail: 'fixture incompatibility' })
+        }\\n'); process.exit(1)`,
+        reportPath,
       ], {
         cwd: root,
         encoding: 'utf8',
       })
       assert.equal(result.status, 0, result.stderr)
-      const report = JSON.parse(readFileSync(reportPath, 'utf8')) as {
-        check: string
-        ok: boolean
-        priorReleaseCompatible: boolean
+      const record = JSON.parse(readFileSync(recordsPath, 'utf8')) as {
+        check_id: string
+        status: string
+        exit_code: number
       }
-      assert.equal(report.check, 'migration-compatibility-precheck')
-      assert.equal(report.ok, true)
-      assert.equal(report.priorReleaseCompatible, true)
+      assert.equal(record.check_id, 'migration-compatibility-precheck')
+      assert.equal(record.status, 'finding')
+      assert.equal(record.exit_code, 1)
     } finally {
       rmSync(directory, { recursive: true, force: true })
     }
@@ -228,6 +239,7 @@ describe('deployment workflow diagnostics contract', () => {
     assert.match(imageSbom, /image: \$\{\{ steps\.image\.outputs\.ref \}\}/)
     assert.match(imageSbom, /format: spdx-json/)
     assert.match(imageSbom, /continue-on-error: true/)
+    assert.match(imageSbom, /timeout-minutes: 10/)
 
     const imageScan = step('Scan exact image for HIGH and CRITICAL vulnerabilities')
     assert.match(
@@ -238,6 +250,7 @@ describe('deployment workflow diagnostics contract', () => {
     assert.match(imageScan, /ignore-unfixed: false/)
     assert.match(imageScan, /scanners: vuln/)
     assert.match(imageScan, /timeout: 10m/)
+    assert.match(imageScan, /timeout-minutes: 12/)
     assert.match(imageScan, /exit-code: '0'/)
     assert.ok(!/\.trivyignore|--ignorefile|--skip-scan/.test(workflow))
   })
@@ -284,6 +297,19 @@ describe('deployment workflow diagnostics contract', () => {
       .includes('deploy:monitor-check'))
     assert.ok(!step('Capture prior release and rollback baselines')
       .includes('verify-deployment.mjs'))
+    assert.ok(!step('Capture prior release and rollback baselines').includes('curl '))
+    assert.match(
+      step('Preload rollback image before production mutation'),
+      /org\.opencontainers\.image\.revision/,
+    )
+    assert.match(
+      step('Preload rollback image before production mutation'),
+      /org\.opencontainers\.image\.version/,
+    )
+    assert.match(
+      step('Verify candidate version, liveness, and readiness'),
+      /\$\{PREVIOUS_INSTANCE_ID:-\}/,
+    )
   })
 
   test('allows continue-on-error only for diagnostic producers and uploads', () => {
@@ -299,6 +325,9 @@ describe('deployment workflow diagnostics contract', () => {
       'Upload deployment diagnostic evidence',
       'Upload quality deployment diagnostic evidence',
     ])
+    for (const name of continued) {
+      assert.match(step(name as string), /timeout-minutes: [1-9][0-9]*/)
+    }
   })
 
   test('aggregates and uploads evidence best-effort with an explicit warning', () => {
@@ -317,6 +346,7 @@ describe('deployment workflow diagnostics contract', () => {
       const upload = step(name)
       assert.match(upload, /if: \$\{\{ always\(\) \}\}/)
       assert.match(upload, /continue-on-error: true/)
+      assert.match(upload, /timeout-minutes: 5/)
       assert.match(upload, /retention-days: 30/)
       assert.match(upload, /deployment-diagnostics\//)
     }
@@ -324,5 +354,24 @@ describe('deployment workflow diagnostics contract', () => {
       step('Warn if deployment diagnostic evidence upload failed'),
       /::warning title=Deployment diagnostics upload::/,
     )
+  })
+
+  test('emits explicit warning annotations for every legitimate skipped prerequisite', () => {
+    for (const name of [
+      'Warn that protected configuration diagnostic was skipped',
+      'Warn that readiness diagnostic was skipped',
+      'Warn that recovery diagnostic was skipped',
+    ]) {
+      assert.match(step(name), /::warning title=Deployment diagnostic skipped/)
+      assert.ok(!step(name).includes('continue-on-error:'))
+    }
+  })
+
+  test('runs readiness after rollback metadata is prepared and before activation is armed', () => {
+    const preload = workflow.indexOf('- name: Preload rollback image before production mutation')
+    const readiness = workflow.indexOf('- name: Diagnostic - pre-activation readiness')
+    const arm = workflow.indexOf('- name: Arm rollback before production mutation')
+    assert.ok(preload < readiness)
+    assert.ok(readiness < arm)
   })
 })

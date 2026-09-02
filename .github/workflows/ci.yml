@@ -142,6 +142,7 @@ jobs:
         id: upload-quality-diagnostics
         if: ${{ always() }}
         continue-on-error: true
+        timeout-minutes: 5
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: deployment-diagnostics-quality-${{ github.run_id }}-${{ github.run_attempt }}
@@ -506,6 +507,13 @@ jobs:
           reason: Image-only publication does not require a Web App prerequisite.
           records: ${{ env.DIAGNOSTIC_RECORDS }}
 
+      - name: Warn that protected configuration diagnostic was skipped
+        if: ${{ env.PUBLISH_IMAGE_ONLY == 'true' }}
+        run: >-
+          echo "::warning title=Deployment diagnostic skipped - protected-configuration-precheck::The
+          image-only path has no Web App prerequisite; the skip is recorded and does
+          not block image publication."
+
       - name: Capture prior release and rollback baselines
         if: ${{ env.PUBLISH_IMAGE_ONLY != 'true' && env.INITIAL_DEPLOYMENT != 'true' }}
         shell: bash
@@ -593,32 +601,6 @@ jobs:
             --output tsv)"
           [[ "$previous_latest_digest" == "$previous_digest" ]]
 
-          live_body="$(curl -fsS --proto '=https' --tlsv1.2 \
-            --max-time "$HTTP_TIMEOUT_SECONDS" \
-            -H 'Accept: application/json' \
-            -H 'Cache-Control: no-cache' \
-            "$PRODUCTION_URL$LIVE_PATH?deploy-baseline=$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT")"
-          ready_body="$(curl -fsS --proto '=https' --tlsv1.2 \
-            --max-time "$HTTP_TIMEOUT_SECONDS" \
-            -H 'Accept: application/json' \
-            -H 'Cache-Control: no-cache' \
-            "$PRODUCTION_URL$READY_PATH?deploy-baseline=$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT")"
-          previous_sha="$(jq -r '.sha // .commit // empty' <<<"$ready_body")"
-          [[ -n "$previous_sha" ]] ||
-            previous_sha="$(jq -r '.sha // .commit // empty' <<<"$live_body")"
-          previous_build_id="$(jq -r '.buildId // .build // empty' <<<"$ready_body")"
-          [[ -n "$previous_build_id" ]] ||
-            previous_build_id="$(jq -r '.buildId // .build // empty' <<<"$live_body")"
-          previous_instance_id="$(
-            jq -r '.instanceId // .runtimeId // .instance // empty' <<<"$ready_body"
-          )"
-          [[ -n "$previous_instance_id" ]] ||
-            previous_instance_id="$(
-              jq -r '.instanceId // .runtimeId // .instance // empty' <<<"$live_body"
-            )"
-          [[ "$previous_sha" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$previous_build_id" =~ ^[0-9]+-[0-9]+$ ]]
-          [[ "$previous_instance_id" =~ ^[A-Za-z0-9._:-]+$ ]]
           app_settings_hash="$(app_settings_snapshot_hash)"
           site_invariants_hash="$(site_snapshot_hash)"
           echo "::add-mask::$app_settings_hash"
@@ -627,9 +609,6 @@ jobs:
             echo "PREVIOUS_IMAGE_REFERENCE=$previous_ref"
             echo "PREVIOUS_IMAGE_DIGEST=$previous_digest"
             echo "PREVIOUS_LATEST_DIGEST=$previous_latest_digest"
-            echo "PREVIOUS_HEALTH_SHA=$previous_sha"
-            echo "PREVIOUS_BUILD_ID=$previous_build_id"
-            echo "PREVIOUS_INSTANCE_ID=$previous_instance_id"
             echo "APP_SETTINGS_BASELINE_SHA256=$app_settings_hash"
             echo "SITE_INVARIANTS_BASELINE_SHA256=$site_invariants_hash"
             echo "DEPLOYMENT_MUTATED=false"
@@ -740,29 +719,6 @@ jobs:
             echo "DEPLOYMENT_MUTATED=false"
           } >> "$GITHUB_ENV"
 
-      - name: Diagnostic - pre-activation readiness
-        if: ${{ env.PUBLISH_IMAGE_ONLY != 'true' && env.INITIAL_DEPLOYMENT != 'true' }}
-        uses: ./.github/actions/deployment-diagnostic
-        with:
-          check-id: readiness-precondition-precheck
-          category: readiness-precondition
-          phase: pre-activation
-          report: reports/readiness-precondition.json
-          report-format: generic-json
-          records: ${{ env.DIAGNOSTIC_RECORDS }}
-          timeout-ms: '300000'
-          run: |
-            npm run --silent deploy:precheck -- readiness \
-              --base-url "$PRODUCTION_URL" \
-              --expected-sha "$PREVIOUS_HEALTH_SHA" \
-              --expected-build-id "$PREVIOUS_BUILD_ID" \
-              --attempts 12 \
-              --confirmations "$REQUIRED_CONFIRMATIONS" \
-              --interval-ms "$((POLL_INTERVAL_SECONDS * 1000))" \
-              --request-timeout-ms "$((HTTP_TIMEOUT_SECONDS * 1000))" \
-              --run-token "predeploy-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
-              --report reports/readiness-precondition.json
-
       - name: Diagnostic - skip readiness without a running release
         if: ${{ env.PUBLISH_IMAGE_ONLY == 'true' || env.INITIAL_DEPLOYMENT == 'true' }}
         uses: ./.github/actions/deployment-diagnostic
@@ -773,6 +729,13 @@ jobs:
           mode: skip
           reason: Image-only publication and first activation require no running prior release.
           records: ${{ env.DIAGNOSTIC_RECORDS }}
+
+      - name: Warn that readiness diagnostic was skipped
+        if: ${{ env.PUBLISH_IMAGE_ONLY == 'true' || env.INITIAL_DEPLOYMENT == 'true' }}
+        run: >-
+          echo "::warning title=Deployment diagnostic skipped - readiness-precondition-precheck::There
+          is no running prior release on the image-only or first-activation path;
+          the skip is recorded and does not block the release."
 
       - name: Diagnostic - recovery precondition
         if: ${{ env.PUBLISH_IMAGE_ONLY != 'true' && env.INITIAL_DEPLOYMENT != 'true' }}
@@ -802,6 +765,13 @@ jobs:
           mode: skip
           reason: Image-only publication and first activation have no running prior release to inspect.
           records: ${{ env.DIAGNOSTIC_RECORDS }}
+
+      - name: Warn that recovery diagnostic was skipped
+        if: ${{ env.PUBLISH_IMAGE_ONLY == 'true' || env.INITIAL_DEPLOYMENT == 'true' }}
+        run: >-
+          echo "::warning title=Deployment diagnostic skipped - recovery-precondition-precheck::There
+          is no running prior release on the image-only or first-activation path;
+          the skip is recorded and does not block the release."
 
       - name: Build and inspect unique immutable candidate
         id: image
@@ -894,6 +864,7 @@ jobs:
       - name: Generate exact-image SBOM
         id: image-sbom
         continue-on-error: true
+        timeout-minutes: 10
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
         with:
           image: ${{ steps.image.outputs.ref }}
@@ -918,6 +889,7 @@ jobs:
       - name: Scan exact image for HIGH and CRITICAL vulnerabilities
         id: image-scan
         continue-on-error: true
+        timeout-minutes: 12
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ steps.image.outputs.ref }}
@@ -945,6 +917,7 @@ jobs:
       - name: Install Cosign for diagnostic verification
         id: cosign
         continue-on-error: true
+        timeout-minutes: 5
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
       - name: Diagnostic - signature verification
@@ -1109,9 +1082,60 @@ jobs:
             docker pull "$INITIAL_IMAGE_REFERENCE"
           else
             docker pull "$PREVIOUS_IMAGE_REFERENCE"
+            previous_sha="$(docker image inspect "$PREVIOUS_IMAGE_REFERENCE" \
+              --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+            previous_build_id="$(docker image inspect "$PREVIOUS_IMAGE_REFERENCE" \
+              --format '{{index .Config.Labels "org.opencontainers.image.version"}}')"
+            [[ "$previous_sha" =~ ^[0-9a-f]{40}$ ]]
+            [[ "$previous_build_id" =~ ^[0-9]+-[0-9]+$ ]]
+            {
+              echo "PREVIOUS_HEALTH_SHA=$previous_sha"
+              echo "PREVIOUS_BUILD_ID=$previous_build_id"
+            } >> "$GITHUB_ENV"
             docker tag \
               "$PREVIOUS_IMAGE_REFERENCE" \
               "$ACR_LOGIN_SERVER/$IMAGE_REPOSITORY:latest"
+          fi
+
+      - name: Diagnostic - pre-activation readiness
+        if: ${{ env.PUBLISH_IMAGE_ONLY != 'true' && env.INITIAL_DEPLOYMENT != 'true' }}
+        uses: ./.github/actions/deployment-diagnostic
+        with:
+          check-id: readiness-precondition-precheck
+          category: readiness-precondition
+          phase: pre-activation
+          report: reports/readiness-precondition.json
+          report-format: generic-json
+          records: ${{ env.DIAGNOSTIC_RECORDS }}
+          timeout-ms: '300000'
+          run: |
+            npm run --silent deploy:precheck -- readiness \
+              --base-url "$PRODUCTION_URL" \
+              --expected-sha "$PREVIOUS_HEALTH_SHA" \
+              --expected-build-id "$PREVIOUS_BUILD_ID" \
+              --attempts 12 \
+              --confirmations "$REQUIRED_CONFIRMATIONS" \
+              --interval-ms "$((POLL_INTERVAL_SECONDS * 1000))" \
+              --request-timeout-ms "$((HTTP_TIMEOUT_SECONDS * 1000))" \
+              --run-token "predeploy-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+              --report reports/readiness-precondition.json
+
+      - name: Retain prior process identity when readiness observed it
+        if: ${{ env.PUBLISH_IMAGE_ONLY != 'true' && env.INITIAL_DEPLOYMENT != 'true' }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          previous_instance_id="$(
+            jq -er '
+              select(.ok == true) |
+              .instance_id |
+              select(type == "string" and test("^[A-Za-z0-9._:-]+$"))
+            ' reports/readiness-precondition.json 2>/dev/null || true
+          )"
+          if [[ -n "$previous_instance_id" ]]; then
+            echo "PREVIOUS_INSTANCE_ID=$previous_instance_id" >> "$GITHUB_ENV"
+          else
+            echo "::warning title=Readiness diagnostic metadata::A prior process identity was not observed; activation remains non-blocking and post-activation verification retains process-absence proof."
           fi
 
       - name: Arm rollback before production mutation
@@ -1194,7 +1218,7 @@ jobs:
             --request-timeout-ms "$((HTTP_TIMEOUT_SECONDS * 1000))"
             --run-token "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           )
-          if [[ "$INITIAL_DEPLOYMENT" != "true" ]]; then
+          if [[ "$INITIAL_DEPLOYMENT" != "true" && -n "${PREVIOUS_INSTANCE_ID:-}" ]]; then
             verify_args+=(--previous-instance-id "$PREVIOUS_INSTANCE_ID")
           fi
           node scripts/verify-deployment.mjs "${verify_args[@]}"
@@ -1659,6 +1683,7 @@ jobs:
         id: upload-deployment-diagnostics
         if: ${{ always() }}
         continue-on-error: true
+        timeout-minutes: 5
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: deployment-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
