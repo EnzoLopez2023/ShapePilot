@@ -1,0 +1,140 @@
+# Vendored from
+# https://github.com/EnzoLopez2023/azure-infra/blob/main/deployment-diagnostics/templates/action.yml
+#
+# Install at `.github/actions/deployment-diagnostic/action.yml` together with
+# `scripts/deployment-diagnostic.mjs`. This action is the only place an app
+# repository needs deployment-diagnostics shell; workflows call it declaratively.
+#
+# A check result never fails this action. Only a malformed invocation does,
+# because that is a workflow authoring defect rather than a check result.
+name: Deployment diagnostic
+description: >-
+  Run or record one pre-deployment diagnostic check without letting its result
+  block candidate build or production activation.
+
+inputs:
+  check-id:
+    description: Contract check identifier, for example image-vulnerability-scan.
+    required: true
+  category:
+    description: Contract category for the check.
+    required: true
+  phase:
+    description: pre-build or pre-activation.
+    required: true
+  mode:
+    description: run, record, skip, or aggregate.
+    required: false
+    default: run
+  run:
+    description: Checker command to execute when mode is `run`.
+    required: false
+    default: ''
+  exit-code:
+    description: Exit status of an already-executed checker when mode is `record`.
+    required: false
+    default: ''
+  report:
+    description: Path to the checker report to parse and retain.
+    required: false
+    default: ''
+  report-format:
+    description: >-
+      trivy-json, grype-json, npm-audit-json, cyclonedx-json, spdx-json,
+      generic-json, text, or none.
+    required: false
+    default: none
+  evidence:
+    description: Newline-separated additional evidence paths to record.
+    required: false
+    default: ''
+  reason:
+    description: Why the prerequisite is absent when mode is `skip`.
+    required: false
+    default: ''
+  records:
+    description: JSONL record path.
+    required: false
+    default: deployment-diagnostics/records.jsonl
+  helper:
+    description: Path to the vendored helper.
+    required: false
+    default: scripts/deployment-diagnostic.mjs
+  timeout-ms:
+    description: Checker timeout in milliseconds.
+    required: false
+    default: '900000'
+
+outputs:
+  status:
+    description: pass, finding, execution-failure, or skipped-no-prerequisite.
+    value: ${{ steps.diagnostic.outputs.status }}
+  exit-code:
+    description: Checker exit status, empty when no process ran.
+    value: ${{ steps.diagnostic.outputs.exit-code }}
+  record-path:
+    description: JSONL record path the result was appended to.
+    value: ${{ steps.diagnostic.outputs.record-path }}
+
+runs:
+  using: composite
+  steps:
+    - id: diagnostic
+      shell: bash
+      env:
+        DIAGNOSTIC_CHECK_ID: ${{ inputs.check-id }}
+        DIAGNOSTIC_CATEGORY: ${{ inputs.category }}
+        DIAGNOSTIC_PHASE: ${{ inputs.phase }}
+        DIAGNOSTIC_MODE: ${{ inputs.mode }}
+        DIAGNOSTIC_COMMAND: ${{ inputs.run }}
+        DIAGNOSTIC_EXIT_CODE: ${{ inputs.exit-code }}
+        DIAGNOSTIC_REPORT: ${{ inputs.report }}
+        DIAGNOSTIC_REPORT_FORMAT: ${{ inputs.report-format }}
+        DIAGNOSTIC_EVIDENCE: ${{ inputs.evidence }}
+        DIAGNOSTIC_REASON: ${{ inputs.reason }}
+        DIAGNOSTIC_RECORDS: ${{ inputs.records }}
+        DIAGNOSTIC_HELPER: ${{ inputs.helper }}
+        DIAGNOSTIC_TIMEOUT_MS: ${{ inputs.timeout-ms }}
+      run: |
+        set -uo pipefail
+
+        args=(
+          --check "$DIAGNOSTIC_CHECK_ID"
+          --category "$DIAGNOSTIC_CATEGORY"
+          --phase "$DIAGNOSTIC_PHASE"
+          --records "$DIAGNOSTIC_RECORDS"
+        )
+        if [[ -n "$DIAGNOSTIC_REPORT" ]]; then
+          args+=(--report "$DIAGNOSTIC_REPORT" --report-format "$DIAGNOSTIC_REPORT_FORMAT")
+        fi
+        while IFS= read -r evidence_path; do
+          if [[ -n "$evidence_path" ]]; then
+            args+=(--evidence "$evidence_path")
+          fi
+        done <<< "$DIAGNOSTIC_EVIDENCE"
+
+        case "$DIAGNOSTIC_MODE" in
+          aggregate)
+            node "$DIAGNOSTIC_HELPER" aggregate --records "$DIAGNOSTIC_RECORDS"
+            ;;
+          skip)
+            node "$DIAGNOSTIC_HELPER" skip "${args[@]}" --reason "$DIAGNOSTIC_REASON"
+            ;;
+          record)
+            node "$DIAGNOSTIC_HELPER" record "${args[@]}" --exit-code "$DIAGNOSTIC_EXIT_CODE"
+            ;;
+          run)
+            # Delegate to the helper's own run mode rather than timing the
+            # checker here. The helper classifies a timeout, a signal, and a
+            # missing binary as an execution failure instead of a finding, and
+            # it redacts the checker's captured output before any of it can
+            # reach the record or the job summary.
+            node "$DIAGNOSTIC_HELPER" run "${args[@]}" \
+              --timeout "$DIAGNOSTIC_TIMEOUT_MS" \
+              -- bash -c "$DIAGNOSTIC_COMMAND"
+            ;;
+          *)
+            echo "::error title=Deployment diagnostic::unknown mode: $DIAGNOSTIC_MODE"
+            exit 2
+            ;;
+        esac

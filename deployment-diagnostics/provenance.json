@@ -1,0 +1,20 @@
+{
+  "contractVersion": "deployment-diagnostics-v1",
+  "source": {
+    "repository": "EnzoLopez2023/azure-infra",
+    "pullRequest": 24,
+    "commit": "f45790e9df7c9fabbc53dd04e6055a59d6f28f39"
+  },
+  "vendoredFiles": [
+    {
+      "sourcePath": "deployment-diagnostics/templates/deployment-diagnostic.mjs",
+      "targetPath": "scripts/deployment-diagnostic.mjs",
+      "gitBlob": "d31a00faad5832832bf0b91e96387f5f77645700"
+    },
+    {
+      "sourcePath": "deployment-diagnostics/templates/action.yml",
+      "targetPath": ".github/actions/deployment-diagnostic/action.yml",
+      "gitBlob": "ff7330e29f4f15abe61bf8c4f5520ff5f1674fc4"
+    }
+  ]
+}

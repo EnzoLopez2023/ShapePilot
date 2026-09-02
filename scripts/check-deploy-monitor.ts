@@ -18,14 +18,14 @@ const ALLOWED_PHASES = new Set([
   'initial-postdeploy',
 ])
 
-interface Arguments {
+export interface Arguments {
   phase: string
   resourceGroup: string
   webapp: string
   baseUrl: string
 }
 
-function parseArguments(args: string[]): Arguments {
+export function parseArguments(args: string[]): Arguments {
   const values = new Map<string, string>()
   for (let index = 0; index < args.length; index += 2) {
     const flag = args[index]
@@ -499,9 +499,8 @@ function alertCounts(resourceGroup: string): Record<string, number> {
   return counts
 }
 
-try {
-  const options = parseArguments(process.argv.slice(2))
-  console.log(JSON.stringify({
+export function runMonitorCheck(options: Arguments): Record<string, unknown> {
+  return {
     status: 'ok',
     phase: options.phase,
     directHttpsOrigin: options.baseUrl,
@@ -512,10 +511,23 @@ try {
       '/api/ready',
     ],
     alertCounts: alertCounts(options.resourceGroup),
-  }))
-} catch (error) {
-  console.error(
-    `Deployment safety check failed: ${error instanceof Error ? error.message : error}`,
-  )
-  process.exitCode = 1
+  }
+}
+
+export function main(args = process.argv.slice(2)): void {
+  try {
+    const options = parseArguments(args)
+    console.log(JSON.stringify(runMonitorCheck(options)))
+  } catch (error) {
+    console.error(
+      `Deployment safety check failed: ${error instanceof Error ? error.message : error}`,
+    )
+    process.exitCode = 1
+  }
+}
+
+const invokedDirectly = process.argv[1]
+  && import.meta.url === new URL(process.argv[1], 'file:').href
+if (invokedDirectly) {
+  main()
 }

@@ -76,12 +76,12 @@ const REQUIRED_TABLES = [
   'schema_migrations',
 ] as const
 
-interface Arguments {
+export interface Arguments {
   profile: 'sqlite-one-worker'
   initial: boolean
 }
 
-function parseArguments(args: string[]): Arguments {
+export function parseArguments(args: string[]): Arguments {
   let profile: string | undefined
   let initial = false
   for (let index = 0; index < args.length; index += 1) {
@@ -208,12 +208,20 @@ export async function runMigrationCheck(options: Arguments): Promise<Record<stri
   }
 }
 
-try {
-  const result = await runMigrationCheck(parseArguments(process.argv.slice(2)))
-  console.log(JSON.stringify(result))
-} catch (error) {
-  console.error(
-    `Migration compatibility check failed: ${error instanceof Error ? error.message : error}`,
-  )
-  process.exitCode = 1
+export async function main(args = process.argv.slice(2)): Promise<void> {
+  try {
+    const result = await runMigrationCheck(parseArguments(args))
+    console.log(JSON.stringify(result))
+  } catch (error) {
+    console.error(
+      `Migration compatibility check failed: ${error instanceof Error ? error.message : error}`,
+    )
+    process.exitCode = 1
+  }
+}
+
+const invokedDirectly = process.argv[1]
+  && import.meta.url === new URL(process.argv[1], 'file:').href
+if (invokedDirectly) {
+  await main()
 }

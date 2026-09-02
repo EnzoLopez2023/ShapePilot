@@ -62,14 +62,31 @@ storage environment are both present; all other metadata still fails closed.
 The single `.github/workflows/ci.yml` workflow runs on pinned Ubuntu 24.04 and
 Node 24.17.0. It installs with lifecycle scripts, then gates architecture
 invariants, strict TypeScript, ESLint, all Vitest suites, the native guard and
-client build, a HIGH/CRITICAL full and production dependency audit, and a
-CycloneDX source SBOM.
+client build. The full and production dependency audits retain their
+`audit-level=high` threshold, and the CycloneDX source SBOM still runs, but
+their results are deployment diagnostics rather than release gates.
 
 The container job builds the pinned image, verifies its non-root user, labels,
 and `/home` volume prohibition, initializes a disposable production-shaped
 SQLite volume, then uses `docker exec` to prove three consecutive agreeing
 static-version/version/liveness/readiness rounds and the native
 `better-sqlite3` DELETE-journal authority.
+
+### Observable deployment diagnostics
+
+ShapePilot vendors `deployment-diagnostics-v1` from
+`EnzoLopez2023/azure-infra` PR 24 at reviewed commit
+`f45790e9df7c9fabbc53dd04e6055a59d6f28f39`. The exact source paths and Git
+blob IDs are retained in `deployment-diagnostics/provenance.json`.
+
+Applicable pre-deployment checks still run at their existing strength. A
+finding, checker failure, or absent run-specific prerequisite produces a
+warning, a job-summary row, and a structured JSONL record without stopping the
+candidate build or activation. Quality and deployment diagnostic artifacts are
+uploaded best-effort with 30-day retention; an upload failure emits a warning.
+Checkout, tool setup, OIDC authentication, image build and push, digest
+resolution, activation, post-activation verification, and rollback remain
+blocking.
 
 ## Production job
 
