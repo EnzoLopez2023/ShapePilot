@@ -65,29 +65,43 @@ export function buildRegions(design: TrayDesign): TrayRegions {
 // back into the rim so a slicer unions the two solids instead of seeing a
 // zero-gap contact.
 const SPACER_INSET_MM = 2
+const SPACER_INSET_STEP_MM = 1
+// How far a corner search gives up. The Systainer notched preset's own corner
+// chamfer only needs ~6 mm; this leaves headroom for a bigger notch or a
+// pocket sitting in the way, without searching so far the post stops meaning
+// "this corner" at all.
+const SPACER_INSET_MAX_MM = 40
 const SPACER_WELD_MM = 0.05
 
 /**
- * The corner posts that actually fit: a square footprint inset from each corner
- * of the profile bounding box, kept only where it sits wholly on the solid rim.
- * A notch or a pocket in the corner drops that post.
+ * The corner posts that actually fit. Profile bounding-box corners are not
+ * always solid material -- the Systainer notched preset chamfers all four, so
+ * the nominal inset can land entirely in the notch -- so each corner searches
+ * progressively deeper (both axes together, toward the tray centre) until it
+ * finds a spot that sits wholly on the rim, or gives up at SPACER_INSET_MAX_MM.
+ * A pocket placed right in a corner is handled the same way: the post just
+ * lands a little further in than the bare minimum.
  */
 export function cornerSpacerRects(design: TrayDesign, top?: MultiPolygon): Polygon[] {
   const cs = design.cornerSpacers
   if (!cs || cs.heightMm <= 0 || cs.sizeMm <= 0) return []
   const rim = top ?? buildRegions(design).top
   const bb = multiBBox(profileToMulti(design.profile))
-  const s = cs.sizeMm, i = SPACER_INSET_MM
-  const origins: [number, number][] = [
-    [bb.minX + i, bb.minY + i],
-    [bb.maxX - i - s, bb.minY + i],
-    [bb.maxX - i - s, bb.maxY - i - s],
-    [bb.minX + i, bb.maxY - i - s],
+  const s = cs.sizeMm
+
+  const corners: [1 | -1, 1 | -1][] = [[1, 1], [-1, 1], [-1, -1], [1, -1]]
+  const originAt = (dir: [1 | -1, 1 | -1], inset: number): [number, number] => [
+    dir[0] === 1 ? bb.minX + inset : bb.maxX - inset - s,
+    dir[1] === 1 ? bb.minY + inset : bb.maxY - inset - s,
   ]
+
   const rects: Polygon[] = []
-  for (const [x, y] of origins) {
-    const rect: Polygon = [translateRing(rectRing(s, s), x, y)]
-    if (multiArea(difference([rect], rim)) < 1e-6) rects.push(rect)
+  for (const dir of corners) {
+    for (let inset = SPACER_INSET_MM; inset <= SPACER_INSET_MAX_MM; inset += SPACER_INSET_STEP_MM) {
+      const [x, y] = originAt(dir, inset)
+      const rect: Polygon = [translateRing(rectRing(s, s), x, y)]
+      if (multiArea(difference([rect], rim)) < 1e-6) { rects.push(rect); break }
+    }
   }
   return rects
 }

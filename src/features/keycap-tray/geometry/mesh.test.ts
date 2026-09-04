@@ -125,11 +125,35 @@ test('a zero-height or zero-size spacer is a no-op', () => {
   assert.equal(+buildTrayMesh({ ...d, cornerSpacers: { heightMm: 0, sizeMm: 10 } }).bbox[5].toFixed(3), 12.4)
 })
 
-test('a corner pocket drops the post that would overhang it, keeping the rest', () => {
-  // A 2u pocket jammed into the bottom-left corner swallows that post's footprint.
+test('a corner pocket nudges the post inward rather than dropping it', () => {
+  // A 2u pocket jammed into the bottom-left corner blocks the minimum 2 mm
+  // inset, but there is room a bit further in -- the search finds it instead
+  // of giving up on the whole corner.
   const d = design([pk(2, 2, 2)], { cornerSpacers: { heightMm: 7, sizeMm: 12 } })
   const rects = cornerSpacerRects(d)
-  assert.ok(rects.length >= 1 && rects.length < 4, `expected a partial post set, got ${rects.length}`)
+  assert.equal(rects.length, 4, 'expected all four corners to find room')
+  assert.equal(checkManifold(buildTrayMesh(d)).danglingEdges, 0)
+})
+
+test('a corner truly has no room drops just that post, keeping the rest', () => {
+  // A pocket spanning the whole 40 mm search depth leaves nowhere to land.
+  const d = design([pk(1, 0, 0, { widthMm: 45, heightMm: 45 })],
+    { cornerSpacers: { heightMm: 7, sizeMm: 12 } })
+  const rects = cornerSpacerRects(d)
+  assert.equal(rects.length, 3, `expected exactly one corner dropped, got ${4 - rects.length} dropped`)
+  assert.equal(checkManifold(buildTrayMesh(d)).danglingEdges, 0)
+})
+
+test('a chamfered/notched profile corner is found by searching past the default inset', () => {
+  // Regression test: the notched Systainer preset chamfers all four corners,
+  // so the fixed 2 mm inset used to land in empty space at every one of them.
+  const d = {
+    ...design([]),
+    profile: { kind: 'preset' as const, id: 'systainer-s76-notched' as const },
+    cornerSpacers: { heightMm: 7, sizeMm: 12 },
+  }
+  const rects = cornerSpacerRects(d)
+  assert.equal(rects.length, 4, `expected all four notched corners to be found, got ${rects.length}`)
   assert.equal(checkManifold(buildTrayMesh(d)).danglingEdges, 0)
 })
 
