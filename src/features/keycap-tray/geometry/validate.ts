@@ -252,6 +252,59 @@ export function checkDepth(d: TrayDesign, fab: FabricationSettings): Issue[] {
   return issues
 }
 
+// Layer heights Bambu Studio ships presets for. A floor that is a whole number
+// of layers at one of these prints a flat pocket floor; otherwise the top of
+// the floor lands mid-layer and comes out stepped or smeared.
+const COMMON_LAYER_HEIGHTS_MM = [0.2, 0.16, 0.12, 0.28] as const
+
+const wholeLayers = (thicknessMm: number): boolean =>
+  COMMON_LAYER_HEIGHTS_MM.some(h => {
+    const n = thicknessMm / h
+    return Math.abs(n - Math.round(n)) < 0.02
+  })
+
+/**
+ * FDM-only checks, scoped to `print`. The rest of this file grew up around the
+ * CNC (bit radius, stock blow-through); these are the equivalents for a printed
+ * tray -- floor stiffness and whole-layer floors so a keycap drops in against a
+ * flat surface, not a stepped one.
+ */
+export function checkPrintability(d: TrayDesign): Issue[] {
+  const issues: Issue[] = []
+  const floor = d.floorThicknessMm
+
+  if (floor > 0 && floor < 0.8) {
+    issues.push({
+      code: 'floor-too-thin-fdm',
+      severity: 'warning',
+      targets: ['print'],
+      message: `A ${floor} mm floor is under four 0.2 mm layers -- it flexes under the caps and can ` +
+        `split along a layer line. 1.2 mm or more keeps the pockets rigid.`,
+    })
+  } else if (floor > 0 && !wholeLayers(floor)) {
+    const lo = Math.floor(floor / 0.2) * 0.2
+    issues.push({
+      code: 'floor-not-whole-layers',
+      severity: 'warning',
+      targets: ['print'],
+      message: `The ${floor} mm floor is ${(floor / 0.2).toFixed(1)} layers at 0.2 mm, so the pocket ` +
+        `floor prints mid-layer and comes out rough. ${lo.toFixed(1)} or ${(lo + 0.2).toFixed(1)} mm sits on a layer.`,
+    })
+  }
+
+  if (d.pocketDepthMm > 0 && d.pocketDepthMm < 1.2) {
+    issues.push({
+      code: 'pocket-too-shallow-fdm',
+      severity: 'warning',
+      targets: ['print'],
+      message: `A ${d.pocketDepthMm} mm pocket is barely a few layers deep; caps won't be held and ` +
+        `the walls print as a fragile lip.`,
+    })
+  }
+
+  return issues
+}
+
 export function checkPlate(_d: TrayDesign, fab: FabricationSettings, mesh: Mesh): Issue[] {
   const w = mesh.bbox[3] - mesh.bbox[0]
   const h = mesh.bbox[4] - mesh.bbox[1]
@@ -331,6 +384,7 @@ export function validateDesign(d: TrayDesign, fab: FabricationSettings, mesh: Me
     ...checkCornerRadius(d, fab),
     ...checkWallThickness(d, fab),
     ...checkDepth(d, fab),
+    ...checkPrintability(d),
     ...checkPlate(d, fab, mesh),
     ...checkMesh(mesh),
   ]

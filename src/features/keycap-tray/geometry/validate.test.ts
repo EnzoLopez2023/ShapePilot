@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
-import { checkWallThickness, validateDesign } from './validate.ts'
+import { checkWallThickness, checkPrintability, validateDesign, issuesFor } from './validate.ts'
 import { buildTrayMesh } from './layers.ts'
 import { DEFAULT_FABRICATION } from '../model/defaults.ts'
 import { emptyDesign } from '../model/presets.ts'
@@ -52,4 +52,33 @@ test('a freely rotated single pocket produces no manifold error', () => {
   const d = design([{ id: 'a', units: 2, x: 100, y: 100, rotationDeg: 33 }])
   const issues = validateDesign(d, fab, buildTrayMesh(d))
   assert.equal(issues.some(i => i.code === 'non-manifold'), false)
+})
+
+const codes = (d: TrayDesign) => new Set(checkPrintability(d).map(i => i.code))
+
+test('the default tray (2.4 mm floor, 10 mm pocket) raises no print warning', () => {
+  assert.equal(checkPrintability(emptyDesign()).length, 0)
+})
+
+test('a floor that is not a whole number of layers is flagged for print only', () => {
+  const d = { ...emptyDesign(), floorThicknessMm: 1.5 } // 7.5 layers at 0.2
+  const issue = checkPrintability(d).find(i => i.code === 'floor-not-whole-layers')
+  assert.ok(issue)
+  assert.deepEqual(issue?.targets, ['print'])
+  assert.equal(issuesFor(checkPrintability(d), 'cnc').length, 0)
+})
+
+test('common non-0.2 layer heights (0.12, 0.16) do not trip the whole-layer check', () => {
+  assert.ok(!codes({ ...emptyDesign(), floorThicknessMm: 1.44 }).has('floor-not-whole-layers')) // 12 x 0.12
+  assert.ok(!codes({ ...emptyDesign(), floorThicknessMm: 1.6 }).has('floor-not-whole-layers'))  // 8 x 0.2 / 10 x 0.16
+})
+
+test('a sub-0.8 mm floor is a stiffness warning, not a whole-layer one', () => {
+  const c = codes({ ...emptyDesign(), floorThicknessMm: 0.6 })
+  assert.ok(c.has('floor-too-thin-fdm'))
+  assert.ok(!c.has('floor-not-whole-layers'))
+})
+
+test('a barely-there pocket depth is flagged', () => {
+  assert.ok(codes({ ...emptyDesign(), pocketDepthMm: 0.8 }).has('pocket-too-shallow-fdm'))
 })
