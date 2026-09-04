@@ -45,6 +45,8 @@ const payload = (d: TrayDesign, projectId?: string | null) => ({
   floorThicknessMm: d.floorThicknessMm,
   pocketDepthMm: d.pocketDepthMm,
   engraveDepthMm: d.engraveDepthMm,
+  // Absent clears the spacers server-side, which is what "turned them off" means.
+  cornerSpacers: d.cornerSpacers ?? null,
   pockets: d.pockets,
 })
 

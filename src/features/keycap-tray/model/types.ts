@@ -41,6 +41,19 @@ export interface Pocket {
   cornerRadiusMm?: number
 }
 
+/**
+ * Square posts at the four corners of the tray rim. A tray stacked on top rests
+ * on the posts, not on keycaps that stand proud of their pockets. Absent = no
+ * spacers. A post that would overhang a notch or a corner-hugging pocket is
+ * dropped, and `validate.ts` notes the shortfall.
+ */
+export interface CornerSpacers {
+  /** Post height above the tray rim, mm. */
+  heightMm: number
+  /** Square post footprint, mm on a side. */
+  sizeMm: number
+}
+
 export interface TrayDesign {
   id: string
   /** The keycap project this tray is cut for; null while it stands alone. */
@@ -52,6 +65,7 @@ export interface TrayDesign {
   floorThicknessMm: number
   pocketDepthMm: number
   engraveDepthMm: number
+  cornerSpacers?: CornerSpacers
   pockets: Pocket[]
   /** Bumped on every mutation; the useMemo key for mesh rebuilds. */
   revision: number

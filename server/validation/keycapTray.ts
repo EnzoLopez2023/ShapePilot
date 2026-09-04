@@ -500,8 +500,27 @@ function validatePockets(value: unknown, sizing: PocketSizing): PocketInput[] | 
 
 const DESIGN_KEYS = [
   'name', 'projectId', 'notes', 'profile', 'sizing', 'floorThicknessMm', 'pocketDepthMm',
-  'engraveDepthMm', 'pockets',
+  'engraveDepthMm', 'cornerSpacers', 'pockets',
 ] as const
+
+/**
+ * Corner-spacer posts: absent or null means none, an object sets both
+ * dimensions. Bounded like every other extent so a broken payload cannot reach
+ * the mesher.
+ */
+function validateCornerSpacers(value: unknown): { heightMm: number; sizeMm: number } | undefined {
+  if (absent(value)) return undefined
+  const spacers = requireObject(value, 'cornerSpacers')
+  rejectUnknownKeys(spacers, ['heightMm', 'sizeMm'], 'cornerSpacers')
+  return {
+    heightMm: requireNumber(spacers.heightMm, 'cornerSpacers.heightMm', {
+      exclusiveMin: 0, max: LIMITS.maxDepthMm,
+    }),
+    sizeMm: requireNumber(spacers.sizeMm, 'cornerSpacers.sizeMm', {
+      exclusiveMin: 0, max: LIMITS.maxExtentMm,
+    }),
+  }
+}
 
 /** Row ids are integers in SQLite and strings on the wire. */
 const ROW_ID = /^[0-9]{1,19}$/
@@ -549,6 +568,7 @@ export function validateTrayDesignInput(value: unknown): TrayDesignInput {
   const engraveDepthMm = optionalNumber(body.engraveDepthMm, 'engraveDepthMm', {
     min: 0, max: LIMITS.maxDepthMm,
   })
+  const cornerSpacers = validateCornerSpacers(body.cornerSpacers)
 
   const pockets = validatePockets(body.pockets, sizing.effective)
 
@@ -562,6 +582,7 @@ export function validateTrayDesignInput(value: unknown): TrayDesignInput {
   if (floorThicknessMm !== undefined) input.floorThicknessMm = floorThicknessMm
   if (pocketDepthMm !== undefined) input.pocketDepthMm = pocketDepthMm
   if (engraveDepthMm !== undefined) input.engraveDepthMm = engraveDepthMm
+  if (cornerSpacers !== undefined) input.cornerSpacers = cornerSpacers
   if (pockets !== undefined) input.pockets = pockets
   return input
 }

@@ -314,6 +314,15 @@ describe('keycap tray write validation', () => {
       design({ pocketDepthMm: LIMITS.maxDepthMm + 1 }), 'pocketDepthMm'],
     ['negative engrave depth', design({ engraveDepthMm: -0.4 }), 'engraveDepthMm'],
 
+    ['corner spacers with an unknown key',
+      design({ cornerSpacers: { heightMm: 7, sizeMm: 10, depthMm: 1 } }), 'cornerSpacers.depthMm'],
+    ['corner spacers with zero height',
+      design({ cornerSpacers: { heightMm: 0, sizeMm: 10 } }), 'cornerSpacers.heightMm'],
+    ['corner spacers with a string size',
+      design({ cornerSpacers: { heightMm: 7, sizeMm: '10' } }), 'cornerSpacers.sizeMm'],
+    ['corner spacers that are not an object',
+      design({ cornerSpacers: 7 }), 'cornerSpacers'],
+
     ['pockets as an object', design({ pockets: {} }), 'pockets'],
     ['too many pockets',
       design({
@@ -564,6 +573,26 @@ describe('valid keycap tray behaviour is unchanged', () => {
       `/api/keycap-trays/${created.body.id}`, { token: TOKEN })
     assert.equal(loaded.body.engraveDepthMm, 0)
     assert.equal(loaded.body.notes, undefined)
+  })
+
+  test('corner spacers round-trip, and null clears them on update', async () => {
+    const created = await create(design({ cornerSpacers: { heightMm: 7, sizeMm: 10 } }))
+    assert.equal(created.status, 201)
+
+    const loaded = await server.fetchJson<{
+      name: string; profile: unknown; cornerSpacers?: { heightMm: number; sizeMm: number }
+    }>(`/api/keycap-trays/${created.body.id}`, { token: TOKEN })
+    assert.deepEqual(loaded.body.cornerSpacers, { heightMm: 7, sizeMm: 10 })
+
+    const cleared = await server.fetchJson<{ cornerSpacers?: unknown }>(
+      `/api/keycap-trays/${created.body.id}`, {
+        method: 'PUT', token: TOKEN,
+        body: JSON.stringify({ name: loaded.body.name, profile: loaded.body.profile, cornerSpacers: null }),
+      })
+    assert.equal(cleared.status, 200)
+    const reloaded = await server.fetchJson<{ cornerSpacers?: unknown }>(
+      `/api/keycap-trays/${created.body.id}`, { token: TOKEN })
+    assert.equal(reloaded.body.cornerSpacers, undefined)
   })
 
   test('a library pocket with only a name keeps the pinned defaults', async () => {
