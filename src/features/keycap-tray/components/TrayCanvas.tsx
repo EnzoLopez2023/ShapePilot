@@ -6,6 +6,7 @@ import type { Issue } from '../geometry/validate.ts'
 import type { Pocket, TrayDesign } from '../model/types.ts'
 import type { Ring } from '../../../geometry/vec.ts'
 import { pocketRing } from '../geometry/shapes.ts'
+import { cornerSpacerRects } from '../geometry/layers.ts'
 import { profileToMulti } from '../model/presets.ts'
 import { multiBBox } from '../../../geometry/vec.ts'
 import { offsetRingInward } from '../../../geometry/offset.ts'
@@ -528,6 +529,13 @@ export default function TrayCanvas(props: TrayCanvasProps) {
     return rings.length ? rings.map(ringToPath).join(' ') : null
   }, [showBuffer, bufferMm, profileRings])
 
+  // Corner-post footprints, so a pocket dragged toward a corner shows the area
+  // it would have to clear -- same "keep clear" visual language as the buffer.
+  const cornerSpacerPaths = useMemo(
+    () => cornerSpacerRects(design).map(rect => ringToPath(rect[0])),
+    [design],
+  )
+
   return (
     <Box sx={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
       <svg
@@ -586,6 +594,19 @@ export default function TrayCanvas(props: TrayCanvasProps) {
               strokeWidth={view.w / 700} strokeDasharray={`${view.w / 250} ${view.w / 250}`}
             />
           )}
+
+          {cornerSpacerPaths.map((d, i) => (
+            <path
+              key={`spacer${i}`}
+              d={d}
+              fill={bufferColor}
+              fillOpacity={dark ? 0.22 : 0.16}
+              stroke={bufferColor}
+              strokeWidth={view.w / 700}
+              strokeDasharray={`${view.w / 250} ${view.w / 250}`}
+              style={{ pointerEvents: 'none' }}
+            />
+          ))}
 
           {drag?.guideX != null && (
             <line x1={drag.guideX} y1={view.y} x2={drag.guideX} y2={view.y + view.h}
