@@ -263,23 +263,32 @@ const wholeLayers = (thicknessMm: number): boolean =>
     return Math.abs(n - Math.round(n)) < 0.02
   })
 
+export interface PrintCheckOptions {
+  /**
+   * Floor thinner than this is flagged. Defaults to 0.8 mm (four 0.2 mm layers);
+   * the material picker raises it -- PETG wants 1.4, PLA Matte 1.0.
+   */
+  minFloorMm?: number
+}
+
 /**
  * FDM-only checks, scoped to `print`. The rest of this file grew up around the
  * CNC (bit radius, stock blow-through); these are the equivalents for a printed
  * tray -- floor stiffness and whole-layer floors so a keycap drops in against a
  * flat surface, not a stepped one.
  */
-export function checkPrintability(d: TrayDesign): Issue[] {
+export function checkPrintability(d: TrayDesign, opts: PrintCheckOptions = {}): Issue[] {
   const issues: Issue[] = []
   const floor = d.floorThicknessMm
+  const minFloor = opts.minFloorMm ?? 0.8
 
-  if (floor > 0 && floor < 0.8) {
+  if (floor > 0 && floor < minFloor) {
     issues.push({
       code: 'floor-too-thin-fdm',
       severity: 'warning',
       targets: ['print'],
-      message: `A ${floor} mm floor is under four 0.2 mm layers -- it flexes under the caps and can ` +
-        `split along a layer line. 1.2 mm or more keeps the pockets rigid.`,
+      message: `A ${floor} mm floor is below the ${minFloor} mm this print wants -- it flexes under the ` +
+        `caps and can split along a layer line. Thicken the floor or pick a stiffer material.`,
     })
   } else if (floor > 0 && !wholeLayers(floor)) {
     const lo = Math.floor(floor / 0.2) * 0.2
@@ -378,13 +387,15 @@ export function checkMesh(mesh: Mesh): Issue[] {
   }]
 }
 
-export function validateDesign(d: TrayDesign, fab: FabricationSettings, mesh: Mesh): Issue[] {
+export function validateDesign(
+  d: TrayDesign, fab: FabricationSettings, mesh: Mesh, print: PrintCheckOptions = {},
+): Issue[] {
   return [
     ...checkPlacement(d),
     ...checkCornerRadius(d, fab),
     ...checkWallThickness(d, fab),
     ...checkDepth(d, fab),
-    ...checkPrintability(d),
+    ...checkPrintability(d, print),
     ...checkPlate(d, fab, mesh),
     ...checkMesh(mesh),
   ]

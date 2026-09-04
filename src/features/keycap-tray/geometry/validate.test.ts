@@ -82,3 +82,12 @@ test('a sub-0.8 mm floor is a stiffness warning, not a whole-layer one', () => {
 test('a barely-there pocket depth is flagged', () => {
   assert.ok(codes({ ...emptyDesign(), pocketDepthMm: 0.8 }).has('pocket-too-shallow-fdm'))
 })
+
+test('the material floor threshold raises the bar: 1.2 mm is fine for PLA, thin for PETG', () => {
+  const d = { ...emptyDesign(), floorThicknessMm: 1.2 } // 6 whole layers at 0.2
+  assert.equal(checkPrintability(d).length, 0)                          // generic 0.8
+  assert.equal(checkPrintability(d, { minFloorMm: 1.0 }).length, 0)     // PLA Matte
+  const petg = checkPrintability(d, { minFloorMm: 1.4 })                // PETG
+  assert.equal(petg[0]?.code, 'floor-too-thin-fdm')
+  assert.deepEqual(petg[0]?.targets, ['print'])
+})
