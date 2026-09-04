@@ -153,6 +153,8 @@ export interface PocketRecord {
   widthMm?: number
   heightMm?: number
   cornerRadiusMm?: number
+  /** One post per 1u slot along this pocket, or absent when it has none. */
+  locatingPosts?: { heightMm: number; outerDiameterMm: number; boreDiameterMm: number }
 }
 
 export interface TrayDesignRecord {
@@ -219,6 +221,8 @@ export interface PocketInput {
   widthMm?: number | null
   heightMm?: number | null
   cornerRadiusMm?: number | null
+  /** Null or absent clears the posts; an object sets them. */
+  locatingPosts?: unknown
 }
 
 export interface LibraryPocketRecord {

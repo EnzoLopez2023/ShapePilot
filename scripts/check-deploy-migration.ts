@@ -62,6 +62,12 @@ const ROLLBACK_COMPATIBLE_LEDGER = [
     name: 'keycap tray corner spacers',
     checksum: 'cc144e6ca091fdd0728f696137eae14fb41a1c538011636dd9db4bc1ce742f5a',
   },
+  {
+    ordinal: 6,
+    id: '007-locating-posts',
+    name: 'keycap tray locating posts',
+    checksum: '26299d4beb0ab40cc7a35190f0600c3634862fecfa0fb6f925497c8d899d898f',
+  },
 ] as const
 
 const REQUIRED_TABLES = [

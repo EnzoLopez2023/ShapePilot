@@ -34,7 +34,8 @@ import { DuplicateLibraryPocketError, InvalidProfileError } from './contracts.ts
 
 const POCKET_COLUMNS = `
   units, height_units, x_mm, y_mm, rotation_deg, is_through,
-  label, label_mode, depth_mm, width_mm, height_mm, corner_mm, sort_order, shape, mirror_x`
+  label, label_mode, depth_mm, width_mm, height_mm, corner_mm, sort_order, shape, mirror_x,
+  locating_posts_json`
 
 interface DesignRow {
   id: number | bigint
@@ -73,6 +74,7 @@ interface PocketRow {
   width_mm: number | null
   height_mm: number | null
   corner_mm: number | null
+  locating_posts_json: string | null
 }
 
 interface LibraryRow {
@@ -102,6 +104,9 @@ const rowToPocket = (r: PocketRow): PocketRecord => ({
   widthMm: r.width_mm ?? undefined,
   heightMm: r.height_mm ?? undefined,
   cornerRadiusMm: r.corner_mm ?? undefined,
+  ...(r.locating_posts_json
+    ? { locatingPosts: JSON.parse(r.locating_posts_json) as PocketRecord['locatingPosts'] }
+    : {}),
 })
 
 const rowToDesign = (d: DesignRow, pockets: PocketRecord[]): TrayDesignRecord => ({
@@ -159,7 +164,12 @@ interface PocketParams {
   sort_order: number
   shape: 'rect' | 'iso-enter' | null
   mirror_x: number
+  locating_posts_json: string | null
 }
+
+/** `{heightMm,outerDiameterMm,boreDiameterMm}` -> JSON, anything else -> NULL. The route has validated it. */
+const locatingPostsJson = (p: PocketInput): string | null =>
+  p.locatingPosts && typeof p.locatingPosts === 'object' ? JSON.stringify(p.locatingPosts) : null
 
 const pocketParams = (designId: number | bigint, p: PocketInput, i: number): PocketParams => ({
   design_id: designId,
@@ -178,6 +188,7 @@ const pocketParams = (designId: number | bigint, p: PocketInput, i: number): Poc
   corner_mm: p.cornerRadiusMm ?? null,
   sort_order: i,
   shape: p.shape ?? null,
+  locating_posts_json: locatingPostsJson(p),
 })
 
 export function createKeycapTrayRepository(db: SqliteDatabase): KeycapTrayRepository {
@@ -185,7 +196,7 @@ export function createKeycapTrayRepository(db: SqliteDatabase): KeycapTrayReposi
     INSERT INTO keycap_tray_pockets (design_id, ${POCKET_COLUMNS})
     VALUES (@design_id, @units, @height_units, @x_mm, @y_mm, @rotation_deg, @is_through,
             @label, @label_mode, @depth_mm, @width_mm, @height_mm, @corner_mm, @sort_order,
-            @shape, @mirror_x)`)
+            @shape, @mirror_x, @locating_posts_json)`)
 
   const selectOwnedDesign = db.prepare<[string, string, string], DesignRow>(`
     SELECT id, project_id, name, notes, profile_kind, profile_json, sizing_json,

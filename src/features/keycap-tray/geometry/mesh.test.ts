@@ -3,7 +3,7 @@ import { test } from 'vitest'
 import { buildRegions, buildTrayMesh, cornerSpacerRects } from './layers.ts'
 import { checkManifold } from '../../../geometry/mesh.ts'
 import { multiArea } from '../../../geometry/vec.ts'
-import { LIBRARY_SIZING, PYTHON_SIZING } from './shapes.ts'
+import { LIBRARY_SIZING, PYTHON_SIZING, locatingPostSlotCenters } from './shapes.ts'
 import type { Pocket, TrayDesign } from '../model/types.ts'
 import { hydrateDesignSizing } from '../service.ts'
 
@@ -155,6 +155,61 @@ test('a chamfered/notched profile corner is found by searching past the default 
   const rects = cornerSpacerRects(d)
   assert.equal(rects.length, 4, `expected all four notched corners to be found, got ${rects.length}`)
   assert.equal(checkManifold(buildTrayMesh(d)).danglingEdges, 0)
+})
+
+test('locatingPostSlotCenters places one centre per 1u across the pocket width', () => {
+  // A 5u pocket 18.8 mm tall at (10, 10), Python sizing (pitch 19.05, offset -0.25).
+  const p = pk(5, 10, 10)
+  const centers = locatingPostSlotCenters(p, PYTHON_SIZING)
+  assert.equal(centers.length, 5)
+  const w0 = 5 * 19.05 - 0.25
+  for (let i = 0; i < 5; i++) {
+    assert.ok(Math.abs(centers[i][0] - (10 + (i + 0.5) * (w0 / 5))) < 1e-6)
+    assert.ok(Math.abs(centers[i][1] - (10 + 18.8 / 2)) < 1e-6)
+  }
+})
+
+test('locatingPostSlotCenters follows a 90 degree rotation, still one per slot', () => {
+  const p = pk(3, 0, 0, { rotationDeg: 90 })
+  const centers = locatingPostSlotCenters(p, PYTHON_SIZING)
+  assert.equal(centers.length, 3)
+  // Rotated 90 about its own centre, the row of centres now runs vertically.
+  const xs = new Set(centers.map(([x]) => +x.toFixed(3)))
+  assert.equal(xs.size, 1, 'a 90 degree turn should line the posts up on one x')
+})
+
+test('locating posts add watertight, evenly-spaced tubes on a long pocket', () => {
+  const d = design([pk(10, 10, 10, {
+    locatingPosts: { heightMm: 3, outerDiameterMm: 6, boreDiameterMm: 4 },
+  })]) // default pocketDepthMm 10, so a 3 mm post is well clear of the rim
+  const mesh = buildTrayMesh(d)
+  const report = checkManifold(mesh)
+  assert.equal(report.danglingEdges, 0)
+  assert.ok(report.volume > 0)
+  // Floor thickness (2.4) + post height (3) sits well under floor + pocket depth (12.4).
+  assert.ok(mesh.bbox[5] > 2.4 + 3, `expected the posts to raise the bbox, got ${mesh.bbox[5]}`)
+})
+
+test('a through-cut pocket is skipped: no floor for its posts to stand on', () => {
+  const d = design([pk(4, 10, 10, {
+    isThrough: true,
+    locatingPosts: { heightMm: 3, outerDiameterMm: 6, boreDiameterMm: 4 },
+  })])
+  const mesh = buildTrayMesh(d)
+  const withoutPosts = buildTrayMesh(design([pk(4, 10, 10, { isThrough: true })]))
+  assert.equal(checkManifold(mesh).danglingEdges, 0)
+  // Same volume with or without posts -- they were not built.
+  assert.ok(Math.abs(checkManifold(mesh).volume - checkManifold(withoutPosts).volume) < 1e-6)
+})
+
+test('an invalid bore (not smaller than the post) is a geometry no-op', () => {
+  const withBad = design([pk(3, 10, 10, {
+    locatingPosts: { heightMm: 3, outerDiameterMm: 5, boreDiameterMm: 5 },
+  })])
+  const withoutPosts = design([pk(3, 10, 10)])
+  assert.ok(Math.abs(
+    checkManifold(buildTrayMesh(withBad)).volume - checkManifold(buildTrayMesh(withoutPosts)).volume,
+  ) < 1e-6)
 })
 
 test('the plain systainer preset is 248 x 156', () => {

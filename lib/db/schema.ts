@@ -320,6 +320,17 @@ export const CORNER_SPACER_STATEMENTS: readonly string[] = [
   `ALTER TABLE keycap_tray_designs ADD COLUMN corner_spacers_json TEXT`,
 ]
 
+/**
+ * Locating posts: one hollow post per 1u slot in a pocket, so several 1u
+ * keycaps sharing one long pocket each get a home. Per-pocket, so the column
+ * lands on keycap_tray_pockets. Same nullable-JSON shape as the others:
+ * `{"heightMm":3,"outerDiameterMm":6,"boreDiameterMm":4}` or NULL for a pocket
+ * with none, which is every pocket that exists before this migration.
+ */
+export const LOCATING_POST_STATEMENTS: readonly string[] = [
+  `ALTER TABLE keycap_tray_pockets ADD COLUMN locating_posts_json TEXT`,
+]
+
 /** Tables ShapePilot owns and reconciles. Order is the reconciliation order. */
 export const OWNED_LEGACY_TABLES = [
   'keycap_tray_designs',

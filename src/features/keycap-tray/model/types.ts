@@ -39,6 +39,26 @@ export interface Pocket {
   widthMm?: number
   heightMm?: number
   cornerRadiusMm?: number
+  /** One post per 1u slot along this pocket, or absent when it has none. */
+  locatingPosts?: LocatingPosts
+}
+
+/**
+ * Hollow posts that give several 1u keycaps sharing one long pocket each a
+ * home, so they don't slide into each other. One post per 1u slot (N =
+ * round(units)), evenly spaced along the pocket's own width and centred on its
+ * height -- the same footprint the pocket transform (rotate/mirror/flip)
+ * already carries. Each post is an open-bottom tube: it rises `heightMm` off
+ * the pocket floor, and the bore goes the *same* `heightMm` down through it to
+ * the floor -- there is no separate bore-depth field, because a blind hole
+ * would leave a floor inside the post that a keycap's skirt can't reach past.
+ */
+export interface LocatingPosts {
+  /** Height off the pocket floor, and the bore's depth. Must stay under the pocket depth. */
+  heightMm: number
+  outerDiameterMm: number
+  /** Must be smaller than outerDiameterMm -- the difference is the tube's wall. */
+  boreDiameterMm: number
 }
 
 /**

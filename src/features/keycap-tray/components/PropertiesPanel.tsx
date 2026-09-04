@@ -10,6 +10,7 @@ import { BUFFER_STEPS_MM, SNAP_STEPS_MM } from '../state/viewSettings.ts'
 import type { ViewSettings } from '../state/viewSettings.ts'
 import { MATERIALS, MATERIAL_IDS, materialOf } from '../model/materials.ts'
 import { rotateDesign180 } from '../model/transform.ts'
+import { locatingPostSlotCenters } from '../geometry/shapes.ts'
 import { cornerSpacerRects } from '../geometry/layers.ts'
 import { planTiles } from '../geometry/tiling.ts'
 import type { FabricationSettings, Pocket, TrayDesign, TrayProfile } from '../model/types.ts'
@@ -417,6 +418,53 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
                 hint="Rotate the pocket about its own centre. Or drag a corner handle on the canvas (hold Shift to snap to 15°)."
                 sx={{ maxWidth: 120 }}
               />
+
+              <Tooltip title="One open-bottom tube per 1u slot, standing on the pocket floor -- so several 1u keycaps sharing this pocket each get a home instead of sliding around.">
+                <FormControlLabel
+                  control={
+                    <Switch
+                      size="small" checked={!!selected[0].locatingPosts}
+                      onChange={e => onPocket(selected[0].id, {
+                        locatingPosts: e.target.checked
+                          ? { heightMm: Math.min(3, Math.max(0.5, design.pocketDepthMm - 1)), outerDiameterMm: 6, boreDiameterMm: 4 }
+                          : undefined,
+                      })}
+                    />
+                  }
+                  label="Locating posts"
+                />
+              </Tooltip>
+              {selected[0].locatingPosts && (
+                <>
+                  <Stack direction="row" spacing={1}>
+                    <LengthField
+                      label="Post height" imperial={imperial} valueMm={selected[0].locatingPosts.heightMm}
+                      hint="Height off the pocket floor -- and the bore's depth, always the same, since the hole goes all the way through the post to the floor. Must stay under the pocket depth."
+                      onChangeMm={v => onPocket(selected[0].id, {
+                        locatingPosts: { ...selected[0].locatingPosts!, heightMm: v },
+                      })}
+                    />
+                    <LengthField
+                      label="Post ⌀" imperial={imperial} valueMm={selected[0].locatingPosts.outerDiameterMm}
+                      hint="Outer diameter of the tube."
+                      onChangeMm={v => onPocket(selected[0].id, {
+                        locatingPosts: { ...selected[0].locatingPosts!, outerDiameterMm: v },
+                      })}
+                    />
+                    <LengthField
+                      label="Bore ⌀" imperial={imperial} valueMm={selected[0].locatingPosts.boreDiameterMm}
+                      hint="Diameter of the hole through the post -- sized to the keycap's stem collar, not the cross itself. Must be smaller than the post."
+                      onChangeMm={v => onPocket(selected[0].id, {
+                        locatingPosts: { ...selected[0].locatingPosts!, boreDiameterMm: v },
+                      })}
+                    />
+                  </Stack>
+                  <Typography variant="body2" color="text.secondary">
+                    {locatingPostSlotCenters(selected[0], design.sizing).length} post
+                    {locatingPostSlotCenters(selected[0], design.sizing).length === 1 ? '' : 's'}, one per 1u slot
+                  </Typography>
+                </>
+              )}
             </>
           )}
           {selected.map(p => (

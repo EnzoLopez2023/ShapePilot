@@ -55,7 +55,7 @@ export interface PocketLike {
  * its centre. Order matters -- reflecting first keeps mirror/flip meaningful in
  * the pocket's own frame regardless of angle. Callers still translate by (x, y).
  */
-function applyPocketTransform(local: Ring, w0: number, h0: number, p: PocketLike): Ring {
+export function applyPocketTransform(local: Ring, w0: number, h0: number, p: PocketLike): Ring {
   const deg = normalizeAngleDeg(p.rotationDeg ?? 0)
   if (!p.mirrorX && !p.flipY && !deg) return local
   let ring = local
@@ -87,6 +87,24 @@ export function pocketRing(p: PocketLike, s: PocketSizing): Polygon {
   const r = effectivePocketCornerRadius(p, s)
   const ring = applyPocketTransform(unitRing(w0, h0, r, s.cornerSegments), w0, h0, p)
   return [translateRing(ring, p.x, p.y)]
+}
+
+/**
+ * World-space centres for one locating post per 1u slot along this pocket's
+ * local width (N = round(units), minimum 1), centred on its local height. The
+ * centres go through the same reflect/rotate/translate pipeline as the
+ * pocket's own footprint, so they land correctly even on a rotated or
+ * mirrored pocket. Not meaningful for the ISO Enter shape.
+ */
+export function locatingPostSlotCenters(p: PocketLike, s: PocketSizing): Vec2[] {
+  if (p.shape === 'iso-enter') return []
+  const w0 = p.widthMm ?? pocketWidth(p.units, s)
+  const h0 = p.heightMm ?? pocketHeight(p.heightUnits ?? 1, s)
+  const n = Math.max(1, Math.round(p.units))
+  const local: Ring = []
+  for (let i = 0; i < n; i++) local.push([(i + 0.5) * (w0 / n), h0 / 2])
+  const transformed = applyPocketTransform(local, w0, h0, p)
+  return transformed.map(([x, y]) => [x + p.x, y + p.y] as Vec2)
 }
 
 const dedupeRing = (ring: Ring): Ring => ring.filter((pt, i) => {
