@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
-import { checkWallThickness, checkPrintability, checkPlate, validateDesign, issuesFor } from './validate.ts'
+import {
+  checkWallThickness, checkPrintability, checkPlate, checkLocatingPosts, validateDesign, issuesFor,
+} from './validate.ts'
 import { buildTrayMesh } from './layers.ts'
 import { DEFAULT_FABRICATION } from '../model/defaults.ts'
 import { emptyDesign } from '../model/presets.ts'
@@ -102,4 +104,58 @@ test('the material floor threshold raises the bar: 1.2 mm is fine for PLA, thin 
   const petg = checkPrintability(d, { minFloorMm: 1.4 })                // PETG
   assert.equal(petg[0]?.code, 'floor-too-thin-fdm')
   assert.deepEqual(petg[0]?.targets, ['print'])
+})
+
+const withPosts = (over: Partial<NonNullable<Pocket['locatingPosts']>> = {}, pocketOver: Partial<Pocket> = {}) =>
+  design([{
+    id: 'a', units: 5, x: 10, y: 10,
+    locatingPosts: { heightMm: 3, outerDiameterMm: 6, boreDiameterMm: 4, ...over },
+    ...pocketOver,
+  }])
+
+test('a well-formed locating post on a normal pocket raises nothing', () => {
+  assert.equal(checkLocatingPosts(withPosts()).length, 0)
+})
+
+test('a post at or above the pocket depth is an error', () => {
+  const issue = checkLocatingPosts(withPosts({ heightMm: 10 }))[0] // default pocketDepthMm is 10
+  assert.equal(issue?.code, 'locating-post-too-tall')
+  assert.equal(issue?.severity, 'error')
+  assert.deepEqual(issue?.targets, ['print'])
+})
+
+test('a bore that is not smaller than the post is an error', () => {
+  assert.equal(
+    checkLocatingPosts(withPosts({ outerDiameterMm: 5, boreDiameterMm: 5 }))[0]?.code,
+    'locating-post-bore-too-wide')
+})
+
+test('a thin post wall is a warning, not an error', () => {
+  const issue = checkLocatingPosts(withPosts({ outerDiameterMm: 5, boreDiameterMm: 4.5 }))[0]
+  assert.equal(issue?.code, 'locating-post-wall-too-thin')
+  assert.equal(issue?.severity, 'warning')
+})
+
+test('posts wider than the slot pitch are flagged as touching', () => {
+  // 5 slots across a 5u pocket (~95 mm wide, Python sizing) -> ~19 mm pitch.
+  const issue = checkLocatingPosts(withPosts({ outerDiameterMm: 19 }))[0]
+  assert.equal(issue?.code, 'locating-posts-too-close')
+})
+
+test('a single-slot (1u) pocket is never flagged for posts touching', () => {
+  const d = design([{
+    id: 'a', units: 1, x: 10, y: 10,
+    locatingPosts: { heightMm: 3, outerDiameterMm: 15, boreDiameterMm: 4 },
+  }])
+  assert.equal(checkLocatingPosts(d).some(i => i.code === 'locating-posts-too-close'), false)
+})
+
+test('locating posts on a through-cut pocket are a warning, not silently ignored', () => {
+  const issue = checkLocatingPosts(withPosts({}, { isThrough: true }))[0]
+  assert.equal(issue?.code, 'locating-posts-on-through-pocket')
+  assert.equal(issue?.severity, 'warning')
+})
+
+test('a pocket with no locatingPosts raises nothing', () => {
+  assert.equal(checkLocatingPosts(design([{ id: 'a', units: 5, x: 10, y: 10 }])).length, 0)
 })

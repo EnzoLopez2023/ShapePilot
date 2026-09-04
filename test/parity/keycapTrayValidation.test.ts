@@ -361,6 +361,18 @@ describe('keycap tray write validation', () => {
       pocketDesign({ heightMm: LIMITS.maxExtentMm + 1 }), 'pockets[0].heightMm'],
     ['a pocket with a negative corner radius',
       pocketDesign({ cornerRadiusMm: -0.1 }), 'pockets[0].cornerRadiusMm'],
+
+    ['locating posts with an unknown key',
+      pocketDesign({ locatingPosts: { heightMm: 3, outerDiameterMm: 6, boreDiameterMm: 4, blindMm: 1 } }),
+      'pockets[0].locatingPosts.blindMm'],
+    ['locating posts with a bore not smaller than the post',
+      pocketDesign({ locatingPosts: { heightMm: 3, outerDiameterMm: 5, boreDiameterMm: 5 } }),
+      'pockets[0].locatingPosts.boreDiameterMm'],
+    ['locating posts with a zero height',
+      pocketDesign({ locatingPosts: { heightMm: 0, outerDiameterMm: 6, boreDiameterMm: 4 } }),
+      'pockets[0].locatingPosts.heightMm'],
+    ['locating posts that are not an object',
+      pocketDesign({ locatingPosts: 3 }), 'pockets[0].locatingPosts'],
     ['a pocket with an oversized client id',
       pocketDesign({ id: 'i'.repeat(LIMITS.clientIdMaxLength + 1) }), 'pockets[0].id'],
   ]
@@ -593,6 +605,31 @@ describe('valid keycap tray behaviour is unchanged', () => {
     const reloaded = await server.fetchJson<{ cornerSpacers?: unknown }>(
       `/api/keycap-trays/${created.body.id}`, { token: TOKEN })
     assert.equal(reloaded.body.cornerSpacers, undefined)
+  })
+
+  test('a pocket\'s locating posts round-trip, and null clears them on update', async () => {
+    const created = await create(pocketDesign({
+      id: 'a', units: 5, x: 10, y: 10,
+      locatingPosts: { heightMm: 3, outerDiameterMm: 6, boreDiameterMm: 4 },
+    }))
+    assert.equal(created.status, 201)
+
+    const loaded = await server.fetchJson<{
+      name: string; profile: unknown
+      pockets: { locatingPosts?: { heightMm: number; outerDiameterMm: number; boreDiameterMm: number } }[]
+    }>(`/api/keycap-trays/${created.body.id}`, { token: TOKEN })
+    assert.deepEqual(loaded.body.pockets[0].locatingPosts, { heightMm: 3, outerDiameterMm: 6, boreDiameterMm: 4 })
+
+    const clearedPockets = loaded.body.pockets.map(p => ({ ...p, locatingPosts: null }))
+    const cleared = await server.fetchJson(
+      `/api/keycap-trays/${created.body.id}`, {
+        method: 'PUT', token: TOKEN,
+        body: JSON.stringify({ name: loaded.body.name, profile: loaded.body.profile, pockets: clearedPockets }),
+      })
+    assert.equal(cleared.status, 200)
+    const reloaded = await server.fetchJson<{ pockets: { locatingPosts?: unknown }[] }>(
+      `/api/keycap-trays/${created.body.id}`, { token: TOKEN })
+    assert.equal(reloaded.body.pockets[0].locatingPosts, undefined)
   })
 
   test('a library pocket with only a name keeps the pinned defaults', async () => {

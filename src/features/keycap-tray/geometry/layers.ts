@@ -3,7 +3,8 @@
 import type { MultiPolygon, Polygon } from '../../../geometry/vec.ts'
 import { multiArea, multiBBox, translateRing } from '../../../geometry/vec.ts'
 import { difference, punchDisjointFast, union, unionDisjointFast } from '../../../geometry/boolean.ts'
-import { pocketRing, rectRing } from './shapes.ts'
+import { pocketRing, rectRing, locatingPostSlotCenters } from './shapes.ts'
+import { circleRing } from '../../../geometry/primitives.ts'
 import { insertTJunctions } from '../../../geometry/tjunction.ts'
 import type { Mesh } from '../../../geometry/mesh.ts'
 import { MeshBuilder } from '../../../geometry/mesh.ts'
@@ -106,6 +107,20 @@ export function cornerSpacerRects(design: TrayDesign, top?: MultiPolygon): Polyg
   return rects
 }
 
+// How far a locating post's tube dips below the pocket floor, so the slicer
+// welds the overlap instead of seeing a zero-gap contact -- the same trick as
+// the corner posts, just against the floor instead of the rim.
+const POST_WELD_MM = 0.05
+
+/** The tube footprint for one locating post: an outer circle with the bore as
+ *  a hole, in the outer-CCW / hole-CW winding every polygon-with-a-hole in
+ *  this codebase uses. */
+function postTubePolygon(cx: number, cy: number, outerR: number, innerR: number): Polygon {
+  const outer = translateRing(circleRing(outerR, 32), cx, cy)
+  const hole = translateRing(circleRing(innerR, 32), cx, cy).slice().reverse()
+  return [outer, hole]
+}
+
 export function buildTrayMesh(design: TrayDesign): Mesh {
   const F = design.floorThicknessMm
   const D = design.pocketDepthMm
@@ -131,6 +146,25 @@ export function buildTrayMesh(design: TrayDesign): Mesh {
       b.addHorizontal([rect], z0, 'down')
       b.addHorizontal([rect], z1, 'up')
       b.addWalls([rect], z0, z1)
+    }
+  }
+
+  // Locating posts: an open-bottom tube per 1u slot, standing on the pocket
+  // floor. A through-cut pocket has no floor to stand on, so it is skipped --
+  // validate.ts flags that rather than silently dropping the posts.
+  for (const p of design.pockets) {
+    const lp = p.locatingPosts
+    if (!lp || p.isThrough) continue
+    if (!(lp.heightMm > 0 && lp.outerDiameterMm > 0 && lp.boreDiameterMm > 0)) continue
+    if (lp.boreDiameterMm >= lp.outerDiameterMm) continue // no wall; validate.ts flags it
+    const outerR = lp.outerDiameterMm / 2, innerR = lp.boreDiameterMm / 2
+    const z0 = F - POST_WELD_MM
+    const z1 = F + lp.heightMm
+    for (const [cx, cy] of locatingPostSlotCenters(p, design.sizing)) {
+      const tube = postTubePolygon(cx, cy, outerR, innerR)
+      b.addHorizontal([tube], z0, 'down')
+      b.addHorizontal([tube], z1, 'up')
+      b.addWalls([tube], z0, z1)
     }
   }
 

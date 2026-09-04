@@ -431,8 +431,34 @@ function validateSizing(value: unknown): { stored: unknown; effective: PocketSiz
 const POCKET_KEYS = [
   'id', 'units', 'heightUnits', 'x', 'y', 'rotationDeg', 'mirrorX', 'flipY',
   'isThrough', 'shape', 'depthMm', 'label', 'labelMode',
-  'widthMm', 'heightMm', 'cornerRadiusMm',
+  'widthMm', 'heightMm', 'cornerRadiusMm', 'locatingPosts',
 ] as const
+
+/**
+ * One post per 1u slot in this pocket. Absent or null means none; an object
+ * sets all three dimensions. `boreDiameterMm` must be smaller than
+ * `outerDiameterMm`, or there is no wall left for the post to print.
+ */
+function validateLocatingPosts(
+  value: unknown, field: string,
+): { heightMm: number; outerDiameterMm: number; boreDiameterMm: number } | undefined {
+  if (absent(value)) return undefined
+  const posts = requireObject(value, field)
+  rejectUnknownKeys(posts, ['heightMm', 'outerDiameterMm', 'boreDiameterMm'], field)
+  const heightMm = requireNumber(posts.heightMm, `${field}.heightMm`, {
+    exclusiveMin: 0, max: LIMITS.maxDepthMm,
+  })
+  const outerDiameterMm = requireNumber(posts.outerDiameterMm, `${field}.outerDiameterMm`, {
+    exclusiveMin: 0, max: LIMITS.maxExtentMm,
+  })
+  const boreDiameterMm = requireNumber(posts.boreDiameterMm, `${field}.boreDiameterMm`, {
+    exclusiveMin: 0, max: LIMITS.maxExtentMm,
+  })
+  if (boreDiameterMm >= outerDiameterMm) {
+    bad(`${field}.boreDiameterMm`, `${field}.boreDiameterMm must be smaller than outerDiameterMm`)
+  }
+  return { heightMm, outerDiameterMm, boreDiameterMm }
+}
 
 function validatePocket(value: unknown, index: number, sizing: PocketSizing): PocketInput {
   const field = `pockets[${index}]`
@@ -471,6 +497,9 @@ function validatePocket(value: unknown, index: number, sizing: PocketSizing): Po
   optionalNumber(pocket.cornerRadiusMm, `${field}.cornerRadiusMm`, {
     min: 0, max: LIMITS.maxRadiusMm,
   })
+  // Rebuilt rather than passed through, so nothing unvalidated survives.
+  ;(pocket as Record<string, unknown>).locatingPosts =
+    validateLocatingPosts(pocket.locatingPosts, `${field}.locatingPosts`)
 
   const shape = (pocket.shape ?? 'rect') as (typeof POCKET_SHAPES)[number]
   const explicitWidth = pocket.widthMm as number | undefined

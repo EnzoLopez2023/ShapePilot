@@ -6,7 +6,7 @@ import type { FabricationSettings, Pocket, TrayDesign } from '../model/types.ts'
 import type { Polygon, Ring, Vec2 } from '../../../geometry/vec.ts'
 import { bboxOverlaps, multiArea, ringBBox } from '../../../geometry/vec.ts'
 import { difference, intersection } from '../../../geometry/boolean.ts'
-import { effectivePocketCornerRadius, pocketRing } from './shapes.ts'
+import { effectivePocketCornerRadius, pocketRing, pocketWidth } from './shapes.ts'
 import { buildRegions } from './layers.ts'
 import { planTiles } from './tiling.ts'
 import { profileToMulti } from '../model/presets.ts'
@@ -315,6 +315,83 @@ export function checkPrintability(d: TrayDesign, opts: PrintCheckOptions = {}): 
   return issues
 }
 
+// Minimum tube wall for a locating post -- a couple of 0.4 mm perimeters. It is
+// thinner than the general pocket-wall minimum (minWallMm) on purpose: this is
+// a short, unstressed feature, not a structural divider between cavities.
+const MIN_POST_WALL_MM = 0.8
+
+/** Locating posts: print-only, since they only exist in the 3D mesh. */
+export function checkLocatingPosts(d: TrayDesign): Issue[] {
+  const issues: Issue[] = []
+  for (const p of d.pockets) {
+    const lp = p.locatingPosts
+    if (!lp) continue
+    const label = p.label ?? `${p.units}u`
+
+    if (p.isThrough) {
+      issues.push({
+        code: 'locating-posts-on-through-pocket',
+        severity: 'warning',
+        targets: ['print'],
+        pocketIds: [p.id],
+        message: `${label} is a through-cut, so its locating posts have no floor to stand on and will not print.`,
+      })
+      continue
+    }
+
+    if (lp.heightMm >= d.pocketDepthMm) {
+      issues.push({
+        code: 'locating-post-too-tall',
+        severity: 'error',
+        targets: ['print'],
+        pocketIds: [p.id],
+        message: `${label}'s locating posts are ${lp.heightMm} mm tall, at or above the ` +
+          `${d.pocketDepthMm} mm pocket depth -- they would reach the rim. Shorten the post or deepen the pocket.`,
+      })
+    }
+
+    if (lp.boreDiameterMm >= lp.outerDiameterMm) {
+      issues.push({
+        code: 'locating-post-bore-too-wide',
+        severity: 'error',
+        targets: ['print'],
+        pocketIds: [p.id],
+        message: `${label}'s locating post bore (${lp.boreDiameterMm} mm) isn't smaller than the ` +
+          `post itself (${lp.outerDiameterMm} mm) -- there is no wall left to print.`,
+      })
+    } else {
+      const wall = (lp.outerDiameterMm - lp.boreDiameterMm) / 2
+      if (wall < MIN_POST_WALL_MM) {
+        issues.push({
+          code: 'locating-post-wall-too-thin',
+          severity: 'warning',
+          targets: ['print'],
+          pocketIds: [p.id],
+          message: `${label}'s locating post wall is ${wall.toFixed(2)} mm -- under ` +
+            `${MIN_POST_WALL_MM} mm prints thin and can tear. Widen the post or narrow the bore.`,
+        })
+      }
+    }
+
+    const n = Math.max(1, Math.round(p.units))
+    if (n > 1) {
+      const w0 = p.widthMm ?? pocketWidth(p.units, d.sizing)
+      const pitchLocal = w0 / n
+      if (lp.outerDiameterMm > pitchLocal - 1) {
+        issues.push({
+          code: 'locating-posts-too-close',
+          severity: 'warning',
+          targets: ['print'],
+          pocketIds: [p.id],
+          message: `${label}'s ${n} locating posts sit ${pitchLocal.toFixed(1)} mm apart but are ` +
+            `${lp.outerDiameterMm} mm across -- they will touch or merge. Use a smaller post.`,
+        })
+      }
+    }
+  }
+  return issues
+}
+
 // Room a brim and the nozzle skirt want around the part.
 const PLATE_MARGIN_MM = 5
 
@@ -418,6 +495,7 @@ export function validateDesign(
     ...checkWallThickness(d, fab),
     ...checkDepth(d, fab),
     ...checkPrintability(d, print),
+    ...checkLocatingPosts(d),
     ...checkPlate(d, fab, mesh),
     ...checkMesh(mesh),
   ]
