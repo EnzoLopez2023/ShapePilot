@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
-import { checkWallThickness, checkPrintability, validateDesign, issuesFor } from './validate.ts'
+import { checkWallThickness, checkPrintability, checkPlate, validateDesign, issuesFor } from './validate.ts'
 import { buildTrayMesh } from './layers.ts'
 import { DEFAULT_FABRICATION } from '../model/defaults.ts'
 import { emptyDesign } from '../model/presets.ts'
@@ -81,6 +81,18 @@ test('a sub-0.8 mm floor is a stiffness warning, not a whole-layer one', () => {
 
 test('a barely-there pocket depth is flagged', () => {
   assert.ok(codes({ ...emptyDesign(), pocketDepthMm: 0.8 }).has('pocket-too-shallow-fdm'))
+})
+
+const plateIssue = (w: number, h: number) =>
+  checkPlate(emptyDesign(), fab, {
+    positions: new Float32Array(), indices: new Uint32Array(), triangleCount: 0,
+    bbox: [0, 0, 0, w, h, 12.4],
+  })
+
+test('checkPlate: comfortably-sized, snug, and oversized trays', () => {
+  assert.equal(plateIssue(200, 150).length, 0)                        // 256 plate, room to spare
+  assert.equal(plateIssue(254, 150)[0]?.code, 'plate-margin-tight')   // within 5 mm on one axis
+  assert.equal(plateIssue(300, 150)[0]?.code, 'exceeds-plate')        // over the edge
 })
 
 test('the material floor threshold raises the bar: 1.2 mm is fine for PLA, thin for PETG', () => {

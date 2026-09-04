@@ -314,19 +314,35 @@ export function checkPrintability(d: TrayDesign, opts: PrintCheckOptions = {}): 
   return issues
 }
 
+// Room a brim and the nozzle skirt want around the part.
+const PLATE_MARGIN_MM = 5
+
 export function checkPlate(_d: TrayDesign, fab: FabricationSettings, mesh: Mesh): Issue[] {
   const w = mesh.bbox[3] - mesh.bbox[0]
   const h = mesh.bbox[4] - mesh.bbox[1]
-  const fits = (w <= fab.plateWidthMm && h <= fab.plateDepthMm) ||
-    (h <= fab.plateWidthMm && w <= fab.plateDepthMm)
-  if (fits) return []
-  return [{
-    code: 'exceeds-plate',
-    severity: 'warning',
-    targets: ['print'],
-    message: `The tray is ${w.toFixed(1)} x ${h.toFixed(1)} mm, larger than the ` +
-      `${fab.plateWidthMm} x ${fab.plateDepthMm} mm plate. Split it before printing.`,
-  }]
+  const within = (mw: number, md: number) => w <= mw && h <= md
+  const fits = within(fab.plateWidthMm, fab.plateDepthMm) || within(fab.plateDepthMm, fab.plateWidthMm)
+  if (!fits) {
+    return [{
+      code: 'exceeds-plate',
+      severity: 'warning',
+      targets: ['print'],
+      message: `The tray is ${w.toFixed(1)} x ${h.toFixed(1)} mm, larger than the ` +
+        `${fab.plateWidthMm} x ${fab.plateDepthMm} mm plate. Split it before printing.`,
+    }]
+  }
+  const snug = (mw: number, md: number) => w > mw - PLATE_MARGIN_MM || h > md - PLATE_MARGIN_MM
+  const tight = snug(fab.plateWidthMm, fab.plateDepthMm) && snug(fab.plateDepthMm, fab.plateWidthMm)
+  if (tight) {
+    return [{
+      code: 'plate-margin-tight',
+      severity: 'warning',
+      targets: ['print'],
+      message: `The tray is ${w.toFixed(1)} x ${h.toFixed(1)} mm, within ${PLATE_MARGIN_MM} mm of the ` +
+        `plate edge. A brim or skirt will not fit -- turn them off or trim the tray.`,
+    }]
+  }
+  return []
 }
 
 export function checkPlacement(d: TrayDesign): Issue[] {
