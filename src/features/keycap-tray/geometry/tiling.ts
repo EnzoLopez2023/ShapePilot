@@ -5,11 +5,16 @@
 // clear gaps between pocket rows and columns where one exists, so a piece never
 // carries half a pocket. Turning the plan into meshes and jointed seams is a
 // later step; this part is pure arithmetic and cheap enough to run on render.
-import type { Polygon } from '../../../geometry/vec.ts'
+import type { MultiPolygon, Polygon, Ring, Vec2 } from '../../../geometry/vec.ts'
 import { multiBBox, ringBBox } from '../../../geometry/vec.ts'
+import { intersection } from '../../../geometry/boolean.ts'
+import { insertTJunctions } from '../../../geometry/tjunction.ts'
+import { MeshBuilder } from '../../../geometry/mesh.ts'
+import type { Mesh } from '../../../geometry/mesh.ts'
 import type { TrayDesign } from '../model/types.ts'
 import { profileToMulti } from '../model/presets.ts'
 import { pocketRing } from './shapes.ts'
+import { buildRegions, cornerSpacerRects } from './layers.ts'
 
 export interface TilingOptions {
   plateWidthMm: number
@@ -131,4 +136,134 @@ export function planTiles(design: TrayDesign, opts: TilingOptions): TilePlan {
 export function needsTiling(design: TrayDesign, opts: TilingOptions): boolean {
   const plan = planTiles(design, opts)
   return plan.cols * plan.rows > 1
+}
+
+// -- turning a plan into meshes ---------------------------------------------
+
+// How far a finger reaches past the grid line, and the finger period along a
+// seam. The two pieces on either side of a cut consume the SAME profile, so
+// they interlock and register without hardware.
+const JOINT_DEPTH_MM = 3
+const TOOTH_PITCH_MM = 12
+const SPACER_WELD_MM = 0.05
+
+export interface TrayTile {
+  row: number
+  col: number
+  /** "R1C1" .. row then column, 1-based. */
+  label: string
+  widthMm: number
+  depthMm: number
+  /** Watertight, its own origin at (0, 0). */
+  mesh: Mesh
+}
+
+const near = (a: number, b: number) => Math.abs(a - b) < 1e-6
+const isCut = (value: number, cuts: number[]) => cuts.some(c => near(c, value))
+
+/**
+ * The finger boundary for one interior cut, sampled over [lo, hi] along the
+ * seam. Returns points as (alongSeam, crossOffset) where crossOffset is
+ * `cut ± JOINT_DEPTH_MM`. Tooth boundaries sit on a fixed global grid so the
+ * profile is identical for both neighbouring pieces.
+ */
+function fingerPoints(cut: number, lo: number, hi: number): [number, number][] {
+  const sideAt = (k: number) => (k % 2 === 0 ? cut - JOINT_DEPTH_MM : cut + JOINT_DEPTH_MM)
+  const kLo = Math.floor(lo / TOOTH_PITCH_MM)
+  const pts: [number, number][] = [[lo, sideAt(kLo)]]
+  for (let k = kLo + 1; k * TOOTH_PITCH_MM < hi - 1e-9; k++) {
+    const b = k * TOOTH_PITCH_MM
+    if (b <= lo + 1e-9) continue
+    pts.push([b, sideAt(k - 1)], [b, sideAt(k)])
+  }
+  const kHi = pts.length ? Math.floor((pts[pts.length - 1][0]) / TOOTH_PITCH_MM) : kLo
+  pts.push([hi, sideAt(kHi)])
+  return pts
+}
+
+/** The clip outline for one cell: straight on tray-boundary sides, fingered on
+ *  interior cuts. Walked CCW. */
+function tileClipRing(
+  cell: TilePlan['cells'][number], plan: TilePlan, bb: ReturnType<typeof multiBBox>,
+): Ring {
+  const { minX, minY, maxX, maxY } = cell
+  const ring: Vec2[] = []
+  // bottom: minX -> maxX at y = minY
+  if (isCut(minY, plan.cutsY) && !near(minY, bb.minY)) {
+    for (const [x, y] of fingerPoints(minY, minX, maxX)) ring.push([x, y])
+  } else { ring.push([minX, minY], [maxX, minY]) }
+  // right: minY -> maxY at x = maxX
+  if (isCut(maxX, plan.cutsX) && !near(maxX, bb.maxX)) {
+    for (const [y, x] of fingerPoints(maxX, minY, maxY)) ring.push([x, y])
+  } else { ring.push([maxX, minY], [maxX, maxY]) }
+  // top: maxX -> minX at y = maxY
+  if (isCut(maxY, plan.cutsY) && !near(maxY, bb.maxY)) {
+    for (const [x, y] of fingerPoints(maxY, minX, maxX).reverse()) ring.push([x, y])
+  } else { ring.push([maxX, maxY], [minX, maxY]) }
+  // left: maxY -> minY at x = minX
+  if (isCut(minX, plan.cutsX) && !near(minX, bb.minX)) {
+    for (const [y, x] of fingerPoints(minX, minY, maxY).reverse()) ring.push([x, y])
+  } else { ring.push([minX, maxY], [minX, minY]) }
+  return ring
+}
+
+/** Shift a mesh so its footprint's min corner is at the origin. */
+function toOrigin(mesh: Mesh): Mesh {
+  const [minX, minY] = mesh.bbox
+  const p = mesh.positions.slice()
+  for (let i = 0; i < p.length; i += 3) { p[i] -= minX; p[i + 1] -= minY }
+  return {
+    positions: p, indices: mesh.indices, triangleCount: mesh.triangleCount,
+    bbox: [0, 0, mesh.bbox[2], mesh.bbox[3] - minX, mesh.bbox[4] - minY, mesh.bbox[5]],
+  }
+}
+
+/**
+ * Split an oversized tray into printable pieces, each watertight and at its own
+ * origin. Interior seams interlock with finger joints. Empty when the tray fits
+ * the plate whole.
+ */
+export function tileTray(design: TrayDesign, opts: TilingOptions): TrayTile[] {
+  const plan = planTiles(design, opts)
+  if (plan.cols * plan.rows <= 1) return []
+
+  const F = design.floorThicknessMm
+  const D = design.pocketDepthMm
+  const { base, top, pocketFloors } = buildRegions(design)
+  const bb = multiBBox(profileToMulti(design.profile))
+  const cs = design.cornerSpacers
+  const posts = cs && cs.heightMm > 0 && cs.sizeMm > 0 ? cornerSpacerRects(design, top) : []
+
+  return plan.cells.map(cell => {
+    const clip: MultiPolygon = [[tileClipRing(cell, plan, bb)]]
+    const [cb, ct, cf] = insertTJunctions([
+      intersection(base, clip), intersection(top, clip), intersection(pocketFloors, clip),
+    ])
+
+    const b = new MeshBuilder()
+    b.addHorizontal(cb, 0, 'down')
+    b.addHorizontal(cf, F, 'up')
+    b.addHorizontal(ct, F + D, 'up')
+    b.addWalls(cb, 0, F)
+    b.addWalls(ct, F, F + D)
+
+    if (cs) {
+      const z0 = F + D - SPACER_WELD_MM
+      const z1 = F + D + cs.heightMm
+      for (const rect of posts) {
+        const rb = ringBBox(rect[0])
+        const cx = (rb.minX + rb.maxX) / 2, cy = (rb.minY + rb.maxY) / 2
+        if (cx < cell.minX || cx > cell.maxX || cy < cell.minY || cy > cell.maxY) continue
+        b.addHorizontal([rect], z0, 'down')
+        b.addHorizontal([rect], z1, 'up')
+        b.addWalls([rect], z0, z1)
+      }
+    }
+
+    const mesh = toOrigin(b.finish())
+    return {
+      row: cell.row, col: cell.col, label: `R${cell.row + 1}C${cell.col + 1}`,
+      widthMm: mesh.bbox[3], depthMm: mesh.bbox[4], mesh,
+    }
+  })
 }

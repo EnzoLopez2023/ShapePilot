@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
-import { planTiles, needsTiling } from './tiling.ts'
+import { planTiles, needsTiling, tileTray } from './tiling.ts'
+import { buildTrayMesh } from './layers.ts'
+import { checkManifold } from '../../../geometry/mesh.ts'
 import { PYTHON_SIZING } from './shapes.ts'
 import type { Pocket, TrayDesign } from '../model/types.ts'
 
@@ -60,4 +62,47 @@ test('a huge tray tiles on both axes', () => {
   const plan = planTiles(design(600, 520), X2D)
   assert.deepEqual([plan.cols, plan.rows], [3, 3])
   assert.equal(plan.cells.length, 9)
+})
+
+const fullBoard = (): TrayDesign => {
+  const pockets: Pocket[] = []
+  // 20 x 6 grid, ~430 x 130 mm of pockets on a 450 x 156 tray.
+  for (let c = 0; c < 20; c++) for (let r = 0; r < 6; r++) pockets.push(pk(1, 8 + c * 21, 8 + r * 20.6))
+  return design(450, 156, pockets)
+}
+
+test('tileTray splits a full-board tray into watertight, plate-sized pieces', () => {
+  const tiles = tileTray(fullBoard(), X2D)
+  assert.equal(tiles.length, 2)
+  for (const t of tiles) {
+    const report = checkManifold(t.mesh)
+    assert.equal(report.danglingEdges, 0, `${t.label} not watertight`)
+    assert.ok(report.volume > 0)
+    assert.ok(t.widthMm <= 256 && t.depthMm <= 256, `${t.label} is ${t.widthMm} x ${t.depthMm}`)
+    assert.equal(+t.mesh.bbox[0].toFixed(6), 0) // sits at its own origin
+    assert.equal(+t.mesh.bbox[1].toFixed(6), 0)
+  }
+  assert.deepEqual(tiles.map(t => t.label), ['R1C1', 'R1C2'])
+})
+
+test('the pieces together hold about the same material as the whole tray', () => {
+  const d = fullBoard()
+  const whole = checkManifold(buildTrayMesh(d)).volume
+  const sum = tileTray(d, X2D).reduce((v, t) => v + checkManifold(t.mesh).volume, 0)
+  // Finger joints trade material across the seam; the total barely moves.
+  assert.ok(Math.abs(sum - whole) / whole < 0.02, `whole ${whole}, pieces ${sum}`)
+})
+
+test('tileTray carries corner spacers on the pieces that own each tray corner', () => {
+  const d = { ...fullBoard(), cornerSpacers: { heightMm: 7, sizeMm: 12 } }
+  const tiles = tileTray(d, X2D)
+  for (const t of tiles) {
+    assert.equal(checkManifold(t.mesh).danglingEdges, 0)
+    // A tray corner is on each piece, so each piece is taller than the bare tray.
+    assert.ok(t.mesh.bbox[5] > 12.4 + 6.9, `${t.label} height ${t.mesh.bbox[5]}`)
+  }
+})
+
+test('tileTray returns nothing when the tray already fits', () => {
+  assert.deepEqual(tileTray(design(240, 150), X2D), [])
 })

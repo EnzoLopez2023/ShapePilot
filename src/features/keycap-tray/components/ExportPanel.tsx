@@ -1,4 +1,5 @@
 import { useMemo } from 'react'
+import { zipSync, strToU8 } from 'fflate'
 import { Box, Button, Stack, ToggleButton, ToggleButtonGroup, Tooltip } from '@mui/material'
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline'
 import WarningAmberIcon from '@mui/icons-material/WarningAmber'
@@ -6,7 +7,8 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
 import type { Issue, Target } from '../geometry/validate.ts'
 import { issuesFor } from '../geometry/validate.ts'
 import type { Mesh } from '../../../geometry/mesh.ts'
-import type { TrayDesign } from '../model/types.ts'
+import type { FabricationSettings, TrayDesign } from '../model/types.ts'
+import { tileTray } from '../geometry/tiling.ts'
 import { writeBinaryStl } from '../../../export/stl.ts'
 import { writeThreeMf } from '../../../export/threemf.ts'
 import { writeShaperSvg } from '../export/svg.ts'
@@ -17,6 +19,7 @@ export interface ExportPanelProps {
   design: TrayDesign
   mesh: Mesh
   issues: Issue[]
+  fab: FabricationSettings
   /** Lifted so the toolbar can hide printer-only controls for the CNC target. */
   target: Target
   onTarget: (target: Target) => void
@@ -31,10 +34,30 @@ const FORMATS: { id: string; label: string; target: Target; ext: string; mime: s
 
 // Lives in the header toolbar rather than a full side panel, so status is a
 // single icon with the detail in its tooltip instead of a stack of Alerts.
-export default function ExportPanel({ design, mesh, issues, target, onTarget }: ExportPanelProps) {
+export default function ExportPanel({ design, mesh, issues, fab, target, onTarget }: ExportPanelProps) {
   const scoped = useMemo(() => issuesFor(issues, target), [issues, target])
   const errors = scoped.filter(i => i.severity === 'error')
   const warnings = scoped.filter(i => i.severity === 'warning')
+
+  const tiles = useMemo(
+    () => (target === 'print'
+      ? tileTray(design, { plateWidthMm: fab.plateWidthMm, plateDepthMm: fab.plateDepthMm })
+      : []),
+    [design, fab.plateWidthMm, fab.plateDepthMm, target])
+
+  const downloadTiles = () => {
+    const files: Record<string, Uint8Array> = {}
+    for (const t of tiles) {
+      files[`${safeFilename(design.name)}_${t.label}.stl`] =
+        new Uint8Array(writeBinaryStl(t.mesh, `${design.name} ${t.label}`))
+    }
+    files['README.txt'] = strToU8(
+      `${design.name}\n${tiles.length} pieces, ${tiles[0]?.widthMm.toFixed(0)} x ` +
+      `${tiles[0]?.depthMm.toFixed(0)} mm or smaller. Interior edges interlock with finger ` +
+      `joints -- press together and glue. Labels are row then column from the front-left.\n`)
+    triggerDownload(
+      zipSync(files, { level: 6 }), `${safeFilename(design.name)}_pieces.zip`, 'application/zip')
+  }
 
   const statusText = errors.length
     ? errors.map(i => i.message).join(' ')
@@ -80,6 +103,13 @@ export default function ExportPanel({ design, mesh, issues, target, onTarget }: 
             {f.label}
           </Button>
         ))}
+        {tiles.length > 1 && (
+          <Tooltip title={`Too big for the plate. Download ${tiles.length} interlocking pieces as a zip of STLs.`}>
+            <Button variant="outlined" size="small" onClick={downloadTiles}>
+              Split ×{tiles.length}
+            </Button>
+          </Tooltip>
+        )}
       </Stack>
     </Stack>
   )
