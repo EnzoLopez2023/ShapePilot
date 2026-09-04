@@ -56,6 +56,12 @@ const ROLLBACK_COMPATIBLE_LEDGER = [
     name: 'keycap projects',
     checksum: '02153a8d3de7b95e1076b191cf270d74bfc410639fcee65143ba4ea05b0c477f',
   },
+  {
+    ordinal: 5,
+    id: '006-corner-spacers',
+    name: 'keycap tray corner spacers',
+    checksum: 'cc144e6ca091fdd0728f696137eae14fb41a1c538011636dd9db4bc1ce742f5a',
+  },
 ] as const
 
 const REQUIRED_TABLES = [

@@ -343,6 +343,7 @@ verification period, so in practice that is nothing.
 | Migration | Release | Snapshot |
 | --- | --- | --- |
 | `003-design-documents`, `004-design-assets` | Shaper, Bambu and Playground designers | `/home/data/backups/shapepilot/pre-wave2-20260830T213939Z.db` |
+| `006-corner-spacers` | Keycap tray backlog (print validation, material picker, corner spacers, tiling, profile orientation fix) | None taken -- deliberately skipped for this release. If this deploy's verification fails, automatic rollback is unavailable and there is no snapshot to restore from; recover by re-running `001`-`006` against a fresh file or by hand-repairing forward. |
 
 That snapshot was taken with `sqlite3 .backup` from the Kudu console rather than
 `scripts/recovery.ts backup`, because the app code lives in the application
