@@ -1,5 +1,5 @@
 import type { MultiPolygon, Ring } from '../../../geometry/vec.ts'
-import { normalizePolygon } from '../../../geometry/vec.ts'
+import { normalizePolygon, ringBBox, rotateRing } from '../../../geometry/vec.ts'
 import { rectRing } from '../geometry/shapes.ts'
 import { LIBRARY_SIZING, PYTHON_SIZING } from '../geometry/shapes.ts'
 import type { PresetProfileId, TrayDesign, TrayProfile } from './types.ts'
@@ -27,12 +27,28 @@ const LABELS: Record<PresetProfileId, { label: string; description: string }> = 
   },
 }
 
+/**
+ * `systainer-s76-notched` is extracted from a Shaper (CNC) drawing that sits
+ * 180° from how a printed tray drops face-up into the real Systainer S76 -- the
+ * case's notch pattern only accepts the tray turned over. Confirmed against the
+ * physical case: it is *always* 180° off. Corrected here so every tray built on
+ * the preset comes out the right way up; the raw extraction in profileData.ts
+ * is left untouched.
+ */
+const TURN_180: ReadonlySet<PresetProfileId> = new Set(['systainer-s76-notched'])
+
+const orientRing = (id: PresetProfileId, ring: Ring): Ring => {
+  if (!TURN_180.has(id)) return ring
+  const b = ringBBox(ring)
+  return rotateRing(ring, 180, (b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2)
+}
+
 export const PROFILE_PRESETS: ProfilePreset[] = PRESET_PROFILE_DATA.map(d => ({
   id: d.id as PresetProfileId,
   ...LABELS[d.id as PresetProfileId],
   widthMm: d.widthMm,
   heightMm: d.heightMm,
-  ring: d.ring,
+  ring: orientRing(d.id as PresetProfileId, d.ring),
 }))
 
 export const getPreset = (id: PresetProfileId): ProfilePreset => {
