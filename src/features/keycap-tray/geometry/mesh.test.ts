@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
-import { buildRegions, buildTrayMesh } from './layers.ts'
+import { buildRegions, buildTrayMesh, cornerSpacerRects } from './layers.ts'
 import { checkManifold } from '../../../geometry/mesh.ts'
 import { multiArea } from '../../../geometry/vec.ts'
 import { LIBRARY_SIZING, PYTHON_SIZING } from './shapes.ts'
@@ -100,6 +100,37 @@ test('a through-cut removes the full height', () => {
 test('mesh bbox matches the tray footprint and height', () => {
   const m = buildTrayMesh(design([pk(1, 10, 10)]))
   assert.deepEqual(m.bbox.map(v => +v.toFixed(3)), [0, 0, 0, 100, 80, 12.4])
+})
+
+test('corner spacers add four watertight posts and lift the mesh by their height', () => {
+  const plain = design([pk(1, 40, 30)]) // pocket well clear of every corner
+  const spaced = { ...plain, cornerSpacers: { heightMm: 7, sizeMm: 10 } }
+
+  assert.equal(cornerSpacerRects(spaced).length, 4)
+  const m = buildTrayMesh(spaced)
+  const report = checkManifold(m)
+  assert.equal(report.danglingEdges, 0)
+  // 12.4 mm tray + 7 mm post.
+  assert.equal(+m.bbox[5].toFixed(3), 19.4)
+  // Footprint is unchanged -- posts sit inside the outline.
+  assert.deepEqual(m.bbox.slice(0, 5).map(v => +v.toFixed(3)), [0, 0, 0, 100, 80])
+  // More solid than the bare tray: the posts add volume.
+  assert.ok(report.volume > checkManifold(buildTrayMesh(plain)).volume)
+})
+
+test('a zero-height or zero-size spacer is a no-op', () => {
+  const d = design([])
+  assert.equal(cornerSpacerRects({ ...d, cornerSpacers: { heightMm: 0, sizeMm: 10 } }).length, 0)
+  assert.equal(cornerSpacerRects({ ...d, cornerSpacers: { heightMm: 7, sizeMm: 0 } }).length, 0)
+  assert.equal(+buildTrayMesh({ ...d, cornerSpacers: { heightMm: 0, sizeMm: 10 } }).bbox[5].toFixed(3), 12.4)
+})
+
+test('a corner pocket drops the post that would overhang it, keeping the rest', () => {
+  // A 2u pocket jammed into the bottom-left corner swallows that post's footprint.
+  const d = design([pk(2, 2, 2)], { cornerSpacers: { heightMm: 7, sizeMm: 12 } })
+  const rects = cornerSpacerRects(d)
+  assert.ok(rects.length >= 1 && rects.length < 4, `expected a partial post set, got ${rects.length}`)
+  assert.equal(checkManifold(buildTrayMesh(d)).danglingEdges, 0)
 })
 
 test('the plain systainer preset is 248 x 156', () => {

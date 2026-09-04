@@ -8,6 +8,8 @@ import { multiBBox } from '../../../geometry/vec.ts'
 import { pocketAABB } from '../state/useTrayDesign.ts'
 import { BUFFER_STEPS_MM, SNAP_STEPS_MM } from '../state/viewSettings.ts'
 import type { ViewSettings } from '../state/viewSettings.ts'
+import { MATERIALS, MATERIAL_IDS, materialOf } from '../model/materials.ts'
+import { cornerSpacerRects } from '../geometry/layers.ts'
 import type { FabricationSettings, Pocket, TrayDesign, TrayProfile } from '../model/types.ts'
 import LengthField from '../../../components/LengthField.tsx'
 import AngleField from '../../../components/AngleField.tsx'
@@ -38,7 +40,7 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
     design, selected, fab, imperial, onImperial, view, onView,
     onProfile, onSizing, onDesign, onPocket, onFab, coverage,
   } = props
-  const { snapMm, gridMm, showLabels, showPlate, showBuffer, bufferMm, target } = view
+  const { snapMm, gridMm, showLabels, showPlate, showBuffer, bufferMm, target, material } = view
 
   const heading = (t: string) => (
     <Typography variant="h3" component="h2">{t}</Typography>
@@ -216,6 +218,47 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
         />
       </Stack>
 
+      {target === 'print' && (
+        <>
+          <FormControlLabel
+            control={
+              <Switch
+                size="small" checked={!!design.cornerSpacers}
+                onChange={e => onDesign(d => ({
+                  ...d,
+                  cornerSpacers: e.target.checked ? { heightMm: 7, sizeMm: 12 } : undefined,
+                }))}
+              />
+            }
+            label="Corner spacers"
+          />
+          {design.cornerSpacers && (
+            <>
+              <Stack direction="row" spacing={1}>
+                <LengthField
+                  label="Post height" imperial={imperial} valueMm={design.cornerSpacers.heightMm}
+                  hint="How far each corner post stands above the rim. Set it to the tallest cap's height above its pocket, plus ~1 mm, so the tray above clears the caps."
+                  onChangeMm={v => onDesign(d => ({
+                    ...d, cornerSpacers: { ...d.cornerSpacers!, heightMm: v },
+                  }))}
+                />
+                <LengthField
+                  label="Post size" imperial={imperial} valueMm={design.cornerSpacers.sizeMm}
+                  hint="Square footprint of each corner post. A post that would overhang a notch or a corner pocket is dropped."
+                  onChangeMm={v => onDesign(d => ({
+                    ...d, cornerSpacers: { ...d.cornerSpacers!, sizeMm: v },
+                  }))}
+                />
+              </Stack>
+              <Typography variant="body2" color="text.secondary">
+                Stacks {(design.floorThicknessMm + design.pocketDepthMm + design.cornerSpacers.heightMm).toFixed(1)} mm tall
+                {' · '}{cornerSpacerRects(design).length}/4 posts fit
+              </Typography>
+            </>
+          )}
+        </>
+      )}
+
       <Divider />
       {heading('Pocket sizing')}
       <HoverTooltip title="How a unit count becomes a pocket size. Library sizing rounds corners at 2 mm, wide enough for a 1/8&quot; bit; Python sizing matches the trays already cut but needs a smaller bit.">
@@ -277,6 +320,22 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
           onChangeMm={v => onFab({ ...fab, plateDepthMm: v })}
         />
       </Stack>
+
+      {target === 'print' && (
+        <>
+          <Divider />
+          {heading('Material')}
+          <TextField
+            select size="small" label="Filament" value={material} fullWidth
+            helperText={materialOf(material).note}
+            onChange={e => onView({ material: e.target.value as ViewSettings['material'] })}
+          >
+            {MATERIAL_IDS.map(id => (
+              <MenuItem key={id} value={id}>{MATERIALS[id].label}</MenuItem>
+            ))}
+          </TextField>
+        </>
+      )}
 
       {selected.length > 0 && (
         <>

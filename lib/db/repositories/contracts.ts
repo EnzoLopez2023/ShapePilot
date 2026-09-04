@@ -166,6 +166,8 @@ export interface TrayDesignRecord {
   floorThicknessMm: number
   pocketDepthMm: number
   engraveDepthMm: number
+  /** Stacking posts, or absent when the tray has none. */
+  cornerSpacers?: { heightMm: number; sizeMm: number }
   pockets: PocketRecord[]
   createdAt: string
   updatedAt: string
@@ -196,6 +198,8 @@ export interface TrayDesignInput {
   floorThicknessMm?: number
   pocketDepthMm?: number
   engraveDepthMm?: number
+  /** Null or absent clears the spacers; an object sets them. */
+  cornerSpacers?: unknown
   pockets?: PocketInput[]
 }
 

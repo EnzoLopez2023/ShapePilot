@@ -1,8 +1,9 @@
 // The whole solid as an ordered list of z-bands. Two rules turn this into a
 // mesh, and both are closed-form -- no 3D boolean anywhere.
 import type { MultiPolygon, Polygon } from '../../../geometry/vec.ts'
+import { multiArea, multiBBox, translateRing } from '../../../geometry/vec.ts'
 import { difference, punchDisjointFast, union, unionDisjointFast } from '../../../geometry/boolean.ts'
-import { pocketRing } from './shapes.ts'
+import { pocketRing, rectRing } from './shapes.ts'
 import { insertTJunctions } from '../../../geometry/tjunction.ts'
 import type { Mesh } from '../../../geometry/mesh.ts'
 import { MeshBuilder } from '../../../geometry/mesh.ts'
@@ -60,6 +61,37 @@ export function buildRegions(design: TrayDesign): TrayRegions {
   }
 }
 
+// Gap from the tray's outer edge to a corner post, and the amount a post dips
+// back into the rim so a slicer unions the two solids instead of seeing a
+// zero-gap contact.
+const SPACER_INSET_MM = 2
+const SPACER_WELD_MM = 0.05
+
+/**
+ * The corner posts that actually fit: a square footprint inset from each corner
+ * of the profile bounding box, kept only where it sits wholly on the solid rim.
+ * A notch or a pocket in the corner drops that post.
+ */
+export function cornerSpacerRects(design: TrayDesign, top?: MultiPolygon): Polygon[] {
+  const cs = design.cornerSpacers
+  if (!cs || cs.heightMm <= 0 || cs.sizeMm <= 0) return []
+  const rim = top ?? buildRegions(design).top
+  const bb = multiBBox(profileToMulti(design.profile))
+  const s = cs.sizeMm, i = SPACER_INSET_MM
+  const origins: [number, number][] = [
+    [bb.minX + i, bb.minY + i],
+    [bb.maxX - i - s, bb.minY + i],
+    [bb.maxX - i - s, bb.maxY - i - s],
+    [bb.minX + i, bb.maxY - i - s],
+  ]
+  const rects: Polygon[] = []
+  for (const [x, y] of origins) {
+    const rect: Polygon = [translateRing(rectRing(s, s), x, y)]
+    if (multiArea(difference([rect], rim)) < 1e-6) rects.push(rect)
+  }
+  return rects
+}
+
 export function buildTrayMesh(design: TrayDesign): Mesh {
   const F = design.floorThicknessMm
   const D = design.pocketDepthMm
@@ -74,6 +106,19 @@ export function buildTrayMesh(design: TrayDesign): Mesh {
   // Rule B -- side walls for each band.
   b.addWalls(base, 0, F)
   b.addWalls(top, F, F + D)
+
+  // Corner posts: each an independent closed box that dips SPACER_WELD_MM into
+  // the rim, so the mesh stays edge-paired and the slicer welds the overlap.
+  const cs = design.cornerSpacers
+  if (cs && cs.heightMm > 0 && cs.sizeMm > 0) {
+    const z0 = F + D - SPACER_WELD_MM
+    const z1 = F + D + cs.heightMm
+    for (const rect of cornerSpacerRects(design, top)) {
+      b.addHorizontal([rect], z0, 'down')
+      b.addHorizontal([rect], z1, 'up')
+      b.addWalls([rect], z0, z1)
+    }
+  }
 
   return b.finish()
 }

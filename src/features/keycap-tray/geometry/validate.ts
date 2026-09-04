@@ -252,19 +252,97 @@ export function checkDepth(d: TrayDesign, fab: FabricationSettings): Issue[] {
   return issues
 }
 
+// Layer heights Bambu Studio ships presets for. A floor that is a whole number
+// of layers at one of these prints a flat pocket floor; otherwise the top of
+// the floor lands mid-layer and comes out stepped or smeared.
+const COMMON_LAYER_HEIGHTS_MM = [0.2, 0.16, 0.12, 0.28] as const
+
+const wholeLayers = (thicknessMm: number): boolean =>
+  COMMON_LAYER_HEIGHTS_MM.some(h => {
+    const n = thicknessMm / h
+    return Math.abs(n - Math.round(n)) < 0.02
+  })
+
+export interface PrintCheckOptions {
+  /**
+   * Floor thinner than this is flagged. Defaults to 0.8 mm (four 0.2 mm layers);
+   * the material picker raises it -- PETG wants 1.4, PLA Matte 1.0.
+   */
+  minFloorMm?: number
+}
+
+/**
+ * FDM-only checks, scoped to `print`. The rest of this file grew up around the
+ * CNC (bit radius, stock blow-through); these are the equivalents for a printed
+ * tray -- floor stiffness and whole-layer floors so a keycap drops in against a
+ * flat surface, not a stepped one.
+ */
+export function checkPrintability(d: TrayDesign, opts: PrintCheckOptions = {}): Issue[] {
+  const issues: Issue[] = []
+  const floor = d.floorThicknessMm
+  const minFloor = opts.minFloorMm ?? 0.8
+
+  if (floor > 0 && floor < minFloor) {
+    issues.push({
+      code: 'floor-too-thin-fdm',
+      severity: 'warning',
+      targets: ['print'],
+      message: `A ${floor} mm floor is below the ${minFloor} mm this print wants -- it flexes under the ` +
+        `caps and can split along a layer line. Thicken the floor or pick a stiffer material.`,
+    })
+  } else if (floor > 0 && !wholeLayers(floor)) {
+    const lo = Math.floor(floor / 0.2) * 0.2
+    issues.push({
+      code: 'floor-not-whole-layers',
+      severity: 'warning',
+      targets: ['print'],
+      message: `The ${floor} mm floor is ${(floor / 0.2).toFixed(1)} layers at 0.2 mm, so the pocket ` +
+        `floor prints mid-layer and comes out rough. ${lo.toFixed(1)} or ${(lo + 0.2).toFixed(1)} mm sits on a layer.`,
+    })
+  }
+
+  if (d.pocketDepthMm > 0 && d.pocketDepthMm < 1.2) {
+    issues.push({
+      code: 'pocket-too-shallow-fdm',
+      severity: 'warning',
+      targets: ['print'],
+      message: `A ${d.pocketDepthMm} mm pocket is barely a few layers deep; caps won't be held and ` +
+        `the walls print as a fragile lip.`,
+    })
+  }
+
+  return issues
+}
+
+// Room a brim and the nozzle skirt want around the part.
+const PLATE_MARGIN_MM = 5
+
 export function checkPlate(_d: TrayDesign, fab: FabricationSettings, mesh: Mesh): Issue[] {
   const w = mesh.bbox[3] - mesh.bbox[0]
   const h = mesh.bbox[4] - mesh.bbox[1]
-  const fits = (w <= fab.plateWidthMm && h <= fab.plateDepthMm) ||
-    (h <= fab.plateWidthMm && w <= fab.plateDepthMm)
-  if (fits) return []
-  return [{
-    code: 'exceeds-plate',
-    severity: 'warning',
-    targets: ['print'],
-    message: `The tray is ${w.toFixed(1)} x ${h.toFixed(1)} mm, larger than the ` +
-      `${fab.plateWidthMm} x ${fab.plateDepthMm} mm plate. Split it before printing.`,
-  }]
+  const within = (mw: number, md: number) => w <= mw && h <= md
+  const fits = within(fab.plateWidthMm, fab.plateDepthMm) || within(fab.plateDepthMm, fab.plateWidthMm)
+  if (!fits) {
+    return [{
+      code: 'exceeds-plate',
+      severity: 'warning',
+      targets: ['print'],
+      message: `The tray is ${w.toFixed(1)} x ${h.toFixed(1)} mm, larger than the ` +
+        `${fab.plateWidthMm} x ${fab.plateDepthMm} mm plate. Split it before printing.`,
+    }]
+  }
+  const snug = (mw: number, md: number) => w > mw - PLATE_MARGIN_MM || h > md - PLATE_MARGIN_MM
+  const tight = snug(fab.plateWidthMm, fab.plateDepthMm) && snug(fab.plateDepthMm, fab.plateWidthMm)
+  if (tight) {
+    return [{
+      code: 'plate-margin-tight',
+      severity: 'warning',
+      targets: ['print'],
+      message: `The tray is ${w.toFixed(1)} x ${h.toFixed(1)} mm, within ${PLATE_MARGIN_MM} mm of the ` +
+        `plate edge. A brim or skirt will not fit -- turn them off or trim the tray.`,
+    }]
+  }
+  return []
 }
 
 export function checkPlacement(d: TrayDesign): Issue[] {
@@ -325,12 +403,15 @@ export function checkMesh(mesh: Mesh): Issue[] {
   }]
 }
 
-export function validateDesign(d: TrayDesign, fab: FabricationSettings, mesh: Mesh): Issue[] {
+export function validateDesign(
+  d: TrayDesign, fab: FabricationSettings, mesh: Mesh, print: PrintCheckOptions = {},
+): Issue[] {
   return [
     ...checkPlacement(d),
     ...checkCornerRadius(d, fab),
     ...checkWallThickness(d, fab),
     ...checkDepth(d, fab),
+    ...checkPrintability(d, print),
     ...checkPlate(d, fab, mesh),
     ...checkMesh(mesh),
   ]

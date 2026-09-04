@@ -9,6 +9,9 @@
 // Local, therefore, rather than server-side: this is how one person at one
 // machine was looking at something, not a fact about the tray. Losing it costs
 // four dropdowns.
+import { isMaterialId } from '../model/materials.ts'
+import type { MaterialId } from '../model/materials.ts'
+
 export type CanvasMode = '2d' | '3d'
 export type FabricationTarget = 'print' | 'cnc'
 
@@ -22,6 +25,8 @@ export interface ViewSettings {
   bufferMm: number
   imperial: boolean
   target: FabricationTarget
+  /** Filament the print checks hold the tray to. Not part of the saved design. */
+  material: MaterialId
 }
 
 /** The toolbar's starting point for a tray nothing is remembered about. */
@@ -36,6 +41,7 @@ export const DEFAULT_VIEW_SETTINGS: ViewSettings = {
   bufferMm: 1.8,
   imperial: false,
   target: 'print',
+  material: 'generic',
 }
 
 /** Snap steps offered in the View section: 0.5 mm through 5 mm in 0.5 mm
@@ -96,6 +102,7 @@ export function readViewSettings(raw: unknown, baseline: ViewSettings): ViewSett
     bufferMm: number(stored.bufferMm, 0, 100, baseline.bufferMm),
     imperial: boolean(stored.imperial, baseline.imperial),
     target: isTarget(stored.target) ? stored.target : baseline.target,
+    material: isMaterialId(stored.material) ? stored.material : baseline.material,
   }
 }
 

@@ -16,6 +16,7 @@ import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import SettingsIcon from '@mui/icons-material/SettingsRounded'
 import { buildTrayMesh } from './geometry/layers.ts'
 import { validateDesign } from './geometry/validate.ts'
+import { materialOf } from './model/materials.ts'
 import {
   DEFAULT_VIEW_SETTINGS, forgetViewSettings, loadViewSettings, saveViewSettings,
 } from './state/viewSettings.ts'
@@ -105,7 +106,9 @@ export default function KeycapTrayPage() {
   // Rebuilt only when the design actually changes -- a full 75-pocket tray takes
   // ~55 ms, which is fine on commit but would stutter if it ran during a drag.
   const mesh = useMemo(() => buildTrayMesh(design), [design])
-  const issues = useMemo(() => validateDesign(design, fab, mesh), [design, fab, mesh])
+  const issues = useMemo(
+    () => validateDesign(design, fab, mesh, { minFloorMm: materialOf(settings.material).minFloorMm }),
+    [design, fab, mesh, settings.material])
 
   const refresh = useCallback(async () => {
     setListLoading(true)
@@ -136,10 +139,13 @@ export default function KeycapTrayPage() {
     let cancelled = false
     void designerDefaults().then(defaults => {
       if (cancelled) return
-      setBaseline(defaults.keycapTray)
+      // `material` is a per-tray working choice, not one of the settings-page
+      // "how a designer opens" preferences, so it is not in KeycapTrayDefaults.
+      const base: ViewSettings = { ...DEFAULT_VIEW_SETTINGS, ...defaults.keycapTray }
+      setBaseline(base)
       // Only while nothing is loaded and untouched: a preference arriving late
       // must not overwrite a tray already open or edits already made.
-      setSettings(current => (current === DEFAULT_VIEW_SETTINGS ? defaults.keycapTray : current))
+      setSettings(current => (current === DEFAULT_VIEW_SETTINGS ? base : current))
       setBaselineReady(true)
     })
     return () => { cancelled = true }

@@ -19,6 +19,7 @@ const custom: ViewSettings = {
   bufferMm: 3,
   imperial: true,
   target: 'cnc',
+  material: 'petg',
 }
 
 describe('per-tray view settings', () => {
@@ -51,6 +52,12 @@ describe('per-tray view settings', () => {
       gridMm: 2,      // the one good value survives
       target: 'cnc',
     })
+  })
+
+  test('an unknown material falls back to the baseline', () => {
+    expect(readViewSettings({ material: 'unobtainium' }, DEFAULT_VIEW_SETTINGS).material)
+      .toBe(DEFAULT_VIEW_SETTINGS.material)
+    expect(readViewSettings({ material: 'petg' }, DEFAULT_VIEW_SETTINGS).material).toBe('petg')
   })
 
   test('an out-of-range number is refused, not clamped', () => {

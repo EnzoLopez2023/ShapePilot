@@ -311,6 +311,15 @@ export const KEYCAP_PROJECT_STATEMENTS: readonly string[] = [
   ON keycap_tray_designs (project_id, updated_at DESC)`,
 ]
 
+/**
+ * Corner-spacer posts for stacking a tray inside a Systainer. One nullable JSON
+ * column, same shape as `sizing_json`: `{"heightMm":7,"sizeMm":10}` or NULL for
+ * a tray with no spacers, which is every tray imported from Hearth.
+ */
+export const CORNER_SPACER_STATEMENTS: readonly string[] = [
+  `ALTER TABLE keycap_tray_designs ADD COLUMN corner_spacers_json TEXT`,
+]
+
 /** Tables ShapePilot owns and reconciles. Order is the reconciliation order. */
 export const OWNED_LEGACY_TABLES = [
   'keycap_tray_designs',
