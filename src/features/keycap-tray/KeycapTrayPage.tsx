@@ -497,7 +497,7 @@ export default function KeycapTrayPage() {
             sx={{ ml: 'auto', alignItems: 'center', flexWrap: 'wrap', rowGap: 1 }}
           >
             <ExportPanel
-              design={design} mesh={mesh} issues={issues}
+              design={design} mesh={mesh} issues={issues} fab={fab}
               target={target} onTarget={next => patch({ target: next })}
             />
 

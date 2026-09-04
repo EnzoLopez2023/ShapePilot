@@ -8,6 +8,7 @@ import { bboxOverlaps, multiArea, ringBBox } from '../../../geometry/vec.ts'
 import { difference, intersection } from '../../../geometry/boolean.ts'
 import { effectivePocketCornerRadius, pocketRing } from './shapes.ts'
 import { buildRegions } from './layers.ts'
+import { planTiles } from './tiling.ts'
 import { profileToMulti } from '../model/presets.ts'
 import { checkManifold } from '../../../geometry/mesh.ts'
 import type { Mesh } from '../../../geometry/mesh.ts'
@@ -317,18 +318,23 @@ export function checkPrintability(d: TrayDesign, opts: PrintCheckOptions = {}): 
 // Room a brim and the nozzle skirt want around the part.
 const PLATE_MARGIN_MM = 5
 
-export function checkPlate(_d: TrayDesign, fab: FabricationSettings, mesh: Mesh): Issue[] {
+export function checkPlate(d: TrayDesign, fab: FabricationSettings, mesh: Mesh): Issue[] {
   const w = mesh.bbox[3] - mesh.bbox[0]
   const h = mesh.bbox[4] - mesh.bbox[1]
   const within = (mw: number, md: number) => w <= mw && h <= md
   const fits = within(fab.plateWidthMm, fab.plateDepthMm) || within(fab.plateDepthMm, fab.plateWidthMm)
   if (!fits) {
+    const plan = planTiles(d, { plateWidthMm: fab.plateWidthMm, plateDepthMm: fab.plateDepthMm })
+    const pieces = `${plan.cols} × ${plan.rows}`
+    const gapNote = plan.cutsThroughPockets
+      ? ' A cut runs through a pocket -- nudge a pocket row aside to open a gap.'
+      : ''
     return [{
       code: 'exceeds-plate',
       severity: 'warning',
       targets: ['print'],
       message: `The tray is ${w.toFixed(1)} x ${h.toFixed(1)} mm, larger than the ` +
-        `${fab.plateWidthMm} x ${fab.plateDepthMm} mm plate. Split it before printing.`,
+        `${fab.plateWidthMm} x ${fab.plateDepthMm} mm plate. Split it into ${pieces} pieces.${gapNote}`,
     }]
   }
   const snug = (mw: number, md: number) => w > mw - PLATE_MARGIN_MM || h > md - PLATE_MARGIN_MM
