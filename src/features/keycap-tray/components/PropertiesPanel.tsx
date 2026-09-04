@@ -10,6 +10,7 @@ import { BUFFER_STEPS_MM, SNAP_STEPS_MM } from '../state/viewSettings.ts'
 import type { ViewSettings } from '../state/viewSettings.ts'
 import { MATERIALS, MATERIAL_IDS, materialOf } from '../model/materials.ts'
 import { cornerSpacerRects } from '../geometry/layers.ts'
+import { planTiles } from '../geometry/tiling.ts'
 import type { FabricationSettings, Pocket, TrayDesign, TrayProfile } from '../model/types.ts'
 import LengthField from '../../../components/LengthField.tsx'
 import AngleField from '../../../components/AngleField.tsx'
@@ -256,6 +257,16 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
               </Typography>
             </>
           )}
+          {(() => {
+            const plan = planTiles(design, { plateWidthMm: fab.plateWidthMm, plateDepthMm: fab.plateDepthMm })
+            if (plan.cols * plan.rows <= 1) return null
+            return (
+              <Typography variant="body2" color="warning.main">
+                Too big for the plate — split into {plan.cols} × {plan.rows} pieces
+                {plan.cutsThroughPockets ? ' · a cut runs through a pocket' : ' · cuts clear the pockets'}
+              </Typography>
+            )
+          })()}
         </>
       )}
 
