@@ -9,6 +9,7 @@ import { pocketAABB } from '../state/useTrayDesign.ts'
 import { BUFFER_STEPS_MM, SNAP_STEPS_MM } from '../state/viewSettings.ts'
 import type { ViewSettings } from '../state/viewSettings.ts'
 import { MATERIALS, MATERIAL_IDS, materialOf } from '../model/materials.ts'
+import { rotateDesign180 } from '../model/transform.ts'
 import { cornerSpacerRects } from '../geometry/layers.ts'
 import { planTiles } from '../geometry/tiling.ts'
 import type { FabricationSettings, Pocket, TrayDesign, TrayProfile } from '../model/types.ts'
@@ -187,6 +188,10 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
         </TextField>
       </HoverTooltip>
 
+      <Tooltip title="Turn the whole tray 180° — outline and every pocket together. Use it when a notched profile was laid out the wrong way up for the physical case.">
+        <Button size="small" onClick={() => onDesign(rotateDesign180)}>Rotate 180°</Button>
+      </Tooltip>
+
       {design.profile.kind === 'rect' && (
         <Stack direction="row" spacing={1}>
           <LengthField
@@ -214,7 +219,7 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
         />
         <LengthField
           label="Depth" imperial={imperial} valueMm={design.pocketDepthMm}
-          hint="How deep every pocket cuts, measured from the top face."
+          hint="How deep every pocket cuts, from the top face. Full cap height (~9 mm) holds caps flush and protected but hard to pick out; 4–5 mm leaves them proud and easy to grab."
           onChangeMm={v => onDesign(d => ({ ...d, pocketDepthMm: v }))}
         />
       </Stack>
