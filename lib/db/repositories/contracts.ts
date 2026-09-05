@@ -170,6 +170,8 @@ export interface TrayDesignRecord {
   engraveDepthMm: number
   /** Stacking posts, or absent when the tray has none. */
   cornerSpacers?: { heightMm: number; sizeMm: number }
+  /** Raised tray-name text, or absent when the tray has none. */
+  nameplate?: { heightMm: number; fontSizeMm: number; x: number; y: number }
   pockets: PocketRecord[]
   createdAt: string
   updatedAt: string
@@ -202,6 +204,8 @@ export interface TrayDesignInput {
   engraveDepthMm?: number
   /** Null or absent clears the spacers; an object sets them. */
   cornerSpacers?: unknown
+  /** Null or absent clears the nameplate; an object sets it. */
+  nameplate?: unknown
   pockets?: PocketInput[]
 }
 

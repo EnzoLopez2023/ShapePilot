@@ -263,6 +263,47 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
               </Typography>
             </>
           )}
+
+          <Tooltip title="Raised text of the tray name on the floor, so the tray reads as its own in a drawer. Drag it on the layout canvas to place it clear of the pockets.">
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small" checked={!!design.nameplate}
+                  onChange={e => onDesign(d => {
+                    if (!e.target.checked) return { ...d, nameplate: undefined }
+                    const bb = multiBBox(profileToMulti(d.profile))
+                    const fontSizeMm = 8
+                    return {
+                      ...d,
+                      nameplate: {
+                        heightMm: 2,
+                        fontSizeMm,
+                        x: (bb.minX + bb.maxX) / 2,
+                        y: bb.maxY - fontSizeMm * 1.5,
+                      },
+                    }
+                  })}
+                />
+              }
+              label="Tray nameplate"
+            />
+          </Tooltip>
+          {design.nameplate && (
+            <Stack direction="row" spacing={1}>
+              <LengthField
+                label="Text height" imperial={imperial} valueMm={design.nameplate.heightMm}
+                hint="How far the raised text stands above the floor. 2 mm prints cleanly and stays legible."
+                onChangeMm={v => onDesign(d => (d.nameplate
+                  ? { ...d, nameplate: { ...d.nameplate, heightMm: v } } : d))}
+              />
+              <LengthField
+                label="Font size" imperial={imperial} valueMm={design.nameplate.fontSizeMm}
+                hint="Cap height of the text. The run's width follows the tray name; around 7–10 mm reads well."
+                onChangeMm={v => onDesign(d => (d.nameplate
+                  ? { ...d, nameplate: { ...d.nameplate, fontSizeMm: v } } : d))}
+              />
+            </Stack>
+          )}
           {(() => {
             const plan = planTiles(design, { plateWidthMm: fab.plateWidthMm, plateDepthMm: fab.plateDepthMm })
             if (plan.cols * plan.rows <= 1) return null
@@ -426,7 +467,7 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
                       size="small" checked={!!selected[0].locatingPosts}
                       onChange={e => onPocket(selected[0].id, {
                         locatingPosts: e.target.checked
-                          ? { heightMm: Math.min(3, Math.max(0.5, design.pocketDepthMm - 1)), outerDiameterMm: 6, boreDiameterMm: 4 }
+                          ? { heightMm: Math.min(3, Math.max(0.5, design.pocketDepthMm - 1)), outerDiameterMm: 9, boreDiameterMm: 6 }
                           : undefined,
                       })}
                     />

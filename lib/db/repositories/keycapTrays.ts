@@ -49,6 +49,7 @@ interface DesignRow {
   depth_mm: number
   engrave_mm: number
   corner_spacers_json: string | null
+  nameplate_json: string | null
   created_at: string
   updated_at: string
 }
@@ -125,6 +126,12 @@ const rowToDesign = (d: DesignRow, pockets: PocketRecord[]): TrayDesignRecord =>
   ...(d.corner_spacers_json
     ? { cornerSpacers: JSON.parse(d.corner_spacers_json) as { heightMm: number; sizeMm: number } }
     : {}),
+  ...(d.nameplate_json
+    ? {
+      nameplate: JSON.parse(d.nameplate_json) as
+        { heightMm: number; fontSizeMm: number; x: number; y: number },
+    }
+    : {}),
   pockets,
   createdAt: d.created_at,
   updatedAt: d.updated_at,
@@ -145,6 +152,12 @@ function splitProfile(profile: TrayDesignInput['profile']): { kind: string; json
 const spacersJson = (input: TrayDesignInput): string | null =>
   input.cornerSpacers && typeof input.cornerSpacers === 'object'
     ? JSON.stringify(input.cornerSpacers)
+    : null
+
+/** `{heightMm,fontSizeMm,x,y}` -> JSON, anything else -> NULL. The route has validated it. */
+const nameplateJson = (input: TrayDesignInput): string | null =>
+  input.nameplate && typeof input.nameplate === 'object'
+    ? JSON.stringify(input.nameplate)
     : null
 
 interface PocketParams {
@@ -200,7 +213,8 @@ export function createKeycapTrayRepository(db: SqliteDatabase): KeycapTrayReposi
 
   const selectOwnedDesign = db.prepare<[string, string, string], DesignRow>(`
     SELECT id, project_id, name, notes, profile_kind, profile_json, sizing_json,
-           floor_mm, depth_mm, engrave_mm, corner_spacers_json, created_at, updated_at
+           floor_mm, depth_mm, engrave_mm, corner_spacers_json, nameplate_json,
+           created_at, updated_at
       FROM keycap_tray_designs
      WHERE owner_tenant_id = ? AND owner_oid = ? AND id = ?`)
 
@@ -210,8 +224,8 @@ export function createKeycapTrayRepository(db: SqliteDatabase): KeycapTrayReposi
   const insertDesign = db.prepare(`
     INSERT INTO keycap_tray_designs
       (owner_tenant_id, owner_oid, project_id, name, notes, profile_kind, profile_json,
-       sizing_json, floor_mm, depth_mm, engrave_mm, corner_spacers_json)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+       sizing_json, floor_mm, depth_mm, engrave_mm, corner_spacers_json, nameplate_json)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 
   const deletePockets = db.prepare('DELETE FROM keycap_tray_pockets WHERE design_id = ?')
 
@@ -227,7 +241,7 @@ export function createKeycapTrayRepository(db: SqliteDatabase): KeycapTrayReposi
         input.name, input.notes ?? null, profile.kind, profile.json,
         JSON.stringify(input.sizing ?? {}),
         input.floorThicknessMm ?? 2.4, input.pocketDepthMm ?? 10, input.engraveDepthMm ?? 0.4,
-        spacersJson(input))
+        spacersJson(input), nameplateJson(input))
       const id = info.lastInsertRowid
       ;(input.pockets ?? []).forEach((p, i) => insertPocket.run(pocketParams(id, p, i)))
       return id
@@ -239,12 +253,12 @@ export function createKeycapTrayRepository(db: SqliteDatabase): KeycapTrayReposi
         UPDATE keycap_tray_designs
            SET name = ?, notes = ?, profile_kind = ?, profile_json = ?, sizing_json = ?,
                floor_mm = ?, depth_mm = ?, engrave_mm = ?, corner_spacers_json = ?,
-               updated_at = datetime('now')
+               nameplate_json = ?, updated_at = datetime('now')
          WHERE owner_tenant_id = ? AND owner_oid = ? AND id = ?`).run(
         input.name, input.notes ?? null, profile.kind, profile.json,
         JSON.stringify(input.sizing ?? {}),
         input.floorThicknessMm ?? 2.4, input.pocketDepthMm ?? 10, input.engraveDepthMm ?? 0.4,
-        spacersJson(input),
+        spacersJson(input), nameplateJson(input),
         owner.tenantId, owner.oid, id)
       // Written separately so an absent `projectId` leaves the link untouched:
       // the designer saves a tray without knowing which project owns it, and a
@@ -265,7 +279,8 @@ export function createKeycapTrayRepository(db: SqliteDatabase): KeycapTrayReposi
     const info = insertDesign.run(
       owner.tenantId, owner.oid, projectId,
       name, source.notes, source.profile_kind, source.profile_json, source.sizing_json,
-      source.floor_mm, source.depth_mm, source.engrave_mm, source.corner_spacers_json)
+      source.floor_mm, source.depth_mm, source.engrave_mm, source.corner_spacers_json,
+      source.nameplate_json)
     db.prepare(`
       INSERT INTO keycap_tray_pockets (design_id, ${POCKET_COLUMNS})
       SELECT ?, ${POCKET_COLUMNS} FROM keycap_tray_pockets WHERE design_id = ?`)

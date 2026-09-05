@@ -74,6 +74,21 @@ export interface CornerSpacers {
   sizeMm: number
 }
 
+/**
+ * Raised text of the tray name, sitting proud of the floor so the tray reads
+ * as its own at a glance in a drawer. One per tray. `x`/`y` are the centre of
+ * the text run in tray coordinates -- the run is centred on its own bounds, so
+ * its width follows the name and only the anchor is stored. Absent = none.
+ */
+export interface Nameplate {
+  /** Emboss height above the floor, mm. */
+  heightMm: number
+  /** Cap height of the text, mm. */
+  fontSizeMm: number
+  x: number
+  y: number
+}
+
 export interface TrayDesign {
   id: string
   /** The keycap project this tray is cut for; null while it stands alone. */
@@ -86,6 +101,7 @@ export interface TrayDesign {
   pocketDepthMm: number
   engraveDepthMm: number
   cornerSpacers?: CornerSpacers
+  nameplate?: Nameplate
   pockets: Pocket[]
   /** Bumped on every mutation; the useMemo key for mesh rebuilds. */
   revision: number

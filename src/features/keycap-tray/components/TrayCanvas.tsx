@@ -4,8 +4,8 @@ import AddIcon from '@mui/icons-material/Add'
 import RemoveIcon from '@mui/icons-material/Remove'
 import type { Issue } from '../geometry/validate.ts'
 import type { Pocket, TrayDesign } from '../model/types.ts'
-import type { Ring } from '../../../geometry/vec.ts'
-import { pocketRing } from '../geometry/shapes.ts'
+import type { MultiPolygon, Ring } from '../../../geometry/vec.ts'
+import { pocketRing, locatingPostSlotCenters } from '../geometry/shapes.ts'
 import { cornerSpacerRects } from '../geometry/layers.ts'
 import { profileToMulti } from '../model/presets.ts'
 import { multiBBox } from '../../../geometry/vec.ts'
@@ -36,6 +36,10 @@ export interface TrayCanvasProps {
   onMove: (ids: Iterable<string>, dx: number, dy: number) => void
   onRotate: (id: string, deg: number) => void
   onDropItem: (item: PaletteItem, x: number, y: number) => void
+  /** Nameplate glyph outlines, centred on their own bounds, or null while the
+   *  font is still loading / the tray has no nameplate. */
+  nameplateOutlines: MultiPolygon | null
+  onMoveNameplate: (dx: number, dy: number) => void
 }
 
 interface DragState {
@@ -145,6 +149,7 @@ export default function TrayCanvas(props: TrayCanvasProps) {
     design, selection, issues, snapMm, gridMm, showPlate, showLabels, inset, fitToken,
     plateWidthMm, plateDepthMm, showBuffer, bufferMm,
     onSelect, onClearSelection, onMove, onRotate, onDropItem,
+    nameplateOutlines, onMoveNameplate,
   } = props
 
   const theme = useTheme()
@@ -154,6 +159,9 @@ export default function TrayCanvas(props: TrayCanvasProps) {
   const [view, setView] = useState({ x: -12, y: -12, w: 280, h: 200 })
   const [drag, setDrag] = useState<DragState | null>(null)
   const [rotateDrag, setRotateDrag] = useState<RotateState | null>(null)
+  const [npDrag, setNpDrag] = useState<
+    { pointerId: number; startX: number; startY: number; dx: number; dy: number } | null
+  >(null)
   // Background gesture: a plain drag on empty canvas pans the view; holding
   // Shift instead rubber-bands a region to zoom into. `marquee` (client pixels
   // relative to the SVG) drives the zoom rectangle overlay; `grabbing` only
@@ -353,6 +361,18 @@ export default function TrayCanvas(props: TrayCanvasProps) {
     try { (e.target as Element).setPointerCapture(e.pointerId) } catch { /* pointer already gone */ }
   }, [design.sizing, toModel])
 
+  const beginNameplateDrag = useCallback((e: React.PointerEvent) => {
+    e.stopPropagation()
+    ;(e.target as Element).setPointerCapture?.(e.pointerId)
+    setNpDrag({ pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, dx: 0, dy: 0 })
+  }, [])
+
+  const endNameplateDrag = useCallback(() => {
+    if (!npDrag) return
+    if (npDrag.dx !== 0 || npDrag.dy !== 0) onMoveNameplate(npDrag.dx, npDrag.dy)
+    setNpDrag(null)
+  }, [npDrag, onMoveNameplate])
+
   // Screen-pixel snap radius for alignment guides, converted to model mm at
   // the current zoom so it feels like a constant ~6 px regardless of scale.
   const guideToleranceMm = useCallback((rectWidth: number) => (6 / rectWidth) * view.w, [view.w])
@@ -388,6 +408,15 @@ export default function TrayCanvas(props: TrayCanvasProps) {
       setRotateDrag(d => (d ? { ...d, angle: deg } : d))
       return
     }
+    if (npDrag && e.pointerId === npDrag.pointerId) {
+      const el = svgRef.current
+      if (!el) return
+      const r = el.getBoundingClientRect()
+      const rawDx = ((e.clientX - npDrag.startX) / r.width) * view.w
+      const rawDy = -((e.clientY - npDrag.startY) / r.height) * view.h
+      setNpDrag(d => (d ? { ...d, dx: snap(rawDx), dy: snap(rawDy) } : d))
+      return
+    }
     if (!drag || e.pointerId !== drag.pointerId) return
     const el = svgRef.current
     if (!el) return
@@ -421,7 +450,7 @@ export default function TrayCanvas(props: TrayCanvasProps) {
     }
 
     setDrag(d => (d ? { ...d, dx, dy, guideX, guideY } : d))
-  }, [drag, rotateDrag, toModel, view, snap, design.pockets, design.sizing,
+  }, [drag, rotateDrag, npDrag, toModel, view, snap, design.pockets, design.sizing,
       pocketCenters, trayCenter, guideToleranceMm])
 
   const endDrag = useCallback(() => {
@@ -443,6 +472,7 @@ export default function TrayCanvas(props: TrayCanvasProps) {
   // clears the selection, as clicking empty canvas always did.
   const onCanvasPointerUp = useCallback((e: React.PointerEvent) => {
     if (rotateDrag && e.pointerId === rotateDrag.pointerId) { endRotate(); return }
+    if (npDrag && e.pointerId === npDrag.pointerId) { endNameplateDrag(); return }
     const bg = bgPointer.current
     if (bg && bg.id === e.pointerId) {
       bgPointer.current = null
@@ -459,10 +489,12 @@ export default function TrayCanvas(props: TrayCanvasProps) {
       return
     }
     endDrag()
-  }, [rotateDrag, endRotate, marquee, endDrag, onClearSelection, commitMarqueeZoom])
+  }, [rotateDrag, endRotate, npDrag, endNameplateDrag, marquee, endDrag,
+      onClearSelection, commitMarqueeZoom])
 
   const onCanvasPointerCancel = useCallback((e: React.PointerEvent) => {
     if (rotateDrag && e.pointerId === rotateDrag.pointerId) { setRotateDrag(null); return }
+    if (npDrag && e.pointerId === npDrag.pointerId) { setNpDrag(null); return }
     if (bgPointer.current?.id === e.pointerId) {
       bgPointer.current = null
       setGrabbing(false)
@@ -470,7 +502,7 @@ export default function TrayCanvas(props: TrayCanvasProps) {
       return
     }
     endDrag()
-  }, [rotateDrag, endDrag])
+  }, [rotateDrag, npDrag, endDrag])
 
   // Dropping from the palette.
   const onDrop = useCallback((e: React.DragEvent) => {
@@ -535,6 +567,20 @@ export default function TrayCanvas(props: TrayCanvasProps) {
     () => cornerSpacerRects(design).map(rect => ringToPath(rect[0])),
     [design],
   )
+
+  // Nameplate glyphs as one evenodd-filled path, plus the run's own bounds for
+  // an invisible drag target -- the outlines are already centred on the origin.
+  const nameplate = useMemo(() => {
+    if (!design.nameplate || !nameplateOutlines?.length) return null
+    const d = nameplateOutlines.flatMap(poly => poly.map(ringToPath)).join(' ')
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (const poly of nameplateOutlines) for (const ring of poly) for (const [x, y] of ring) {
+      if (x < minX) minX = x; if (x > maxX) maxX = x
+      if (y < minY) minY = y; if (y > maxY) maxY = y
+    }
+    const pad = Math.max(1, (maxY - minY) * 0.25)
+    return { d, minX: minX - pad, minY: minY - pad, w: maxX - minX + 2 * pad, h: maxY - minY + 2 * pad }
+  }, [design.nameplate, nameplateOutlines])
 
   return (
     <Box sx={{ position: 'absolute', inset: 0, overflow: 'hidden' }}>
@@ -643,6 +689,21 @@ export default function TrayCanvas(props: TrayCanvasProps) {
                     onPointerDown={e => beginDrag(e, p)}
                     style={{ cursor: 'move' }}
                   />
+                  {p.locatingPosts && !p.isThrough
+                    && locatingPostSlotCenters(p, design.sizing).map(([cx, cy], i) => (
+                      <g key={`lp${i}`} style={{ pointerEvents: 'none' }}>
+                        <circle
+                          cx={cx} cy={cy} r={p.locatingPosts!.outerDiameterMm / 2}
+                          fill="none" stroke={selected ? theme.palette.primary.main : ink}
+                          strokeWidth={view.w / 900}
+                        />
+                        <circle
+                          cx={cx} cy={cy} r={p.locatingPosts!.boreDiameterMm / 2}
+                          fill={pocketFill} stroke={selected ? theme.palette.primary.main : ink}
+                          strokeWidth={view.w / 1100}
+                        />
+                      </g>
+                    ))}
                 </g>
                 {showLabels && <PocketLabel pocket={p} design={design} ink={ink} />}
                 {selected && selection.size === 1 && (
@@ -657,6 +718,28 @@ export default function TrayCanvas(props: TrayCanvasProps) {
               </g>
             )
           })}
+
+          {nameplate && design.nameplate && (
+            <g
+              transform={`translate(${design.nameplate.x + (npDrag?.dx ?? 0)}, ${design.nameplate.y + (npDrag?.dy ?? 0)})`}
+              onPointerDown={beginNameplateDrag}
+              style={{ cursor: 'move' }}
+            >
+              {/* Invisible hit target so the whole run is grabbable, not just
+                  the strokes of the glyphs. */}
+              <rect
+                x={nameplate.minX} y={nameplate.minY}
+                width={nameplate.w} height={nameplate.h}
+                fill="transparent"
+              />
+              <path
+                d={nameplate.d}
+                fillRule="evenodd"
+                fill={theme.palette.primary.main}
+                fillOpacity={0.85}
+              />
+            </g>
+          )}
         </g>
       </svg>
 

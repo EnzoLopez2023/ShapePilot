@@ -7,7 +7,7 @@
 // geometry operation and must not fail because the network did, or because the
 // PWA is running offline.
 import type { Font } from 'opentype.js'
-import type { Ring } from '../geometry/vec.ts'
+import type { MultiPolygon, Ring } from '../geometry/vec.ts'
 import { quantizeRing } from '../geometry/vec.ts'
 import { nestRings } from '../geometry/nest.ts'
 import type { Contour, TextObject } from '../model/document.ts'
@@ -108,39 +108,36 @@ function pathToRings(commands: readonly { type: string; [k: string]: unknown }[]
 }
 
 /**
- * Outlines for one text object, centred on its own origin so it rotates and
- * scales about itself like every other shape.
+ * Glyph outlines for a plain string as a nested `MultiPolygon` -- outer rings
+ * with their counters as holes, recovered by containment -- centred on the
+ * run's own bounds so it scales and rotates about itself like every other
+ * shape. This is the form the mesher wants for extruding text as a solid
+ * (the keycap-tray nameplate); `textOutlines` flattens it for the 2D canvas.
  *
- * Counters -- the hole in an "o" -- come back as separate contours with no
- * parent information, so nesting is recovered by containment, the same way the
- * SVG and DXF importers do it. Without that an "o" would cut as a solid disc.
+ * Glyphs are mapped per character rather than through `stringToGlyphs`, which
+ * runs GSUB shaping: Archivo uses a contextual lookup opentype.js cannot read
+ * and throws on. Ligatures and contextual alternates are a nicety for cut
+ * text; a reliable outline is not. Kerning is still applied.
  */
-export function textOutlines(font: Font, object: TextObject): Contour[] {
-  const text = object.text
-  if (!text.trim()) return []
+export function traceTextPolys(
+  font: Font, text: string, sizeMm: number, letterSpacing = 0,
+): MultiPolygon {
+  if (!text.trim() || sizeMm <= 0) return []
 
-  const size = object.sizeMm
-  const spacing = object.letterSpacing ?? 0
   const rings: Ring[] = []
-
-  // Glyphs are mapped per character rather than through stringToGlyphs, which
-  // runs GSUB shaping: Archivo uses a contextual lookup opentype.js cannot read
-  // and throws on. Ligatures and contextual alternates are a nicety for cut
-  // text; a reliable outline is not. Kerning is still applied.
   let penX = 0
   const glyphs = [...text].map(char => font.charToGlyph(char))
   glyphs.forEach((glyph, index) => {
-    const path = glyph.getPath(penX, 0, size)
+    const path = glyph.getPath(penX, 0, sizeMm)
     rings.push(...pathToRings(path.commands as unknown as { type: string }[]))
-    penX += ((glyph.advanceWidth ?? 0) / font.unitsPerEm) * size + spacing
+    penX += ((glyph.advanceWidth ?? 0) / font.unitsPerEm) * sizeMm + letterSpacing
     const next = glyphs[index + 1]
-    if (next) penX += (font.getKerningValue(glyph, next) / font.unitsPerEm) * size
+    if (next) penX += (font.getKerningValue(glyph, next) / font.unitsPerEm) * sizeMm
   })
   if (!rings.length) return []
 
   const nested = nestRings(rings.map(quantizeRing))
 
-  // Centre on the run's own bounds.
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
   for (const poly of nested) for (const ring of poly) for (const [x, y] of ring) {
     if (x < minX) minX = x; if (x > maxX) maxX = x
@@ -148,11 +145,19 @@ export function textOutlines(font: Font, object: TextObject): Contour[] {
   }
   const dx = -(minX + maxX) / 2
   const dy = -(minY + maxY) / 2
+  return nested.map(poly => poly.map(ring =>
+    ring.map(([x, y]) => [x + dx, y + dy] as const)))
+}
 
+/**
+ * Outlines for one text object as a flat list of contours, for the 2D canvas
+ * (which fills them with `fill-rule: evenodd`). Counters come back as their own
+ * contours -- see `traceTextPolys`, which keeps the nesting the mesher needs.
+ */
+export function textOutlines(font: Font, object: TextObject): Contour[] {
+  const polys = traceTextPolys(font, object.text, object.sizeMm, object.letterSpacing ?? 0)
   const out: Contour[] = []
-  for (const poly of nested) {
-    for (const ring of poly) out.push(ring.map(([x, y]) => [x + dx, y + dy] as const))
-  }
+  for (const poly of polys) for (const ring of poly) out.push(ring)
   return out
 }
 

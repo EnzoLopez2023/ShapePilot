@@ -121,7 +121,20 @@ function postTubePolygon(cx: number, cy: number, outerR: number, innerR: number)
   return [outer, hole]
 }
 
-export function buildTrayMesh(design: TrayDesign): Mesh {
+const NAMEPLATE_WELD_MM = 0.05
+
+export interface TrayMeshOptions {
+  /**
+   * Glyph outlines for the nameplate as a nested `MultiPolygon`, centred on the
+   * run's own bounds (from `traceTextPolys`). Resolved by the caller because
+   * tracing needs an async font load and `buildTrayMesh` stays synchronous.
+   * Absent = no nameplate this build even if `design.nameplate` is set (the
+   * font hasn't loaded yet).
+   */
+  nameplateOutlines?: MultiPolygon
+}
+
+export function buildTrayMesh(design: TrayDesign, opts?: TrayMeshOptions): Mesh {
   const F = design.floorThicknessMm
   const D = design.pocketDepthMm
   const { base, top, pocketFloors } = buildRegions(design)
@@ -166,6 +179,21 @@ export function buildTrayMesh(design: TrayDesign): Mesh {
       b.addHorizontal([tube], z1, 'up')
       b.addWalls([tube], z0, z1)
     }
+  }
+
+  // Nameplate: raised tray-name text, its bottom face dipped NAMEPLATE_WELD_MM
+  // into the floor top so the mesh stays edge-paired and the slicer welds the
+  // overlap -- same trick as the corner and locating posts. The outlines arrive
+  // centred on their own bounds; translate the run to the stored anchor.
+  const np = design.nameplate
+  if (np && np.heightMm > 0 && opts?.nameplateOutlines?.length) {
+    const glyphs: MultiPolygon = opts.nameplateOutlines.map(poly =>
+      poly.map(ring => translateRing(ring, np.x, np.y)))
+    const z0 = F - NAMEPLATE_WELD_MM
+    const z1 = F + np.heightMm
+    b.addHorizontal(glyphs, z0, 'down')
+    b.addHorizontal(glyphs, z1, 'up')
+    b.addWalls(glyphs, z0, z1)
   }
 
   return b.finish()

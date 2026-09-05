@@ -529,7 +529,7 @@ function validatePockets(value: unknown, sizing: PocketSizing): PocketInput[] | 
 
 const DESIGN_KEYS = [
   'name', 'projectId', 'notes', 'profile', 'sizing', 'floorThicknessMm', 'pocketDepthMm',
-  'engraveDepthMm', 'cornerSpacers', 'pockets',
+  'engraveDepthMm', 'cornerSpacers', 'nameplate', 'pockets',
 ] as const
 
 /**
@@ -548,6 +548,29 @@ function validateCornerSpacers(value: unknown): { heightMm: number; sizeMm: numb
     sizeMm: requireNumber(spacers.sizeMm, 'cornerSpacers.sizeMm', {
       exclusiveMin: 0, max: LIMITS.maxExtentMm,
     }),
+  }
+}
+
+/**
+ * Raised tray-name text: absent or null means none, an object sets the emboss
+ * height, cap height and the run's centre. Bounded like every other extent so a
+ * broken payload cannot reach the mesher.
+ */
+function validateNameplate(
+  value: unknown,
+): { heightMm: number; fontSizeMm: number; x: number; y: number } | undefined {
+  if (absent(value)) return undefined
+  const np = requireObject(value, 'nameplate')
+  rejectUnknownKeys(np, ['heightMm', 'fontSizeMm', 'x', 'y'], 'nameplate')
+  return {
+    heightMm: requireNumber(np.heightMm, 'nameplate.heightMm', {
+      exclusiveMin: 0, max: LIMITS.maxDepthMm,
+    }),
+    fontSizeMm: requireNumber(np.fontSizeMm, 'nameplate.fontSizeMm', {
+      exclusiveMin: 0, max: LIMITS.maxExtentMm,
+    }),
+    x: requireNumber(np.x, 'nameplate.x', { max: LIMITS.maxCoordinateMm }),
+    y: requireNumber(np.y, 'nameplate.y', { max: LIMITS.maxCoordinateMm }),
   }
 }
 
@@ -598,6 +621,7 @@ export function validateTrayDesignInput(value: unknown): TrayDesignInput {
     min: 0, max: LIMITS.maxDepthMm,
   })
   const cornerSpacers = validateCornerSpacers(body.cornerSpacers)
+  const nameplate = validateNameplate(body.nameplate)
 
   const pockets = validatePockets(body.pockets, sizing.effective)
 
@@ -612,6 +636,7 @@ export function validateTrayDesignInput(value: unknown): TrayDesignInput {
   if (pocketDepthMm !== undefined) input.pocketDepthMm = pocketDepthMm
   if (engraveDepthMm !== undefined) input.engraveDepthMm = engraveDepthMm
   if (cornerSpacers !== undefined) input.cornerSpacers = cornerSpacers
+  if (nameplate !== undefined) input.nameplate = nameplate
   if (pockets !== undefined) input.pockets = pockets
   return input
 }

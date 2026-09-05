@@ -15,6 +15,8 @@ import AddIcon from '@mui/icons-material/Add'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import SettingsIcon from '@mui/icons-material/SettingsRounded'
 import { buildTrayMesh } from './geometry/layers.ts'
+import { DEFAULT_FONT_ID, loadFont, traceTextPolys } from '../../text/fonts.ts'
+import type { MultiPolygon } from '../../geometry/vec.ts'
 import { validateDesign } from './geometry/validate.ts'
 import { materialOf } from './model/materials.ts'
 import {
@@ -103,9 +105,32 @@ export default function KeycapTrayPage() {
   designRevision.current = design.revision
   const hasUnsavedChanges = savedId !== null && savedRevision !== design.revision
 
+  // Nameplate glyph outlines: traced off the main thread's clock only when the
+  // name or the cap height changes -- dragging the plate moves the anchor, not
+  // the outlines. Held as null until the font resolves so the first paint
+  // doesn't block on a fetch.
+  const [nameplatePolys, setNameplatePolys] = useState<MultiPolygon | null>(null)
+  const npFontSizeMm = design.nameplate?.fontSizeMm
+  useEffect(() => {
+    if (npFontSizeMm === undefined || !design.name.trim()) {
+      setNameplatePolys(null)
+      return
+    }
+    let cancelled = false
+    void loadFont(DEFAULT_FONT_ID)
+      .then(font => {
+        if (!cancelled) setNameplatePolys(traceTextPolys(font, design.name, npFontSizeMm))
+      })
+      .catch(() => { if (!cancelled) setNameplatePolys(null) })
+    return () => { cancelled = true }
+  }, [design.name, npFontSizeMm])
+
   // Rebuilt only when the design actually changes -- a full 75-pocket tray takes
   // ~55 ms, which is fine on commit but would stutter if it ran during a drag.
-  const mesh = useMemo(() => buildTrayMesh(design), [design])
+  const mesh = useMemo(
+    () => buildTrayMesh(
+      design, nameplatePolys ? { nameplateOutlines: nameplatePolys } : undefined),
+    [design, nameplatePolys])
   const issues = useMemo(
     () => validateDesign(design, fab, mesh, { minFloorMm: materialOf(settings.material).minFloorMm }),
     [design, fab, mesh, settings.material])
@@ -579,6 +604,10 @@ export default function KeycapTrayPage() {
               onMove={d.movePockets}
               onRotate={(id, deg) => d.updatePocket(id, { rotationDeg: deg })}
               onDropItem={(item, x, y) => d.addPocket(item.units, x, y, paletteItemExtra(item))}
+              nameplateOutlines={nameplatePolys}
+              onMoveNameplate={(dx, dy) => d.replace(cur => (cur.nameplate
+                ? { ...cur, nameplate: { ...cur.nameplate, x: cur.nameplate.x + dx, y: cur.nameplate.y + dy } }
+                : cur))}
             />
           ) : (
             <Suspense fallback={<LoadingState label="Loading the 3D viewer…" />}>

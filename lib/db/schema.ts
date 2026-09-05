@@ -331,6 +331,16 @@ export const LOCATING_POST_STATEMENTS: readonly string[] = [
   `ALTER TABLE keycap_tray_pockets ADD COLUMN locating_posts_json TEXT`,
 ]
 
+/**
+ * Nameplate: raised text of the tray name on the floor. Design-level, one per
+ * tray, so the column lands on `keycap_tray_designs`. Same nullable-JSON shape
+ * as `corner_spacers_json`: `{"heightMm":2,"fontSizeMm":8,"x":124,"y":150}` or
+ * NULL for a tray with none, which is every tray before this migration.
+ */
+export const NAMEPLATE_STATEMENTS: readonly string[] = [
+  `ALTER TABLE keycap_tray_designs ADD COLUMN nameplate_json TEXT`,
+]
+
 /** Tables ShapePilot owns and reconciles. Order is the reconciliation order. */
 export const OWNED_LEGACY_TABLES = [
   'keycap_tray_designs',
