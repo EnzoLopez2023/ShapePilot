@@ -14,7 +14,7 @@ import SaveIcon from '@mui/icons-material/SaveOutlined'
 import AddIcon from '@mui/icons-material/Add'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import SettingsIcon from '@mui/icons-material/SettingsRounded'
-import { buildTrayMesh } from './geometry/layers.ts'
+import { buildNameplateMesh, buildTrayMesh } from './geometry/layers.ts'
 import { DEFAULT_FONT_ID, loadFont, traceTextPolys } from '../../text/fonts.ts'
 import type { MultiPolygon } from '../../geometry/vec.ts'
 import { validateDesign } from './geometry/validate.ts'
@@ -127,10 +127,17 @@ export default function KeycapTrayPage() {
 
   // Rebuilt only when the design actually changes -- a full 75-pocket tray takes
   // ~55 ms, which is fine on commit but would stutter if it ran during a drag.
+  // `mesh` is the welded single body for the 3D preview and validation; export
+  // splits the nameplate off (`bodyMesh` + `nameplateMesh`) so a two-filament
+  // tray ships as two aligned parts.
   const mesh = useMemo(
     () => buildTrayMesh(
       design, nameplatePolys ? { nameplateOutlines: nameplatePolys } : undefined),
     [design, nameplatePolys])
+  const nameplateMesh = useMemo(
+    () => buildNameplateMesh(design, nameplatePolys), [design, nameplatePolys])
+  const bodyMesh = useMemo(
+    () => (nameplateMesh ? buildTrayMesh(design) : mesh), [design, nameplateMesh, mesh])
   const issues = useMemo(
     () => validateDesign(design, fab, mesh, { minFloorMm: materialOf(settings.material).minFloorMm }),
     [design, fab, mesh, settings.material])
@@ -522,7 +529,7 @@ export default function KeycapTrayPage() {
             sx={{ ml: 'auto', alignItems: 'center', flexWrap: 'wrap', rowGap: 1 }}
           >
             <ExportPanel
-              design={design} mesh={mesh} issues={issues} fab={fab}
+              design={design} mesh={bodyMesh} nameplateMesh={nameplateMesh} issues={issues} fab={fab}
               target={target} onTarget={next => patch({ target: next })}
             />
 

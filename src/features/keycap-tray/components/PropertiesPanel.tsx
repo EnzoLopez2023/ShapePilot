@@ -292,7 +292,7 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
             <Stack direction="row" spacing={1}>
               <LengthField
                 label="Text height" imperial={imperial} valueMm={design.nameplate.heightMm}
-                hint="How far the raised text stands above the floor. 2 mm prints cleanly and stays legible."
+                hint="How far the raised text stands proud of the tray's top face. The floor + pocket depth is added automatically, so type the amount you want it to stick out -- 2 mm prints cleanly and stays legible."
                 onChangeMm={v => onDesign(d => (d.nameplate
                   ? { ...d, nameplate: { ...d.nameplate, heightMm: v } } : d))}
               />

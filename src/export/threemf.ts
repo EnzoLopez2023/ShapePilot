@@ -17,11 +17,7 @@ const f = (v: number): string => {
   return s.replace(/\.?0+$/, '') || '0'
 }
 
-/**
- * 3MF carries explicit millimetre units and plate placement, so Bambu Studio
- * imports it without the unit guess and repair prompt that STL invites.
- */
-export function writeThreeMf(mesh: Mesh, name = 'Keycap tray'): ArrayBuffer {
+const meshXml = (mesh: Mesh): string => {
   const { positions: p, indices: ix } = mesh
   const verts: string[] = []
   for (let i = 0; i < p.length; i += 3) {
@@ -31,21 +27,10 @@ export function writeThreeMf(mesh: Mesh, name = 'Keycap tray'): ArrayBuffer {
   for (let t = 0; t < ix.length; t += 3) {
     tris.push(`<triangle v1="${ix[t]}" v2="${ix[t + 1]}" v3="${ix[t + 2]}"/>`)
   }
-  const model = `<?xml version="1.0" encoding="UTF-8"?>
-<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
-<metadata name="Title">${name.replace(/[<&>]/g, '')}</metadata>
-<metadata name="Application">ShapePilot Keycap Tray Designer</metadata>
-<resources>
-<object id="1" type="model">
-<mesh>
-<vertices>${verts.join('')}</vertices>
-<triangles>${tris.join('')}</triangles>
-</mesh>
-</object>
-</resources>
-<build><item objectid="1"/></build>
-</model>`
+  return `<mesh><vertices>${verts.join('')}</vertices><triangles>${tris.join('')}</triangles></mesh>`
+}
 
+const pack = (model: string): ArrayBuffer => {
   const zipped = zipSync({
     '[Content_Types].xml': strToU8(CONTENT_TYPES),
     '_rels/.rels': strToU8(RELS),
@@ -54,4 +39,34 @@ export function writeThreeMf(mesh: Mesh, name = 'Keycap tray'): ArrayBuffer {
   // Return a plain ArrayBuffer so it drops straight into a Blob.
   return zipped.buffer.slice(
     zipped.byteOffset, zipped.byteOffset + zipped.byteLength) as ArrayBuffer
+}
+
+/**
+ * 3MF carries explicit millimetre units and plate placement, so Bambu Studio
+ * imports it without the unit guess and repair prompt that STL invites.
+ */
+export function writeThreeMf(mesh: Mesh, name = 'Keycap tray'): ArrayBuffer {
+  return writeThreeMfParts([{ mesh, name }], name)
+}
+
+/**
+ * One 3MF holding several bodies, each its own `<object>`, all placed at the
+ * shared origin. A two-filament tray ships as two parts -- the tray and its
+ * nameplate text -- already aligned, so in the slicer you just pick the text
+ * and assign it a second filament.
+ */
+export function writeThreeMfParts(
+  parts: readonly { mesh: Mesh; name: string }[], title = 'Keycap tray',
+): ArrayBuffer {
+  const objects = parts.map((part, i) =>
+    `<object id="${i + 1}" type="model" name="${part.name.replace(/[<&>"]/g, '')}">${meshXml(part.mesh)}</object>`)
+  const items = parts.map((_, i) => `<item objectid="${i + 1}"/>`)
+  const model = `<?xml version="1.0" encoding="UTF-8"?>
+<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">
+<metadata name="Title">${title.replace(/[<&>]/g, '')}</metadata>
+<metadata name="Application">ShapePilot Keycap Tray Designer</metadata>
+<resources>${objects.join('')}</resources>
+<build>${items.join('')}</build>
+</model>`
+  return pack(model)
 }

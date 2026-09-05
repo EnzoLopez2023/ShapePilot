@@ -181,21 +181,49 @@ export function buildTrayMesh(design: TrayDesign, opts?: TrayMeshOptions): Mesh 
     }
   }
 
-  // Nameplate: raised tray-name text, its bottom face dipped NAMEPLATE_WELD_MM
-  // into the floor top so the mesh stays edge-paired and the slicer welds the
-  // overlap -- same trick as the corner and locating posts. The outlines arrive
-  // centred on their own bounds; translate the run to the stored anchor.
-  const np = design.nameplate
-  if (np && np.heightMm > 0 && opts?.nameplateOutlines?.length) {
-    const glyphs: MultiPolygon = opts.nameplateOutlines.map(poly =>
-      poly.map(ring => translateRing(ring, np.x, np.y)))
-    const z0 = F - NAMEPLATE_WELD_MM
-    const z1 = F + np.heightMm
-    b.addHorizontal(glyphs, z0, 'down')
-    b.addHorizontal(glyphs, z1, 'up')
-    b.addWalls(glyphs, z0, z1)
-  }
+  // Nameplate: raised tray-name text standing on the tray's *top* face, its
+  // bottom dipped NAMEPLATE_WELD_MM into the rim so the mesh stays edge-paired
+  // and the slicer welds the overlap -- same trick as the corner posts.
+  // `heightMm` is how far the text stands proud of the top face; the floor +
+  // depth offset is baked in (see addNameplate) so the field means what the
+  // user typed.
+  if (opts?.nameplateOutlines?.length) addNameplate(b, design, opts.nameplateOutlines)
 
+  return b.finish()
+}
+
+/**
+ * Extrude the nameplate glyphs from the tray's top face up by `heightMm`, its
+ * base dipped NAMEPLATE_WELD_MM into the rim. Shared by `buildTrayMesh` (which
+ * welds it into the one body) and `buildNameplateMesh` (which emits it alone
+ * for a two-filament export). The outlines arrive centred on their own bounds;
+ * translate the run to the stored anchor.
+ */
+function addNameplate(b: MeshBuilder, design: TrayDesign, outlines: MultiPolygon): void {
+  const np = design.nameplate
+  if (!np || !(np.heightMm > 0)) return
+  const topZ = design.floorThicknessMm + design.pocketDepthMm
+  const glyphs: MultiPolygon = outlines.map(poly =>
+    poly.map(ring => translateRing(ring, np.x, np.y)))
+  const z0 = topZ - NAMEPLATE_WELD_MM
+  const z1 = topZ + np.heightMm
+  b.addHorizontal(glyphs, z0, 'down')
+  b.addHorizontal(glyphs, z1, 'up')
+  b.addWalls(glyphs, z0, z1)
+}
+
+/**
+ * The nameplate text as its own closed mesh, for exporting a two-filament tray:
+ * the slicer prints this body in a second colour and welds it to the tray
+ * along the NAMEPLATE_WELD_MM overlap. Null when the tray has no nameplate or
+ * the font outlines aren't ready yet.
+ */
+export function buildNameplateMesh(
+  design: TrayDesign, outlines: MultiPolygon | null,
+): Mesh | null {
+  if (!design.nameplate || !(design.nameplate.heightMm > 0) || !outlines?.length) return null
+  const b = new MeshBuilder()
+  addNameplate(b, design, outlines)
   return b.finish()
 }
 
