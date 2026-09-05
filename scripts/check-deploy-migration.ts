@@ -68,6 +68,12 @@ const ROLLBACK_COMPATIBLE_LEDGER = [
     name: 'keycap tray locating posts',
     checksum: '26299d4beb0ab40cc7a35190f0600c3634862fecfa0fb6f925497c8d899d898f',
   },
+  {
+    ordinal: 7,
+    id: '008-tray-nameplate',
+    name: 'keycap tray nameplate',
+    checksum: '432089c5e289ebb88ed7d7b697ec1b144029d10098a116075281f24a65cb4790',
+  },
 ] as const
 
 const REQUIRED_TABLES = [
