@@ -169,7 +169,7 @@ export interface TrayDesignRecord {
   pocketDepthMm: number
   engraveDepthMm: number
   /** Stacking posts, or absent when the tray has none. */
-  cornerSpacers?: { heightMm: number; sizeMm: number }
+  cornerSpacers?: { heightMm: number; sizeMm: number; separate?: boolean }
   /** Raised tray-name text, or absent when the tray has none. */
   nameplate?: { heightMm: number; fontSizeMm: number; x: number; y: number }
   pockets: PocketRecord[]

@@ -14,7 +14,7 @@ import SaveIcon from '@mui/icons-material/SaveOutlined'
 import AddIcon from '@mui/icons-material/Add'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import SettingsIcon from '@mui/icons-material/SettingsRounded'
-import { buildNameplateMesh, buildTrayMesh } from './geometry/layers.ts'
+import { buildCornerSpacersMesh, buildNameplateMesh, buildTrayMesh } from './geometry/layers.ts'
 import { DEFAULT_FONT_ID, loadFont, traceTextPolys } from '../../text/fonts.ts'
 import type { MultiPolygon } from '../../geometry/vec.ts'
 import { validateDesign } from './geometry/validate.ts'
@@ -36,6 +36,7 @@ import TrayCanvas from './components/TrayCanvas.tsx'
 import PocketPalette from './components/PocketPalette.tsx'
 import PropertiesPanel from './components/PropertiesPanel.tsx'
 import ExportPanel from './components/ExportPanel.tsx'
+import type { ExtraPart } from './components/ExportPanel.tsx'
 import ProjectGate from './components/ProjectGate.tsx'
 import { useConfirm } from '../../components/ConfirmDialogProvider.tsx'
 import { EmptyState, LoadingState } from '../../components/LoadingState.tsx'
@@ -128,16 +129,26 @@ export default function KeycapTrayPage() {
   // Rebuilt only when the design actually changes -- a full 75-pocket tray takes
   // ~55 ms, which is fine on commit but would stutter if it ran during a drag.
   // `mesh` is the welded single body for the 3D preview and validation; export
-  // splits the nameplate off (`bodyMesh` + `nameplateMesh`) so a two-filament
-  // tray ships as two aligned parts.
+  // splits off any second-filament bodies (nameplate, corner spacers) so a
+  // two-colour tray ships as aligned parts. `buildTrayMesh` with no options
+  // already omits the nameplate and, when `cornerSpacers.separate` is set, the
+  // spacers -- so it *is* the body-only mesh.
   const mesh = useMemo(
     () => buildTrayMesh(
       design, nameplatePolys ? { nameplateOutlines: nameplatePolys } : undefined),
     [design, nameplatePolys])
   const nameplateMesh = useMemo(
     () => buildNameplateMesh(design, nameplatePolys), [design, nameplatePolys])
+  const cornerSpacersMesh = useMemo(() => buildCornerSpacersMesh(design), [design])
+  const extraParts = useMemo<ExtraPart[]>(() => {
+    const parts: ExtraPart[] = []
+    if (nameplateMesh) parts.push({ mesh: nameplateMesh, suffix: 'nameplate', label: 'nameplate' })
+    if (cornerSpacersMesh) parts.push({ mesh: cornerSpacersMesh, suffix: 'spacers', label: 'corner spacers' })
+    return parts
+  }, [nameplateMesh, cornerSpacersMesh])
   const bodyMesh = useMemo(
-    () => (nameplateMesh ? buildTrayMesh(design) : mesh), [design, nameplateMesh, mesh])
+    () => (extraParts.length ? buildTrayMesh(design, { omitSeparateParts: true }) : mesh),
+    [design, extraParts, mesh])
   const issues = useMemo(
     () => validateDesign(design, fab, mesh, { minFloorMm: materialOf(settings.material).minFloorMm }),
     [design, fab, mesh, settings.material])
@@ -529,7 +540,7 @@ export default function KeycapTrayPage() {
             sx={{ ml: 'auto', alignItems: 'center', flexWrap: 'wrap', rowGap: 1 }}
           >
             <ExportPanel
-              design={design} mesh={bodyMesh} nameplateMesh={nameplateMesh} issues={issues} fab={fab}
+              design={design} mesh={bodyMesh} extraParts={extraParts} issues={issues} fab={fab}
               target={target} onTarget={next => patch({ target: next })}
             />
 

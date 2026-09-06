@@ -261,6 +261,19 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
                 Stacks {(design.floorThicknessMm + design.pocketDepthMm + design.cornerSpacers.heightMm).toFixed(1)} mm tall
                 {' · '}{cornerSpacerRects(design).length}/4 posts fit
               </Typography>
+              <Tooltip title="Export the four posts as their own body (welded to the rim by a 0.05 mm overlap). STL comes out as a zip, 3MF as a multi-object model -- assign the posts a second filament in the slicer.">
+                <FormControlLabel
+                  control={
+                    <Switch
+                      size="small" checked={!!design.cornerSpacers.separate}
+                      onChange={e => onDesign(d => (d.cornerSpacers
+                        ? { ...d, cornerSpacers: { ...d.cornerSpacers, separate: e.target.checked } }
+                        : d))}
+                    />
+                  }
+                  label="Separate body (2nd colour)"
+                />
+              </Tooltip>
             </>
           )}
 

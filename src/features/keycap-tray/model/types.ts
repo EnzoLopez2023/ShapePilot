@@ -72,6 +72,9 @@ export interface CornerSpacers {
   heightMm: number
   /** Square post footprint, mm on a side. */
   sizeMm: number
+  /** Export the four posts as their own body (welded to the rim by a 0.05 mm
+   *  overlap) so a slicer can print them in a second filament. */
+  separate?: boolean
 }
 
 /**

@@ -537,10 +537,13 @@ const DESIGN_KEYS = [
  * dimensions. Bounded like every other extent so a broken payload cannot reach
  * the mesher.
  */
-function validateCornerSpacers(value: unknown): { heightMm: number; sizeMm: number } | undefined {
+function validateCornerSpacers(
+  value: unknown,
+): { heightMm: number; sizeMm: number; separate?: boolean } | undefined {
   if (absent(value)) return undefined
   const spacers = requireObject(value, 'cornerSpacers')
-  rejectUnknownKeys(spacers, ['heightMm', 'sizeMm'], 'cornerSpacers')
+  rejectUnknownKeys(spacers, ['heightMm', 'sizeMm', 'separate'], 'cornerSpacers')
+  const separate = optionalBoolean(spacers.separate, 'cornerSpacers.separate')
   return {
     heightMm: requireNumber(spacers.heightMm, 'cornerSpacers.heightMm', {
       exclusiveMin: 0, max: LIMITS.maxDepthMm,
@@ -548,6 +551,7 @@ function validateCornerSpacers(value: unknown): { heightMm: number; sizeMm: numb
     sizeMm: requireNumber(spacers.sizeMm, 'cornerSpacers.sizeMm', {
       exclusiveMin: 0, max: LIMITS.maxExtentMm,
     }),
+    ...(separate === undefined ? {} : { separate }),
   }
 }
 

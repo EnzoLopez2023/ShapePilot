@@ -132,6 +132,12 @@ export interface TrayMeshOptions {
    * font hasn't loaded yet).
    */
   nameplateOutlines?: MultiPolygon
+  /**
+   * Leave out anything the design flags for a second filament -- the nameplate
+   * and, when `cornerSpacers.separate` is set, the corner posts. This is the
+   * *export body*; the 3D preview always welds everything into one mesh.
+   */
+  omitSeparateParts?: boolean
 }
 
 export function buildTrayMesh(design: TrayDesign, opts?: TrayMeshOptions): Mesh {
@@ -149,17 +155,10 @@ export function buildTrayMesh(design: TrayDesign, opts?: TrayMeshOptions): Mesh 
   b.addWalls(base, 0, F)
   b.addWalls(top, F, F + D)
 
-  // Corner posts: each an independent closed box that dips SPACER_WELD_MM into
-  // the rim, so the mesh stays edge-paired and the slicer welds the overlap.
-  const cs = design.cornerSpacers
-  if (cs && cs.heightMm > 0 && cs.sizeMm > 0) {
-    const z0 = F + D - SPACER_WELD_MM
-    const z1 = F + D + cs.heightMm
-    for (const rect of cornerSpacerRects(design, top)) {
-      b.addHorizontal([rect], z0, 'down')
-      b.addHorizontal([rect], z1, 'up')
-      b.addWalls([rect], z0, z1)
-    }
+  // Corner posts: always welded in for the 3D preview; left out of the export
+  // body only when the user flagged them for a second filament.
+  if (!(opts?.omitSeparateParts && design.cornerSpacers?.separate)) {
+    addCornerSpacers(b, design, top)
   }
 
   // Locating posts: an open-bottom tube per 1u slot, standing on the pocket
@@ -187,7 +186,9 @@ export function buildTrayMesh(design: TrayDesign, opts?: TrayMeshOptions): Mesh 
   // `heightMm` is how far the text stands proud of the top face; the floor +
   // depth offset is baked in (see addNameplate) so the field means what the
   // user typed.
-  if (opts?.nameplateOutlines?.length) addNameplate(b, design, opts.nameplateOutlines)
+  if (!opts?.omitSeparateParts && opts?.nameplateOutlines?.length) {
+    addNameplate(b, design, opts.nameplateOutlines)
+  }
 
   return b.finish()
 }
@@ -224,6 +225,37 @@ export function buildNameplateMesh(
   if (!design.nameplate || !(design.nameplate.heightMm > 0) || !outlines?.length) return null
   const b = new MeshBuilder()
   addNameplate(b, design, outlines)
+  return b.finish()
+}
+
+/**
+ * The four corner posts, each an independent closed box that dips
+ * SPACER_WELD_MM into the tray rim so the slicer welds the overlap. Shared by
+ * `buildTrayMesh` (welds them in) and `buildCornerSpacersMesh` (emits them
+ * alone for a second filament). A post that would overhang a notch or a
+ * corner-hugging pocket is dropped by `cornerSpacerRects`.
+ */
+function addCornerSpacers(b: MeshBuilder, design: TrayDesign, top?: MultiPolygon): void {
+  const cs = design.cornerSpacers
+  if (!cs || !(cs.heightMm > 0) || !(cs.sizeMm > 0)) return
+  const z0 = design.floorThicknessMm + design.pocketDepthMm - SPACER_WELD_MM
+  const z1 = design.floorThicknessMm + design.pocketDepthMm + cs.heightMm
+  for (const rect of cornerSpacerRects(design, top)) {
+    b.addHorizontal([rect], z0, 'down')
+    b.addHorizontal([rect], z1, 'up')
+    b.addWalls([rect], z0, z1)
+  }
+}
+
+/**
+ * The corner spacers as their own closed mesh, for a two-filament tray. Null
+ * unless the tray has spacers with `separate` set.
+ */
+export function buildCornerSpacersMesh(design: TrayDesign): Mesh | null {
+  const cs = design.cornerSpacers
+  if (!cs?.separate || !(cs.heightMm > 0) || !(cs.sizeMm > 0)) return null
+  const b = new MeshBuilder()
+  addCornerSpacers(b, design)
   return b.finish()
 }
 

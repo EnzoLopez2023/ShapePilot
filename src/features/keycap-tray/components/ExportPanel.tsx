@@ -15,14 +15,22 @@ import { writeShaperSvg } from '../export/svg.ts'
 import { writeDxf } from '../export/dxf.ts'
 import { safeFilename, triggerDownload } from '../../../export/download.ts'
 
+/** A body split off the tray for a second filament -- the nameplate text, the
+ *  corner spacers. `suffix` names the STL file, `label` the 3MF object. */
+export interface ExtraPart {
+  mesh: Mesh
+  suffix: string
+  label: string
+}
+
 export interface ExportPanelProps {
   design: TrayDesign
-  /** The tray body. Excludes the nameplate text when `nameplateMesh` is set --
-   *  a two-filament tray ships as two bodies, not one welded mesh. */
+  /** The tray body. Excludes any body listed in `extraParts` -- a
+   *  two-filament tray ships as separate bodies, not one welded mesh. */
   mesh: Mesh
-  /** The nameplate text as its own body, or null when the tray has none. When
-   *  set, STL exports as a zip of two files and 3MF as a two-object model. */
-  nameplateMesh: Mesh | null
+  /** Bodies split off for a second filament. When non-empty, STL exports as a
+   *  zip and 3MF as a multi-object model. */
+  extraParts: ExtraPart[]
   issues: Issue[]
   fab: FabricationSettings
   /** Lifted so the toolbar can hide printer-only controls for the CNC target. */
@@ -40,7 +48,7 @@ const FORMATS: { id: string; label: string; target: Target; ext: string; mime: s
 // Lives in the header toolbar rather than a full side panel, so status is a
 // single icon with the detail in its tooltip instead of a stack of Alerts.
 export default function ExportPanel(
-  { design, mesh, nameplateMesh, issues, fab, target, onTarget }: ExportPanelProps,
+  { design, mesh, extraParts, issues, fab, target, onTarget }: ExportPanelProps,
 ) {
   const scoped = useMemo(() => issuesFor(issues, target), [issues, target])
   const errors = scoped.filter(i => i.severity === 'error')
@@ -79,24 +87,27 @@ export default function ExportPanel(
     const base = safeFilename(design.name)
     const name = `${base}.${fmt.ext}`
     if (id === 'stl') {
-      if (nameplateMesh) {
-        // STL carries no colour, so a two-filament tray is two files the
+      if (extraParts.length) {
+        // STL carries no colour, so a two-filament tray is separate files the
         // slicer aligns by their shared origin.
-        triggerDownload(zipSync({
+        const files: Record<string, Uint8Array> = {
           [`${base}_tray.stl`]: new Uint8Array(writeBinaryStl(mesh, `${design.name} tray`)),
-          [`${base}_nameplate.stl`]:
-            new Uint8Array(writeBinaryStl(nameplateMesh, `${design.name} nameplate`)),
-        }, { level: 6 }), `${base}_2-colour.zip`, 'application/zip')
+        }
+        for (const part of extraParts) {
+          files[`${base}_${part.suffix}.stl`] =
+            new Uint8Array(writeBinaryStl(part.mesh, `${design.name} ${part.suffix}`))
+        }
+        triggerDownload(zipSync(files, { level: 6 }), `${base}_2-colour.zip`, 'application/zip')
       } else {
         triggerDownload(writeBinaryStl(mesh, design.name), name, fmt.mime)
       }
     }
     if (id === '3mf') {
       triggerDownload(
-        nameplateMesh
+        extraParts.length
           ? writeThreeMfParts([
             { mesh, name: `${design.name} tray` },
-            { mesh: nameplateMesh, name: `${design.name} nameplate` },
+            ...extraParts.map(p => ({ mesh: p.mesh, name: `${design.name} ${p.label}` })),
           ], design.name)
           : writeThreeMf(mesh, design.name),
         name, fmt.mime)

@@ -124,7 +124,7 @@ const rowToDesign = (d: DesignRow, pockets: PocketRecord[]): TrayDesignRecord =>
   pocketDepthMm: d.depth_mm,
   engraveDepthMm: d.engrave_mm,
   ...(d.corner_spacers_json
-    ? { cornerSpacers: JSON.parse(d.corner_spacers_json) as { heightMm: number; sizeMm: number } }
+    ? { cornerSpacers: JSON.parse(d.corner_spacers_json) as { heightMm: number; sizeMm: number; separate?: boolean } }
     : {}),
   ...(d.nameplate_json
     ? {
