@@ -515,6 +515,28 @@ export interface DesignAssetRepository {
   record(owner: Owner, input: DesignAssetInput): Promise<DesignAssetRecord>
 }
 
+/**
+ * One filament the account owns, in one of the forms it is sold in. `key` names
+ * a row in the committed catalogue (lib/contracts/bambuFilaments.ts); the
+ * database holds it as an opaque string and the route is what proves it real.
+ */
+export interface FilamentInventoryEntry {
+  key: string
+  variant: 'spool' | 'refill'
+}
+
+export interface FilamentInventoryRepository {
+  list(owner: Owner): Promise<FilamentInventoryEntry[]>
+  /**
+   * Replace the whole inventory, exactly as a project's set items are replaced:
+   * the client edits a list and sends the list, and a half-applied inventory is
+   * never a state the database can be in.
+   */
+  replace(
+    owner: Owner, entries: readonly FilamentInventoryEntry[],
+  ): Promise<FilamentInventoryEntry[]>
+}
+
 export interface Repositories {
   memberships: MembershipRepository
   settings: SettingsRepository
@@ -523,4 +545,5 @@ export interface Repositories {
   keycapProjects: KeycapProjectRepository
   designDocuments: DesignDocumentRepository
   designAssets: DesignAssetRepository
+  filaments: FilamentInventoryRepository
 }

@@ -19,9 +19,17 @@ tests). Neither can accidentally reach the other's globals. Both are strict, wit
 directly — no server bundler, no transpile step, no `tsx` in production.
 
 `lib/contracts/` is the one directory both projects include. It holds pure,
-dependency-free type-and-validator modules that must agree across the wire —
-today `shapeProgram.ts`, the AI's geometry vocabulary, which the server
-validates on the way out and the browser validates again on the way in.
+dependency-free type-and-validator modules that must agree across the wire:
+
+- `shapeProgram.ts` — the AI's geometry vocabulary, which the server validates
+  on the way out and the browser validates again on the way in.
+- `vectorDrawing.ts` — the 2D drawing contract.
+- `bambuFilaments.ts` — the filament catalogue. It is here rather than under
+  `src/features/` because both sides need it: the page renders from it, and the
+  server validates every tick against it. Generated from
+  `scripts/filament-source.json` by `npm run filaments:generate`; `check:filaments`
+  in `npm run ci` proves the two are in step.
+
 Anything placed here must import nothing: no node, no DOM, no ApiError.
 
 Shared client modules sit above the feature folders rather than inside one:

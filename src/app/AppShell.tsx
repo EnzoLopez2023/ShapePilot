@@ -14,6 +14,7 @@ import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
 import ArchitectureRoundedIcon from '@mui/icons-material/ArchitectureRounded'
 import ViewInArRoundedIcon from '@mui/icons-material/ViewInArRounded'
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
+import Inventory2RoundedIcon from '@mui/icons-material/Inventory2Rounded'
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded'
 import AdminPanelSettingsRoundedIcon from '@mui/icons-material/AdminPanelSettingsRounded'
 import { EASE_IOS, GLASS, SHADOW } from '../theme/theme.ts'
@@ -38,6 +39,7 @@ const NAV: NavItem[] = [
   { to: '/shaper-designer', label: 'Shaper designer', icon: ArchitectureRoundedIcon },
   { to: '/bambu-designer', label: 'Bambu designer', icon: ViewInArRoundedIcon },
   { to: '/playground', label: 'AI playground', icon: AutoAwesomeRoundedIcon },
+  { to: '/filaments', label: 'Filaments', icon: Inventory2RoundedIcon },
   { to: '/settings', label: 'Settings', icon: TuneRoundedIcon },
   { to: '/admin', label: 'Admin', icon: AdminPanelSettingsRoundedIcon, adminOnly: true },
 ]

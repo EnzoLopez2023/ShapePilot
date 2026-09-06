@@ -25,6 +25,7 @@ export const EMPTY_SEED_DOMAIN_TABLES = [
   'audit_events',
   'design_assets',
   'design_documents',
+  'filament_inventory',
   'keycap_pocket_library',
   'keycap_project_photos',
   'keycap_projects',

@@ -25,6 +25,7 @@ import { createFilesystemAssetStore } from '../lib/assets/assetStore.ts'
 import { createDesignAssetRouter } from './routes/designAssets.ts'
 import { createDesignDocumentRouter } from './routes/designDocuments.ts'
 import { createHealthRouter } from './routes/health.ts'
+import { createFilamentRouter } from './routes/filaments.ts'
 import { createKeycapProjectRouter } from './routes/keycapProjects.ts'
 import { createKeycapTrayRouter } from './routes/keycapTrays.ts'
 import { createSettingsRouter } from './routes/settings.ts'
@@ -123,6 +124,7 @@ export function createApp(options: CreateAppOptions): Express {
   app.use('/api/design-assets', authenticated,
     createDesignAssetRouter({ repos, store, logger: options.logger }))
   app.use('/api/ai', authenticated, createAiRouter({ repos, client: aiClient, store }))
+  app.use('/api/filaments', authenticated, createFilamentRouter(repos))
   app.use('/api/settings', authenticated, createSettingsRouter(repos))
   app.use('/api/audit', authenticated, createAuditRouter(repos))
   app.use('/api/admin/audit', authenticated, adminOnly, createAuditAdminRouter(repos))

@@ -341,6 +341,42 @@ export const NAMEPLATE_STATEMENTS: readonly string[] = [
   `ALTER TABLE keycap_tray_designs ADD COLUMN nameplate_json TEXT`,
 ]
 
+/**
+ * Which filaments an account owns. One row per owned (filament, variant); the
+ * absence of a row is "not owned", which is the only other state there is.
+ *
+ * Sparse rather than a row per catalogue entry with boolean columns. The
+ * catalogue is committed code (lib/contracts/bambuFilaments.ts), not data, so a
+ * new colour -- or a whole new brand -- must never be a migration. A dense table
+ * would also need 108 rows per account to say nothing, and seeding them would
+ * both put a write on a read path and break the empty-seed proof, which requires
+ * every domain table to be empty after bootstrap.
+ *
+ * `filament_key` names a row in that catalogue and is deliberately something
+ * the database cannot check. The route validates membership; a colour retired
+ * from the catalogue leaves a harmless tick nobody can see rather than making
+ * the inventory unreadable.
+ *
+ * `variant` is NOT NULL even for the lines sold only on a reel, which carry
+ * 'spool': SQLite treats NULLs as distinct inside a UNIQUE index, so a nullable
+ * variant would let the same filament be ticked twice.
+ *
+ * No `updated_at`: a tick is created and destroyed, never edited. No separate
+ * index either -- the implicit UNIQUE index already leads with the owner pair,
+ * which is the only way this table is ever read.
+ */
+export const FILAMENT_INVENTORY_STATEMENTS: readonly string[] = [
+  `CREATE TABLE filament_inventory (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_tenant_id TEXT    NOT NULL,
+  owner_oid       TEXT    NOT NULL,
+  filament_key    TEXT    NOT NULL,
+  variant         TEXT    NOT NULL CHECK (variant IN ('spool', 'refill')),
+  created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (owner_tenant_id, owner_oid, filament_key, variant)
+)`,
+]
+
 /** Tables ShapePilot owns and reconciles. Order is the reconciliation order. */
 export const OWNED_LEGACY_TABLES = [
   'keycap_tray_designs',

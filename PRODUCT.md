@@ -28,6 +28,14 @@ inventory; it never writes one. The project then shows what is already placed
 across its trays against what the set holds, which is the question a half-cut
 set raises: what still needs a home.
 
+Wave 4 adds **filaments**, and it is the first surface here that is neither
+design nor fabrication. It belongs anyway: the inventory is the workbench's
+material vocabulary — what this machine can actually print in today. A person
+ticks the Bambu Lab spools and refills they own; the catalogue of what exists is
+committed code, and only the ticks are stored. It answers the question that
+comes before a design, not after it, and it is the natural source for the
+designers' own material choices once they want one.
+
 A person opens ShapePilot to lay something out, check whether the result can
 actually be printed or cut, and export a file their machine accepts. Everything
 downstream of that — geometry, validation, STL/3MF/SVG/DXF — happens in the

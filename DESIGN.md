@@ -320,6 +320,41 @@ base ring, local coords, origin (0,0), bbox w0×h0   (w0,h0 = UN-rotated extents
   reviewed in a dialog, applied to the draft, and only saved by Save — the same
   rule as the design copilot. Rows it produced are marked until they are edited.
 
+## Filaments
+
+- **A section per product line, not one grid of colours.** The obvious layout —
+  colour names down the side, materials across the top — collapses on contact
+  with the catalogue: PLA Matte shares no colour name with PLA Basic ("Charcoal"
+  and "Ivory White" against "Black" and "Jade White"), and PLA Wood shares none
+  with anything. That grid is ~85 rows with one live checkbox each and six dead
+  cells. So each line is its own `Paper` with only the colours it actually has.
+- **The two-checkbox asymmetry is the catalogue's shape, not a layout choice.**
+  PLA Basic and PLA Matte are sold on a reel and as a refill; PETG, ABS and PLA
+  Wood only on a reel. Rows carry one checkbox per way the line is bought, so
+  the sections have different column counts on purpose. `variants` is data on
+  the line, so a brand that sells differently needs no new code.
+- **The swatch is a dot, and its ring is structural.** A 14px radius on an 18px
+  chip is already a circle, so it is drawn as one deliberately rather than
+  quietly introducing a second radius. The 1px `divider` ring is not decoration:
+  Jade White is `#FFFFFF` on a white surface and several darks are near-black on
+  the dark ground, and without the ring those swatches are simply absent. A
+  dual-colour filament is a 135° split of its two hexes.
+- **The colour name is never tinted with its own hex.** It is the one move this
+  page invites and it would drop half the catalogue through the contrast floor.
+  Colour lives in the swatch; the name stays body text.
+- **Every checkbox names itself in full.** A column heading cannot name a grid
+  cell, and the page has 165 of them — `"PLA Basic Jade White 10100, with
+  spool"`, not `"checkbox"`. Uniqueness is asserted in the UI test, because it
+  is invisible until someone reads the page by ear.
+- **A tick is the commit.** No Save button: a dirty-guard over 165 checkboxes is
+  friction nobody wants, and a checkbox that means nothing until you press
+  something else is a checkbox that lies. Ticks apply optimistically and the
+  whole inventory is queued; the writer coalesces so a fast run is at most two
+  requests and the last one always describes what is on screen. A write that
+  fails says so and offers a reload rather than diverging in silence.
+- **Discontinued colours stay, dimmed and labelled.** A spool you own outlives
+  its SKU, and a catalogue that drops it would quietly untick something real.
+
 ## Home
 
 - **Two questions, in the order a maker asks them.** What was I doing, and what

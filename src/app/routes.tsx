@@ -15,6 +15,7 @@ const ProjectPage = lazy(() => import('../features/keycap-projects/ProjectPage.t
 const ShaperDesignerPage = lazy(() => import('../features/shaper-designer/ShaperDesignerPage.tsx'))
 const BambuDesignerPage = lazy(() => import('../features/bambu-designer/BambuDesignerPage.tsx'))
 const PlaygroundPage = lazy(() => import('../features/playground/PlaygroundPage.tsx'))
+const FilamentsPage = lazy(() => import('../features/filaments/FilamentsPage.tsx'))
 const SettingsPage = lazy(() => import('../features/settings/SettingsPage.tsx'))
 const AdminPage = lazy(() => import('../features/admin/AdminPage.tsx'))
 
@@ -112,6 +113,14 @@ export function AppRoutes() {
                   <PlaygroundPage />
                 </Suspense>
               </Box>
+            }
+          />
+          <Route
+            path="/filaments"
+            element={
+              <Suspense fallback={<LoadingState label="Loading your filaments…" />}>
+                <FilamentsPage />
+              </Suspense>
             }
           />
           <Route

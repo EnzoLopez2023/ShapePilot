@@ -74,6 +74,12 @@ const ROLLBACK_COMPATIBLE_LEDGER = [
     name: 'keycap tray nameplate',
     checksum: '432089c5e289ebb88ed7d7b697ec1b144029d10098a116075281f24a65cb4790',
   },
+  {
+    ordinal: 8,
+    id: '009-filament-inventory',
+    name: 'filament inventory',
+    checksum: '9d9a08f37de27964da0a9c3fec9904dc0ec0e36ee9536d8e3166582388dfd6bd',
+  },
 ] as const
 
 const REQUIRED_TABLES = [
@@ -83,6 +89,7 @@ const REQUIRED_TABLES = [
   'audit_events',
   'design_assets',
   'design_documents',
+  'filament_inventory',
   'keycap_pocket_library',
   'keycap_project_photos',
   'keycap_projects',
