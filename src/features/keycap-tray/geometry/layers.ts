@@ -1,7 +1,7 @@
 // The whole solid as an ordered list of z-bands. Two rules turn this into a
 // mesh, and both are closed-form -- no 3D boolean anywhere.
-import type { MultiPolygon, Polygon } from '../../../geometry/vec.ts'
-import { multiArea, multiBBox, translateRing } from '../../../geometry/vec.ts'
+import type { MultiPolygon, Polygon, Vec2 } from '../../../geometry/vec.ts'
+import { multiArea, multiBBox, pointInRing, translateRing } from '../../../geometry/vec.ts'
 import { difference, punchDisjointFast, union, unionDisjointFast } from '../../../geometry/boolean.ts'
 import { pocketRing, rectRing, locatingPostSlotCenters } from './shapes.ts'
 import { circleRing } from '../../../geometry/primitives.ts'
@@ -12,6 +12,10 @@ import type { Pocket, TrayDesign } from '../model/types.ts'
 import { profileToMulti } from '../model/presets.ts'
 
 export interface Layer { z0: number; z1: number; region: MultiPolygon }
+
+/** Inside some polygon's outer ring and outside all of that polygon's holes. */
+const pointInMulti = (p: Vec2, mp: MultiPolygon): boolean =>
+  mp.some(poly => pointInRing(p, poly[0]) && !poly.slice(1).some(hole => pointInRing(p, hole)))
 
 /** union() but skipping the clipper when nothing overlaps, which is the norm. */
 export function unionPockets(polys: Polygon[]): MultiPolygon {
@@ -162,8 +166,10 @@ export function buildTrayMesh(design: TrayDesign, opts?: TrayMeshOptions): Mesh 
   }
 
   // Locating posts: an open-bottom tube per 1u slot, standing on the pocket
-  // floor. A through-cut pocket has no floor to stand on, so it is skipped --
-  // validate.ts flags that rather than silently dropping the posts.
+  // floor. Skipped when the pocket itself is a through-cut (no floor at all),
+  // and per-post when a *different* through-cut pocket removed the floor at
+  // that slot -- a post with nothing under it just prints as a floating ring.
+  // `pocketFloors` already excludes every through-cut region.
   for (const p of design.pockets) {
     const lp = p.locatingPosts
     if (!lp || p.isThrough) continue
@@ -173,6 +179,7 @@ export function buildTrayMesh(design: TrayDesign, opts?: TrayMeshOptions): Mesh 
     const z0 = F - POST_WELD_MM
     const z1 = F + lp.heightMm
     for (const [cx, cy] of locatingPostSlotCenters(p, design.sizing)) {
+      if (!pointInMulti([cx, cy], pocketFloors)) continue // floating -- no floor here
       const tube = postTubePolygon(cx, cy, outerR, innerR)
       b.addHorizontal([tube], z0, 'down')
       b.addHorizontal([tube], z1, 'up')

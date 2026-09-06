@@ -4,6 +4,7 @@ import {
   checkWallThickness, checkPrintability, checkPlate, checkLocatingPosts, validateDesign, issuesFor,
 } from './validate.ts'
 import { buildTrayMesh } from './layers.ts'
+import { checkManifold } from '../../../geometry/mesh.ts'
 import { DEFAULT_FABRICATION } from '../model/defaults.ts'
 import { emptyDesign } from '../model/presets.ts'
 import type { Pocket, TrayDesign } from '../model/types.ts'
@@ -140,6 +141,23 @@ test('posts wider than the slot pitch are flagged as touching', () => {
   // 5 slots across a 5u pocket (~95 mm wide, Python sizing) -> ~19 mm pitch.
   const issue = checkLocatingPosts(withPosts({ outerDiameterMm: 19 }))[0]
   assert.equal(issue?.code, 'locating-posts-too-close')
+})
+
+test('a post over a separate through-cut pocket is dropped and flagged', () => {
+  // A 5u pocket with posts, and a 1u through-cut sitting over its 3rd slot
+  // (~x 10 + 2.5 * pitch). The overlapped post has no floor.
+  const d = design([
+    {
+      id: 'long', units: 5, x: 10, y: 20,
+      locatingPosts: { heightMm: 3, outerDiameterMm: 9, boreDiameterMm: 6 },
+    },
+    { id: 'thru', units: 1, x: 48, y: 20, isThrough: true },
+  ])
+  const issue = checkLocatingPosts(d).find(i => i.code === 'locating-post-over-through-cut')
+  assert.equal(issue?.severity, 'warning')
+  assert.match(issue?.message ?? '', /1 locating post over a through-cut/)
+  // The mesh stays watertight with that post removed.
+  assert.equal(checkManifold(buildTrayMesh(d)).danglingEdges, 0)
 })
 
 test('a single-slot (1u) pocket is never flagged for posts touching', () => {

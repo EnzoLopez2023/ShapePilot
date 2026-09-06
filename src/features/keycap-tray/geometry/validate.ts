@@ -6,8 +6,11 @@ import type { FabricationSettings, Pocket, TrayDesign } from '../model/types.ts'
 import type { Polygon, Ring, Vec2 } from '../../../geometry/vec.ts'
 import { bboxOverlaps, multiArea, ringBBox } from '../../../geometry/vec.ts'
 import { difference, intersection } from '../../../geometry/boolean.ts'
-import { effectivePocketCornerRadius, pocketRing, pocketWidth } from './shapes.ts'
+import {
+  effectivePocketCornerRadius, locatingPostSlotCenters, pocketRing, pocketWidth,
+} from './shapes.ts'
 import { buildRegions } from './layers.ts'
+import { pointInRing } from '../../../geometry/vec.ts'
 import { planTiles } from './tiling.ts'
 import { profileToMulti } from '../model/presets.ts'
 import { checkManifold } from '../../../geometry/mesh.ts'
@@ -320,9 +323,17 @@ export function checkPrintability(d: TrayDesign, opts: PrintCheckOptions = {}): 
 // a short, unstressed feature, not a structural divider between cavities.
 const MIN_POST_WALL_MM = 0.8
 
+/** Inside some polygon's outer ring and outside all of that polygon's holes. */
+const inMulti = (pt: Vec2, mp: Polygon[]): boolean =>
+  mp.some(poly => pointInRing(pt, poly[0]) && !poly.slice(1).some(hole => pointInRing(pt, hole)))
+
 /** Locating posts: print-only, since they only exist in the 3D mesh. */
 export function checkLocatingPosts(d: TrayDesign): Issue[] {
   const issues: Issue[] = []
+  const hasAnyPosts = d.pockets.some(p => p.locatingPosts && !p.isThrough)
+  // `pocketFloors` already excludes every through-cut region, so a post slot
+  // outside it has nothing to stand on -- another pocket cut the floor away.
+  const floors = hasAnyPosts ? buildRegions(d).pocketFloors : []
   for (const p of d.pockets) {
     const lp = p.locatingPosts
     if (!lp) continue
@@ -337,6 +348,19 @@ export function checkLocatingPosts(d: TrayDesign): Issue[] {
         message: `${label} is a through-cut, so its locating posts have no floor to stand on and will not print.`,
       })
       continue
+    }
+
+    const floating = locatingPostSlotCenters(p, d.sizing).filter(c => !inMulti(c, floors)).length
+    if (floating > 0) {
+      issues.push({
+        code: 'locating-post-over-through-cut',
+        severity: 'warning',
+        targets: ['print'],
+        pocketIds: [p.id],
+        message: `${label} has ${floating} locating post${floating === 1 ? '' : 's'} over a `
+          + 'through-cut, with no floor to stand on -- '
+          + `${floating === 1 ? 'it is' : 'they are'} dropped from the print.`,
+      })
     }
 
     if (lp.heightMm >= d.pocketDepthMm) {
