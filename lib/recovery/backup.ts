@@ -12,7 +12,7 @@ import Database from 'better-sqlite3'
 import type DatabaseConstructor from 'better-sqlite3'
 import { codeIdentity } from '../db/migrate.ts'
 import {
-  assertIdentityMatches, readAuthorityId, readDatabaseIdentity,
+  assertIdentityMatches, assertLedgerPrefix, readAuthorityId, readDatabaseIdentity,
 } from '../db/identity.ts'
 import { verifyNativeFileIdentity } from '../db/nativeIdentity.ts'
 import type { ArtifactStore } from './artifactStore.ts'
@@ -173,6 +173,20 @@ export interface CreateBackupOptions {
   workRoot?: string
   /** Deterministic test seam after descriptor preflight and before SQLite open. */
   afterSourcePreflight?: () => void
+  /**
+   * Accept a source whose migration ledger is a genuine *prefix* of this
+   * build's, rather than identical to it.
+   *
+   * For exactly one caller: the pre-migration snapshot, which copies a database
+   * that is still a release behind the code taking the copy -- an exact
+   * identity match is impossible there by construction. The check that replaces
+   * it still proves same lineage (see `assertLedgerPrefix`); it only stops
+   * comparing the three things a pending migration is about to change.
+   *
+   * Leave it off everywhere else. An operator backup of a database this build
+   * did not produce is a mistake worth failing on.
+   */
+  expectLedgerPrefix?: boolean
 }
 
 export interface BackupResult {
@@ -223,11 +237,19 @@ export async function createBackup(options: CreateBackupOptions): Promise<Backup
         source.pragma('query_only = ON')
         const sourceIdentity = readDatabaseIdentity(source)
         sourceAuthorityId = readAuthorityId(source)
-        assertIdentityMatches(
-          codeIdentity(),
-          sourceIdentity,
-          'the backup source is not a database this build produced',
-        )
+        if (options.expectLedgerPrefix) {
+          assertLedgerPrefix(
+            codeIdentity(),
+            sourceIdentity,
+            'the backup source is not an earlier state of this build\'s schema',
+          )
+        } else {
+          assertIdentityMatches(
+            codeIdentity(),
+            sourceIdentity,
+            'the backup source is not a database this build produced',
+          )
+        }
         // SQLite's own backup API: a consistent copy of a live database.
         await source.backup(snapshotPath)
       } finally {
@@ -268,19 +290,28 @@ export async function createBackup(options: CreateBackupOptions): Promise<Backup
     }
 
     // The snapshot must be an authority this build produced: same app marker,
-    // same ordered ledger, same checksums — not merely the same head id.
-    assertIdentityMatches(
-      codeIdentity(),
-      {
-        app: database.appMarker,
-        schemaFormat: database.schemaFormat,
-        schemaMarker: database.schemaMarker,
-        schemaObjectsSha256: database.schemaObjectsSha256,
-        headMigration: database.headMigration,
-        ledger: database.migrationLedger,
-      },
-      'the snapshot is not a database this build produced',
-    )
+    // same ordered ledger, same checksums — not merely the same head id. A
+    // pre-migration snapshot is checked against the same lineage rather than
+    // the same head, for the reason given on `expectLedgerPrefix`.
+    const snapshotIdentity = {
+      app: database.appMarker,
+      schemaFormat: database.schemaFormat,
+      schemaMarker: database.schemaMarker,
+      schemaObjectsSha256: database.schemaObjectsSha256,
+      headMigration: database.headMigration,
+      ledger: database.migrationLedger,
+    }
+    if (options.expectLedgerPrefix) {
+      assertLedgerPrefix(
+        codeIdentity(), snapshotIdentity,
+        'the snapshot is not an earlier state of this build\'s schema',
+      )
+    } else {
+      assertIdentityMatches(
+        codeIdentity(), snapshotIdentity,
+        'the snapshot is not a database this build produced',
+      )
+    }
 
     const manifest: BackupManifest = {
       contract: BACKUP_MANIFEST_CONTRACT,

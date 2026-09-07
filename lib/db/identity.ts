@@ -254,6 +254,73 @@ export function identityDifferences(
   return differences
 }
 
+/**
+ * Differences that stop `actual` being a genuine *earlier state* of `expected`.
+ *
+ * Same lineage, fewer migrations. Every entry the database has must match this
+ * build's ledger exactly at the same ordinal, and the database may not be
+ * ahead. What is deliberately not compared is anything derived from the whole
+ * ledger -- the schema marker, the sqlite_schema catalog, the head migration --
+ * because those are precisely what a pending migration is about to change.
+ *
+ * This exists for one caller: the pre-migration snapshot, which has to read a
+ * database that is one release behind the code taking the copy. It is still a
+ * real "is this our file" guard -- a wrong file, a wrong backup or a
+ * hand-edited schema all fail it -- it just permits the single difference the
+ * deploy is about to remove. See lib/recovery/preMigrationBackup.ts.
+ */
+export function ledgerPrefixDifferences(
+  expected: DatabaseIdentity, actual: DatabaseIdentity,
+): string[] {
+  const differences: string[] = []
+  if (actual.app !== expected.app) {
+    differences.push(`app marker is "${actual.app}", expected "${expected.app}"`)
+  }
+  if (actual.schemaFormat !== expected.schemaFormat) {
+    differences.push(
+      `schema format marker is "${actual.schemaFormat}", expected "${expected.schemaFormat}"`)
+  }
+  if (actual.ledger.length > expected.ledger.length) {
+    differences.push(
+      `migration ledger has ${actual.ledger.length} entries, more than the `
+      + `${expected.ledger.length} this build ships`)
+    return differences
+  }
+  if (actual.ledger.length === 0) {
+    differences.push('migration ledger is empty')
+    return differences
+  }
+  for (const [index, have] of actual.ledger.entries()) {
+    const want = expected.ledger[index]
+    if (have.ordinal !== want.ordinal) {
+      differences.push(`ledger entry ${index} has ordinal ${have.ordinal}, expected ${want.ordinal}`)
+    }
+    if (have.id !== want.id) {
+      differences.push(`ledger entry ${index} is "${have.id}", expected "${want.id}"`)
+    }
+    if (have.name !== want.name) {
+      differences.push(`ledger entry ${index} is named "${have.name}", expected "${want.name}"`)
+    }
+    if (have.checksum !== want.checksum) {
+      differences.push(`ledger entry ${index} ("${want.id}") has a different checksum`)
+    }
+  }
+  return differences
+}
+
+/** `ledgerPrefixDifferences`, as an assertion. */
+export function assertLedgerPrefix(
+  expected: DatabaseIdentity, actual: DatabaseIdentity, context: string,
+): void {
+  const differences = ledgerPrefixDifferences(expected, actual)
+  if (differences.length > 0) {
+    throw new IdentityError(
+      'SCHEMA_LINEAGE_MISMATCH',
+      `${context}: ${differences.join('; ')}`,
+    )
+  }
+}
+
 export function assertIdentityMatches(
   expected: DatabaseIdentity, actual: DatabaseIdentity, context: string,
 ): void {

@@ -10,6 +10,9 @@ import {
   readAppliedMigrations,
 } from '../lib/db/migrate.ts'
 import { applyConnectionPragmas } from '../lib/db/connection.ts'
+import {
+  ensurePreMigrationSnapshot, snapshotRequiredFor,
+} from '../lib/recovery/preMigrationBackup.ts'
 
 /**
  * The migration lineage this release ships.
@@ -206,6 +209,57 @@ function assertPriorReleaseReads(database: Database.Database, designId: number):
   assert.equal(pockets.length, 2)
 }
 
+/**
+ * The other half of the migration contract: production must not be able to
+ * change a schema it has not copied first.
+ *
+ * Asserted here, on every deploy, rather than trusted. The runtime guard lives
+ * in lib/recovery/preMigrationBackup.ts and is what makes the snapshot
+ * automatic; this proves the guard is still armed in the image about to ship,
+ * against a database one release behind — the exact shape production will be in
+ * when this release starts.
+ */
+async function assertSnapshotGuardArmed(root: string): Promise<void> {
+  assert.equal(snapshotRequiredFor('production'), true,
+    'production must require a pre-migration snapshot')
+  assert.equal(snapshotRequiredFor('development'), false,
+    'development must not require an artifact store to run migrations')
+
+  const path = join(root, 'one-release-behind.db')
+  const behind = new Database(path)
+  try {
+    applyConnectionPragmas(behind, 2_000, path)
+    migrate(behind, MIGRATIONS.slice(0, -1))
+  } finally {
+    behind.close()
+  }
+
+  await assert.rejects(
+    () => ensurePreMigrationSnapshot({
+      databasePath: path,
+      openStore: null,
+      appVersion: 'deploy-check',
+      buildId: 'deploy-check',
+      sourceCommit: 'deploy-check',
+      required: true,
+    }),
+    (error: unknown) =>
+      error instanceof Error && /Refusing to change the schema/.test(error.message),
+    'a pending migration with no artifact store must refuse to change the schema',
+  )
+
+  // ...and the refusal really did leave the database alone.
+  const after = new Database(path, { readonly: true, fileMustExist: true })
+  try {
+    assert.equal(
+      readAppliedMigrations(after).length, MIGRATIONS.length - 1,
+      'the refused start must not have applied anything',
+    )
+  } finally {
+    after.close()
+  }
+}
+
 export async function runMigrationCheck(options: Arguments): Promise<Record<string, unknown>> {
   assert.deepEqual(
     codeLedger(),
@@ -225,12 +279,14 @@ export async function runMigrationCheck(options: Arguments): Promise<Record<stri
     database.transaction(() => migrate(database as Database.Database, MIGRATIONS))()
     assertCandidate(database, designId)
     assertPriorReleaseReads(database, designId)
+    await assertSnapshotGuardArmed(root)
 
     return {
       status: 'ok',
       profile: options.profile,
       initial: options.initial,
       priorReleaseCompatible: true,
+      snapshotGuardArmed: true,
       migrations: readAppliedMigrations(database).map(({ id, checksum }) => ({ id, checksum })),
       requiredTables: REQUIRED_TABLES,
     }

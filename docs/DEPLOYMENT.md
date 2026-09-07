@@ -307,8 +307,42 @@ been taken.
 
 ### Before such a deploy
 
-Take a snapshot from the App Service SSH console and keep the artifact id. The
-Web App already sets `BACKUP_ROOT`, so no environment setup is needed:
+Nothing. The snapshot is taken by the release itself.
+
+When a container starts and finds migrations pending, `start()` copies the
+database to `BACKUP_ROOT` *before* opening it for service — through SQLite's
+online backup API, with `quick_check`, `integrity_check` and `foreign_key_check`
+run against the copy, and the manifest read back out of the store to prove it
+landed. Only then does `openDatabase` apply the migration. The artifact id is
+printed on the first line of the container log and recorded in the audit trail
+under category `deploy`, action `pre_migration_snapshot`.
+
+If the snapshot cannot be written — `BACKUP_ROOT` unmounted, the volume full,
+the store unreadable — **the container refuses to start**. That is the intended
+outcome: the schema stays untouched, so the previous image is still valid and
+automatic rollback still works. A deploy that fails this way has cost nothing
+but a deploy.
+
+This runs only when the ledger is actually short, so it happens once per
+migration rather than once per start, and it is skipped entirely outside
+production unless `BACKUP_ROOT` is configured. `npm run deploy:migration-check`
+asserts the guard is armed in the image about to ship, so removing it fails CI
+rather than quietly shipping (`snapshotGuardArmed` in its output).
+
+Two consequences worth knowing:
+
+* The database being copied is one release *behind* the code copying it, so the
+  usual exact-identity check cannot apply. What replaces it is `assertLedgerPrefix`
+  (`lib/db/identity.ts`): same app marker, same schema format, and every ledger
+  entry the database has matching this build's at the same ordinal. A wrong file,
+  a wrong backup or a hand-edited schema all still fail — only the one difference
+  the deploy is about to remove is permitted.
+* A database whose history is *not* this build's is not snapshotted at all. The
+  copy would be of something we cannot vouch for, and `migrate` is about to
+  reject it by name a moment later.
+
+Taking one by hand still works, and is still the right thing before anything
+unusual — a manual schema repair, a restore, a volume migration:
 
 ```bash
 node scripts/recovery.ts backup
@@ -316,7 +350,10 @@ node scripts/recovery.ts backup
 
 ### If verification fails
 
-Automatic rollback will also fail. Recover deliberately:
+Automatic rollback will also fail. Recover deliberately. The artifact id is in
+the container log (`pre-migration snapshot <id> … taken before <migration>`) and
+in the audit trail; `node scripts/recovery.ts list` shows the store's contents if
+you need to find it another way.
 
 ```bash
 # 1. Restore forward into a new file. Never over the live authority; in
@@ -348,6 +385,12 @@ verification period, so in practice that is nothing.
 | `008-tray-nameplate` | Raised tray-name nameplate, plus the two-filament export split | None recorded. Added retrospectively on 2026-09-06: that release acknowledged the rollback-compatible ledger in `scripts/check-deploy-migration.ts` (`34b6e15`) but never updated this table, so no snapshot was ever written down. Nothing in the repository records one being taken, and the releases either side of it (`006`, `007`) deliberately skipped theirs, so assume none exists. Its window has long since closed -- `008` is no longer the head migration -- so this row is a record, not an open risk. |
 | `009-filament-inventory` | Filaments page (tick which Bambu Lab spools and refills you own) | None taken -- same policy as `006` and `007`, chosen again for this release. `filament_inventory` is a new table no prior release reads, so a failed verification loses only the ticks entered during it; every other table is untouched by this migration. |
 | `010-switch-trays` | Switch tray designer (a plate mechanical switches pass through, auto-filled, with posts underneath) | None taken -- same policy as `006`, `007` and `009`. `switch_tray_designs` is a new table no prior release reads and nothing else references, so a failed verification loses only the switch trays saved during it; every other table is untouched by this migration. |
+
+Every row above says "none taken", which is the honest record of a policy that
+depended on somebody remembering a manual step before a deploy they were already
+in the middle of. From `011` onward the column is no longer a decision: the
+release takes its own snapshot, or it does not start. New rows should record the
+artifact id from the deploy log rather than a choice.
 
 That snapshot was taken with `sqlite3 .backup` from the Kudu console rather than
 `scripts/recovery.ts backup`, because the app code lives in the application
