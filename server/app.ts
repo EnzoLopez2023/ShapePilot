@@ -28,6 +28,7 @@ import { createHealthRouter } from './routes/health.ts'
 import { createFilamentRouter } from './routes/filaments.ts'
 import { createKeycapProjectRouter } from './routes/keycapProjects.ts'
 import { createKeycapTrayRouter } from './routes/keycapTrays.ts'
+import { createSwitchTrayRouter } from './routes/switchTrays.ts'
 import { createSettingsRouter } from './routes/settings.ts'
 import { createVersionRouter } from './routes/version.ts'
 
@@ -113,6 +114,7 @@ export function createApp(options: CreateAppOptions): Express {
   const adminOnly = requireRole('admin', repos.memberships)
 
   app.use('/api/keycap-trays', authenticated, createKeycapTrayRouter(repos))
+  app.use('/api/switch-trays', authenticated, createSwitchTrayRouter(repos))
   app.use('/api/keycap-projects', authenticated, createKeycapProjectRouter(repos))
   app.use('/api/design-documents', authenticated, createDesignDocumentRouter(repos))
   // Asset bytes never touch express.json, which only parses application/json;

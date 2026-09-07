@@ -271,6 +271,70 @@ export interface KeycapTrayRepository {
   deleteLibraryPocket(owner: Owner, id: string): Promise<boolean>
 }
 
+// -- switch trays -------------------------------------------------------------
+
+/**
+ * A switch tray, as stored. Unlike a keycap tray there is no cell list: every
+ * cell is the same square, generated from `fill` against `profile`, so what
+ * persists is what generates them.
+ */
+export interface SwitchTrayRecord {
+  id: string
+  name: string
+  notes?: string
+  profile: { kind: TrayProfileKind } & Record<string, unknown>
+  /** Stored whole, not by id -- the user may have measured their own switches. */
+  switch: Record<string, unknown>
+  plate: Record<string, unknown>
+  fill: Record<string, unknown>
+  /** Posts under the plate, or absent when the tray does not stack. */
+  feet?: Record<string, unknown>
+  nameplate?: { heightMm: number; fontSizeMm: number; x: number; y: number }
+  /** `"col,row"` of cells clicked out of the generated grid. */
+  skippedCells?: string[]
+  /** Override for the profile preset's own clear height, mm. */
+  caseClearHeightMm?: number
+  createdAt: string
+  updatedAt: string
+  revision: number
+}
+
+export interface SwitchTraySummary {
+  id: string
+  name: string
+  notes?: string
+  profileKind: TrayProfileKind
+  /** Denormalised for the picker and the home page. */
+  switchLabel: string
+  createdAt: string
+  updatedAt: string
+}
+
+/** The write payload; matches what the client sends. */
+export interface SwitchTrayInput {
+  name: string
+  notes?: string | null
+  profile: { kind?: unknown } & Record<string, unknown>
+  switch: unknown
+  plate: unknown
+  fill: unknown
+  /** Null or absent clears the feet; an object sets them. */
+  feet?: unknown
+  /** Null or absent clears the nameplate; an object sets it. */
+  nameplate?: unknown
+  skippedCells?: unknown
+  caseClearHeightMm?: number | null
+}
+
+export interface SwitchTrayRepository {
+  listDesigns(owner: Owner): Promise<SwitchTraySummary[]>
+  getDesign(owner: Owner, id: string): Promise<SwitchTrayRecord | null>
+  createDesign(owner: Owner, input: SwitchTrayInput): Promise<{ id: string }>
+  updateDesign(owner: Owner, id: string, input: SwitchTrayInput): Promise<boolean>
+  cloneDesign(owner: Owner, id: string, name?: string): Promise<{ id: string } | null>
+  deleteDesign(owner: Owner, id: string): Promise<boolean>
+}
+
 export class DuplicateLibraryPocketError extends Error {
   readonly pocketName: string
   constructor(pocketName: string) {
@@ -542,6 +606,7 @@ export interface Repositories {
   settings: SettingsRepository
   audit: AuditRepository
   keycapTrays: KeycapTrayRepository
+  switchTrays: SwitchTrayRepository
   keycapProjects: KeycapProjectRepository
   designDocuments: DesignDocumentRepository
   designAssets: DesignAssetRepository

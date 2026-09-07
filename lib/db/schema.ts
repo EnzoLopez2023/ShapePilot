@@ -377,6 +377,53 @@ export const FILAMENT_INVENTORY_STATEMENTS: readonly string[] = [
 )`,
 ]
 
+/**
+ * Switch trays: a plate a mechanical keyboard switch passes through, with posts
+ * underneath so a stack of them lives in a Systainer.
+ *
+ * One table and no per-cell rows, because a switch tray has none to store. Every
+ * cell is the same square and the layout is *generated* from the pitch, margin
+ * and outline (see src/features/switch-tray/geometry/fill.ts), so what persists
+ * is the handful of parameters that generate it -- a tray holding 130 switches
+ * is one row, and re-opening it recomputes the same 130 cells.
+ *
+ * The JSON columns follow the shape the keycap tray already uses for
+ * `sizing_json` and `corner_spacers_json`: a validated object, or NULL where the
+ * feature is absent.
+ *
+ *   switch_json        the resolved switch profile, stored whole rather than by
+ *                      id -- the user may have measured their own switches, and
+ *                      a tray must keep printing the same after a catalogue edit
+ *   plate_json         retention, shelf and recess thickness, clearances
+ *   fill_json          pitch, margin, stagger, origin, spread
+ *   feet_json          posts, or NULL for a tray that does not stack
+ *   nameplate_json     raised name on the plate, or NULL
+ *   skipped_cells_json cells the user clicked out of the grid, or NULL
+ *   case_clear_mm      override for the profile preset's own clear height
+ */
+export const SWITCH_TRAY_STATEMENTS: readonly string[] = [
+  `CREATE TABLE switch_tray_designs (
+  id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_tenant_id    TEXT    NOT NULL,
+  owner_oid          TEXT    NOT NULL,
+  name               TEXT    NOT NULL,
+  notes              TEXT,
+  profile_kind       TEXT    NOT NULL,
+  profile_json       TEXT    NOT NULL,
+  switch_json        TEXT    NOT NULL,
+  plate_json         TEXT    NOT NULL,
+  fill_json          TEXT    NOT NULL,
+  feet_json          TEXT,
+  nameplate_json     TEXT,
+  skipped_cells_json TEXT,
+  case_clear_mm      REAL,
+  created_at         TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at         TEXT    NOT NULL DEFAULT (datetime('now'))
+)`,
+  `CREATE INDEX idx_switch_trays_owner
+  ON switch_tray_designs (owner_tenant_id, owner_oid, updated_at DESC)`,
+]
+
 /** Tables ShapePilot owns and reconciles. Order is the reconciliation order. */
 export const OWNED_LEGACY_TABLES = [
   'keycap_tray_designs',

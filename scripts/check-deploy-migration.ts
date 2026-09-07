@@ -80,6 +80,12 @@ const ROLLBACK_COMPATIBLE_LEDGER = [
     name: 'filament inventory',
     checksum: '9d9a08f37de27964da0a9c3fec9904dc0ec0e36ee9536d8e3166582388dfd6bd',
   },
+  {
+    ordinal: 9,
+    id: '010-switch-trays',
+    name: 'switch trays',
+    checksum: 'c7ab92c4b21c54a619a2eb5b8aacf040ca28448285dc51aa94c0c195c7437489',
+  },
 ] as const
 
 const REQUIRED_TABLES = [
@@ -98,6 +104,7 @@ const REQUIRED_TABLES = [
   'keycap_tray_pockets',
   'legacy_import_rows',
   'legacy_import_runs',
+  'switch_tray_designs',
   'schema_migrations',
 ] as const
 

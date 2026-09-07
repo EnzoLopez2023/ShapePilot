@@ -34,6 +34,7 @@ export const EMPTY_SEED_DOMAIN_TABLES = [
   'keycap_tray_pockets',
   'legacy_import_rows',
   'legacy_import_runs',
+  'switch_tray_designs',
 ] as const
 
 interface ExpectedOwner {
