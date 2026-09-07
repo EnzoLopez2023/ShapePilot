@@ -323,6 +323,19 @@ outcome: the schema stays untouched, so the previous image is still valid and
 automatic rollback still works. A deploy that fails this way has cost nothing
 but a deploy.
 
+Free space is checked *before* the copy begins, on every volume the backup will
+touch (`RECOVERY_WORK_ROOT` and `BACKUP_ROOT`, which are usually the same
+mount). A backup needs room for two copies of the database at once — the
+snapshot in the work directory and the copy the store takes from it — so the
+refusal is worded in those terms and arrives as a sentence rather than an
+ENOSPC halfway through a write. Between "enough for this one" and "comfortable"
+there is a warning band: the snapshot is taken, and the log carries
+`ShapePilot backup volume: … room for roughly N more snapshots`. That is the
+signal to clear old artifacts out of the store by hand — the store is
+append-only by design (`native/artifact-store-guard.c` implements `put`,
+`list`, `fetch` and `bundle`, and deliberately no delete), so nothing prunes
+itself.
+
 This runs only when the ledger is actually short, so it happens once per
 migration rather than once per start, and it is skipped entirely outside
 production unless `BACKUP_ROOT` is configured. `npm run deploy:migration-check`

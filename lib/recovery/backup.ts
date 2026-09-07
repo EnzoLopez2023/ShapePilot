@@ -16,6 +16,7 @@ import {
 } from '../db/identity.ts'
 import { verifyNativeFileIdentity } from '../db/nativeIdentity.ts'
 import type { ArtifactStore } from './artifactStore.ts'
+import { availableBytes, checkSpaceFor } from './diskSpace.ts'
 import type {
   BackupDatabase, BackupManifest, CheckResult, ForeignKeyCheck, TableSnapshot,
 } from './manifest.ts'
@@ -174,6 +175,12 @@ export interface CreateBackupOptions {
   /** Deterministic test seam after descriptor preflight and before SQLite open. */
   afterSourcePreflight?: () => void
   /**
+   * How free space is measured, for tests. A full volume is not something a
+   * test can conjure, and the refusal it produces is worth proving rather than
+   * assuming. Defaults to asking the operating system.
+   */
+  freeSpaceProbe?: (path: string) => number | null
+  /**
    * Accept a source whose migration ledger is a genuine *prefix* of this
    * build's, rather than identical to it.
    *
@@ -196,6 +203,12 @@ export interface BackupResult {
   manifestKey: string
   bytes: number
   sha256: string
+  /**
+   * Things that were true but not fatal -- today a volume with room for this
+   * snapshot and not many more. The backup succeeded; the caller decides how
+   * loudly to say so.
+   */
+  warnings: string[]
 }
 
 /**
@@ -206,6 +219,22 @@ export async function createBackup(options: CreateBackupOptions): Promise<Backup
   const sourceCreatedUtc = options.sourceCreatedUtc ?? new Date().toISOString()
   const workRoot = options.workRoot ?? join(dirname(resolve(options.sourcePath)), '.recovery-work')
   await mkdir(workRoot, { recursive: true })
+
+  // Ask about the disk before committing to the idea that there will be a copy.
+  // Running out of room mid-write fails just the same, but only after the work,
+  // and with an ENOSPC rather than a sentence anyone can act on.
+  const space = checkSpaceFor(
+    [workRoot, ...(options.store.root ? [options.store.root] : [])],
+    statSync(resolve(options.sourcePath)).size,
+    options.freeSpaceProbe ?? availableBytes,
+  )
+  if (space.refusals.length) {
+    throw new RecoveryError(
+      'BACKUP_INSUFFICIENT_SPACE',
+      `not enough free space to take a backup: ${space.refusals.join('; ')}`,
+    )
+  }
+
   const work = await mkdtemp(join(workRoot, 'backup-'))
   const snapshotPath = join(work, BACKUP_DATABASE_FILE)
 
@@ -371,6 +400,7 @@ export async function createBackup(options: CreateBackupOptions): Promise<Backup
       manifestKey,
       bytes: details.size,
       sha256,
+      warnings: space.warnings,
     }
   } finally {
     await rm(work, { recursive: true, force: true })

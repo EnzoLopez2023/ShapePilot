@@ -54,6 +54,7 @@ try {
       for (const table of result.manifest.database.tables) {
         console.log(`  ${table.name}: ${table.rowCount} rows`)
       }
+      for (const warning of result.warnings) console.warn(`warning     ${warning}`)
       break
     }
 

@@ -55,7 +55,10 @@ function recordSnapshot(
     action: 'pre_migration_snapshot',
     outcome: 'success',
     subject: snapshot.artifactId,
-    detail: `${snapshot.pending.join(', ')} · ${snapshot.bytes} bytes · build ${buildId}`,
+    detail: [
+      `${snapshot.pending.join(', ')} · ${snapshot.bytes} bytes · build ${buildId}`,
+      ...snapshot.warnings,
+    ].join(' | '),
   }).catch(() => { /* the snapshot is already safe; the note is not worth a crash */ })
 }
 
@@ -90,6 +93,11 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<Runni
   })
   if (snapshot.status !== 'up-to-date') {
     console.log(`ShapePilot ${describePreMigrationSnapshot(snapshot)}`)
+  }
+  if (snapshot.status === 'taken') {
+    // A volume with room for this snapshot and not many more. Said now, while
+    // there is still time to act on it and no incident in progress.
+    for (const warning of snapshot.warnings) console.warn(`ShapePilot backup volume: ${warning}`)
   }
 
   let lifecycle: Lifecycle = 'starting'

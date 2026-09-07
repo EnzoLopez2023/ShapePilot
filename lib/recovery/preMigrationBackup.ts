@@ -84,6 +84,8 @@ export interface PreMigrationSnapshotOptions {
   sourceCommit: string
   workRoot?: string
   migrations?: readonly Migration[]
+  /** Test seam, passed through to `createBackup`. See its own note. */
+  freeSpaceProbe?: (path: string) => number | null
   /**
    * Production. A pending migration with no usable store is a hard failure
    * rather than a warning: a snapshot you might not have is worth nothing, and
@@ -105,7 +107,15 @@ export type PreMigrationSnapshot =
   | { status: 'ledger-diverged'; pending: [] }
   /** Migrations pending, no artifact store, and not production. Development. */
   | { status: 'no-store'; pending: string[] }
-  | { status: 'taken'; pending: string[]; artifactId: string; bytes: number; sha256: string }
+  | {
+    status: 'taken'
+    pending: string[]
+    artifactId: string
+    bytes: number
+    sha256: string
+    /** Non-fatal notes from the backup -- today, a volume running low. */
+    warnings: string[]
+  }
 
 /**
  * Whether a missing snapshot is fatal.
@@ -189,6 +199,7 @@ export async function ensurePreMigrationSnapshot(
       workRoot: options.workRoot,
       // The source is a release behind by construction; see the note on the option.
       expectLedgerPrefix: true,
+      freeSpaceProbe: options.freeSpaceProbe,
     })
     return {
       status: 'taken',
@@ -196,6 +207,7 @@ export async function ensurePreMigrationSnapshot(
       artifactId: result.artifactId,
       bytes: result.bytes,
       sha256: result.sha256,
+      warnings: result.warnings,
     }
   } catch (cause) {
     const detail = cause instanceof RecoveryError || cause instanceof Error

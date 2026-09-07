@@ -203,6 +203,27 @@ describe('refusing to migrate without one', () => {
     assert.deepEqual(appliedIds(target.dbPath), before)
   })
 
+  test('a volume without room for the copy is a hard failure, and the schema is untouched', async () => {
+    const target = fixture('refuse-no-space', MIGRATIONS.length - 1)
+    const before = appliedIds(target.dbPath)
+
+    await assert.rejects(
+      () => ensurePreMigrationSnapshot(options(target, {
+        // A full volume, deterministically. See `freeSpaceProbe`.
+        freeSpaceProbe: () => 4096,
+      })),
+      (error: unknown) => {
+        assert.ok(error instanceof PreMigrationSnapshotError)
+        assert.equal(error.code, 'PRE_MIGRATION_SNAPSHOT_FAILED')
+        assert.match(error.message, /not enough free space/)
+        assert.match(error.message, /Refusing to change the schema/)
+        return true
+      })
+
+    assert.deepEqual(appliedIds(target.dbPath), before)
+    assert.deepEqual(await target.store.list(''), [])
+  })
+
   test('outside production a missing store is reported, not fatal', async () => {
     const target = fixture('dev-no-store', MIGRATIONS.length - 1)
     const result = await ensurePreMigrationSnapshot(

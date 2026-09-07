@@ -27,6 +27,12 @@ export interface StoredObject {
 
 export interface ArtifactStore {
   readonly description: string
+  /**
+   * Filesystem root, when the store has one. Present so a caller can ask the
+   * operating system about the volume the artifact will land on -- see
+   * lib/recovery/diskSpace.ts. Absent for any store that is not a directory.
+   */
+  readonly root?: string
   put(key: string, data: Uint8Array): Promise<StoredObject>
   putFile(key: string, sourcePath: string): Promise<StoredObject>
   /** Publish a complete multi-file artifact under one atomic top-level key. */
@@ -232,6 +238,7 @@ export function createFilesystemArtifactStore(root: string): ArtifactStore {
 
   return {
     description: `filesystem:${base}`,
+    root: base,
 
     async put(key, data) {
       const safe = assertSafeKey(key)
