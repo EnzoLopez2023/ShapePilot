@@ -10,22 +10,74 @@
 // A `clip` or `plain` plate has R = 0 and only the first two exist.
 import type { MultiPolygon, Polygon } from '../../../geometry/vec.ts'
 import { translateRing } from '../../../geometry/vec.ts'
-import { difference, punchDisjointFast, union, unionDisjointFast } from '../../../geometry/boolean.ts'
+import {
+  difference, intersection, punchDisjointFast, union, unionDisjointFast,
+} from '../../../geometry/boolean.ts'
 import { rectRing } from '../../../geometry/primitives.ts'
 import { insertTJunctions } from '../../../geometry/tjunction.ts'
 import type { Mesh } from '../../../geometry/mesh.ts'
 import { MeshBuilder } from '../../../geometry/mesh.ts'
 import { profileToMulti } from '../../../model/trayProfile.ts'
 import { cellHoleMm, cellKeepoutMm, feetHeightMm } from '../model/defaults.ts'
-import type { SwitchTrayDesign } from '../model/types.ts'
+import type { NameplateStyle, SwitchTrayDesign } from '../model/types.ts'
 import type { FillPlan } from './fill.ts'
 import { FOOT_WELD_MM, feetRects } from './feet.ts'
 
 /** Segments per 90° corner on a cell. 0.5 mm radius, so 8 is already invisible. */
 const CELL_CORNER_SEGMENTS = 8
 
-/** How far the nameplate dips into the plate so a slicer welds the overlap. */
+/** How far a *raised* nameplate dips into the plate so a slicer welds the
+ *  overlap. An inlay shares an exact boundary instead -- an overlap there would
+ *  be two extruders claiming the same space. */
 const NAMEPLATE_WELD_MM = 0.05
+
+/** Default cut for an inlay or inset: three layers at 0.2 mm. */
+export const DEFAULT_NAMEPLATE_DEPTH_MM = 0.6
+
+export const nameplateStyleOf = (design: SwitchTrayDesign): NameplateStyle =>
+  design.nameplate?.style ?? 'raised'
+
+/** The glyph run in tray coordinates. Outlines arrive centred on their own bounds. */
+export function placeGlyphs(
+  design: SwitchTrayDesign, outlines: MultiPolygon | null | undefined,
+): MultiPolygon {
+  const np = design.nameplate
+  if (!np || !outlines?.length) return []
+  return outlines.map(poly => poly.map(ring => translateRing(ring, np.x, np.y)))
+}
+
+/**
+ * The rectangle the name occupies, for the fill to treat as spoken for.
+ *
+ * The run has to sit on solid plate, and at a working pitch the web between two
+ * switch recesses is barely a millimetre -- so the name cannot thread through
+ * the field and has to displace cells instead. Reserving the box is what makes
+ * that happen deliberately rather than by the two overlapping.
+ */
+export function nameplateBox(
+  design: SwitchTrayDesign,
+  outlines: MultiPolygon | null | undefined,
+  marginMm = 1,
+): Polygon[] {
+  const glyphs = placeGlyphs(design, outlines)
+  if (!glyphs.length) return []
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const poly of glyphs) for (const ring of poly) for (const [x, y] of ring) {
+    if (x < minX) minX = x; if (x > maxX) maxX = x
+    if (y < minY) minY = y; if (y > maxY) maxY = y
+  }
+  if (!Number.isFinite(minX)) return []
+  const w = maxX - minX + 2 * marginMm
+  const h = maxY - minY + 2 * marginMm
+  return [[translateRing(rectRing(w, h), minX - marginMm, minY - marginMm)]]
+}
+
+/** How deep an inlay or inset cuts. Zero for a raised boss, which adds instead. */
+export const nameplateDepthMm = (design: SwitchTrayDesign): number => {
+  const np = design.nameplate
+  if (!np || nameplateStyleOf(design) === 'raised') return 0
+  return Math.max(0, np.depthMm ?? DEFAULT_NAMEPLATE_DEPTH_MM)
+}
 
 const unionAll = (polys: Polygon[]): MultiPolygon => {
   if (!polys.length) return []
@@ -52,13 +104,25 @@ export interface PlateBands {
   recess: MultiPolygon
   /** Where a recess actually has a ledge under it, at `z = H+S`. */
   ledges: MultiPolygon
+  /**
+   * The plate's topmost `depthMm` with the name cut out of it, and the floor
+   * that cut leaves behind. Empty for a raised nameplate or none at all.
+   */
+  engraved: MultiPolygon
+  nameplateFloors: MultiPolygon
+  /** The glyph volume itself, clipped to solid plate -- what an inlay fills. */
+  nameplateSolid: MultiPolygon
   /** Underside of the plate, and its top face. */
   plateBottomZ: number
   shelfTopZ: number
+  /** Where the name's cut begins. Equal to `plateTopZ` when there is no cut. */
+  engraveFloorZ: number
   plateTopZ: number
 }
 
-export function buildBands(design: SwitchTrayDesign, plan: FillPlan): PlateBands {
+export function buildBands(
+  design: SwitchTrayDesign, plan: FillPlan, glyphs: MultiPolygon = [],
+): PlateBands {
   const { shelfMm: S, recessMm: R, cornerRadiusMm } = design.plate
   const H = feetHeightMm(design.feet)
   const profile = profileToMulti(design.profile)
@@ -77,14 +141,36 @@ export function buildBands(design: SwitchTrayDesign, plan: FillPlan): PlateBands
     rawLedges = difference(rawShelf, rawRecess)
   }
 
-  // The three regions share the z = H+S interface and the outer silhouette, so
-  // they have to agree vertex-for-vertex or the mesh leaks. See tjunction.ts.
-  const [shelf, recess, ledges] = insertTJunctions([rawShelf, rawRecess, rawLedges])
+  // The name is cut into the plate's top face, which makes it a shallow blind
+  // pocket like any other -- so it is built the same way: the band above the
+  // cut is the top region minus the glyphs, and the floor it leaves is the
+  // difference between the two.
+  // The depth only counts when there is something to cut with it. A tray whose
+  // nameplate is configured but whose glyphs have not been traced yet -- the
+  // font is loaded asynchronously, so this is every first paint -- must build
+  // as a plate with no cut at all, not as one with a 0.6 mm band that nothing
+  // fills.
+  const wantedDepth = nameplateDepthMm(design)
+  const cutting = wantedDepth > 0 && glyphs.length > 0
+  const depth = cutting ? wantedDepth : 0
+  const rawEngraved = cutting ? difference(rawRecess, glyphs) : []
+  const rawNameplateFloors = cutting ? difference(rawRecess, rawEngraved) : []
+
+  // The regions share the z = H+S interface and the outer silhouette, so they
+  // have to agree vertex-for-vertex or the mesh leaks. See tjunction.ts.
+  const [shelf, recess, ledges, engraved, nameplateFloors] = insertTJunctions(
+    [rawShelf, rawRecess, rawLedges, rawEngraved, rawNameplateFloors])
 
   return {
-    profile, shelf, recess, ledges,
+    profile, shelf, recess, ledges, engraved, nameplateFloors,
+    // Clipped to the plate: a glyph hanging over a switch hole or off the edge
+    // would otherwise become a floating fragment of the second body. Computed
+    // whatever the style, because a raised boss with nothing under it is just
+    // as wrong as an inlay with nothing to fill.
+    nameplateSolid: glyphs.length ? intersection(rawRecess, glyphs) : [],
     plateBottomZ: H,
     shelfTopZ: H + S,
+    engraveFloorZ: H + S + R - depth,
     plateTopZ: H + S + R,
   }
 }
@@ -107,25 +193,38 @@ export interface SwitchTrayMeshOptions {
 export function buildSwitchTrayMesh(
   design: SwitchTrayDesign, plan: FillPlan, opts?: SwitchTrayMeshOptions,
 ): Mesh {
-  const bands = buildBands(design, plan)
+  const style = nameplateStyleOf(design)
+  const glyphs = placeGlyphs(design, opts?.nameplateOutlines)
+  const bands = buildBands(design, plan, glyphs)
   const b = new MeshBuilder()
   const hasRecess = bands.plateTopZ > bands.shelfTopZ
+  const cut = bands.engraved.length > 0
 
   // Horizontals at every interface, walls for every band.
   b.addHorizontal(bands.shelf, bands.plateBottomZ, 'down')
   if (hasRecess) {
     b.addHorizontal(bands.ledges, bands.shelfTopZ, 'up')
-    b.addHorizontal(bands.recess, bands.plateTopZ, 'up')
     b.addWalls(bands.shelf, bands.plateBottomZ, bands.shelfTopZ)
-    b.addWalls(bands.recess, bands.shelfTopZ, bands.plateTopZ)
+    b.addWalls(bands.recess, bands.shelfTopZ, bands.engraveFloorZ)
   } else {
-    b.addHorizontal(bands.shelf, bands.shelfTopZ, 'up')
-    b.addWalls(bands.shelf, bands.plateBottomZ, bands.shelfTopZ)
+    b.addWalls(bands.shelf, bands.plateBottomZ, bands.engraveFloorZ)
+  }
+
+  if (cut) {
+    // The name's cut: a floor where the glyphs are, and the band above it
+    // carrying the top face.
+    b.addHorizontal(bands.nameplateFloors, bands.engraveFloorZ, 'up')
+    b.addHorizontal(bands.engraved, bands.plateTopZ, 'up')
+    b.addWalls(bands.engraved, bands.engraveFloorZ, bands.plateTopZ)
+  } else {
+    b.addHorizontal(bands.recess, bands.plateTopZ, 'up')
   }
 
   if (!(opts?.omitSeparateParts && design.feet?.separate)) addFeet(b, design)
-  if (!opts?.omitSeparateParts && opts?.nameplateOutlines?.length) {
-    addNameplate(b, design, bands.plateTopZ, opts.nameplateOutlines)
+  // Only a raised nameplate is added to the plate. An inlay or an inset is
+  // already accounted for -- it was taken out of it above.
+  if (style === 'raised' && !opts?.omitSeparateParts && glyphs.length) {
+    addRaisedNameplate(b, design, bands.plateTopZ, glyphs)
   }
 
   return b.finish()
@@ -157,13 +256,11 @@ export function buildFeetMesh(design: SwitchTrayDesign): Mesh | null {
   return b.finish()
 }
 
-function addNameplate(
-  b: MeshBuilder, design: SwitchTrayDesign, topZ: number, outlines: MultiPolygon,
+function addRaisedNameplate(
+  b: MeshBuilder, design: SwitchTrayDesign, topZ: number, glyphs: MultiPolygon,
 ): void {
   const np = design.nameplate
   if (!np || !(np.heightMm > 0)) return
-  const glyphs: MultiPolygon = outlines.map(poly =>
-    poly.map(ring => translateRing(ring, np.x, np.y)))
   const z0 = topZ - NAMEPLATE_WELD_MM
   const z1 = topZ + np.heightMm
   b.addHorizontal(glyphs, z0, 'down')
@@ -172,11 +269,38 @@ function addNameplate(
 }
 
 /** The nameplate alone, for a two-filament export. */
+/**
+ * The name as its own body, for a two-filament print. Null when there is
+ * nothing to hand a second extruder.
+ *
+ * A `raised` boss stands on the plate and welds into it. An `inlay` instead
+ * fills exactly the volume `buildBands` removed -- an exact shared boundary,
+ * not an overlap, because here the two bodies are two extruders and a shared
+ * space is a fight rather than a weld. An `inset` has no body at all: the point
+ * of it is the empty groove.
+ */
 export function buildNameplateMesh(
   design: SwitchTrayDesign, plan: FillPlan, outlines: MultiPolygon | null,
 ): Mesh | null {
-  if (!design.nameplate || !(design.nameplate.heightMm > 0) || !outlines?.length) return null
+  const np = design.nameplate
+  if (!np || !outlines?.length) return null
+  const style = nameplateStyleOf(design)
+  if (style === 'inset') return null
+
+  const glyphs = placeGlyphs(design, outlines)
+  if (!glyphs.length) return null
   const b = new MeshBuilder()
-  addNameplate(b, design, buildBands(design, plan).plateTopZ, outlines)
+
+  if (style === 'raised') {
+    if (!(np.heightMm > 0)) return null
+    addRaisedNameplate(b, design, buildBands(design, plan, glyphs).plateTopZ, glyphs)
+    return b.finish()
+  }
+
+  const bands = buildBands(design, plan, glyphs)
+  if (!bands.nameplateSolid.length) return null
+  b.addHorizontal(bands.nameplateSolid, bands.engraveFloorZ, 'down')
+  b.addHorizontal(bands.nameplateSolid, bands.plateTopZ, 'up')
+  b.addWalls(bands.nameplateSolid, bands.engraveFloorZ, bands.plateTopZ)
   return b.finish()
 }

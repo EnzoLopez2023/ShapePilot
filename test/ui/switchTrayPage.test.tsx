@@ -8,6 +8,7 @@ import assert from 'node:assert/strict'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { readFileSync } from 'node:fs'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import SwitchTrayPage from '../../src/features/switch-tray/SwitchTrayPage.tsx'
 import { ThemeModeProvider } from '../../src/theme/ThemeModeProvider.tsx'
@@ -32,6 +33,14 @@ beforeEach(() => {
       new Response(JSON.stringify(payload), {
         status, headers: { 'content-type': 'application/json' },
       })
+    // The real font, so the nameplate's glyphs actually trace — the run's box
+    // is what the fill reserves, so a stubbed font would silently test nothing.
+    if (path.endsWith('.ttf')) {
+      const bytes = readFileSync(`public${path}`)
+      return new Response(bytes as unknown as BodyInit, {
+        headers: { 'content-type': 'font/ttf' },
+      })
+    }
     if (path === '/api/switch-trays' && method === 'GET') return json(200, state.designs)
     if (path === '/api/switch-trays' && method === 'POST') {
       const created = body as { name: string }
@@ -197,4 +206,54 @@ test('the Open dialog lists saved trays by their switch', async () => {
   const dialog = await screen.findByRole('dialog')
   assert.ok(within(dialog).getByText('MX spares'))
   assert.ok(within(dialog).getByText(/Cherry MX/))
+})
+
+test('the tray can be named, and the name is what goes on the plate', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(capacity()).toBeGreaterThan(80))
+
+  const name = screen.getByLabelText('Name')
+  await user.clear(name)
+  await user.type(name, 'MX Browns')
+  await waitFor(() => expect(screen.getByRole('heading', { level: 1 }).textContent).toBe('MX Browns'))
+
+  // Turning the nameplate on defaults to the flush inlay -- the only style that
+  // leaves the plate lying flat in the orientation this tray prints in.
+  await user.click(screen.getByLabelText('Name on the plate'))
+  await waitFor(() => expect(screen.getByRole('combobox', { name: 'Style' })).toBeTruthy())
+  assert.match(screen.getByRole('combobox', { name: 'Style' }).textContent ?? '', /Inlay/)
+  // Depth, not height: an inlay cuts in.
+  assert.ok(screen.getByLabelText('Depth'))
+  assert.equal(screen.queryByLabelText('Height'), null)
+})
+
+test('a raised name swaps depth for height, and says what that costs', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(capacity()).toBeGreaterThan(80))
+  await user.click(screen.getByLabelText('Name on the plate'))
+
+  await user.click(await screen.findByRole('combobox', { name: 'Style' }))
+  await user.click(await screen.findByRole('option', { name: /Raised/ }))
+
+  await waitFor(() => expect(screen.getByLabelText('Height')).toBeTruthy())
+  assert.equal(screen.queryByLabelText('Depth'), null)
+  assert.ok(screen.getByText(/will not lie flat on the bed/))
+})
+
+test('naming the tray takes cells, because the text needs solid plate', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(capacity()).toBeGreaterThan(80))
+  const before = capacity()
+
+  const name = screen.getByLabelText('Name')
+  await user.clear(name)
+  await user.type(name, 'MX BROWN')
+  await user.click(screen.getByLabelText('Name on the plate'))
+
+  // The fill reserves the run's box, so the switches give way rather than the
+  // two overlapping.
+  await waitFor(() => expect(capacity()).toBeLessThan(before), { timeout: 8000 })
 })

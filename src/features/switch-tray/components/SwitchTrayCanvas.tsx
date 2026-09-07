@@ -9,6 +9,7 @@ import { cellHoleMm, cellKeepoutMm } from '../model/defaults.ts'
 import type { SwitchTrayDesign } from '../model/types.ts'
 import type { FillPlan } from '../geometry/fill.ts'
 import { feetRects } from '../geometry/feet.ts'
+import { nameplateStyleOf, placeGlyphs } from '../geometry/layers.ts'
 
 const ringToPath = (r: Ring): string =>
   `${r.map(([x, y], i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(3)},${y.toFixed(3)}`).join('')}Z`
@@ -21,6 +22,9 @@ export interface SwitchTrayCanvasProps {
   fitToken: number
   showHousings: boolean
   onToggleCell: (col: number, row: number) => void
+  /** Glyph outlines centred on their own bounds, or null while the font loads. */
+  nameplateOutlines: MultiPolygon | null
+  onMoveNameplate: (dx: number, dy: number) => void
 }
 
 /**
@@ -33,12 +37,16 @@ export interface SwitchTrayCanvasProps {
  */
 export function SwitchTrayCanvas({
   design, plan, inset, fitToken, showHousings, onToggleCell,
+  nameplateOutlines, onMoveNameplate,
 }: SwitchTrayCanvasProps) {
   const theme = useTheme()
   const dark = theme.palette.mode === 'dark'
   const svgRef = useRef<SVGSVGElement | null>(null)
   const [view, setView] = useState({ x: -12, y: -12, w: 280, h: 200 })
   const [grabbing, setGrabbing] = useState(false)
+  const [nameDrag, setNameDrag] = useState<
+    { pointerId: number; startX: number; startY: number; dx: number; dy: number } | null
+  >(null)
   const pan = useRef<
     { id: number; clientX: number; clientY: number; viewX: number; viewY: number; moved: boolean }
     | null
@@ -127,6 +135,19 @@ export function SwitchTrayCanvas({
   }
 
   const onPointerMove = (e: React.PointerEvent) => {
+    if (nameDrag && nameDrag.pointerId === e.pointerId) {
+      const el = svgRef.current
+      if (!el) return
+      const r = el.getBoundingClientRect()
+      setNameDrag({
+        ...nameDrag,
+        dx: ((e.clientX - nameDrag.startX) / r.width) * view.w,
+        // Model space is y-up and the scene is flipped once, so screen-down is
+        // model-down.
+        dy: -((e.clientY - nameDrag.startY) / r.height) * view.h,
+      })
+      return
+    }
     const p = pan.current
     if (!p || p.id !== e.pointerId) return
     const el = svgRef.current
@@ -138,7 +159,15 @@ export function SwitchTrayCanvas({
     setView(v => ({ ...v, x: p.viewX - dx, y: p.viewY + dy }))
   }
 
-  const endPan = () => { pan.current = null; setGrabbing(false) }
+  const endPan = (e?: React.PointerEvent) => {
+    if (nameDrag && (!e || nameDrag.pointerId === e.pointerId)) {
+      if (nameDrag.dx || nameDrag.dy) onMoveNameplate(nameDrag.dx, nameDrag.dy)
+      setNameDrag(null)
+      return
+    }
+    pan.current = null
+    setGrabbing(false)
+  }
 
   const ink = theme.palette.text.primary
   const stock = dark ? '#2A2D33' : '#FFFFFF'
@@ -170,6 +199,34 @@ export function SwitchTrayCanvas({
     }
     return out
   }, [design.skippedCells, plan])
+
+  // The name as one evenodd-filled path, plus its own bounds for a drag target
+  // big enough to grab. An inlay or an inset is drawn as an outline, because
+  // that is what it is -- material removed, or a second colour, not a bump.
+  const nameplate = useMemo(() => {
+    const glyphs = placeGlyphs(design, nameplateOutlines)
+    if (!glyphs.length) return null
+    const d = glyphs.flatMap(poly => poly.map(ringToPath)).join(' ')
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (const poly of glyphs) for (const ring of poly) for (const [x, y] of ring) {
+      if (x < minX) minX = x; if (x > maxX) maxX = x
+      if (y < minY) minY = y; if (y > maxY) maxY = y
+    }
+    const pad = Math.max(1, (maxY - minY) * 0.25)
+    return {
+      d,
+      x: minX - pad, y: minY - pad,
+      w: maxX - minX + 2 * pad, h: maxY - minY + 2 * pad,
+      raised: nameplateStyleOf(design) === 'raised',
+    }
+  }, [design, nameplateOutlines])
+
+  const beginNameDrag = (e: React.PointerEvent) => {
+    if (e.button !== 0) return
+    e.stopPropagation()
+    setNameDrag({ pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, dx: 0, dy: 0 })
+    try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* pointer already gone */ }
+  }
 
   const stroke = view.w / 800
 
@@ -242,6 +299,28 @@ export function SwitchTrayCanvas({
               />
             </g>
           ))}
+
+          {nameplate && (
+            <g transform={nameDrag ? `translate(${nameDrag.dx},${nameDrag.dy})` : undefined}>
+              <path
+                d={nameplate.d}
+                fillRule="evenodd"
+                fill={nameplate.raised ? ink : 'none'}
+                fillOpacity={nameplate.raised ? 0.85 : 1}
+                stroke={ink}
+                strokeWidth={nameplate.raised ? 0 : stroke}
+                style={{ pointerEvents: 'none' }}
+              />
+              {/* An invisible handle: the glyphs themselves are far too fiddly
+                  to grab at any useful zoom. */}
+              <rect
+                x={nameplate.x} y={nameplate.y} width={nameplate.w} height={nameplate.h}
+                fill="transparent"
+                onPointerDown={beginNameDrag}
+                style={{ cursor: 'move' }}
+              />
+            </g>
+          )}
 
           {skipped.map(c => (
             <rect

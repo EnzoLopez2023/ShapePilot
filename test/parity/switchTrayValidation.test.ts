@@ -115,6 +115,27 @@ describe('switch tray validation', () => {
     rejects(design({ switch: { ...mx, flangeToTopMm: Number.NaN } }), 'switch.flangeToTopMm')
   })
 
+  test('a nameplate carries its style, and only a style this build knows', () => {
+    const ok = validateSwitchTrayInput(design({
+      nameplate: { style: 'inlay', heightMm: 1.2, depthMm: 0.6, fontSizeMm: 8, x: 40, y: 12 },
+    }))
+    assert.deepEqual(ok.nameplate, {
+      style: 'inlay', heightMm: 1.2, depthMm: 0.6, fontSizeMm: 8, x: 40, y: 12,
+    })
+    // Absent style: a tray saved before the styles existed, which was raised.
+    const legacy = validateSwitchTrayInput(design({
+      nameplate: { heightMm: 1.2, fontSizeMm: 8, x: 40, y: 12 },
+    }))
+    assert.deepEqual(legacy.nameplate, { heightMm: 1.2, fontSizeMm: 8, x: 40, y: 12 })
+
+    rejects(design({
+      nameplate: { style: 'engraved', heightMm: 1.2, fontSizeMm: 8, x: 40, y: 12 },
+    }), 'nameplate.style')
+    rejects(design({
+      nameplate: { heightMm: 1.2, depthMm: -1, fontSizeMm: 8, x: 40, y: 12 },
+    }), 'nameplate.depthMm')
+  })
+
   test('a skipped cell has to look like a cell', () => {
     rejects(design({ skippedCells: 'all of them' }), 'skippedCells')
     rejects(design({ skippedCells: ['3'] }), 'skippedCells[0]')

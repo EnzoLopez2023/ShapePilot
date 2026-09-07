@@ -21,7 +21,7 @@ import { cellKeepoutMm, emptyDesign } from './model/defaults.ts'
 import { planFill } from './geometry/fill.ts'
 import { feetRects } from './geometry/feet.ts'
 import {
-  buildFeetMesh, buildNameplateMesh, buildSwitchTrayMesh,
+  buildBands, buildFeetMesh, buildNameplateMesh, buildSwitchTrayMesh, nameplateBox, placeGlyphs,
 } from './geometry/layers.ts'
 import { validateDesign } from './geometry/validate.ts'
 import { useSwitchTrayDesign } from './state/useSwitchTrayDesign.ts'
@@ -98,10 +98,18 @@ export default function SwitchTrayPage() {
   const fitted = useMemo(
     () => feetRects(design.profile, design.feet), [design.profile, design.feet])
 
+  // The name has to sit on solid plate, so the fill treats its box as occupied
+  // and drops the cells under it -- deliberately, rather than the two
+  // overlapping. Recomputed when the glyphs resolve, which is one reflow on
+  // open and none after.
+  const reserved = useMemo(
+    () => [...fitted, ...nameplateBox(design, nameplatePolys)],
+    [fitted, design, nameplatePolys])
+
   const plan = useMemo(
     () => planFill({
       region: profileToMulti(design.profile),
-      blockers: fitted,
+      blockers: reserved,
       keepoutMm: cellKeepoutMm(design.plate, design.switch),
       marginMm: design.fill.marginMm,
       pitchXMm: design.fill.pitchXMm,
@@ -114,7 +122,7 @@ export default function SwitchTrayPage() {
     // `revision` is bumped on every mutation, which is cheaper than deep
     // comparing the settings objects on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [design.revision, fitted],
+    [design.revision, reserved],
   )
 
   // `mesh` is the welded single body for the 3D preview and validation; export
@@ -141,8 +149,20 @@ export default function SwitchTrayPage() {
     [design, plan, extraParts, mesh])
 
   const issues = useMemo(
-    () => validateDesign(design, plan, { fittedFeet: fitted.length, mesh }),
-    [design, plan, fitted, mesh])
+    () => {
+      const glyphs = placeGlyphs(design, nameplatePolys)
+      return validateDesign(design, plan, {
+        fittedFeet: fitted.length,
+        mesh,
+        nameplateGlyphs: glyphs,
+        // What of the name actually landed on plate, which is what says whether
+        // it has been dragged off the tray or over a hole.
+        nameplateSolid: glyphs.length
+          ? buildBands(design, plan, glyphs).nameplateSolid
+          : undefined,
+      })
+    },
+    [design, plan, fitted, mesh, nameplatePolys])
 
   const refresh = useCallback(async () => {
     setListLoading(true)
@@ -349,6 +369,10 @@ export default function SwitchTrayPage() {
               fitToken={fitToken}
               showHousings={settings.showHousings}
               onToggleCell={d.toggleCell}
+              nameplateOutlines={nameplatePolys}
+              onMoveNameplate={(dx, dy) => d.replace(nd => (nd.nameplate
+                ? { ...nd, nameplate: { ...nd.nameplate, x: nd.nameplate.x + dx, y: nd.nameplate.y + dy } }
+                : nd))}
             />
           ) : (
             <Suspense fallback={<LoadingState label="Loading the 3D view…" />}>

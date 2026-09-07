@@ -2,6 +2,9 @@
 // the panel shows what applies and the user decides.
 import type { Mesh } from '../../../geometry/mesh.ts'
 import { checkManifold } from '../../../geometry/mesh.ts'
+import type { MultiPolygon } from '../../../geometry/vec.ts'
+import { multiArea } from '../../../geometry/vec.ts'
+import { nameplateDepthMm, nameplateStyleOf } from './layers.ts'
 import {
   MIN_SHELF_MM, cellKeepoutMm, feetHeightMm, minPitchMm, wallAtPitchMm,
 } from '../model/defaults.ts'
@@ -184,6 +187,106 @@ export function checkFeet(d: SwitchTrayDesign, fittedFeet: number): Issue[] {
   return issues
 }
 
+/** A typical extrusion from a 0.4 mm nozzle. What one bead of plastic is. */
+const EXTRUSION_MM = 0.42
+
+/**
+ * Where an inset groove stops being reliable.
+ *
+ * A groove wants two extrusions so first-layer squish cannot close it, which
+ * would be 0.84 mm -- but `meanStrokeMm` averages the whole run, and the thin
+ * parts of a letter (the waist of an S, the crossbar of an A) drag that below
+ * what the stems actually measure. 1.8 extrusions is the same rule stated
+ * against the estimator that is available, and it puts the boundary between an
+ * 8 mm run, which comes out crisp, and a 6 mm one, which comes out soft.
+ */
+const INSET_STROKE_FLOOR_MM = 1.8 * EXTRUSION_MM
+
+/**
+ * Mean stroke width of a glyph run.
+ *
+ * For a stroke-like shape, area is roughly length x width and perimeter is
+ * roughly twice the length, so twice the area over the perimeter is the width.
+ * Crude for a single letter, good for a run of them -- and it is the number
+ * that decides whether text survives the process, so it is worth measuring
+ * rather than guessing from the point size.
+ */
+function meanStrokeMm(glyphs: MultiPolygon): number {
+  let perimeter = 0
+  for (const poly of glyphs) for (const ring of poly) {
+    for (let i = 0; i < ring.length; i++) {
+      const [ax, ay] = ring[i]
+      const [bx, by] = ring[(i + 1) % ring.length]
+      perimeter += Math.hypot(bx - ax, by - ay)
+    }
+  }
+  return perimeter > 0 ? (2 * multiArea(glyphs)) / perimeter : 0
+}
+
+export function checkNameplate(d: SwitchTrayDesign, glyphs: MultiPolygon | undefined): Issue[] {
+  const np = d.nameplate
+  if (!np || !glyphs?.length) return []
+  const issues: Issue[] = []
+  const style = nameplateStyleOf(d)
+  const depth = nameplateDepthMm(d)
+  const plateMm = d.plate.shelfMm + d.plate.recessMm
+
+  if (style !== 'raised' && depth >= plateMm) {
+    issues.push({
+      code: 'nameplate-too-deep',
+      severity: 'error',
+      message: `A ${depth.toFixed(2)} mm cut goes through a ${plateMm.toFixed(2)} mm plate. `
+        + `Three layers — 0.6 mm — is opaque for an inlay.`,
+    })
+  }
+
+  const stroke = meanStrokeMm(glyphs)
+  if (style === 'inset' && stroke < INSET_STROKE_FLOOR_MM) {
+    issues.push({
+      code: 'nameplate-stroke-thin',
+      severity: 'warning',
+      message: `${stroke.toFixed(2)} mm strokes are under two extrusions wide. An inset is read `
+        + `by the shadow in its groove, and the first layer squishes a gap that narrow shut — `
+        + `raise the text size, or switch to an inlay, which is read by colour instead.`,
+    })
+  } else if (style !== 'inset' && stroke < EXTRUSION_MM) {
+    issues.push({
+      code: 'nameplate-stroke-thin',
+      severity: 'warning',
+      message: `${stroke.toFixed(2)} mm strokes are narrower than a single extrusion, so the `
+        + `slicer may drop parts of the text. Raise the text size.`,
+    })
+  }
+  return issues
+}
+
+export function checkNameplatePlacement(
+  d: SwitchTrayDesign, glyphs: MultiPolygon | undefined, solid: MultiPolygon | undefined,
+): Issue[] {
+  if (!d.nameplate || !glyphs?.length || solid === undefined) return []
+  const wanted = multiArea(glyphs)
+  const landed = multiArea(solid)
+  if (wanted <= 0) return []
+  const kept = landed / wanted
+  if (kept < 0.02) {
+    return [{
+      code: 'nameplate-off-plate',
+      severity: 'warning',
+      message: 'The name is off the plate — nothing of it will be cut or printed. '
+        + 'Drag it back onto the tray on the layout view.',
+    }]
+  }
+  if (kept < 0.98) {
+    return [{
+      code: 'nameplate-clipped',
+      severity: 'warning',
+      message: `${Math.round((1 - kept) * 100)}% of the name hangs over a switch hole or the `
+        + 'tray edge and will be cut away. Move it onto solid plate.',
+    }]
+  }
+  return []
+}
+
 export function checkPlateFit(mesh: Mesh, fab: SwitchTrayFabrication): Issue[] {
   const w = mesh.bbox[3] - mesh.bbox[0]
   const h = mesh.bbox[4] - mesh.bbox[1]
@@ -240,6 +343,9 @@ export interface ValidateOptions {
   fabrication?: SwitchTrayFabrication
   fittedFeet: number
   mesh?: Mesh
+  /** The name's glyphs in tray coordinates, and the part of them on solid plate. */
+  nameplateGlyphs?: MultiPolygon
+  nameplateSolid?: MultiPolygon
 }
 
 export function validateDesign(
@@ -251,6 +357,8 @@ export function validateDesign(
     ...checkPlate(d),
     ...checkFeet(d, opts.fittedFeet),
     ...checkStack(d),
+    ...checkNameplate(d, opts.nameplateGlyphs),
+    ...checkNameplatePlacement(d, opts.nameplateGlyphs, opts.nameplateSolid),
     ...(opts.mesh ? [...checkPlateFit(opts.mesh, fab), ...checkMesh(opts.mesh)] : []),
   ]
 }

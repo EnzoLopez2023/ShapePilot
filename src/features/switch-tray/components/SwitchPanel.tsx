@@ -9,9 +9,10 @@ import {
   RETENTION_LABELS, cellHoleMm, cellKeepoutMm, defaultFeet, defaultPlate, minPitchMm,
 } from '../model/defaults.ts'
 import { SWITCH_PROFILES, getSwitchProfile } from '../model/switches.ts'
+import { DEFAULT_NAMEPLATE_DEPTH_MM } from '../geometry/layers.ts'
 import type {
-  FillSettings, PlateSettings, Retention, SwitchProfile, SwitchProfileId, SwitchTrayDesign,
-  TrayProfile,
+  FillSettings, NameplateStyle, PlateSettings, Retention, SwitchProfile, SwitchProfileId,
+  SwitchTrayDesign, TrayProfile,
 } from '../model/types.ts'
 
 export interface SwitchPanelProps {
@@ -25,6 +26,16 @@ export interface SwitchPanelProps {
 }
 
 const RETENTIONS: Retention[] = ['shelf', 'clip', 'plain']
+
+const NAMEPLATE_STYLE_HELP = [
+  'Inlay: the glyphs are taken out of the top of the plate and exported as a second body '
+  + 'that fills exactly that space. The surface stays flat and the name is read by colour, '
+  + 'so a thin stroke still works. Needs a second filament.',
+  'Inset: the same cut with nothing filling it — read by the shadow in the groove, so it '
+  + 'wants a heavier stroke to survive first-layer squish.',
+  'Raised: a boss on the top face. That face is the one on the bed when the tray prints '
+  + 'feet-up, so the bump stops it lying flat.',
+].join('\n\n')
 
 /**
  * The left column: what the tray is cut from, what goes in it, and how the
@@ -78,6 +89,13 @@ export default function SwitchPanel(props: SwitchPanelProps) {
           </ToggleButtonGroup>
         </Tooltip>
       </Stack>
+
+      <Tooltip title="Shown on the toolbar, in the Open list, on exported file names — and, when the nameplate is on, cut into the plate itself.">
+        <TextField
+          size="small" label="Name" value={design.name}
+          onChange={e => onDesign(d => ({ ...d, name: e.target.value }))}
+        />
+      </Tooltip>
 
       <HoverTooltip title="The tray outline. Presets match a physical Systainer insert; Custom rectangle lets you set any width and depth.">
         <TextField
@@ -214,20 +232,88 @@ export default function SwitchPanel(props: SwitchPanelProps) {
         </span>
       </Tooltip>
 
-      <FormControlLabel
-        control={
-          <Switch
-            size="small" checked={!!design.nameplate}
-            onChange={e => onDesign(d => ({
-              ...d,
-              nameplate: e.target.checked
-                ? { heightMm: 1.2, fontSizeMm: 8, x: 30, y: 10 }
-                : undefined,
-            }))}
-          />
-        }
-        label="Tray nameplate"
-      />
+      <Divider />
+
+      <Tooltip title="Carry the tray's name on the plate's top face — the side you see in the case. Drag it on the layout to place it; the fill keeps switch cells clear of wherever it lands.">
+        <FormControlLabel
+          control={
+            <Switch
+              size="small" checked={!!design.nameplate}
+              onChange={e => onDesign(d => ({
+                ...d,
+                nameplate: e.target.checked
+                  ? {
+                    style: 'inlay',
+                    heightMm: 1.2,
+                    depthMm: DEFAULT_NAMEPLATE_DEPTH_MM,
+                    fontSizeMm: 8,
+                    x: 40,
+                    y: 12,
+                  }
+                  : undefined,
+              }))}
+            />
+          }
+          label="Name on the plate"
+        />
+      </Tooltip>
+
+      {design.nameplate && (
+        <>
+          <HoverTooltip title={NAMEPLATE_STYLE_HELP}>
+            <TextField
+              select size="small" label="Style"
+              value={design.nameplate.style ?? 'raised'}
+              onChange={e => onDesign(d => (d.nameplate
+                ? { ...d, nameplate: { ...d.nameplate, style: e.target.value as NameplateStyle } }
+                : d))}
+            >
+              <MenuItem value="inlay">Inlay — flush, second colour</MenuItem>
+              <MenuItem value="inset">Inset — cut in, read by shadow</MenuItem>
+              <MenuItem value="raised">Raised — stands proud</MenuItem>
+            </TextField>
+          </HoverTooltip>
+
+          <Stack direction="row" spacing={1}>
+            <LengthField
+              label="Text size" imperial={imperial} valueMm={design.nameplate.fontSizeMm}
+              hint="Em size, not cap height — this font's capitals are 0.70 em, so 8 mm draws 5.7 mm letters. An inlay is read by colour and stays legible small; an inset is read by shadow and wants 8 mm or more to survive the first layer."
+              onChangeMm={v => onDesign(d => (d.nameplate
+                ? { ...d, nameplate: { ...d.nameplate, fontSizeMm: v } }
+                : d))}
+            />
+            {(design.nameplate.style ?? 'raised') === 'raised' ? (
+              <LengthField
+                label="Height" imperial={imperial} valueMm={design.nameplate.heightMm}
+                hint="How far the text stands proud of the top face. Note this is the face that lies on the bed when the tray prints feet-up, so a raised name stops it lying flat."
+                onChangeMm={v => onDesign(d => (d.nameplate
+                  ? { ...d, nameplate: { ...d.nameplate, heightMm: v } }
+                  : d))}
+              />
+            ) : (
+              <LengthField
+                label="Depth" imperial={imperial}
+                valueMm={design.nameplate.depthMm ?? DEFAULT_NAMEPLATE_DEPTH_MM}
+                hint="How far the cut goes into the plate. 0.6 mm is three layers, which is opaque for an inlay; the plate is only a few millimetres thick, so keep it well under that."
+                onChangeMm={v => onDesign(d => (d.nameplate
+                  ? { ...d, nameplate: { ...d.nameplate, depthMm: v } }
+                  : d))}
+              />
+            )}
+          </Stack>
+
+          <Typography variant="body2" color="text.secondary">
+            {(design.nameplate.style ?? 'raised') === 'inlay'
+              ? `${(design.nameplate.fontSizeMm * 0.7).toFixed(1)} mm letters, flush with the top `
+                + 'face — exports as a second body filling exactly the space it cut.'
+              : (design.nameplate.style === 'inset'
+                ? `${(design.nameplate.fontSizeMm * 0.7).toFixed(1)} mm letters, cut into the top `
+                  + 'face. One body, one colour.'
+                : `${(design.nameplate.fontSizeMm * 0.7).toFixed(1)} mm letters standing proud — `
+                  + 'the plate will not lie flat on the bed in this print orientation.')}
+          </Typography>
+        </>
+      )}
     </Stack>
   )
 }

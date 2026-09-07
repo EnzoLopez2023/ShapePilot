@@ -72,9 +72,37 @@ export interface FeetSettings {
   separate?: boolean
 }
 
-/** Raised text of the tray name on the plate's top face. Absent = none. */
+/**
+ * How the tray's name is carried on the plate's top face -- the face that is
+ * visible in the case, and the one that lies on the bed when the tray is
+ * printed feet-up.
+ *
+ * `inlay`  the glyph volume is taken out of the top `depthMm` of the plate and
+ *          emitted as its own body that fills exactly that space. The surface
+ *          stays flat, and the name is read by colour rather than by shadow --
+ *          which is why a thin stroke still works here and does not for
+ *          `inset`. Needs a second filament; printed in one colour it just
+ *          degrades to `inset`.
+ * `inset`  the same cut, with nothing filling it. Read by the shadow in the
+ *          groove, so it wants a heavier stroke to survive first-layer squish.
+ * `raised` a boss standing proud of the top face. Read by shadow too, but the
+ *          bump stops the plate lying flat on the bed in the print orientation
+ *          this tray is designed for.
+ */
+export type NameplateStyle = 'inlay' | 'inset' | 'raised'
+
+/** Text of the tray name on the plate's top face. Absent = none. */
 export interface Nameplate {
+  /** Absent on trays saved before the styles existed; those were raised. */
+  style?: NameplateStyle
+  /** How far a `raised` boss stands proud of the top face. */
   heightMm: number
+  /** How far an `inlay` or `inset` cuts into it. Three layers is opaque. */
+  depthMm?: number
+  /**
+   * Em size, not cap height. This font's capitals are 0.70 em, so 8 mm here
+   * draws 5.7 mm letters.
+   */
   fontSizeMm: number
   x: number
   y: number

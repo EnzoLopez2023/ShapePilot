@@ -21,6 +21,7 @@ export const STAGGERS = ['none', 'brick'] as const
 export const ORIGINS = ['centred', 'maximised'] as const
 export const FOOT_PATTERNS = ['corners', 'corners+edges'] as const
 export const FOOT_TIERS = ['stacked', 'bottom'] as const
+export const NAMEPLATE_STYLES = ['inlay', 'inset', 'raised'] as const
 
 /**
  * Bounds. Every one is far outside any real tray -- a Systainer insert is
@@ -140,9 +141,19 @@ function validateFeet(value: unknown): Record<string, unknown> | undefined {
 function validateNameplate(value: unknown): Record<string, unknown> | undefined {
   if (absent(value)) return undefined
   const n = requireObject(value, 'nameplate')
-  rejectUnknownKeys(n, ['heightMm', 'fontSizeMm', 'x', 'y'], 'nameplate')
+  rejectUnknownKeys(n, ['style', 'heightMm', 'depthMm', 'fontSizeMm', 'x', 'y'], 'nameplate')
+  // Optional: trays saved before the styles existed carry none, and read back
+  // as the raised one they were.
+  const style = absent(n.style)
+    ? undefined
+    : requireEnum(n.style, 'nameplate.style', NAMEPLATE_STYLES)
+  const depthMm = optionalNumber(n.depthMm, 'nameplate.depthMm', {
+    min: 0, max: LIMITS.maxDimensionMm,
+  })
   return {
+    ...(style === undefined ? {} : { style }),
     heightMm: dim(n.heightMm, 'nameplate.heightMm'),
+    ...(depthMm === undefined ? {} : { depthMm }),
     fontSizeMm: dim(n.fontSizeMm, 'nameplate.fontSizeMm'),
     x: requireNumber(n.x, 'nameplate.x', { max: LIMITS.maxCoordinateMm }),
     y: requireNumber(n.y, 'nameplate.y', { max: LIMITS.maxCoordinateMm }),
