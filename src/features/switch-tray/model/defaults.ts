@@ -10,6 +10,22 @@ export const STACK_CLEARANCE_MM = 0.5
 /** Thinnest plate worth printing, and the floor for a `shelf` shelf. */
 export const MIN_SHELF_MM = 1.2
 
+/**
+ * Snap a plate thickness onto a whole number of 0.2 mm layers.
+ *
+ * A switch's spec plate thickness is an injection-moulding number and is not
+ * always printable: MX asks for 1.50 mm, which is seven and a half layers at
+ * the default height and comes out with its face landing mid-layer. A tenth
+ * either way is well inside what the clips tolerate -- 1.6 mm FR4 plates are
+ * the norm in real keyboards -- so the printable thickness is the better
+ * default, and it keeps `validate.ts` from warning about every fresh tray.
+ * Ties go up, because a plate is the one part where thicker never hurts.
+ */
+export const snapToLayersMm = (mm: number): number => {
+  const layers = Math.max(1, Math.floor(mm / 0.2 + 0.5 + 1e-9))
+  return Math.round(layers * 20) / 100
+}
+
 export const RETENTION_LABELS: Record<Retention, { label: string; blurb: string }> = {
   shelf: {
     label: 'Drop-in shelf',
@@ -31,9 +47,9 @@ export function defaultPlate(retention: Retention, s: SwitchProfile): PlateSetti
     case 'shelf':
       // The shelf still carries the whole tray, so it does not go as thin as a
       // clip plate; the recess is deep enough to stop a switch tipping.
-      return { ...common, shelfMm: Math.max(1.6, s.clipPlateMm), recessMm: 2.0 }
+      return { ...common, shelfMm: Math.max(1.6, snapToLayersMm(s.clipPlateMm)), recessMm: 2.0 }
     case 'clip':
-      return { ...common, shelfMm: s.clipPlateMm, recessMm: 0 }
+      return { ...common, shelfMm: snapToLayersMm(s.clipPlateMm), recessMm: 0 }
     case 'plain':
       return { ...common, shelfMm: 2.0, recessMm: 0, holeClearanceMm: 0.4 }
   }

@@ -14,6 +14,7 @@ interface StubState {
   projects: unknown[]
   trays: unknown[]
   documents: unknown[]
+  switchTrays: unknown[]
   failWith?: number
 }
 
@@ -45,6 +46,9 @@ beforeEach(() => {
       updatedAt: '2026-08-29 10:00:00' })],
     documents: [{ id: '1', kind: 'bambu', name: 'Bracket', objectCount: 4,
       createdAt: '2026-08-20 09:00:00', updatedAt: '2026-08-20 09:00:00' }],
+    switchTrays: [{ id: '2', name: 'MX spares', profileKind: 'preset',
+      switchLabel: 'Cherry MX',
+      createdAt: '2026-08-21 09:00:00', updatedAt: '2026-08-21 09:00:00' }],
   }
   vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
     const path = String(input).replace(/^https?:\/\/[^/]+/, '')
@@ -61,6 +65,7 @@ beforeEach(() => {
     if (/^\/api\/keycap-trays\/\d+$/.test(path)) return json(200, design(path.split('/').pop()!))
     if (path.startsWith('/api/keycap-trays')) return json(200, state.trays)
     if (path.startsWith('/api/design-documents')) return json(200, state.documents)
+    if (path.startsWith('/api/switch-trays')) return json(200, state.switchTrays)
     return json(202, { ok: true })
   })
 })
@@ -101,11 +106,12 @@ test('the counts are what the workshop actually holds', async () => {
   assert.ok(within(band).getByText('4'))
 })
 
-test('all four ways in are present and addressable', async () => {
+test('every way in is present and addressable', async () => {
   renderHome()
   const paths = await screen.findByRole('region', { name: 'Start something' })
   for (const [name, href] of [
     ['Keycap tray', '/keycap-tray'],
+    ['Switch tray', '/switch-tray'],
     ['Shaper designer', '/shaper-designer'],
     ['Bambu designer', '/bambu-designer'],
     ['AI playground', '/playground'],
@@ -126,14 +132,14 @@ test('a document is the hero when it is the most recent thing', async () => {
 })
 
 test('an empty workshop invites rather than showing zeroes as achievement', async () => {
-  state = { projects: [], trays: [], documents: [] }
+  state = { projects: [], trays: [], documents: [], switchTrays: [] }
   renderHome()
   await waitFor(() => expect(
     screen.getByRole('heading', { name: 'Nothing on the bench yet' })).toBeTruthy())
   // No hero to resume, and no counts worth reading.
   assert.equal(screen.queryByRole('region', { name: 'Where you left off' }), null)
   assert.equal(screen.queryByRole('region', { name: 'What the workshop holds' }), null)
-  // The four ways in are the whole point of the page in this state.
+  // The ways in are the whole point of the page in this state.
   assert.ok(screen.getByRole('region', { name: 'Start something' }))
 })
 

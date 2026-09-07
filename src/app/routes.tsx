@@ -10,6 +10,7 @@ import { LoadingState } from '../components/LoadingState.tsx'
 // view switch: each section is its own route and its own chunk.
 const HomePage = lazy(() => import('../features/home/HomePage.tsx'))
 const KeycapTrayPage = lazy(() => import('../features/keycap-tray/KeycapTrayPage.tsx'))
+const SwitchTrayPage = lazy(() => import('../features/switch-tray/SwitchTrayPage.tsx'))
 const ProjectsPage = lazy(() => import('../features/keycap-projects/ProjectsPage.tsx'))
 const ProjectPage = lazy(() => import('../features/keycap-projects/ProjectPage.tsx'))
 const ShaperDesignerPage = lazy(() => import('../features/shaper-designer/ShaperDesignerPage.tsx'))
@@ -65,6 +66,29 @@ export function AppRoutes() {
               <Box sx={{ flex: 1, minHeight: 0 }}>
                 <Suspense fallback={<LoadingState label="Loading the designer…" />}>
                   <KeycapTrayPage />
+                </Suspense>
+              </Box>
+            }
+          />
+          {/* Same addressing as the keycap tray: the bare path is a scratch
+              tray, and `/:designId` names a saved one so a link, a reload and
+              the back button all land on the same design. */}
+          <Route
+            path="/switch-tray"
+            element={
+              <Box sx={{ flex: 1, minHeight: 0 }}>
+                <Suspense fallback={<LoadingState label="Loading the designer…" />}>
+                  <SwitchTrayPage />
+                </Suspense>
+              </Box>
+            }
+          />
+          <Route
+            path="/switch-tray/:designId"
+            element={
+              <Box sx={{ flex: 1, minHeight: 0 }}>
+                <Suspense fallback={<LoadingState label="Loading the designer…" />}>
+                  <SwitchTrayPage />
                 </Suspense>
               </Box>
             }

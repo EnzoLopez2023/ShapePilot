@@ -3,6 +3,7 @@ import { describeWhen, summarise } from './workshop.ts'
 import type { ProjectSummary } from '../../keycap-projects/model/types.ts'
 import type { DesignSummary } from '../../keycap-tray/service.ts'
 import type { DocumentSummary } from '../../../services/designDocuments.ts'
+import type { SwitchTraySummary } from '../../switch-tray/service.ts'
 
 const project = (over: Partial<ProjectSummary> = {}): ProjectSummary => ({
   id: '1', name: 'Set', capCount: 70, trayCount: 2, photoCount: 1,
@@ -19,17 +20,38 @@ const doc = (over: Partial<DocumentSummary> = {}): DocumentSummary => ({
   createdAt: '2026-08-01 10:00:00', updatedAt: '2026-08-01 10:00:00', ...over,
 })
 
+const switchTray = (over: Partial<SwitchTraySummary> = {}): SwitchTraySummary => ({
+  id: '1', name: 'MX spares', profileKind: 'preset', switchLabel: 'Cherry MX',
+  createdAt: '2026-08-01 10:00:00', updatedAt: '2026-08-01 10:00:00', ...over,
+})
+
 describe('summarise', () => {
-  test('counts what the workshop holds across all three stores', () => {
+  test('counts what the workshop holds across every store', () => {
     const result = summarise(
       [project({ capCount: 70 }), project({ id: '2', capCount: 30 })],
       [tray({ pocketCount: 18 }), tray({ id: '2', pocketCount: 29 })],
       [doc({ objectCount: 4 }), doc({ id: '2', kind: 'shaper', objectCount: 7 })],
+      [switchTray()],
     )
     expect(result.totals).toEqual({
-      projects: 2, trays: 2, pockets: 47, objects: 11, caps: 100,
+      projects: 2, trays: 2, pockets: 47, switchTrays: 1, objects: 11, caps: 100,
     })
     expect(result.empty).toBe(false)
+  })
+
+  test('a switch tray can be the latest work, and links to itself by id', () => {
+    const result = summarise(
+      [], [tray({ updatedAt: '2026-08-30 09:00:00' })],
+      [doc({ updatedAt: '2026-08-30 12:00:00' })],
+      [switchTray({ id: '7', updatedAt: '2026-09-01 09:00:00' })],
+    )
+    expect(result.latest).toMatchObject({
+      kind: 'switch-tray', name: 'MX spares', href: '/switch-tray/7', context: 'Cherry MX',
+    })
+  })
+
+  test('switch trays alone are not emptiness', () => {
+    expect(summarise([], [], [], [switchTray()]).empty).toBe(false)
   })
 
   test('the latest work is the most recently touched of either kind', () => {

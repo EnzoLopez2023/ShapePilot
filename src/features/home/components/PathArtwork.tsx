@@ -176,6 +176,62 @@ export function ShaperArtwork() {
   )
 }
 
+/**
+ * A grid of switch cells in a plate, seen from above, with one cell drawn as
+ * the section through it: recess, shelf, hole. The plate is the whole point --
+ * a switch tray is a sheet with holes, not a box with pockets.
+ */
+export function SwitchArtwork() {
+  const pitch = 22
+  const hole = 15
+  const housing = 18
+  const cols = 6
+  const rows = 3
+  const x0 = 20
+  const y0 = 18
+  const cells: { x: number; y: number }[] = []
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) cells.push({ x: x0 + c * pitch, y: y0 + r * pitch })
+  }
+  return (
+    <Drawing viewBox="0 0 176 104">
+      {/* The plate the cells are cut from. */}
+      <rect
+        data-part x={8} y={8} width={148} height={78} rx={4}
+        fill="currentColor" fillOpacity={0.06}
+        stroke="currentColor" strokeOpacity={0.6} strokeWidth={1.25}
+      />
+      {cells.map(({ x, y }, index) => (
+        <g key={index} data-part>
+          {/* The top housing's footprint: dashed, because the plate does not
+              cut it -- it only has to leave room for it. */}
+          <rect
+            x={x - housing / 2} y={y - housing / 2} width={housing} height={housing} rx={1.5}
+            fill="none" stroke="currentColor" strokeOpacity={0.22}
+            strokeWidth={1} strokeDasharray="3 3"
+          />
+          <rect
+            x={x - hole / 2} y={y - hole / 2} width={hole} height={hole} rx={1.5}
+            fill="currentColor" fillOpacity={0.1}
+            stroke="currentColor" strokeOpacity={0.55} strokeWidth={1.25}
+          />
+        </g>
+      ))}
+      {/* Two of the posts the plate stands on, at the corners nearest the eye. */}
+      <g data-part stroke="currentColor" strokeOpacity={0.4} strokeWidth={1.25} fill="none">
+        <rect x={13} y={13} width={9} height={9} rx={1} />
+        <rect x={142} y={72} width={9} height={9} rx={1} />
+      </g>
+      {/* The pitch, which is the number this designer is really about. */}
+      <g stroke="currentColor" strokeOpacity={0.3} strokeWidth={1} data-part>
+        <path d={`M${x0} 96 H${x0 + pitch}`} />
+        <path d={`M${x0} 92 V100`} />
+        <path d={`M${x0 + pitch} 92 V100`} />
+      </g>
+    </Drawing>
+  )
+}
+
 /** A solid, a hole, and the boolean between them. */
 export function BambuArtwork() {
   return (

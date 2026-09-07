@@ -12,7 +12,6 @@ import type { TestServer } from '../helpers/server.ts'
 import { LIMITS, validateCloneRequest, validateSwitchTrayInput } from '../../server/validation/switchTray.ts'
 import { KNOWN_PRESET_PROFILE_IDS } from '../../server/validation/trayProfile.ts'
 import { ApiError } from '../../server/errors/ApiError.ts'
-import { SWITCH_PROFILES } from '../../src/features/switch-tray/model/switches.ts'
 
 const TOKEN = 'switch-validation-token'
 
@@ -159,12 +158,27 @@ describe('switch tray validation', () => {
     assert.deepEqual(shipped.sort(), [...KNOWN_PRESET_PROFILE_IDS].sort())
   })
 
-  test('every switch profile the client ships passes validation', () => {
-    for (const profile of SWITCH_PROFILES) {
-      assert.doesNotThrow(
-        () => validateSwitchTrayInput(design({ switch: profile })), profile.id)
+  test('the switch fields the client ships are exactly the ones accepted', () => {
+    // Read as text, like the preset ids above: the browser bundle and the
+    // server are separate TypeScript projects and this file is in the server
+    // one. A field added to `SwitchProfile` without being added here would be
+    // an unknown-key 400 the moment anyone saved a tray.
+    const source = readFileSync('src/features/switch-tray/model/switches.ts', 'utf8')
+    const body = source.slice(
+      source.indexOf('export interface SwitchProfile {'),
+      source.indexOf('export const MX'))
+    const shipped = [...body.matchAll(/^\s{2}(\w+):/gm)].map(match => match[1])
+    assert.deepEqual(shipped.sort(), [
+      'bodyMm', 'clipPlateMm', 'flangeToTipMm', 'flangeToTopMm', 'housingMm',
+      'id', 'label', 'minPitchMm', 'source', 'standardPitchMm',
+    ])
+    // ...and each of them really is accepted.
+    for (const field of shipped) {
+      assert.ok(Object.hasOwn(mx, field), `the fixture is missing switch.${field}`)
     }
+    assert.doesNotThrow(() => validateSwitchTrayInput(design()))
   })
+
 })
 
 describe('switch tray validation over HTTP', () => {
