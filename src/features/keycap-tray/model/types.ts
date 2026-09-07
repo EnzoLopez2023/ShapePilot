@@ -1,14 +1,10 @@
-import type { MultiPolygon } from '../../../geometry/vec.ts'
 import type { PocketSizing } from '../geometry/shapes.ts'
 
 export type { PocketSizing }
 
-export type TrayProfile =
-  | { kind: 'rect'; widthMm: number; heightMm: number; cornerRadiusMm?: number }
-  | { kind: 'preset'; id: PresetProfileId }
-  | { kind: 'custom'; rings: MultiPolygon; sourceName?: string }
-
-export type PresetProfileId = 'systainer-s76-plain' | 'systainer-s76-notched'
+// The outline is shared with the switch tray; see src/model/trayProfile.ts.
+import type { TrayProfile } from '../../../model/trayProfile.ts'
+export type { TrayProfile, PresetProfileId } from '../../../model/trayProfile.ts'
 
 export interface Pocket {
   id: string

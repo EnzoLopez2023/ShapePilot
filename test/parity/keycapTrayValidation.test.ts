@@ -703,7 +703,7 @@ describe('validation the wire cannot express', () => {
   test('the accepted preset ids are exactly the ones the client ships', () => {
     // Read as text rather than imported: the browser bundle and the server are
     // separate TypeScript projects, and this file is in the server one.
-    const source = readFileSync('src/features/keycap-tray/model/profileData.ts', 'utf8')
+    const source = readFileSync('src/model/trayProfileData.ts', 'utf8')
     const shipped = [...source.matchAll(/"id":\s*"([^"]+)"/g)].map(match => match[1])
     assert.deepEqual(shipped.sort(), [...KNOWN_PRESET_PROFILE_IDS].sort())
   })

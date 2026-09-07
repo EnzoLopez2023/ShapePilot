@@ -2,20 +2,24 @@ import { useEffect, useRef } from 'react'
 import { Box, useTheme } from '@mui/material'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import type { Mesh as TrayMesh } from '../../../geometry/mesh.ts'
+import type { Mesh as SolidMesh } from '../../geometry/mesh.ts'
 import {
   addSolidLighting, buildEdges, disposeBody, edgeColourFor, solidMaterial,
-} from '../../../components/viewport3d/solidRender.ts'
+} from './solidRender.ts'
 
-export interface TrayViewer3DProps {
-  mesh: TrayMesh
+export interface SolidViewer3DProps {
+  mesh: SolidMesh
+  /** Announced to screen readers -- "tray", "switch tray plate", ... */
+  label?: string
 }
 
 /**
  * Plain three.js rather than react-three-fiber: this is one static mesh and an
  * orbit camera, and the reconciler would only add weight to the bundle.
+ *
+ * Shared by every tray-shaped designer -- it only ever needed a `Mesh`.
  */
-export default function TrayViewer3D({ mesh }: TrayViewer3DProps) {
+export default function SolidViewer3D({ mesh, label = 'the model' }: SolidViewer3DProps) {
   const theme = useTheme()
   const dark = theme.palette.mode === 'dark'
   const hostRef = useRef<HTMLDivElement | null>(null)
@@ -121,7 +125,7 @@ export default function TrayViewer3D({ mesh }: TrayViewer3DProps) {
     <Box
       ref={hostRef}
       role="img"
-      aria-label={`Three-dimensional preview of the tray, ${mesh.triangleCount} triangles`}
+      aria-label={`Three-dimensional preview of ${label}, ${mesh.triangleCount} triangles`}
       sx={{ position: 'absolute', inset: 0, minHeight: 0 }}
     />
   )

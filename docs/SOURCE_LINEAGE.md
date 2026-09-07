@@ -55,8 +55,8 @@ unchanged, only its address. `…` abbreviates `src/features/keycap-tray`.
 | `src/KeycapTray/export/dxf.ts` | `src/export/dxf.ts` | takes cut layers instead of a `TrayDesign` (Wave 2); same entities, layers and extents, but grouped by layer rather than interleaved, which shifts entity handles. `…/export/dxf.ts` is now the tray's adapter |
 | `src/KeycapTray/types.ts` | `…/model/types.ts` | `DEFAULT_FABRICATION` moved to `model/defaults.ts` |
 | `src/KeycapTray/units.ts` | `src/units.ts` | verbatim; promoted (Wave 2) |
-| `src/KeycapTray/presets.ts` | `…/model/presets.ts` | import paths only |
-| `src/KeycapTray/profileData.ts` | `…/model/profileData.ts` | import path only |
+| `src/KeycapTray/presets.ts` | `…/model/presets.ts` + `src/model/trayProfile.ts` | import paths; the tray *outline* (profile union, presets, `profileToMulti`/`profileSize`) promoted to `src/model/trayProfile.ts` when the switch tray needed the same Systainer shapes, and re-exported from `…/model/presets.ts` |
+| `src/KeycapTray/profileData.ts` | `src/model/trayProfileData.ts` | import path only; promoted alongside `trayProfile.ts` |
 | `src/KeycapTray/paletteItems.ts` | `…/model/defaults.ts` | app-owned local-storage key |
 | `src/KeycapTray/useTrayDesign.ts` | `…/state/useTrayDesign.ts` | import paths only |
 | `src/KeycapTray/api.ts` | `…/service.ts` | app HTTP client instead of `getApiBaseUrl()` |

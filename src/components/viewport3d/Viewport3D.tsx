@@ -1,6 +1,6 @@
 // The 3D editing surface.
 //
-// Plain three.js rather than react-three-fiber, matching TrayViewer3D: the
+// Plain three.js rather than react-three-fiber, matching SolidViewer3D: the
 // reconciler would add bundle weight for a scene that is a handful of meshes
 // and a gizmo. What this adds over the tray's read-only preview is raycast
 // picking, a TransformControls gizmo, and a workplane sized to the machine.

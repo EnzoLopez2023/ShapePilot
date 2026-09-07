@@ -44,7 +44,7 @@ import { formatUpdated } from '../keycap-projects/model/formatUpdated.ts'
 
 // three.js is a third of the bundle and the 2D layout is the default view, so
 // the viewer is only fetched when someone actually switches to 3D.
-const TrayViewer3D = lazy(() => import('./components/TrayViewer3D.tsx'))
+const TrayViewer3D = lazy(() => import('../../components/viewport3d/SolidViewer3D.tsx'))
 
 // The panels sit beside the canvas rather than over it, so fit-to-view has the
 // whole element to work with. Hoisted so the fit effect's dependencies stay
@@ -629,7 +629,7 @@ export default function KeycapTrayPage() {
             />
           ) : (
             <Suspense fallback={<LoadingState label="Loading the 3D viewer…" />}>
-              <TrayViewer3D mesh={mesh} />
+              <TrayViewer3D mesh={mesh} label="the tray" />
             </Suspense>
           )}
           <Typography

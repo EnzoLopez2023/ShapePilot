@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 import { PROFILE_PRESETS, getPreset } from './presets.ts'
-import { PRESET_PROFILE_DATA } from './profileData.ts'
+import { PRESET_PROFILE_DATA } from '../../../model/trayProfileData.ts'
 import { ringBBox } from '../../../geometry/vec.ts'
 
 const raw = (id: string) => PRESET_PROFILE_DATA.find(d => d.id === id)!
