@@ -117,9 +117,37 @@ test('switching to Choc changes the switch, the plate and the stacking pitch', a
   await user.click(screen.getByRole('combobox', { name: 'Switch' }))
   await user.click(await screen.findByRole('option', { name: 'Kailh Choc v1' }))
 
-  // Half the switch, so a whole extra tray fits the case.
+  // Half the switch, so two more trays fit the same case.
   await waitFor(() => expect(screen.getByText(/15\.0 mm per tier/)).toBeTruthy())
   assert.ok(screen.getByText(/4 trays fit/))
+})
+
+test('the bottom of the stack is a build you can switch to and export', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(capacity()).toBeGreaterThan(80))
+
+  // The stacked build is the default, and its posts clear a whole switch.
+  const height = () => (screen.getByLabelText(/^Post height/) as HTMLInputElement).value
+  assert.match(screen.getByRole('combobox', { name: 'Building' }).textContent ?? '',
+    /stands on another/)
+  assert.equal(height(), '16.8')
+
+  await user.click(screen.getByRole('combobox', { name: 'Building' }))
+  await user.click(await screen.findByRole('option', { name: /bottom of the stack/i }))
+
+  // Switching really changes the tray, not just a readout.
+  await waitFor(() => expect(height()).toBe('7.2'))
+  assert.ok(screen.getByLabelText('Post height (bottom)'))
+})
+
+test('the stack figure says which builds it is counting', async () => {
+  renderPage()
+  await waitFor(() => expect(capacity()).toBeGreaterThan(80))
+  // The count is only reachable by building two different trays, so it says so
+  // rather than promising a number the export cannot produce.
+  assert.ok(screen.getByText(/one bottom tray \(7\.2 mm posts\)/))
+  assert.ok(screen.getByText(/export each build once/))
 })
 
 test('a clip-in plate packs tighter than a drop-in shelf', async () => {

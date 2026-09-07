@@ -11,7 +11,7 @@ import {
   cellKeepoutMm, defaultFeet, defaultFill, defaultPlate, emptyDesign,
 } from '../model/defaults.ts'
 import { CHOC_V1, MX } from '../model/switches.ts'
-import { stackBudget } from '../model/stack.ts'
+import { stackBudget, stackHeightMm } from '../model/stack.ts'
 import type { PresetProfileId, Retention, SwitchProfile, SwitchTrayDesign } from '../model/types.ts'
 
 function tray(
@@ -81,13 +81,57 @@ test('the solid stands on its feet, and is exactly one tier tall', () => {
     `tray is ${mesh.bbox[5]} mm tall, tier pitch is ${budget.tierPitchMm}`)
 })
 
-test('Choc stacks a whole tier tighter than MX', () => {
+test('the tier pitch is the switch, not the plate', () => {
+  // Whatever the plate does, a tier costs one switch envelope plus clearance.
   const mx = stackBudget(tray('shelf', MX))
   const choc = stackBudget(tray('shelf', CHOC_V1))
   assert.ok(Math.abs(mx.tierPitchMm - 20.4) < 1e-9)
   assert.ok(Math.abs(choc.tierPitchMm - 15.0) < 1e-9)
-  assert.equal(mx.tiers, 3)
+  // Half the switch, so Choc buys two extra trays in the same case.
+  assert.ok(choc.tiers !== null && mx.tiers !== null && choc.tiers > mx.tiers)
   assert.equal(choc.tiers, 4)
+})
+
+test('a third MX tray misses the S76 by a third of a millimetre', () => {
+  // Worth pinning, because it is the number that decides whether the case
+  // holds 2 trays or 3, and because it moved once already: before the bottom
+  // tray's posts carried the same 0.5 mm clearance as a stacked one, three
+  // came to 62.7 mm and "fitted" only by standing its pins on the floor.
+  const mx = tray('shelf', MX)
+  assert.equal(stackBudget(mx).tiers, 2)
+  const three = stackHeightMm(mx, 3)
+  assert.ok(three > 63 && three < 64, `three MX trays came to ${three} mm`)
+  // The 63 mm is an estimate, not a measurement, so the answer is sensitive to
+  // it: a case half a millimetre taller holds the third tray.
+  assert.equal(stackBudget({ ...mx, caseClearHeightMm: 63.5 }).tiers, 3)
+})
+
+test('a bottom tray is built shorter than a stacked one, and is not called short for it', () => {
+  const stacked = tray('shelf', MX)
+  const bottom = { ...stacked, feet: { ...stacked.feet!, tier: 'bottom' as const } }
+
+  const stackedMesh = buildSwitchTrayMesh(stacked, planFor(stacked))
+  const bottomMesh = buildSwitchTrayMesh(bottom, planFor(bottom))
+  // The whole point: the export really is the shorter tray.
+  assert.ok(bottomMesh.bbox[5] < stackedMesh.bbox[5],
+    `bottom tray is ${bottomMesh.bbox[5]} mm, stacked is ${stackedMesh.bbox[5]}`)
+  assert.ok(checkManifold(bottomMesh).ok)
+
+  // ...and the posts that would be far too short to stack on are correct here.
+  const issues = validateDesign(bottom, planFor(bottom), {
+    fittedFeet: feetRects(bottom.profile, bottom.feet).length, mesh: bottomMesh,
+  })
+  assert.deepEqual(issues, [], JSON.stringify(issues, null, 2))
+})
+
+test('a bottom tray whose pins would touch the floor is still an error', () => {
+  const bottom = tray('shelf', MX)
+  bottom.feet = { ...bottom.feet!, tier: 'bottom', bottomTierHeightMm: 2 }
+  const issues = validateDesign(bottom, planFor(bottom), { fittedFeet: 4 })
+  const short = issues.find(i => i.code === 'feet-too-short')
+  assert.ok(short, 'no feet-too-short issue')
+  assert.equal(short.severity, 'error')
+  assert.match(short.message, /touching the case floor/)
 })
 
 test('the feet can come out as their own body for a second filament', () => {

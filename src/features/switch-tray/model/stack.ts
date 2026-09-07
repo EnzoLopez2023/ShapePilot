@@ -5,7 +5,7 @@
 // own where the panel and the validator can both read it.
 import { profileInternalClearHeight } from '../../../model/trayProfile.ts'
 import {
-  STACK_CLEARANCE_MM, bottomTierFeetHeightMm, requiredFeetHeightMm,
+  STACK_CLEARANCE_MM, bottomTierFeetHeightMm, feetHeightMm, requiredFeetHeightMm,
 } from './defaults.ts'
 import type { SwitchTrayDesign } from './types.ts'
 
@@ -29,8 +29,10 @@ export interface StackBudget {
   stackHeightMm: number | null
   /** How tall one more tier would make it -- what "5th overflows" is measured on. */
   nextTierHeightMm: number | null
-  /** True when the feet as configured are too short to stack at all. */
+  /** True when the feet as configured are too short for the tier being built. */
   feetTooShort: boolean
+  /** Which build this design currently is. */
+  tier: 'stacked' | 'bottom'
 }
 
 /**
@@ -51,7 +53,8 @@ export function stackHeightMm(design: SwitchTrayDesign, n: number): number {
 
 export function stackBudget(design: SwitchTrayDesign): StackBudget {
   const { shelfMm, recessMm } = design.plate
-  const feetMm = design.feet?.heightMm ?? 0
+  const feetMm = feetHeightMm(design.feet)
+  const tier = design.feet?.tier ?? 'stacked'
   const requiredFeetMm = requiredFeetHeightMm(design.plate, design.switch)
   const bottomTierFeetMm = bottomTierFeetHeightMm(design.plate, design.switch)
   const tierPitchMm =
@@ -82,6 +85,9 @@ export function stackBudget(design: SwitchTrayDesign): StackBudget {
     tiers,
     stackHeightMm: height,
     nextTierHeightMm: next,
-    feetTooShort: feetMm + 1e-9 < requiredFeetMm,
+    // Each tier is judged against its own job: a bottom tray that only lifts
+    // its pins is correct, not short.
+    feetTooShort: feetMm + 1e-9 < (tier === 'bottom' ? bottomTierFeetMm : requiredFeetMm),
+    tier,
   }
 }

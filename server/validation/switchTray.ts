@@ -20,6 +20,7 @@ export const RETENTIONS = ['shelf', 'clip', 'plain'] as const
 export const STAGGERS = ['none', 'brick'] as const
 export const ORIGINS = ['centred', 'maximised'] as const
 export const FOOT_PATTERNS = ['corners', 'corners+edges'] as const
+export const FOOT_TIERS = ['stacked', 'bottom'] as const
 
 /**
  * Bounds. Every one is far outside any real tray -- a Systainer insert is
@@ -115,13 +116,17 @@ function validateFeet(value: unknown): Record<string, unknown> | undefined {
   if (absent(value)) return undefined
   const f = requireObject(value, 'feet')
   rejectUnknownKeys(f, [
-    'heightMm', 'sizeMm', 'pattern', 'bottomTierHeightMm', 'separate',
+    'tier', 'heightMm', 'sizeMm', 'pattern', 'bottomTierHeightMm', 'separate',
   ], 'feet')
   const separate = optionalBoolean(f.separate, 'feet.separate')
   const bottom = optionalNumber(f.bottomTierHeightMm, 'feet.bottomTierHeightMm', {
     min: 0, max: LIMITS.maxFootHeightMm,
   })
+  // Optional: trays saved before the two builds were distinguished carry no
+  // tier, and read back as the stacked one they were.
+  const tier = absent(f.tier) ? undefined : requireEnum(f.tier, 'feet.tier', FOOT_TIERS)
   return {
+    ...(tier === undefined ? {} : { tier }),
     heightMm: requireNumber(f.heightMm, 'feet.heightMm', {
       exclusiveMin: 0, max: LIMITS.maxFootHeightMm,
     }),

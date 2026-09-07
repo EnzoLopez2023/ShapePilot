@@ -3,7 +3,7 @@
 import type { Mesh } from '../../../geometry/mesh.ts'
 import { checkManifold } from '../../../geometry/mesh.ts'
 import {
-  MIN_SHELF_MM, cellKeepoutMm, minPitchMm, wallAtPitchMm,
+  MIN_SHELF_MM, cellKeepoutMm, feetHeightMm, minPitchMm, wallAtPitchMm,
 } from '../model/defaults.ts'
 import { stackBudget } from '../model/stack.ts'
 import type { SwitchTrayDesign } from '../model/types.ts'
@@ -141,7 +141,8 @@ export function checkPlate(d: SwitchTrayDesign): Issue[] {
 export function checkFeet(d: SwitchTrayDesign, fittedFeet: number): Issue[] {
   const issues: Issue[] = []
   const feet = d.feet
-  if (!feet || feet.heightMm <= 0) {
+  const height = feetHeightMm(feet)
+  if (!feet || height <= 0) {
     issues.push({
       code: 'no-feet',
       severity: 'warning',
@@ -152,13 +153,23 @@ export function checkFeet(d: SwitchTrayDesign, fittedFeet: number): Issue[] {
 
   const budget = stackBudget(d)
   if (budget.feetTooShort) {
-    issues.push({
-      code: 'feet-too-short',
-      severity: 'error',
-      message: `${feet.heightMm.toFixed(1)} mm posts are not enough to stack on: a tray above `
-        + `would land its pins on these switches. It needs `
-        + `${budget.requiredFeetMm.toFixed(1)} mm.`,
-    })
+    // Each tier is judged against its own job. A bottom tray only has to lift
+    // its own pins; calling it short for not clearing a switch it will never
+    // sit under would be wrong.
+    issues.push(budget.tier === 'bottom'
+      ? {
+        code: 'feet-too-short',
+        severity: 'error',
+        message: `${height.toFixed(1)} mm posts leave this tray's own switch pins touching the `
+          + `case floor. The bottom of a stack needs ${budget.bottomTierFeetMm.toFixed(1)} mm.`,
+      }
+      : {
+        code: 'feet-too-short',
+        severity: 'error',
+        message: `${height.toFixed(1)} mm posts are not enough to stack on: a tray above `
+          + `would land its pins on these switches. It needs `
+          + `${budget.requiredFeetMm.toFixed(1)} mm.`,
+      })
   }
 
   const wanted = feetWanted(feet)

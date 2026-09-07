@@ -5,8 +5,8 @@ import {
 import LengthField from '../../../components/LengthField.tsx'
 import HoverTooltip from '../../../components/HoverTooltip.tsx'
 import {
-  bottomTierFeetHeightMm, cellKeepoutMm, defaultFeet, minPitchMm, requiredFeetHeightMm,
-  wallAtPitchMm,
+  bottomTierFeetHeightMm, cellKeepoutMm, defaultFeet, feetHeightMm, minPitchMm,
+  requiredFeetHeightMm, wallAtPitchMm,
 } from '../model/defaults.ts'
 import { stackBudget } from '../model/stack.ts'
 import type { FeetSettings, FillSettings, SwitchTrayDesign } from '../model/types.ts'
@@ -46,6 +46,11 @@ export default function FillPanel(props: FillPanelProps) {
     wallAtPitchMm(plan.pitchYMm, design.plate, design.switch))
   const skipped = design.skippedCells?.length ?? 0
   const wanted = feetWanted(feet)
+  const tier = feet?.tier ?? 'stacked'
+  const height = feetHeightMm(feet)
+  const stackedMm = feet?.heightMm ?? requiredFeetHeightMm(design.plate, design.switch)
+  const bottomMm = feet?.bottomTierHeightMm
+    ?? bottomTierFeetHeightMm(design.plate, design.switch)
 
   const errors = issues.filter(i => i.severity === 'error')
   const warnings = issues.filter(i => i.severity === 'warning')
@@ -182,11 +187,35 @@ export default function FillPanel(props: FillPanelProps) {
 
       {feet && (
         <>
+          <HoverTooltip title="A stack needs two builds of the same tray. Everything above the bottom stands on the tray below and has to clear a whole switch; the bottom one rests on the case floor and only has to lift its own pins, which is what buys the extra tier. Switch between them and export each once.">
+            <TextField
+              select size="small" label="Building"
+              value={feet.tier ?? 'stacked'}
+              onChange={e => {
+                const tier = e.target.value as 'stacked' | 'bottom'
+                onFeet({ ...feet, tier })
+              }}
+            >
+              <MenuItem value="stacked">
+                A tray that stands on another ({stackedMm.toFixed(1)} mm posts)
+              </MenuItem>
+              <MenuItem value="bottom">
+                The bottom of the stack ({bottomMm.toFixed(1)} mm posts)
+              </MenuItem>
+            </TextField>
+          </HoverTooltip>
+
           <Stack direction="row" spacing={1}>
             <LengthField
-              label="Post height" imperial={imperial} valueMm={feet.heightMm}
-              hint="Under a stacked tray this has to clear a whole switch — the tray above hangs its pins into the same air these switch tops stand in."
-              onChangeMm={v => onFeet({ ...feet, heightMm: v })}
+              label={tier === 'bottom' ? 'Post height (bottom)' : 'Post height (stacked)'}
+              imperial={imperial}
+              valueMm={height}
+              hint={tier === 'bottom'
+                ? 'This tray rests on the case floor, so the posts only have to lift its own switch pins clear.'
+                : 'This tray stands on another, so the posts have to clear a whole switch — the tray below has switch tops standing up into the same air these pins hang into.'}
+              onChangeMm={v => onFeet(tier === 'bottom'
+                ? { ...feet, bottomTierHeightMm: v }
+                : { ...feet, heightMm: v })}
             />
             <LengthField
               label="Post size" imperial={imperial} valueMm={feet.sizeMm}
@@ -205,8 +234,9 @@ export default function FillPanel(props: FillPanelProps) {
           </HoverTooltip>
           <Typography variant="body2" color="text.secondary">
             {fittedFeet}/{wanted} posts fit
-            {' · '}needs {requiredFeetHeightMm(design.plate, design.switch).toFixed(1)} mm to stack on
-            {' · '}{bottomTierFeetHeightMm(design.plate, design.switch).toFixed(1)} mm at the bottom of a stack
+            {' · '}{tier === 'bottom'
+              ? `the stacked build needs ${stackedMm.toFixed(1)} mm`
+              : `the bottom build needs ${bottomMm.toFixed(1)} mm`}
           </Typography>
           <Tooltip title="Export the posts as their own body (welded to the plate by a 0.05 mm overlap). STL comes out as a zip, 3MF as a multi-object model — assign the posts a second filament in the slicer.">
             <FormControlLabel
@@ -245,6 +275,12 @@ export default function FillPanel(props: FillPanelProps) {
                 : `${budget.tiers} tray${budget.tiers === 1 ? '' : 's'} fit — `
                   + `${(budget.stackHeightMm ?? 0).toFixed(1)} of ${budget.clearHeightMm} mm`}
             </Typography>
+            {budget.tiers !== null && budget.tiers > 1 && (
+              <Typography variant="body2" color="text.secondary">
+                That is one bottom tray ({bottomMm.toFixed(1)} mm posts) and{' '}
+                {budget.tiers - 1} stacked ({stackedMm.toFixed(1)} mm) — export each build once.
+              </Typography>
+            )}
             {budget.nextTierHeightMm !== null && budget.tiers > 0 && (
               <Typography variant="body2" color="text.secondary">
                 One more would need {budget.nextTierHeightMm.toFixed(1)} mm.

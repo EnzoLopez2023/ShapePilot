@@ -16,7 +16,7 @@ import { insertTJunctions } from '../../../geometry/tjunction.ts'
 import type { Mesh } from '../../../geometry/mesh.ts'
 import { MeshBuilder } from '../../../geometry/mesh.ts'
 import { profileToMulti } from '../../../model/trayProfile.ts'
-import { cellHoleMm, cellKeepoutMm } from '../model/defaults.ts'
+import { cellHoleMm, cellKeepoutMm, feetHeightMm } from '../model/defaults.ts'
 import type { SwitchTrayDesign } from '../model/types.ts'
 import type { FillPlan } from './fill.ts'
 import { FOOT_WELD_MM, feetRects } from './feet.ts'
@@ -60,7 +60,7 @@ export interface PlateBands {
 
 export function buildBands(design: SwitchTrayDesign, plan: FillPlan): PlateBands {
   const { shelfMm: S, recessMm: R, cornerRadiusMm } = design.plate
-  const H = design.feet?.heightMm ?? 0
+  const H = feetHeightMm(design.feet)
   const profile = profileToMulti(design.profile)
 
   const holeMm = cellHoleMm(design.plate, design.switch)
@@ -139,8 +139,9 @@ export function buildSwitchTrayMesh(
  */
 function addFeet(b: MeshBuilder, design: SwitchTrayDesign): void {
   const feet = design.feet
-  if (!feet || !(feet.heightMm > 0) || !(feet.sizeMm > 0)) return
-  const z1 = feet.heightMm + FOOT_WELD_MM
+  const height = feetHeightMm(feet)
+  if (!feet || !(height > 0) || !(feet.sizeMm > 0)) return
+  const z1 = height + FOOT_WELD_MM
   for (const rect of feetRects(design.profile, feet)) {
     b.addHorizontal([rect], 0, 'down')
     b.addHorizontal([rect], z1, 'up')
@@ -150,7 +151,7 @@ function addFeet(b: MeshBuilder, design: SwitchTrayDesign): void {
 
 /** The posts alone, for a two-filament export. Null unless `separate` is set. */
 export function buildFeetMesh(design: SwitchTrayDesign): Mesh | null {
-  if (!design.feet?.separate || !(design.feet.heightMm > 0)) return null
+  if (!design.feet?.separate || !(feetHeightMm(design.feet) > 0)) return null
   const b = new MeshBuilder()
   addFeet(b, design)
   return b.finish()

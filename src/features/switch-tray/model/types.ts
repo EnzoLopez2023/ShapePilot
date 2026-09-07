@@ -51,15 +51,22 @@ export interface FillSettings {
  * Posts under the plate. The tray above rests on them, and they are what keeps
  * this tray's own pins off whatever is below.
  *
- * `heightMm` has to clear a whole switch: the tray above hangs its pins into
- * the same air this tray's switch tops stand in. `bottomTierHeightMm` is the
- * short variant for the tray at the bottom of a stack, which only has to lift
- * its own pins off the case floor -- it is what buys an extra tier.
+ * A stack needs two builds of the same tray, because the two positions ask for
+ * different posts. Everything above the bottom stands on the tray below and has
+ * to clear a whole switch (`heightMm`); the bottom one rests on the case floor
+ * and only has to lift its own pins (`bottomTierHeightMm`) -- which is what
+ * buys the extra tier. `tier` says which one is being built, and the mesh, the
+ * validator and the stack budget all read it through `feetHeightMm`, so the
+ * tray previewed is the tray exported is the tray the budget counted.
  */
 export interface FeetSettings {
+  /** Which position this build is for. Absent on trays saved before it existed. */
+  tier?: 'stacked' | 'bottom'
+  /** Post height for a tray that stands on another tray. */
   heightMm: number
   sizeMm: number
   pattern: 'corners' | 'corners+edges'
+  /** Post height for the tray at the bottom of the stack. */
   bottomTierHeightMm?: number
   /** Export the posts as their own body so a slicer can give them a colour. */
   separate?: boolean

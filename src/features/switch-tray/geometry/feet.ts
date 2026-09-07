@@ -9,6 +9,7 @@ import { multiArea, multiBBox, translateRing } from '../../../geometry/vec.ts'
 import { difference } from '../../../geometry/boolean.ts'
 import { rectRing } from '../../../geometry/primitives.ts'
 import { profileToMulti } from '../../../model/trayProfile.ts'
+import { feetHeightMm } from '../model/defaults.ts'
 import type { FeetSettings, TrayProfile } from '../model/types.ts'
 
 // Gap from the tray's outer edge to a post, and how far the search will walk
@@ -31,7 +32,7 @@ const fitsOn = (rect: Polygon, region: MultiPolygon): boolean =>
  * solid material inside `INSET_MAX_MM` is dropped, and `validate.ts` says so.
  */
 export function feetRects(profile: TrayProfile, feet: FeetSettings | undefined): Polygon[] {
-  if (!feet || feet.heightMm <= 0 || feet.sizeMm <= 0) return []
+  if (!feet || feetHeightMm(feet) <= 0 || feet.sizeMm <= 0) return []
   const region = profileToMulti(profile)
   const bb = multiBBox(region)
   const s = feet.sizeMm

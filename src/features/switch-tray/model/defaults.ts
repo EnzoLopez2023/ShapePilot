@@ -105,17 +105,50 @@ export const requiredFeetHeightMm = (plate: PlateSettings, s: SwitchProfile): nu
   Math.max(0,
     s.flangeToTopMm + s.flangeToTipMm + STACK_CLEARANCE_MM - plate.recessMm - plate.shelfMm)
 
-/** The bottom tray only has to lift its own pins off the case floor. */
+/**
+ * The bottom tray only has to lift its own pins off the case floor.
+ *
+ * The same clearance the stacked case uses, and for the same reason: without
+ * it the pin tips land exactly level with the bottom of the posts, which is not
+ * "clear of the floor", it is "resting on the floor".
+ */
 export const bottomTierFeetHeightMm = (plate: PlateSettings, s: SwitchProfile): number =>
-  Math.max(0, s.flangeToTipMm - plate.shelfMm)
+  Math.max(0, s.flangeToTipMm + STACK_CLEARANCE_MM - plate.shelfMm)
+
+/**
+ * Up to the next tenth of a millimetre, without float noise inventing one.
+ *
+ * These heights are differences of decimals -- 8.3 + 0.5 - 1.6 lands on
+ * 7.200000000000001 -- and a bare `ceil` reads that as "past 7.2" and offers
+ * 7.3. The epsilon is far below any dimension that matters and far above the
+ * error being discarded.
+ */
+const roundUp = (mm: number): number => Math.ceil(mm * 10 - 1e-9) / 10
 
 export function defaultFeet(plate: PlateSettings, s: SwitchProfile): FeetSettings {
   return {
-    heightMm: Math.ceil(requiredFeetHeightMm(plate, s) * 10) / 10,
+    tier: 'stacked',
+    heightMm: roundUp(requiredFeetHeightMm(plate, s)),
     sizeMm: 12,
     pattern: 'corners',
-    bottomTierHeightMm: Math.ceil(bottomTierFeetHeightMm(plate, s) * 10) / 10,
+    bottomTierHeightMm: roundUp(bottomTierFeetHeightMm(plate, s)),
   }
+}
+
+/**
+ * The post height this tray is actually built with.
+ *
+ * One function, used by the mesh, the validator and the stack budget alike, so
+ * the tray that is previewed is the tray that is exported is the tray the
+ * budget counted. The bottom of a stack rests on the case floor and only has to
+ * lift its own pins; every tray above it stands on the one below and has to
+ * clear a whole switch.
+ */
+export const feetHeightMm = (feet: FeetSettings | undefined): number => {
+  if (!feet) return 0
+  return feet.tier === 'bottom'
+    ? feet.bottomTierHeightMm ?? feet.heightMm
+    : feet.heightMm
 }
 
 export function emptyDesign(name = 'Untitled switch tray'): SwitchTrayDesign {
