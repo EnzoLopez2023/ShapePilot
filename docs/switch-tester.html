@@ -314,9 +314,41 @@
     box-shadow: 0 10px 40px rgba(0,0,0,.22);
   }
   dialog::backdrop { background: rgba(10,12,14,.32); }
+  /* Non-modal (dialog.show, not showModal): a modal dialog makes everything
+     behind it inert, so clicking a second switch never reached the grid. The
+     price is the modal's free focus trap, Escape handling and ::backdrop --
+     Escape is wired up by hand, and the shadow does the separating the
+     backdrop used to.
+
+     A bottom sheet is the default, not the phone case. Since the panel no
+     longer blocks the page, it must not cover the grid either, and a
+     right-hand drawer only clears a 10-wide grid above ~1320px -- under that
+     it eats the last columns, which are then unreachable for as long as the
+     panel is open. Sheet below, drawer above. */
   #detail {
-    margin: 0 0 0 auto; height: 100dvh; max-height: 100dvh; width: min(400px, 94vw);
-    max-width: 94vw; border-left: 1px solid var(--rule);
+    position: fixed; inset: auto 0 0 0; margin: 0;
+    width: 100%; max-width: 100%; height: auto; max-height: 52dvh;
+    border-top: 1px solid var(--rule);
+    border-radius: var(--radius) var(--radius) 0 0;
+    /* A modal dialog sits in the top layer, above everything, for free. A
+       non-modal one is just another positioned box, so the sticky row numbers
+       and table headers (z-index 1) would paint straight through it. */
+    z-index: 50;
+  }
+  /* The sheet is fixed, so the page scrolls under it and every cell stays
+     reachable -- but focusing one would happily park it behind the sheet.
+     Reserve the sheet's height so arrow-key navigation keeps the cell in
+     sight. */
+  .panel-open { scroll-padding-bottom: 56dvh; }
+
+  @media (min-width: 1340px) {
+    #detail {
+      inset: 0 0 auto auto;
+      height: 100dvh; max-height: 100dvh;
+      width: 370px; max-width: 370px;
+      border-top: none; border-left: 1px solid var(--rule); border-radius: 0;
+    }
+    .panel-open { scroll-padding-bottom: 0; }
   }
   .d-inner { display: flex; flex-direction: column; height: 100%; }
   .d-head { padding: 14px 16px 10px; border-bottom: 1px solid var(--rule); }
@@ -378,11 +410,9 @@
   /* ---------- responsive ---------- */
 
   @media (max-width: 900px) {
-    #detail {
-      margin: auto 0 0; width: 100%; max-width: 100%; height: auto; max-height: 88dvh;
-      border-left: none; border-top: 1px solid var(--rule);
-      border-radius: var(--radius) var(--radius) 0 0;
-    }
+    /* On a phone the sheet can be taller: there is no grid worth keeping in
+       view behind it, and the specs are what you came for. */
+    #detail { max-height: 82dvh; }
     .counters { margin-left: 0; flex-basis: 100%; }
   }
   @media (max-width: 600px) {
@@ -1137,6 +1167,9 @@
     c = Math.min(10, Math.max(1, c))
     e.preventDefault()
     setFocusedPos(r + '-' + c, true)
+    // With the panel open it follows the selection, so it can never sit there
+    // describing a switch your focus left three cells ago.
+    if (dlg.open) openDetail(state.focusedPos, cellByPos.get(state.focusedPos))
   })
 
   gridEl.addEventListener('click', function (e) {
@@ -1435,6 +1468,12 @@
       if (e.key === 'ArrowRight') { e.preventDefault(); step(1) }
     })
 
+    // A non-modal dialog ignores Escape, so it is ours to handle -- from
+    // anywhere on the page, including out of the notes field.
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && dlg.open) { e.preventDefault(); closeDetail() }
+    })
+
     // Escape and the backdrop close the dialog natively, so the close event is
     // the only hook for those. Our own Close button does not wait for it --
     // restoreFocus is idempotent, and belt-and-braces beats a stranded focus
@@ -1447,6 +1486,7 @@
 
   function restoreFocus () {
     openPos = null
+    document.documentElement.classList.remove('panel-open')
     var target = lastTrigger && lastTrigger.isConnected
       ? lastTrigger : cellByPos.get(state.focusedPos)
     if (target) target.focus()
@@ -1478,13 +1518,22 @@
     $('d-name').focus()
   }
 
+  // Also the "show a different switch" path: with the panel already open,
+  // clicking or arrowing to another cell repaints it in place. Focus is only
+  // taken on the first open -- stealing it on every click would fight the
+  // click-through-the-tester workflow this panel exists for.
   function openDetail (pos, trigger) {
-    lastTrigger = trigger || null
+    var wasOpen = dlg.open
+    if (wasOpen) flushNote()
+    lastTrigger = trigger || cellByPos.get(pos)
     openPos = pos
     setFocusedPos(pos, false)
     paintDetail()
-    if (!dlg.open) dlg.showModal()
-    $('d-name').focus()
+    if (!wasOpen) {
+      dlg.show()
+      document.documentElement.classList.add('panel-open')
+      $('d-name').focus()
+    }
   }
 
   function paintDetail () {
