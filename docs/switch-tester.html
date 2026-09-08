@@ -464,8 +464,8 @@
       <button type="button" id="view-list-btn" data-view="list" aria-pressed="false">Shopping list</button>
     </div>
     <input type="search" id="search" class="search" placeholder="Search name, brand, type, note&hellip;" aria-label="Search switches">
-    <button type="button" class="tool-btn" id="btn-export">Export</button>
-    <button type="button" class="tool-btn" id="btn-import">Import</button>
+    <button type="button" class="tool-btn" id="btn-export">Save to file</button>
+    <button type="button" class="tool-btn" id="btn-import">Load from file</button>
     <button type="button" class="tool-btn" id="btn-print">Print list</button>
     <input type="file" id="file-input" accept="application/json,.json" hidden>
   </div>
@@ -513,7 +513,7 @@
 
   <footer class="foot">
     <p>Specs quoted from Keychron's Switch Tester 100 Max Edition spec sheet (SKU Z156). &ldquo;&mdash;&rdquo; means the sheet states no value: magnetic switches have no fixed operating force or pre-travel, since actuation is set in software.</p>
-    <p>Your marks are stored in this browser and in the JSON you export. Export regularly &mdash; it is the only copy that survives a cleared browser.</p>
+    <p><b>Moving to another computer, or keeping a backup:</b> <b>Save to file</b> writes every mark to a small .json; <b>Load from file</b> reads it back anywhere this page is open, merging it over whatever is already there. Your marks otherwise live only in this browser, so the saved file is the only copy that survives a cleared browser or a second machine.</p>
   </footer>
 </div>
 
@@ -907,7 +907,7 @@
     var count = el('div', null, '')
     count.id = 'banner-count'
     var row = el('div', 'row')
-    var exp = el('button', 'tool-btn', 'Export now')
+    var exp = el('button', 'tool-btn', 'Save to file now')
     exp.type = 'button'
     exp.addEventListener('click', exportMarks)
     row.appendChild(exp)
@@ -1599,10 +1599,10 @@
       setTimeout(function () { URL.revokeObjectURL(url) }, 1000)
       dirty = 0
       paintStorage()
-      $('status').textContent = 'Exported ' + name + '.'
+      $('status').textContent = 'Saved ' + name + ' to your downloads.'
     } catch (err) {
       // Downloads can be blocked outright; the JSON still has to be reachable.
-      showTextIo('Export', 'Copy this and save it as ' + name + '.', json, 'Select all', function () {
+      showTextIo('Save to file', 'This browser blocked the download. Copy this and save it as ' + name + '.', json, 'Select all', function () {
         $('io-text').select()
       })
     }
@@ -1611,7 +1611,7 @@
   function importMarks (text) {
     var incoming = readBlob(text)
     if (!incoming) {
-      $('status').textContent = 'That file was not readable as switch-tester marks.'
+      $('status').textContent = 'That file was not readable as saved switch-tester marks.'
       return
     }
     if (incoming.future) {
@@ -1621,12 +1621,12 @@
     var incomingCount = Object.keys(incoming.marks).length
     var currentCount = Object.keys(state.marks).length
     var overwrites = Object.keys(incoming.marks).filter(function (p) { return state.marks[p] }).length
-    var message = 'Import ' + incomingCount + (incomingCount === 1 ? ' marked switch' : ' marked switches') + '?'
+    var message = 'Load ' + incomingCount + (incomingCount === 1 ? ' marked switch' : ' marked switches') + ' from this file?'
     if (currentCount) {
       message += '\n\nYou have ' + currentCount + ' marked now; ' + overwrites +
         ' would be overwritten and the rest kept.'
     }
-    if (!window.confirm(message)) { $('status').textContent = 'Import cancelled.'; return }
+    if (!window.confirm(message)) { $('status').textContent = 'Nothing loaded.'; return }
     if (store.state === 'ok') {
       try { store.set(BACKUP_KEY, JSON.stringify(snapshot())) } catch (e) {}
     }
@@ -1636,7 +1636,9 @@
     paintCounters()
     refilter()
     if (openPos) paintDetail()
-    $('status').textContent = 'Imported ' + incomingCount + '. Your previous marks were backed up in this browser.'
+    $('status').textContent = 'Loaded ' + incomingCount + '.' + (currentCount
+      ? ' Your previous marks were backed up in this browser.'
+      : '')
   }
 
   var ioDlg = $('text-io')
@@ -1663,8 +1665,8 @@
     var reader = new FileReader()
     reader.onload = function () { importMarks(String(reader.result)) }
     reader.onerror = function () {
-      showTextIo('Import', 'That file could not be read. Paste its contents here instead.', '',
-        'Import pasted text', function () { ioDlg.close(); importMarks($('io-text').value) })
+      showTextIo('Load from file', 'That file could not be read. Paste its contents here instead.', '',
+        'Load pasted text', function () { ioDlg.close(); importMarks($('io-text').value) })
     }
     reader.readAsText(file)
     this.value = ''
