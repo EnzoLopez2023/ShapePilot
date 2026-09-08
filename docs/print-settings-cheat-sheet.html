@@ -1,0 +1,490 @@
+<!--
+  Print Settings cheat sheet -- Bambu Lab X2D. Two pages, letter, meant to be
+  printed once and taped up next to the printer.
+
+  This file is the source; docs/print-settings-cheat-sheet.pdf is generated from
+  it by `npm run cheatsheet:render` and committed beside it, because the PDF is
+  the artefact anybody actually uses and re-rendering needs Chrome on the box.
+  Edit here, re-render, commit both.
+
+  Layout note: each .page is a fixed 8.5x11in flex column, so spacers and rules
+  carry `flex: 0 0 auto` -- without it they collapse silently as content grows
+  and the sheet quietly loses its section breaks.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Print Settings — Bambu Lab X2D</title>
+<style>
+  @page { size: letter; margin: 0; }
+
+  :root {
+    --ink:      #16181a;
+    --ink-2:    #3c4145;
+    --ink-3:    #6d747a;
+    --ink-4:    #9aa1a7;
+    --rule:     #d9dde0;
+    --rule-2:   #edeff1;
+    --pla:      #f1f6f0;
+    --petg:     #eef3f9;
+    --abs:      #fdf3ea;
+    --card:     #f3f8f2;
+    --card-ln:  #cfe2cd;
+    --card-tx:  #2f6b46;
+    --note-bg:  #fdf7ec;
+    --note-ln:  #e0a548;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { margin: 0; padding: 0; }
+
+  body {
+    font-family: "Helvetica Neue", -apple-system, "Segoe UI", Arial, sans-serif;
+    color: var(--ink);
+    font-size: 10.5px;
+    line-height: 1.42;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    width: 8.5in;
+    height: 11in;
+    padding: 0.62in 0.6in 0.5in;
+    display: flex;
+    flex-direction: column;
+    page-break-after: always;
+    position: relative;
+  }
+  .page:last-child { page-break-after: auto; }
+
+  /* ---------- masthead ---------- */
+
+  .masthead { display: flex; align-items: baseline; gap: 10px; }
+  h1 {
+    font-size: 25px;
+    letter-spacing: -0.4px;
+    font-weight: 700;
+    margin: 0;
+  }
+  .subtitle { font-size: 13px; color: var(--ink-3); font-weight: 400; }
+  .folio { margin-left: auto; font-size: 9.5px; color: var(--ink-4); }
+  .masthead-rule { height: 3px; background: var(--ink); margin: 11px 0 12px; }
+
+  .standfirst { color: var(--ink-2); margin: 0 0 13px; max-width: 96%; }
+  .standfirst strong { color: var(--ink); }
+
+  /* ---------- section headings ---------- */
+
+  h2 {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    margin: 0 0 5px;
+  }
+  .h2-rule { height: 1.5px; background: var(--ink); margin-bottom: 0; flex: 0 0 auto; }
+  .spacer { flex: 0 0 auto; }
+
+  /* ---------- tables ---------- */
+
+  table { width: 100%; border-collapse: collapse; }
+
+  thead th {
+    font-size: 8.8px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    text-align: left;
+    padding: 8px 9px;
+    vertical-align: bottom;
+  }
+
+  tbody td, tbody th {
+    padding: 6px 9px;
+    vertical-align: top;
+    border-top: 1px solid var(--rule-2);
+    text-align: left;
+  }
+
+  tbody th { font-weight: 700; color: var(--ink); width: 22%; }
+  tbody th .hint { display: block; font-weight: 400; color: var(--ink-3); font-size: 9px; }
+
+  .sub { display: block; color: var(--ink-3); font-size: 9px; line-height: 1.3; margin-top: 1px; }
+
+  /* column tints */
+  .c-pla  { background: var(--pla); }
+  .c-petg { background: var(--petg); }
+  .c-abs  { background: var(--abs); }
+
+  .settings thead tr th { border-bottom: 1px solid var(--rule); }
+  .settings thead th:first-child { background: #f4f5f6; }
+  .settings tbody tr:first-child td, .settings tbody tr:first-child th { border-top: none; }
+  .settings td { width: 19.5%; }
+
+  .span-all { background: var(--pla); }
+
+  /* the common-settings table has no column tints */
+  .common tbody th { width: 20%; }
+  .common tbody tr:first-child td, .common tbody tr:first-child th { border-top: none; }
+  .common { margin-top: 2px; }
+  .common tbody th, .common tbody td { padding-left: 11px; }
+
+  /* ---------- callout ---------- */
+
+  .note {
+    background: var(--note-bg);
+    border-left: 3px solid var(--note-ln);
+    padding: 9px 12px;
+    margin-top: 14px;
+    color: var(--ink-2);
+  }
+  .note + .note { margin-top: 8px; }
+  .note strong { color: var(--ink); }
+
+  /* ---------- footer ---------- */
+
+  footer {
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid var(--rule-2);
+    text-align: center;
+    font-size: 9px;
+    color: var(--ink-4);
+  }
+  footer strong { color: var(--ink-3); font-weight: 700; }
+
+  /* ---------- page 2: routine ---------- */
+
+  .routine { margin-top: 4px; }
+  .routine li {
+    display: flex;
+    gap: 11px;
+    padding: 8px 4px;
+    border-top: 1px solid var(--rule-2);
+    align-items: flex-start;
+  }
+  .routine { list-style: none; padding: 0; margin: 0; }
+  .routine li:first-child { border-top: none; }
+  .num {
+    flex: 0 0 auto;
+    width: 15px; height: 15px;
+    border-radius: 50%;
+    background: var(--ink);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    margin-top: 1px;
+  }
+  .routine .body { color: var(--ink-2); }
+  .routine strong { color: var(--ink); }
+
+  /* ---------- page 2: cards ---------- */
+
+  .cards {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 9px;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--card-ln);
+    border-radius: 3px;
+    padding: 8px 10px;
+  }
+  .card h3 {
+    margin: 0 0 3px;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: var(--card-tx);
+  }
+  .card p { margin: 0; color: var(--ink-2); line-height: 1.4; }
+  .card.abs { background: var(--abs); border-color: #ecd0b2; }
+  .card.abs h3 { color: #8a5116; }
+</style>
+</head>
+<body>
+
+<!-- ============================= PAGE 1 ============================= -->
+<section class="page">
+
+  <div class="masthead">
+    <h1>Print Settings</h1>
+    <div class="subtitle">— Bambu Lab X2D</div>
+    <div class="folio">page 1 of 2</div>
+  </div>
+  <div class="masthead-rule"></div>
+
+  <p class="standfirst">
+    These mirror <strong>Bambu Studio's built-in presets</strong> — the point is to
+    <strong>pick the right filament profile and plate type</strong>, not hand-type numbers.
+    Use this to sanity-check a profile and know which knob to turn.
+  </p>
+
+  <h2>Per-filament settings · 0.4 mm nozzle · textured PEI plate</h2>
+  <div class="h2-rule"></div>
+
+  <table class="settings">
+    <thead>
+      <tr>
+        <th>Setting</th>
+        <th class="c-pla">PLA Basic</th>
+        <th class="c-pla">PLA Matte</th>
+        <th class="c-petg">PETG</th>
+        <th class="c-abs">ABS</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <th>Nozzle temp</th>
+        <td class="c-pla">220 °C</td>
+        <td class="c-pla">220 °C</td>
+        <td class="c-petg">255 °C</td>
+        <td class="c-abs">270 °C</td>
+      </tr>
+      <tr>
+        <th>Bed temp</th>
+        <td class="c-pla">55 °C</td>
+        <td class="c-pla">55 °C</td>
+        <td class="c-petg">70 °C<span class="sub">60–65 on the smooth/Cool plate</span></td>
+        <td class="c-abs">100 °C<span class="sub">textured PEI only — not the Cool plate</span></td>
+      </tr>
+      <tr>
+        <th>Part-cooling fan</th>
+        <td class="c-pla">100%</td>
+        <td class="c-pla">100%</td>
+        <td class="c-petg">~50%<span class="sub">more fan = weaker layers</span></td>
+        <td class="c-abs">0–20%<span class="sub">off for the first layers; fan = cracks</span></td>
+      </tr>
+      <tr>
+        <th>Max volumetric speed<span class="hint">the real speed cap</span></th>
+        <td class="c-pla">~21 mm³/s</td>
+        <td class="c-pla">~12 mm³/s<span class="sub">clogs easier</span></td>
+        <td class="c-petg">~10 mm³/s</td>
+        <td class="c-abs">~22 mm³/s<span class="sub">high, but chamber heat is the real limit</span></td>
+      </tr>
+      <tr>
+        <th>Enclosure (door + top)</th>
+        <td class="c-pla">Open</td>
+        <td class="c-pla">Open</td>
+        <td class="c-petg">Open<span class="sub">closed traps heat → clogs</span></td>
+        <td class="c-abs"><strong>Closed</strong><span class="sub">both shut — let the chamber reach 40–50 °C</span></td>
+      </tr>
+      <tr>
+        <th>Dry the spool?</th>
+        <td class="c-pla">Rarely</td>
+        <td class="c-pla">If opened a while</td>
+        <td class="c-petg">Yes — 65 °C / 8 h + desiccant</td>
+        <td class="c-abs">If opened a while<span class="sub">80 °C / 8 h</span></td>
+      </tr>
+      <tr>
+        <th>Bed adhesion</th>
+        <td class="c-pla">Bare plate</td>
+        <td class="c-pla">Bare plate</td>
+        <td class="c-petg">Glue stick as <em>release barrier</em>, or smooth plate</td>
+        <td class="c-abs">Bare hot plate + a brim<span class="sub">glue stick if a corner still lifts</span></td>
+      </tr>
+      <tr>
+        <th>Shrinkage<span class="hint">part ends up smaller</span></th>
+        <td class="c-pla">Negligible</td>
+        <td class="c-pla">Negligible</td>
+        <td class="c-petg">Slight</td>
+        <td class="c-abs">~0.5–0.8%<span class="sub">a 100 mm part lands near 99.4 mm</span></td>
+      </tr>
+      <tr>
+        <th>Support top Z-gap</th>
+        <td class="c-pla">Default</td>
+        <td class="c-pla">Default</td>
+        <td class="c-petg">+0.2 mm<span class="sub">PETG supports fuse on</span></td>
+        <td class="c-abs">Default</td>
+      </tr>
+      <tr>
+        <th>Retraction</th>
+        <td class="span-all" colspan="4">Leave at preset (~0.8 mm @ 30 mm/s) — fix stringing with drying &amp; temp first.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="spacer" style="height:16px"></div>
+
+  <h2>Common process settings — all four filaments</h2>
+  <div class="h2-rule"></div>
+
+  <table class="common">
+    <tbody>
+      <tr>
+        <th>Layer height</th>
+        <td>0.20 mm standard · 0.28 mm draft · 0.12 mm fine &nbsp;·&nbsp; first layer 0.20 mm</td>
+      </tr>
+      <tr>
+        <th>Walls / shells</th>
+        <td>2 wall loops (3 for functional parts) · 4 top + 4 bottom layers (~0.8 mm)</td>
+      </tr>
+      <tr>
+        <th>Infill</th>
+        <td>15% general · 10% display-only · 25–40% functional &nbsp;·&nbsp; Gyroid pattern</td>
+      </tr>
+      <tr>
+        <th>Brim</th>
+        <td>5 mm when the part is tall or has a small footprint; otherwise off <span class="sub">ABS: always on, 5 mm+ — it is the cheapest warp insurance there is</span></td>
+      </tr>
+      <tr>
+        <th>Seam</th>
+        <td>Aligned, with "wipe" on — hides the seam and kills blobs</td>
+      </tr>
+      <tr>
+        <th>Speed</th>
+        <td>Leave the profile's speeds alone — the volumetric cap above is the real limit</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <strong>ABS changes three rules:</strong> shut the enclosure, turn the fan nearly off, and expect the part
+    to come out slightly small. Everything that helps PLA — open door, full fan — is what cracks and warps ABS.
+    Print it in a ventilated room: hot ABS gives off styrene.
+  </div>
+
+  <div class="note">
+    <strong>Plate care:</strong> wash the textured PEI with dish soap &amp; warm water weekly, wipe with IPA between,
+    handle by the edges. Finger grease is the #1 reason a first layer won't stick.
+  </div>
+
+  <footer>
+    Bambu <strong>PLA Basic</strong>, <strong>PLA Matte</strong>, <strong>PETG Basic</strong> and <strong>ABS</strong> profiles.
+    Page 2 — new-spool routine &amp; troubleshooting.
+  </footer>
+
+</section>
+
+<!-- ============================= PAGE 2 ============================= -->
+<section class="page">
+
+  <div class="masthead">
+    <h1>New Spool &amp; Troubleshooting</h1>
+    <div class="folio">page 2 of 2</div>
+  </div>
+  <div class="masthead-rule"></div>
+
+  <h2>Every new spool — a 5-minute routine</h2>
+  <div class="h2-rule"></div>
+
+  <ol class="routine">
+    <li>
+      <span class="num">1</span>
+      <span class="body">Load the spool. In Bambu Studio pick the <strong>exact</strong> filament profile
+      (PLA Basic / PLA Matte / PETG / ABS) and set the <strong>plate type</strong> to Textured PEI.
+      <em>For ABS: shut the door and top now</em> — calibrate at the chamber temperature you'll print at.</span>
+    </li>
+    <li>
+      <span class="num">2</span>
+      <span class="body">Calibration tab → <strong>Flow Dynamics</strong> (pressure advance). Run it, accept the result.</span>
+    </li>
+    <li>
+      <span class="num">3</span>
+      <span class="body">Calibration tab → <strong>Flow Rate</strong>. Run it, apply the correction.</span>
+    </li>
+    <li>
+      <span class="num">4</span>
+      <span class="body">Slice a small test (a 20 mm cube or a real small part) and <strong>watch the first layer</strong>
+      go down — it should look like smooth, touching lines with no gaps or ridges.</span>
+    </li>
+    <li>
+      <span class="num">5</span>
+      <span class="body">If the first layer looks off, nudge <strong>Z-offset</strong> in 0.02 mm steps
+      (down = closer/flatter). Save the calibrated values to that filament so you only do this once per spool.</span>
+    </li>
+  </ol>
+
+  <div class="spacer" style="height:12px"></div>
+
+  <h2>Troubleshooting quick-fixes</h2>
+  <div class="h2-rule"></div>
+
+  <div class="cards">
+
+    <div class="card">
+      <h3>Stringing / whiskers (usually PETG)</h3>
+      <p>Dry the spool (65 °C / 8 h). Drop nozzle temp 5 °C. Confirm retraction is on and "wipe" is enabled.</p>
+    </div>
+
+    <div class="card">
+      <h3>Layers splitting / part snaps easily</h3>
+      <p>Raise nozzle 5–10 °C. Lower the fan (PETG 20–30%). Use thinner layers (0.12–0.16 mm) for strength.</p>
+    </div>
+
+    <div class="card">
+      <h3>First layer won't stick</h3>
+      <p>Re-clean the plate (soap + water). Add a 5 mm brim. Bed +5 °C. Slow the first layer to ~20 mm/s.</p>
+    </div>
+
+    <div class="card">
+      <h3>Corners lifting / warping</h3>
+      <p>Add a brim. No cross-draft (don't point a fan at it). Keep the door shut for PETG. Bed +5 °C.</p>
+    </div>
+
+    <div class="card">
+      <h3>Elephant foot (squished first layers)</h3>
+      <p>Enable elephant-foot compensation ~0.15 mm. Drop bed temp 5 °C. Check Z-offset isn't too low.</p>
+    </div>
+
+    <div class="card">
+      <h3>PLA Matte under-extrudes / clicks</h3>
+      <p>Lower max volumetric speed to ~10 mm³/s. Make sure it's dry. Keep the enclosure open — it's heat-sensitive.</p>
+    </div>
+
+    <div class="card">
+      <h3>Blobs &amp; zits on the surface</h3>
+      <p>Seam = Aligned, "wipe" on, "seam not on overhangs" on. Run Flow Dynamics if you skipped it.</p>
+    </div>
+
+    <div class="card">
+      <h3>Ghosting / ripples after edges</h3>
+      <p>Lower acceleration &amp; speed in the profile. Make sure the printer sits on a solid, non-flexing surface.</p>
+    </div>
+
+    <div class="card abs">
+      <h3>ABS warps or peels off the plate</h3>
+      <p>Door and top shut, and leave them shut — one door-open peek mid-print is enough to lift a corner.
+      Brim 5 mm+. Bed 100 °C. Fan to 0% for the first 3 layers. Never aim a room fan at the printer.</p>
+    </div>
+
+    <div class="card abs">
+      <h3>ABS cracks between layers on tall parts</h3>
+      <p>The chamber is too cool: shut it, wait for it to soak, print tall parts one at a time so each layer
+      stays hot. Fan under 20%, nozzle +5–10 °C, 3 wall loops. Slower is warmer.</p>
+    </div>
+
+    <div class="card abs">
+      <h3>ABS part measures small / holes are tight</h3>
+      <p>Normal — ABS shrinks ~0.5–0.8% as it cools. Scale the model up ~0.6%, or add 0.1–0.2 mm of
+      clearance to sockets and pockets. Don't chase it with flow rate.</p>
+    </div>
+
+    <div class="card abs">
+      <h3>ABS smells strong / hazy chamber</h3>
+      <p>Expected — that's styrene and ultrafine particles. Keep the enclosure closed, run the filter,
+      ventilate the room, and don't sit beside it. This is a comfort <em>and</em> a health setting.</p>
+    </div>
+
+  </div>
+
+  <div class="note">
+    <strong>Golden rule:</strong> change <strong>one</strong> setting at a time and re-print the same small test.
+    If you lose track, reset the filament profile to default and start from the preset again.
+  </div>
+
+  <footer>
+    ShapePilot · Keycap Tray → export 3MF is geometry only; set filament, plate &amp; process in Bambu Studio,
+    then Slice Plate → Print Plate.
+  </footer>
+
+</section>
+
+</body>
+</html>

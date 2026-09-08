@@ -19,6 +19,7 @@
     "filaments:generate": "node scripts/generate-filament-catalog.ts",
     "check:filaments": "node scripts/generate-filament-catalog.ts --check",
     "bg:generate": "node scripts/generate-backgrounds.ts",
+    "cheatsheet:render": "node scripts/render-cheat-sheet.ts",
     "preview": "vite preview",
     "start": "node scripts/start-production.ts",
     "stamp:build": "node scripts/stamp-build-identity.ts",
