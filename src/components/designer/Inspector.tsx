@@ -3,7 +3,7 @@
 // only where a cut type means something.
 import { Divider, MenuItem, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
 import type {
-  CutType, ObjectMode, SceneObject, Shape2DObject, SolidObject, TextObject, Triple,
+  CutType, ObjectMode, PathObject, SceneObject, Shape2DObject, SolidObject, TextObject, Triple,
 } from '../../model/document.ts'
 import LengthField from '../LengthField.tsx'
 import AngleField from '../AngleField.tsx'
@@ -109,7 +109,7 @@ export default function Inspector(props: InspectorProps) {
         onChangeDeg={v => setTransform('rotationDeg', 2, v)}
       />
 
-      {objectDimensions(object, imperial, setParam, onPatch)}
+      {objectDimensions(object, imperial, showZ, setParam, onPatch)}
 
       {showCut && (
         <>
@@ -145,9 +145,20 @@ export default function Inspector(props: InspectorProps) {
 function objectDimensions(
   object: SceneObject,
   imperial: boolean,
+  /** True in the 3D designers, where a flat outline is extruded and its
+   *  thickness is a real dimension. The Shaper page cuts sheet stock, where it
+   *  is not the drawing's business. */
+  showThickness: boolean,
   setParam: (key: string, value: number) => void,
   onPatch: (patch: Partial<SceneObject>) => void,
 ) {
+  const thickness = (fallback = 5) => showThickness && (
+    <LengthField
+      key="thickness" label="Thickness" imperial={imperial}
+      valueMm={(object as PathObject | Shape2DObject | TextObject).thicknessMm ?? fallback}
+      onChangeMm={v => onPatch({ thicknessMm: v } as Partial<SceneObject>)}
+    />
+  )
   const length = (label: string, key: string, fallback: number) => {
     const params = (object as Shape2DObject | SolidObject).params as Record<string, number | undefined>
     return (
@@ -175,6 +186,7 @@ function objectDimensions(
           <Divider />
           <Typography variant="h3">Size</Typography>
           {fields}
+          {thickness()}
         </>
       )
     }
@@ -215,15 +227,27 @@ function objectDimensions(
             label="Size" valueMm={text.sizeMm} imperial={imperial}
             onChangeMm={v => onPatch({ sizeMm: v } as Partial<SceneObject>)}
           />
+          {thickness()}
         </>
       )
     }
 
+    // An imported outline has no parameters of its own -- its shape is the file
+    // it came from -- but in a 3D designer the depth it is extruded to is the
+    // one number about it a person does set, and it had no field until now.
     case 'path':
+      return showThickness ? (
+        <>
+          <Divider />
+          <Typography variant="h3">Size</Typography>
+          {thickness()}
+        </>
+      ) : null
+
     case 'imported':
     case 'group':
-      // Imported outlines and groups have no parameters to edit; they are moved,
-      // rotated and scaled as a whole, which the transform block above covers.
+      // A mesh arrives at its own size and a group is sized by its members;
+      // both are moved, rotated and scaled as a whole by the block above.
       return null
   }
 }
