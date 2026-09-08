@@ -25,6 +25,10 @@ import {
   BAMBU_CONTEXT, CREATE_INSTRUCTIONS, EDIT_INSTRUCTIONS, PLAYGROUND_CONTEXT,
   SHAPE_PROGRAM_SCHEMA,
 } from '../ai/shapeProgramSchema.ts'
+import {
+  elideProgramGeometry, restoreProgramGeometry, withheldGeometryNote,
+} from '../ai/programGeometry.ts'
+import type { WithheldGeometry } from '../ai/programGeometry.ts'
 import { KEYCAP_SET_INSTRUCTIONS, KEYCAP_SET_SCHEMA } from '../ai/keycapSetSchema.ts'
 import { VECTOR_DRAWING_INSTRUCTIONS, VECTOR_DRAWING_SCHEMA } from '../ai/vectorDrawingSchema.ts'
 import { validateSetItems } from '../validation/keycapProject.ts'
@@ -166,18 +170,29 @@ function parseRequest(body: unknown): ShapeRequest {
   return { prompt, program, context, history }
 }
 
-function buildInput(request: ShapeRequest): string {
+/**
+ * The prompt, plus whatever geometry was too large to put in it. The withheld
+ * rings come back out with the answer; see server/ai/programGeometry.ts.
+ */
+function buildInput(request: ShapeRequest): {
+  input: string
+  withheld: Map<string, WithheldGeometry>
+} {
   const sections: string[] = []
+  let withheld = new Map<string, WithheldGeometry>()
   if (request.history.length) {
     sections.push('Conversation so far:\n' + request.history
       .map(t => `${t.role === 'user' ? 'User' : 'You'}: ${t.text}`)
       .join('\n'))
   }
   if (request.program) {
-    sections.push('Current program:\n' + JSON.stringify(request.program))
+    const elided = elideProgramGeometry(request.program)
+    withheld = elided.withheld
+    sections.push('Current program:\n' + JSON.stringify(elided.program))
+    if (elided.notes.length) sections.push(withheldGeometryNote(elided.notes))
   }
   sections.push(`User request:\n${request.prompt}`)
-  return sections.join('\n\n')
+  return { input: sections.join('\n\n'), withheld }
 }
 
 interface PhotoRequest {
@@ -294,9 +309,10 @@ export function createAiRouter({ repos, client, store }: AiRouterOptions): Route
     const instructions =
       `${request.program ? EDIT_INSTRUCTIONS : CREATE_INSTRUCTIONS}\n\n${contextNote}`
 
+    const { input, withheld } = buildInput(request)
     const answer = await client.respondJson({
       instructions,
-      input: buildInput(request),
+      input,
       schemaName: 'shape_program',
       schema: SHAPE_PROGRAM_SCHEMA,
     })
@@ -309,6 +325,9 @@ export function createAiRouter({ repos, client, store }: AiRouterOptions): Route
     }
 
     const { notes, ...programFields } = parsed as Record<string, unknown>
+    // Before validation, because an outline we withheld is exactly the field
+    // the validator would otherwise report as missing.
+    restoreProgramGeometry(programFields, withheld)
     let program: ShapeProgram
     try {
       // Structured output guarantees the shape, not that the numbers describe a

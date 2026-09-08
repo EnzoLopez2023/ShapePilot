@@ -147,6 +147,12 @@ You are MODIFYING an existing program, which is given to you as JSON.
 - Keep the id and geometry of every part the user did not ask you to change,
   exactly as they are. Do not renumber, rename or re-centre anything gratuitously.
 - Add new parts with new ids; modify a part by returning it under its existing id.
+- An imported outline may have had its 'profile' and 'holes' withheld from the
+  JSON, and is measured and sketched in prose instead. Return that part with
+  those two keys OMITTED -- they are restored for you. It is still fully
+  editable: change its heightMm or transform, or wrap it in a 'difference' or
+  'union' (under a NEW id) to cut into it or build onto it. Never invent points
+  to stand in for one; points you emit for it are discarded.
 - In 'notes', say specifically what you added, changed or removed, naming the
   part ids, so the change can be reviewed before it is applied.`
 

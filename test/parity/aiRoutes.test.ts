@@ -213,6 +213,80 @@ describe('ai routes when the model misbehaves', () => {
   })
 })
 
+describe('ai routes with an imported outline in the program', () => {
+  // An SVG import is an extrude of hundreds of points. It is withheld from the
+  // model -- which cannot echo it back and has no business redrawing it -- and
+  // restored from the request afterwards, so an edit as ordinary as changing
+  // the thickness is possible at all.
+  const ring = (n: number, radius: number) =>
+    Array.from({ length: n }, (_, i) => {
+      const a = (i / n) * Math.PI * 2
+      return [radius * Math.cos(a), radius * Math.sin(a)]
+    })
+  const profile = ring(421, 80)
+
+  const imported = {
+    version: 1, units: 'mm',
+    parts: [{
+      id: 'keyboard-holder', name: 'Keyboard Holder.svg', op: 'extrude',
+      params: { profile, heightMm: 5 }, transform,
+    }],
+  }
+
+  /** What the model really answers: the part, the edit, and no geometry. */
+  const thickened = JSON.stringify({
+    version: 1, units: 'mm', notes: 'doubled the thickness of keyboard-holder',
+    parts: [{
+      id: 'keyboard-holder', name: 'Keyboard Holder.svg', op: 'extrude',
+      params: { heightMm: 10 }, transform,
+    }],
+  })
+
+  test('the outline is described to the model, not sent to it', async () => {
+    const recorded: Recorded[] = []
+    const server = await startTestServer({
+      label: 'ai-outline-prompt',
+      verifier: stubVerifier({ [TOKEN]: validClaims() }),
+      aiClient: stubClient(thickened, recorded),
+    })
+    try {
+      await server.fetchJson(`${BASE}/shape`, {
+        method: 'POST', token: TOKEN,
+        body: JSON.stringify({ prompt: 'double the height', program: imported }),
+      })
+      const input = textOf(recorded[0].request)
+      assert.ok(!input.includes('"profile"'), 'the ring must not reach the model')
+      assert.match(input, /outer ring, 421 points/)
+      assert.match(input, /spanning x -80\.0\.\.80\.0/)
+      assert.match(input, /"heightMm":5/)
+      // And it is told what it CAN do to the part, not only what it cannot.
+      assert.match(input, /CUT INTO IT/)
+      assert.match(input, /BUILD ONTO IT/)
+      assert.match(recorded[0].request.instructions, /OMITTED/)
+    } finally { await server.close() }
+  })
+
+  test('the answer comes back with the outline intact and the edit applied', async () => {
+    const server = await startTestServer({
+      label: 'ai-outline-answer',
+      verifier: stubVerifier({ [TOKEN]: validClaims() }),
+      aiClient: stubClient(thickened),
+    })
+    try {
+      const res = await server.fetchJson<{ program: {
+        parts: { params: { profile: number[][]; heightMm: number } }[]
+      } }>(`${BASE}/shape`, {
+        method: 'POST', token: TOKEN,
+        body: JSON.stringify({ prompt: 'double the height', program: imported }),
+      })
+      assert.equal(res.status, 200)
+      const params = res.body.program.parts[0].params
+      assert.equal(params.heightMm, 10)
+      assert.deepEqual(params.profile, profile)
+    } finally { await server.close() }
+  })
+})
+
 describe('ai routes when Foundry is not configured', () => {
   let server: TestServer
 
