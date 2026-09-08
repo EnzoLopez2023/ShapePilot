@@ -25,6 +25,13 @@ export interface ViewportPart {
   /** Holes render translucent, the way Tinkercad shows them. */
   mode: 'solid' | 'hole'
   color?: string
+  /**
+   * Where this object's own origin sits in world millimetres -- its transform
+   * position. The gizmo pivots here, because that is the point the document
+   * rotates and scales about; without it the gizmo turns the part about its
+   * bounding-box centre and the result jumps on release.
+   */
+  origin?: Triple
 }
 
 export interface Viewport3DProps {
@@ -38,7 +45,11 @@ export interface Viewport3DProps {
   /** Snap increment in mm; 0 disables gizmo snapping. */
   snapMm: number
   onSelect: (id: string | null, additive: boolean) => void
-  /** Fired once on gizmo release, so one drag is one undo step. */
+  /**
+   * Fired once on gizmo release, so one drag is one undo step. The change is
+   * RELATIVE: a position offset in mm, a rotation offset in degrees and a
+   * scale factor, all against where the part was when the drag began.
+   */
   onTransform: (id: string, change: {
     position: Triple; rotationDeg: Triple; scale: Triple
   }) => void
@@ -54,11 +65,15 @@ interface SceneState {
   gizmo: TransformControls
   bodies: Map<string, THREE.Mesh>
   pivot: THREE.Object3D
+  /** Where the pivot was placed when the gizmo attached; the drag is measured
+   *  from here, since the gizmo reports an absolute position. */
+  pivotOrigin: THREE.Vector3
   workplane: THREE.Group
   raf: number
 }
 
 const DEG = 180 / Math.PI
+const ZERO = new THREE.Vector3()
 
 export default function Viewport3D(props: Viewport3DProps) {
   const {
@@ -125,7 +140,7 @@ export default function Viewport3D(props: Viewport3DProps) {
 
     const state: SceneState = {
       renderer, scene, camera, controls, gizmo: gizmoControls,
-      bodies: new Map(), pivot, workplane, raf: 0,
+      bodies: new Map(), pivot, pivotOrigin: new THREE.Vector3(), workplane, raf: 0,
     }
     stateRef.current = state
 
@@ -159,8 +174,16 @@ export default function Viewport3D(props: Viewport3DProps) {
     const onGizmoUp = () => {
       const id = pivot.userData.id as string | undefined
       if (!id) return
+      // The gizmo reports where the pivot now is; the document wants how far it
+      // moved. Subtracting the attach point is the whole difference between a
+      // drag that nudges a part and one that teleports it to its own centre.
+      const origin = state.pivotOrigin
       onTransformRef.current(id, {
-        position: [pivot.position.x, pivot.position.y, pivot.position.z],
+        position: [
+          pivot.position.x - origin.x,
+          pivot.position.y - origin.y,
+          pivot.position.z - origin.z,
+        ],
         rotationDeg: [
           pivot.rotation.x * DEG, pivot.rotation.y * DEG, pivot.rotation.z * DEG,
         ],
@@ -202,7 +225,9 @@ export default function Viewport3D(props: Viewport3DProps) {
     const wanted = new Set(parts.map(p => p.id))
     for (const [id, body] of state.bodies) {
       if (wanted.has(id)) continue
-      state.scene.remove(body)
+      // removeFromParent, not scene.remove: the selected body rides the pivot
+      // during a drag, so the scene is not always its parent.
+      body.removeFromParent()
       disposeBody(body)
       state.bodies.delete(id)
     }
@@ -212,7 +237,7 @@ export default function Viewport3D(props: Viewport3DProps) {
     for (const part of parts) {
       const existing = state.bodies.get(part.id)
       if (existing) {
-        state.scene.remove(existing)
+        existing.removeFromParent()
         disposeBody(existing)
       }
       const geom = new THREE.BufferGeometry()
@@ -271,15 +296,32 @@ export default function Viewport3D(props: Viewport3DProps) {
     // is no one origin a scale or rotation would obviously be about.
     const only = selection.size === 1 ? [...selection][0] : null
     const body = only ? state.bodies.get(only) : undefined
-    if (body) {
-      state.pivot.position.set(0, 0, 0)
+
+    // Whatever rode the pivot last time goes back to the scene first, so a body
+    // is never left parented to a pivot that is about to move for another part.
+    for (const other of state.bodies.values()) {
+      if (other !== body && other.parent === state.pivot) state.scene.attach(other)
+    }
+
+    if (body && only) {
       state.pivot.rotation.set(0, 0, 0)
       state.pivot.scale.set(1, 1, 1)
       state.pivot.userData.id = only
-      // The pivot sits at the body's centre so the gizmo lands on the part.
-      body.geometry.computeBoundingBox()
-      const box = body.geometry.boundingBox
-      if (box) state.pivot.position.copy(box.getCenter(new THREE.Vector3()))
+      // The part's own origin when we know it -- that is the point the document
+      // rotates and scales about -- and the body's centre otherwise, so the
+      // gizmo still lands somewhere sensible.
+      const declared = parts.find(p => p.id === only)?.origin
+      if (declared) {
+        state.pivot.position.set(declared[0], declared[1], declared[2])
+      } else {
+        body.geometry.computeBoundingBox()
+        const box = body.geometry.boundingBox
+        state.pivot.position.copy(box ? box.getCenter(new THREE.Vector3()) : ZERO)
+      }
+      state.pivotOrigin.copy(state.pivot.position)
+      // The body rides the pivot for the length of the drag, so the part follows
+      // the cursor instead of sitting still until the document catches up.
+      state.pivot.attach(body)
       state.gizmo.attach(state.pivot)
     } else {
       state.pivot.userData.id = undefined
@@ -309,7 +351,11 @@ export default function Viewport3D(props: Viewport3DProps) {
     )
     // GridHelper lies in XZ; the app's ground plane is XY.
     grid.rotation.x = Math.PI / 2
-    grid.position.set(bx / 2, by / 2, 0)
+    // Centred on the origin, because that is where the model space is: every
+    // primitive is generated about x = y = 0 and the 3MF writer places bodies
+    // at the shared origin. A plate spanning 0..256 instead put every new
+    // object at its front-left corner, three quarters off the bed.
+    grid.position.set(0, 0, 0)
     state.workplane.add(grid)
 
     state.workplane.add(envelope(bx, by, bz, dark ? 0x6f7681 : 0x9c968a))
@@ -325,7 +371,8 @@ export default function Viewport3D(props: Viewport3DProps) {
     const box = new THREE.Box3()
     for (const body of state.bodies.values()) box.expandByObject(body)
     if (box.isEmpty() && buildMm) {
-      box.set(new THREE.Vector3(0, 0, 0), new THREE.Vector3(...buildMm))
+      const [bx, by, bz] = buildMm
+      box.set(new THREE.Vector3(-bx / 2, -by / 2, 0), new THREE.Vector3(bx / 2, by / 2, bz))
     }
     if (box.isEmpty()) box.set(new THREE.Vector3(-50, -50, 0), new THREE.Vector3(50, 50, 50))
 
@@ -391,12 +438,13 @@ function setEmissiveIntensity(material: THREE.MeshStandardMaterial, value: numbe
   material.emissiveIntensity = value
 }
 
-/** A wireframe box from the origin, marking a build envelope. */
+/** A wireframe box marking a build envelope: centred in x and y, sitting on
+ *  z = 0, matching how every solid in the program is generated. */
 function envelope(x: number, y: number, z: number, colour: number): THREE.LineSegments {
   const geometry = new THREE.EdgesGeometry(new THREE.BoxGeometry(x, y, z))
   const material = new THREE.LineBasicMaterial({ color: colour, transparent: true, opacity: 0.5 })
   const lines = new THREE.LineSegments(geometry, material)
-  lines.position.set(x / 2, y / 2, z / 2)
+  lines.position.set(0, 0, z / 2)
   return lines
 }
 

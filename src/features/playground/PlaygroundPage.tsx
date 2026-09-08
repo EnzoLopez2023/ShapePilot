@@ -121,6 +121,7 @@ export default function PlaygroundPage() {
     }
     return parts.map(p => ({
       id: p.object.id, mesh: p.mesh, mode: p.object.mode, color: p.object.color,
+      origin: p.object.transform.position,
     }))
   }, [previewMesh, parts])
 

@@ -103,6 +103,9 @@ export default function BambuDesignerPage() {
   const viewportParts = useMemo<ViewportPart[]>(
     () => parts.map(p => ({
       id: p.object.id, mesh: p.mesh, mode: p.object.mode, color: p.object.color,
+      // The gizmo pivots here, so a rotation or scale turns the part about the
+      // same point the document does.
+      origin: p.object.transform.position,
     })),
     [parts],
   )
