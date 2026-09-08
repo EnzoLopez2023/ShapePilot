@@ -1,0 +1,1713 @@
+<!--
+  Keychron Switch Tester 100 -- Max Edition (SKU Z156). One hundred switches in
+  a 10x10 tray; this page is the notebook for deciding which of them to buy.
+
+  Self-contained on purpose: no build step, no assets, no network, no module
+  script (module scripts are fetched under CORS, and a file:// origin is opaque,
+  so they never run from disk). Double-click the file and it works.
+
+  The grid mirrors the physical tester, so 7-3 on screen is the switch under
+  your finger. That mirroring is the whole point, and it is why filtering DIMS
+  cells instead of removing them -- remove one and every survivor moves.
+
+  Marks live in localStorage under `shapepilot:switch-tester:v1`. Safari can
+  refuse storage to a page opened from disk -- it throws on the localStorage
+  getter itself -- so the page probes at boot and, if refused, says so in a
+  banner and leans on JSON export. The exported .json is always the durable
+  copy. To get persistence in Safari: `cd docs && python3 -m http.server 8000`
+  then open http://localhost:8000/switch-tester.html (a different origin, so
+  import your .json once).
+
+  Spec strings are quoted verbatim from Keychron's sheet
+  (Keychron_switch_tester_100_max_edition_Z156_Spec.xlsx); the numbers beside
+  them (operGf, travelMm, ...) are parsed copies that exist only so sorting
+  never parses strings. If the two ever disagree, the string wins.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Switch Tester 100</title>
+<style>
+  /* ---------- tokens ---------- */
+
+  :root {
+    --ink:      #16181a;
+    --ink-2:    #3c4145;
+    --ink-3:    #6d747a;
+    --ink-4:    #9aa1a7;
+    --rule:     #dfe3e6;
+    --rule-2:   #eef0f2;
+    --surface:  #ffffff;
+    --ground:   #f7f8f9;
+    --raised:   #ffffff;
+    --accent:   #2f6b8f;
+    --accent-w: #e8f0f5;
+    --like:     #2f6b46;
+    --like-w:   #eaf3ed;
+    --dislike:  #9d3427;
+    --dislike-w:#f8ecea;
+    --want:     #b4791b;
+    --want-w:   #fdf5e7;
+    --focus:    #2f6b8f;
+    --radius:   6px;
+    --cell:     1px solid var(--rule);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink:      #e8eaec;
+      --ink-2:    #c2c7cb;
+      --ink-3:    #8f979d;
+      --ink-4:    #6b7278;
+      --rule:     #343a3f;
+      --rule-2:   #24292d;
+      --surface:  #1b1f22;
+      --ground:   #131619;
+      --raised:   #22272b;
+      --accent:   #79b4d6;
+      --accent-w: #1d2c35;
+      --like:     #7cc79a;
+      --like-w:   #16261d;
+      --dislike:  #e4897c;
+      --dislike-w:#2b1a18;
+      --want:     #e0b464;
+      --want-w:   #2b2317;
+      --focus:    #79b4d6;
+    }
+  }
+
+  /* ---------- reset & base ---------- */
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    font-family: "Helvetica Neue", -apple-system, "Segoe UI", Arial, sans-serif;
+    background: var(--ground);
+    color: var(--ink);
+    font-size: 13px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, textarea, select { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  [hidden] { display: none !important; }
+
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 20px 20px 40px; }
+
+  /* ---------- masthead ---------- */
+
+  .masthead { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  h1 { font-size: 24px; letter-spacing: -0.4px; margin: 0; font-weight: 700; }
+  .masthead .sub { color: var(--ink-3); font-size: 13px; }
+  .counters { margin-left: auto; display: flex; gap: 14px; font-size: 12px; color: var(--ink-3); }
+  .counters b { color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; }
+  .masthead-rule { height: 2px; background: var(--ink); margin: 10px 0 14px; }
+
+  /* ---------- storage banner ---------- */
+
+  .banner {
+    background: var(--want-w);
+    border-left: 3px solid var(--want);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    padding: 10px 14px;
+    margin-bottom: 14px;
+    color: var(--ink-2);
+  }
+  .banner b { color: var(--ink); }
+  .banner details { margin-top: 6px; }
+  .banner summary { cursor: pointer; color: var(--accent); }
+  .banner code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12px; background: var(--rule-2); padding: 1px 5px; border-radius: 3px;
+  }
+  .banner .row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+
+  /* ---------- toolbar ---------- */
+
+  .toolbar {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    padding: 10px 12px; background: var(--surface);
+    border: 1px solid var(--rule); border-radius: var(--radius);
+  }
+  .seg { display: flex; border: 1px solid var(--rule); border-radius: var(--radius); overflow: hidden; }
+  .seg button {
+    background: none; border: none; padding: 6px 12px; color: var(--ink-2);
+    border-right: 1px solid var(--rule);
+  }
+  .seg button:last-child { border-right: none; }
+  .seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+
+  .search {
+    flex: 1 1 190px; min-width: 150px; padding: 6px 10px;
+    border: 1px solid var(--rule); border-radius: var(--radius); background: var(--raised);
+  }
+  .tool-btn {
+    background: var(--raised); border: 1px solid var(--rule);
+    border-radius: var(--radius); padding: 6px 11px; color: var(--ink-2);
+  }
+  .tool-btn:hover { border-color: var(--ink-4); }
+
+  /* On a phone the filter panel is a screenful; collapsed, the grid stays one
+     thumb-scroll away. Opened by default on wide screens (set at boot). */
+  .filter-wrap { margin-top: 8px; }
+  .filter-wrap > summary {
+    cursor: pointer; list-style: none; padding: 7px 12px;
+    background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius);
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.8px;
+    color: var(--ink-3); font-weight: 700;
+  }
+  .filter-wrap > summary::-webkit-details-marker { display: none; }
+  .filter-wrap > summary::before { content: "▸ "; color: var(--ink-4); }
+  .filter-wrap[open] > summary { border-radius: var(--radius) var(--radius) 0 0; border-bottom: none; }
+  .filter-wrap[open] > summary::before { content: "▾ "; }
+  .filter-wrap > summary .on { color: var(--accent); }
+
+  .filters {
+    display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start;
+    padding: 10px 12px;
+    background: var(--surface); border: 1px solid var(--rule);
+    border-radius: 0 0 var(--radius) var(--radius);
+  }
+  .fgroup { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+  .fgroup > .flabel {
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.8px;
+    color: var(--ink-4); font-weight: 700; margin-right: 2px;
+  }
+  .chip {
+    background: var(--raised); border: 1px solid var(--rule); color: var(--ink-2);
+    border-radius: 999px; padding: 3px 10px; font-size: 12px;
+  }
+  .chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .fhint { flex-basis: 100%; font-size: 11.5px; color: var(--ink-4); margin: 0; }
+
+  /* ---------- readout ---------- */
+
+  .readout {
+    height: 34px; display: flex; align-items: center; gap: 8px;
+    padding: 0 2px; margin: 10px 0 6px; color: var(--ink-2); font-size: 12.5px;
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  }
+  .readout .rpos {
+    font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink);
+    min-width: 42px;
+  }
+  .readout .rspec { color: var(--ink-3); }
+
+  /* ---------- grid ---------- */
+
+  .grid-scroll { overflow-x: auto; overscroll-behavior-x: contain; padding-bottom: 4px; }
+  .grid {
+    display: grid; grid-template-columns: 22px repeat(10, minmax(0, 1fr));
+    gap: 4px; min-width: 640px; max-width: 860px;
+  }
+  .grid .colhead, .grid .rowhead {
+    font-size: 10px; color: var(--ink-4); display: flex;
+    align-items: center; justify-content: center; font-variant-numeric: tabular-nums;
+  }
+  .grid .rowhead { position: sticky; left: 0; background: var(--ground); z-index: 1; }
+
+  .cell {
+    position: relative; text-align: left; overflow: hidden;
+    background: var(--surface); border: 1px dashed var(--rule);
+    border-radius: 5px; padding: 4px 5px 5px; min-height: 74px;
+    color: var(--ink-2); display: flex; flex-direction: column; gap: 2px;
+    transition: opacity .12s, border-color .12s, background .12s;
+  }
+  .cell:hover { border-color: var(--ink-4); }
+  .cell .cpos {
+    font-size: 9.5px; color: var(--ink-4); font-variant-numeric: tabular-nums;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .cell .swatch {
+    width: 8px; height: 8px; border-radius: 50%;
+    border: 1px solid var(--rule); opacity: .35; flex: 0 0 auto;
+  }
+  .cell .cname {
+    font-size: 8.5px; line-height: 1.18; color: var(--ink-2);
+    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .cell .ctype { font-size: 8px; color: var(--ink-4); margin-top: auto; }
+  .cell.is-tried { border-style: solid; background: var(--raised); }
+  .cell.is-tried .swatch { opacity: 1; }
+  .cell.v-like { border-color: var(--like); background: var(--like-w); }
+  .cell.v-dislike { border-color: var(--dislike); background: var(--dislike-w); }
+  .cell.is-dim { opacity: .3; }
+  .cell.is-dim .swatch { filter: grayscale(1); }
+
+  .cell .marks {
+    position: absolute; top: 3px; right: 4px;
+    display: flex; gap: 3px; align-items: center;
+    font-size: 9.5px; font-weight: 700; font-variant-numeric: tabular-nums;
+  }
+  .cell .m-verdict.like { color: var(--like); }
+  .cell .m-verdict.dislike { color: var(--dislike); }
+  .cell .m-stars { color: var(--ink-3); }
+  .cell.is-want::after {
+    content: ""; position: absolute; right: 0; bottom: 0;
+    border-width: 0 0 12px 12px; border-style: solid;
+    border-color: transparent transparent var(--want) transparent;
+  }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px;
+    font-size: 11.5px; color: var(--ink-4);
+  }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .legend .key {
+    width: 14px; height: 14px; border-radius: 3px; border: 1px dashed var(--rule);
+    background: var(--surface);
+  }
+  .legend .key.solid { border-style: solid; background: var(--raised); }
+  .legend .key.like { border-color: var(--like); background: var(--like-w); }
+  .legend .key.want { border-color: var(--want); background: var(--want-w); }
+
+  /* ---------- table ---------- */
+
+  .tbl-scroll { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius); }
+  table.tbl { border-collapse: collapse; width: 100%; font-size: 12px; }
+  .tbl th, .tbl td { padding: 6px 9px; text-align: left; border-bottom: 1px solid var(--rule-2); white-space: nowrap; }
+  .tbl thead th {
+    position: sticky; top: 0; background: var(--surface); z-index: 1;
+    font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.7px; color: var(--ink-3);
+    border-bottom: 1px solid var(--rule);
+  }
+  .tbl thead th button {
+    background: none; border: none; padding: 0; color: inherit; font: inherit;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .tbl thead th .arrow { color: var(--ink-4); font-size: 9px; }
+  .tbl tbody tr { cursor: pointer; }
+  .tbl tbody tr:hover { background: var(--rule-2); }
+  .tbl .num { font-variant-numeric: tabular-nums; }
+  .tbl .hint { color: var(--ink-4); font-size: 10px; margin-left: 3px; }
+  .tbl .nm { white-space: normal; min-width: 190px; }
+  .tbl .v-like { color: var(--like); font-weight: 700; }
+  .tbl .v-dislike { color: var(--dislike); font-weight: 700; }
+  .tbl .stuck { position: sticky; left: 0; background: var(--surface); }
+  .tbl tbody tr:hover .stuck { background: var(--rule-2); }
+
+  /* ---------- shopping list ---------- */
+
+  .list-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+  .list-head h2 { font-size: 15px; margin: 0; }
+  .list-head .n { color: var(--ink-3); font-size: 12px; }
+  .buy {
+    background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius);
+    padding: 11px 14px; margin-bottom: 8px; break-inside: avoid; page-break-inside: avoid;
+  }
+  .buy h3 { margin: 0 0 2px; font-size: 13.5px; }
+  .buy .meta { color: var(--ink-3); font-size: 12px; }
+  .buy .specs { color: var(--ink-3); font-size: 11.5px; margin-top: 4px; }
+  .buy .note { margin-top: 6px; white-space: pre-wrap; color: var(--ink-2); }
+  .buy .tags { margin-top: 5px; display: flex; gap: 5px; flex-wrap: wrap; }
+  .buy .tags span { font-size: 11px; color: var(--ink-3); border: 1px solid var(--rule); border-radius: 999px; padding: 1px 8px; }
+  .empty { color: var(--ink-3); padding: 20px 2px; }
+
+  /* ---------- dialogs ---------- */
+
+  dialog {
+    border: none; padding: 0; color: var(--ink); background: var(--surface);
+    box-shadow: 0 10px 40px rgba(0,0,0,.22);
+  }
+  dialog::backdrop { background: rgba(10,12,14,.32); }
+  #detail {
+    margin: 0 0 0 auto; height: 100dvh; max-height: 100dvh; width: min(400px, 94vw);
+    max-width: 94vw; border-left: 1px solid var(--rule);
+  }
+  .d-inner { display: flex; flex-direction: column; height: 100%; }
+  .d-head { padding: 14px 16px 10px; border-bottom: 1px solid var(--rule); }
+  .d-head .d-pos { font-size: 11px; color: var(--ink-4); font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+  .d-head h2 { margin: 2px 0 3px; font-size: 16px; line-height: 1.25; }
+  .d-head h2:focus { outline: none; }
+  .d-head .d-sub { color: var(--ink-3); font-size: 12px; display: flex; align-items: center; gap: 6px; }
+  .d-head .swatch-lg { width: 11px; height: 11px; border-radius: 50%; border: 1px solid var(--rule); }
+  .d-body { padding: 12px 16px 18px; overflow-y: auto; flex: 1; }
+  .d-foot {
+    display: flex; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--rule);
+    background: var(--surface);
+  }
+  .d-foot .spacer { flex: 1; }
+
+  .spec-tbl { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+  .spec-tbl th, .spec-tbl td { padding: 4px 0; text-align: left; vertical-align: top; border-bottom: 1px solid var(--rule-2); }
+  .spec-tbl th { font-weight: 400; color: var(--ink-3); font-size: 12px; width: 44%; }
+  .spec-tbl td { font-size: 12.5px; }
+  .spec-tbl td .hint { color: var(--ink-4); font-size: 10.5px; }
+
+  .field { margin-bottom: 14px; }
+  .field > .flabel {
+    display: block; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.8px;
+    color: var(--ink-4); font-weight: 700; margin-bottom: 5px;
+  }
+  .verdict { display: flex; gap: 6px; }
+  .verdict button { flex: 1; background: var(--raised); border: 1px solid var(--rule); border-radius: var(--radius); padding: 7px; color: var(--ink-2); }
+  .verdict button[aria-pressed="true"][data-v="like"] { background: var(--like-w); border-color: var(--like); color: var(--like); font-weight: 700; }
+  .verdict button[aria-pressed="true"][data-v="dislike"] { background: var(--dislike-w); border-color: var(--dislike); color: var(--dislike); font-weight: 700; }
+  .stars { display: flex; gap: 4px; align-items: center; }
+  .stars button {
+    width: 30px; height: 30px; border: 1px solid var(--rule); border-radius: var(--radius);
+    background: var(--raised); color: var(--ink-3); font-variant-numeric: tabular-nums;
+  }
+  .stars button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .stars .clear { width: auto; padding: 0 9px; font-size: 12px; }
+  .toggles { display: flex; gap: 14px; flex-wrap: wrap; }
+  .toggles label { display: flex; align-items: center; gap: 6px; }
+  .tagrow { display: flex; gap: 5px; flex-wrap: wrap; }
+  textarea.note {
+    width: 100%; min-height: 92px; resize: vertical; padding: 8px 10px;
+    border: 1px solid var(--rule); border-radius: var(--radius);
+    background: var(--raised); line-height: 1.4;
+  }
+
+  #text-io { width: min(560px, 92vw); border-radius: var(--radius); }
+  #text-io .d-body textarea {
+    width: 100%; min-height: 220px; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11.5px; border: 1px solid var(--rule); border-radius: var(--radius);
+    background: var(--raised); padding: 8px;
+  }
+  #text-io p { margin: 0 0 10px; color: var(--ink-2); }
+
+  .status { color: var(--ink-3); font-size: 12px; margin: 10px 2px 0; min-height: 18px; }
+  footer.foot { margin-top: 26px; padding-top: 12px; border-top: 1px solid var(--rule); color: var(--ink-4); font-size: 11.5px; }
+  footer.foot p { margin: 0 0 4px; }
+
+  /* ---------- responsive ---------- */
+
+  @media (max-width: 900px) {
+    #detail {
+      margin: auto 0 0; width: 100%; max-width: 100%; height: auto; max-height: 88dvh;
+      border-left: none; border-top: 1px solid var(--rule);
+      border-radius: var(--radius) var(--radius) 0 0;
+    }
+    .counters { margin-left: 0; flex-basis: 100%; }
+  }
+  @media (max-width: 600px) {
+    .wrap { padding: 14px 12px 30px; }
+    h1 { font-size: 20px; }
+    .grid { min-width: 560px; }
+    .cell { min-height: 62px; }
+    .cell .cname { -webkit-line-clamp: 3; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+
+  /* ---------- print: the shopping list only ---------- */
+
+  @media print {
+    :root {
+      --ink: #16181a; --ink-2: #3c4145; --ink-3: #6d747a; --ink-4: #9aa1a7;
+      --rule: #dfe3e6; --rule-2: #eef0f2; --surface: #fff; --ground: #fff; --raised: #fff;
+    }
+    body { background: #fff; }
+    .toolbar, .filters, .filter-wrap, .readout, .banner, .legend, .status, .seg, dialog { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .buy { border-color: #ccc; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="masthead">
+    <h1>Switch Tester 100</h1>
+    <div class="sub">Keychron Max Edition &middot; SKU Z156</div>
+    <div class="counters">
+      <span>Tried <b id="c-tried">0</b>/100</span>
+      <span>Liked <b id="c-liked">0</b></span>
+      <span>Want <b id="c-want">0</b></span>
+    </div>
+  </header>
+  <div class="masthead-rule"></div>
+
+  <div id="storage-banner" class="banner" role="status" hidden></div>
+
+  <div class="toolbar">
+    <div class="seg" role="group" aria-label="View">
+      <button type="button" id="view-grid-btn" data-view="grid" aria-pressed="true">Grid</button>
+      <button type="button" id="view-table-btn" data-view="table" aria-pressed="false">Table</button>
+      <button type="button" id="view-list-btn" data-view="list" aria-pressed="false">Shopping list</button>
+    </div>
+    <input type="search" id="search" class="search" placeholder="Search name, brand, type, note&hellip;" aria-label="Search switches">
+    <button type="button" class="tool-btn" id="btn-export">Export</button>
+    <button type="button" class="tool-btn" id="btn-import">Import</button>
+    <button type="button" class="tool-btn" id="btn-print">Print list</button>
+    <input type="file" id="file-input" accept="application/json,.json" hidden>
+  </div>
+
+  <details class="filter-wrap" id="filter-wrap">
+    <summary id="filter-summary">Filters</summary>
+    <div class="filters" id="filters"></div>
+  </details>
+
+  <p class="readout" id="readout"></p>
+
+  <main>
+    <section id="view-grid" aria-label="Tester grid">
+      <div class="grid-scroll">
+        <div class="grid" id="grid" role="grid" aria-label="Switch tester, 10 rows by 10 columns"></div>
+      </div>
+      <div class="legend">
+        <span><i class="key"></i> not tried</span>
+        <span><i class="key solid"></i> tried</span>
+        <span><i class="key solid like"></i> liked</span>
+        <span><i class="key solid want"></i> want to buy (corner mark)</span>
+        <span>Colour dots approximate the switch colourway &mdash; a scanning aid, not a spec.</span>
+      </div>
+    </section>
+
+    <section id="view-table" aria-label="All switches" hidden>
+      <div class="tbl-scroll">
+        <table class="tbl" id="tbl">
+          <thead><tr id="thead-row"></tr></thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="view-list" aria-label="Shopping list" hidden>
+      <div class="list-head">
+        <h2>Shopping list</h2>
+        <span class="n" id="list-count"></span>
+      </div>
+      <div id="list-body"></div>
+    </section>
+  </main>
+
+  <p class="status" id="status" role="status"></p>
+
+  <footer class="foot">
+    <p>Specs quoted from Keychron's Switch Tester 100 Max Edition spec sheet (SKU Z156). &ldquo;&mdash;&rdquo; means the sheet states no value: magnetic switches have no fixed operating force or pre-travel, since actuation is set in software.</p>
+    <p>Your marks are stored in this browser and in the JSON you export. Export regularly &mdash; it is the only copy that survives a cleared browser.</p>
+  </footer>
+</div>
+
+<dialog id="detail" aria-label="Switch detail">
+  <div class="d-inner">
+    <div class="d-head">
+      <div class="d-pos" id="d-pos"></div>
+      <h2 id="d-name" tabindex="-1"></h2>
+      <div class="d-sub"><i class="swatch-lg" id="d-swatch" aria-hidden="true"></i><span id="d-sub"></span></div>
+    </div>
+    <div class="d-body">
+      <table class="spec-tbl"><tbody id="d-specs"></tbody></table>
+
+      <div class="field">
+        <span class="flabel">Verdict</span>
+        <div class="verdict" id="d-verdict">
+          <button type="button" data-v="like" aria-pressed="false">Like</button>
+          <button type="button" data-v="dislike" aria-pressed="false">Dislike</button>
+        </div>
+      </div>
+
+      <div class="field">
+        <span class="flabel" id="lbl-rating">Rating</span>
+        <div class="stars" id="d-stars" role="group" aria-labelledby="lbl-rating"></div>
+      </div>
+
+      <div class="field">
+        <span class="flabel">Status</span>
+        <div class="toggles">
+          <label><input type="checkbox" id="d-tried"> Tried it</label>
+          <label><input type="checkbox" id="d-want"> Want to buy</label>
+        </div>
+      </div>
+
+      <div class="field">
+        <span class="flabel" id="lbl-tags">Sound &amp; feel</span>
+        <div class="tagrow" id="d-tags" role="group" aria-labelledby="lbl-tags"></div>
+      </div>
+
+      <div class="field">
+        <label class="flabel" for="d-note">Notes</label>
+        <textarea class="note" id="d-note" placeholder="How did it sound and feel?"></textarea>
+      </div>
+    </div>
+    <div class="d-foot">
+      <button type="button" class="tool-btn" id="d-prev">&larr; Prev</button>
+      <button type="button" class="tool-btn" id="d-next">Next &rarr;</button>
+      <span class="spacer"></span>
+      <button type="button" class="tool-btn" id="d-close">Close</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="text-io" aria-label="Marks as JSON">
+  <div class="d-inner">
+    <div class="d-head"><h2 id="io-title" tabindex="-1" style="font-size:15px">Marks</h2></div>
+    <div class="d-body">
+      <p id="io-help"></p>
+      <textarea id="io-text" spellcheck="false" aria-label="Marks JSON"></textarea>
+    </div>
+    <div class="d-foot">
+      <button type="button" class="tool-btn" id="io-action"></button>
+      <span class="spacer"></span>
+      <button type="button" class="tool-btn" id="io-close">Close</button>
+    </div>
+  </div>
+</dialog>
+
+<script id="seed" type="application/json">null</script>
+<script>
+(function () {
+  'use strict'
+
+  /* ---------- data ---------- */
+
+  var SWITCHES = [
+    {pos:'1-1',r:1,c:1,cat:'Mechanical',brand:'Keychron',name:'Keychron Super Switch - Red',short:'Keychron Super Red',type:'Linear',startF:null,startGf:null,operF:'45±15 gf',operGf:45,endF:null,endGf:null,preT:'2±0.4 mm',preMm:2,travel:'4±0.4 mm',travelMm:4,travelKind:'nom',pins:'5-Pin',lubed:true},
+    {pos:'1-2',r:1,c:2,cat:'Mechanical',brand:'Keychron',name:'Keychron Super Switch - Banana',short:'Keychron Super Banana',type:'Tactile',startF:null,startGf:null,operF:'57±8 gf',operGf:57,endF:null,endGf:null,preT:'2±0.4 mm',preMm:2,travel:'3.4±0.4 mm',travelMm:3.4,travelKind:'nom',pins:'5-Pin',lubed:true},
+    {pos:'1-3',r:1,c:3,cat:'Mechanical',brand:'Keychron',name:'Keychron Super Switch - Brown',short:'Keychron Super Brown',type:'Tactile',startF:null,startGf:null,operF:'55±15 gf',operGf:55,endF:null,endGf:null,preT:'2±0.4 mm',preMm:2,travel:'4±0.4 mm',travelMm:4,travelKind:'nom',pins:'5-Pin',lubed:true},
+    {pos:'1-4',r:1,c:4,cat:'Mechanical',brand:'Keychron',name:'Keychron Silk POM Switch - Red',short:'Keychron Silk POM Red',type:'Linear',startF:null,startGf:null,operF:'45±15 gf',operGf:45,endF:null,endGf:null,preT:'2±0.4 mm',preMm:2,travel:'4±0.4 mm',travelMm:4,travelKind:'nom',pins:'5-Pin',lubed:true},
+    {pos:'1-5',r:1,c:5,cat:'Mechanical',brand:'Keychron',name:'Keychron Silk POM Switch - Banana',short:'Keychron Silk POM Banana',type:'Tactile',startF:null,startGf:null,operF:'57±8 gf',operGf:57,endF:null,endGf:null,preT:'2±0.4 mm',preMm:2,travel:'3.4±0.4 mm',travelMm:3.4,travelKind:'nom',pins:'5-Pin',lubed:true},
+    {pos:'1-6',r:1,c:6,cat:'Mechanical',brand:'Keychron',name:'Keychron Silk POM Switch - Brown',short:'Keychron Silk POM Brown',type:'Tactile',startF:null,startGf:null,operF:'55±15 gf',operGf:55,endF:null,endGf:null,preT:'2±0.4 mm',preMm:2,travel:'4±0.4 mm',travelMm:4,travelKind:'nom',pins:'5-Pin',lubed:true},
+    {pos:'1-7',r:1,c:7,cat:'Mechanical',brand:'Keychron',name:'Keychron Mahjong Switch',short:'Keychron Mahjong',type:'Linear',startF:null,startGf:null,operF:'45±15 gf',operGf:45,endF:null,endGf:null,preT:'2±0.4 mm',preMm:2,travel:'3.6±0.4 mm',travelMm:3.6,travelKind:'nom',pins:'5-Pin',lubed:true},
+    {pos:'1-8',r:1,c:8,cat:'Mechanical',brand:'Keychron',name:'Keychron K Pro Switch - Red',short:'Keychron K Pro Red',type:'Linear',startF:null,startGf:null,operF:'45±10 gf',operGf:45,endF:null,endGf:null,preT:'2±0.4 mm',preMm:2,travel:'4±0.4 mm',travelMm:4,travelKind:'nom',pins:'3-Pin',lubed:true},
+    {pos:'1-9',r:1,c:9,cat:'Mechanical',brand:'Keychron',name:'Keychron K Pro Switch - Blue',short:'Keychron K Pro Blue',type:'Clicky',startF:null,startGf:null,operF:'60±10 gf',operGf:60,endF:null,endGf:null,preT:'2±0.4 mm',preMm:2,travel:'4±0.4 mm',travelMm:4,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'1-10',r:1,c:10,cat:'Mechanical',brand:'Keychron',name:'Keychron K Pro Switch - Brown',short:'Keychron K Pro Brown',type:'Tactile',startF:null,startGf:null,operF:'50±10 gf',operGf:50,endF:null,endGf:null,preT:'2±0.4 mm',preMm:2,travel:'4±0.4 mm',travelMm:4,travelKind:'nom',pins:'3-Pin',lubed:true},
+    {pos:'2-1',r:2,c:1,cat:'Mechanical',brand:'Keychron',name:'Keychron K Pro Switch - Yellow',short:'Keychron K Pro Yellow',type:'Linear',startF:null,startGf:null,operF:'50±10 gf',operGf:50,endF:null,endGf:null,preT:'2±0.4 mm',preMm:2,travel:'4±0.4 mm',travelMm:4,travelKind:'nom',pins:'3-Pin',lubed:true},
+    {pos:'2-2',r:2,c:2,cat:'Mechanical',brand:'Keychron',name:'Keychron K Pro Switch - Silver',short:'Keychron K Pro Silver',type:'Linear',startF:null,startGf:null,operF:'42±8 gf',operGf:42,endF:null,endGf:null,preT:'1.3±0.3 mm',preMm:1.3,travel:'3.3±0.3 mm',travelMm:3.3,travelKind:'nom',pins:'3-Pin',lubed:true},
+    {pos:'2-3',r:2,c:3,cat:'Mechanical',brand:'Keychron',name:'Keychron K Pro Switch - Banana',short:'Keychron K Pro Banana',type:'Tactile',startF:null,startGf:null,operF:'57±8 gf',operGf:57,endF:null,endGf:null,preT:'2.2±0.4 mm',preMm:2.2,travel:'3.3±0.2 mm',travelMm:3.3,travelKind:'nom',pins:'3-Pin',lubed:true},
+    {pos:'2-4',r:2,c:4,cat:'Mechanical',brand:'Keychron',name:'Keychron K Pro Switch - Mint',short:'Keychron K Pro Mint',type:'Tactile',startF:null,startGf:null,operF:'67±8 gf',operGf:67,endF:null,endGf:null,preT:'2.2±0.4 mm',preMm:2.2,travel:'3.3±0.2 mm',travelMm:3.3,travelKind:'nom',pins:'3-Pin',lubed:true},
+    {pos:'2-5',r:2,c:5,cat:'Mechanical',brand:'Keychron',name:'Keychron Silent K Pro Switch - Red',short:'Keychron Silent K Pro Red',type:'Linear',startF:null,startGf:null,operF:'45±10 gf',operGf:45,endF:null,endGf:null,preT:'2±0.4 mm',preMm:2,travel:'4±0.4 mm',travelMm:4,travelKind:'nom',pins:'3-Pin',lubed:true},
+    {pos:'2-6',r:2,c:6,cat:'Mechanical',brand:'Keychron',name:'Keychron Silent K Pro Switch - Brown',short:'Keychron Silent K Pro Brown',type:'Tactile',startF:null,startGf:null,operF:'45±10 gf',operGf:45,endF:null,endGf:null,preT:'2.0±0.4 mm',preMm:2,travel:'3.9±0.2 mm',travelMm:3.9,travelKind:'nom',pins:'3-Pin',lubed:true},
+    {pos:'2-7',r:2,c:7,cat:'Mechanical',brand:'Gateron',name:'Gateron Jupiter Switch - Red',short:'Gateron Jupiter Red',type:'Linear',startF:null,startGf:null,operF:'45±15 gf',operGf:45,endF:null,endGf:null,preT:'2.0±0.6 mm',preMm:2,travel:'4.0 mm Max',travelMm:4,travelKind:'max',pins:'3-Pin',lubed:true},
+    {pos:'2-8',r:2,c:8,cat:'Mechanical',brand:'Gateron',name:'Gateron Jupiter Switch - Brown',short:'Gateron Jupiter Brown',type:'Tactile',startF:null,startGf:null,operF:'55±15 gf',operGf:55,endF:null,endGf:null,preT:'2.0±0.6 mm',preMm:2,travel:'4.0 mm Max',travelMm:4,travelKind:'max',pins:'3-Pin',lubed:true},
+    {pos:'2-9',r:2,c:9,cat:'Mechanical',brand:'Gateron',name:'Gateron Jupiter Switch - Banana',short:'Gateron Jupiter Banana',type:'Tactile',startF:null,startGf:null,operF:'59±10 gf',operGf:59,endF:null,endGf:null,preT:'2.0±0.6 mm',preMm:2,travel:'3.4 mm Max',travelMm:3.4,travelKind:'max',pins:'3-Pin',lubed:true},
+    {pos:'2-10',r:2,c:10,cat:'Mechanical',brand:'Gateron',name:'Gateron Phantom Switch - Red',short:'Gateron Phantom Red',type:'Linear',startF:null,startGf:null,operF:'45±15 gf',operGf:45,endF:null,endGf:null,preT:'2.0±0.6 mm',preMm:2,travel:'4.0±0.6 mm',travelMm:4,travelKind:'nom',pins:'3-Pin',lubed:true},
+    {pos:'3-1',r:3,c:1,cat:'Mechanical',brand:'Gateron',name:'Gateron Phantom Switch - Blue',short:'Gateron Phantom Blue',type:'Clicky',startF:null,startGf:null,operF:'60±15 gf',operGf:60,endF:null,endGf:null,preT:'2.3±0.6 mm',preMm:2.3,travel:'4.0±0.6 mm',travelMm:4,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'3-2',r:3,c:2,cat:'Mechanical',brand:'Gateron',name:'Gateron Phantom Switch - Brown',short:'Gateron Phantom Brown',type:'Tactile',startF:null,startGf:null,operF:'55±15 gf',operGf:55,endF:null,endGf:null,preT:'2.0±0.6 mm',preMm:2,travel:'4.0±0.6 mm',travelMm:4,travelKind:'nom',pins:'3-Pin',lubed:true},
+    {pos:'3-3',r:3,c:3,cat:'Mechanical',brand:'Gateron',name:'Gateron Phantom Switch - Yellow',short:'Gateron Phantom Yellow',type:'Linear',startF:null,startGf:null,operF:'50±15 gf',operGf:50,endF:null,endGf:null,preT:'2.0±0.6 mm',preMm:2,travel:'4.0±0.6 mm',travelMm:4,travelKind:'nom',pins:'3-Pin',lubed:true},
+    {pos:'3-4',r:3,c:4,cat:'Mechanical',brand:'Keychron',name:'Keychron Super Switch - Light Banana',short:'Keychron Super Light Banana',type:'Tactile',startF:null,startGf:null,operF:'45±15 gf',operGf:45,endF:null,endGf:null,preT:'2±0.4 mm',preMm:2,travel:'3.4±0.4 mm',travelMm:3.4,travelKind:'nom',pins:'5-Pin',lubed:true},
+    {pos:'3-5',r:3,c:5,cat:'Mechanical',brand:'Keychron',name:'Keychron Super Switch - Heavy Banana',short:'Keychron Super Heavy Banana',type:'Tactile',startF:null,startGf:null,operF:'65±15 gf',operGf:65,endF:null,endGf:null,preT:'2±0.4 mm',preMm:2,travel:'3.4±0.4 mm',travelMm:3.4,travelKind:'nom',pins:'5-Pin',lubed:true},
+    {pos:'3-6',r:3,c:6,cat:'Mechanical',brand:'Keychron',name:'Keychron Silent Banana Switch',short:'Keychron Silent Banana',type:'Tactile',startF:null,startGf:null,operF:'55±10 gf',operGf:55,endF:null,endGf:null,preT:'2±0.5 mm',preMm:2,travel:'3.3 mm',travelMm:3.3,travelKind:'nom',pins:'5-Pin',lubed:true},
+    {pos:'3-7',r:3,c:7,cat:'Magnetic',brand:'Keychron',name:'Keychron Ultra-fast Lime Magnetic Switch - Lime',short:'Keychron Ultra-fast Lime',type:'Linear',startF:'30 gf',startGf:30,operF:null,operGf:null,endF:'55 gf',endGf:55,preT:'Freely setting',preMm:null,travel:'3.5±0.1 mm',travelMm:3.5,travelKind:'nom',pins:null,lubed:true},
+    {pos:'3-8',r:3,c:8,cat:'Magnetic',brand:'Keychron',name:'Keychron Ultra-fast Lime Magnetic Switch - Banana',short:'Keychron Ultra-fast Lime Banana',type:'Tactile',startF:'30 gf',startGf:30,operF:null,operGf:null,endF:'50 gf',endGf:50,preT:'Freely setting',preMm:null,travel:'3.5±0.1 mm',travelMm:3.5,travelKind:'nom',pins:null,lubed:true},
+    {pos:'3-9',r:3,c:9,cat:'Magnetic',brand:'Keychron',name:'Keychron Ultra-fast Lime Magnetic Switch - Silent Red',short:'Keychron Ultra-fast Lime Silent Red',type:'Linear',startF:'30 gf',startGf:30,operF:null,operGf:null,endF:'55 gf',endGf:55,preT:'Freely setting',preMm:null,travel:'3.5±0.1 mm',travelMm:3.5,travelKind:'nom',pins:null,lubed:true},
+    {pos:'3-10',r:3,c:10,cat:'Magnetic',brand:'Keychron',name:'Keychron Ultra-fast Lime Magnetic Switch - Silent Banana',short:'Keychron Ultra-fast Lime Silent Banana',type:'Tactile',startF:'30 gf',startGf:30,operF:null,operGf:null,endF:'50 gf',endGf:50,preT:'Freely setting',preMm:null,travel:'3.5±0.1 mm',travelMm:3.5,travelKind:'nom',pins:null,lubed:true},
+    {pos:'4-1',r:4,c:1,cat:'Magnetic',brand:'Gateron',name:'Gateron Double-Rail Magnetic Switch - Nebula',short:'Gateron Double-Rail Nebula',type:'Linear',startF:'40 gf',startGf:40,operF:null,operGf:null,endF:'60 gf',endGf:60,preT:'Freely setting',preMm:null,travel:'0.1 - 4.0 mm',travelMm:4,travelKind:'range',pins:null,lubed:true},
+    {pos:'4-2',r:4,c:2,cat:'Mechanical',brand:'Gateron',name:'Gateron Jupiter Switch - Light Banana',short:'Gateron Jupiter Light Banana',type:'Tactile',startF:null,startGf:null,operF:'45±15 gf',operGf:45,endF:null,endGf:null,preT:'2.0±0.6 mm',preMm:2,travel:'3.4 mm Max',travelMm:3.4,travelKind:'max',pins:'3-Pin',lubed:true},
+    {pos:'4-3',r:4,c:3,cat:'Mechanical',brand:'Gateron',name:'Gateron Jupiter Switch - Heavy Banana',short:'Gateron Jupiter Heavy Banana',type:'Tactile',startF:null,startGf:null,operF:'65±15 gf',operGf:65,endF:null,endGf:null,preT:'2.0±0.6 mm',preMm:2,travel:'3.4 mm Max',travelMm:3.4,travelKind:'max',pins:'3-Pin',lubed:true},
+    {pos:'4-4',r:4,c:4,cat:'Mechanical',brand:'Keychron',name:'Keychron Silk POM Switch - Light Banana',short:'Keychron Silk POM Light Banana',type:'Tactile',startF:null,startGf:null,operF:'45±15 gf',operGf:45,endF:null,endGf:null,preT:'2±0.4 mm',preMm:2,travel:'3.4±0.4 mm',travelMm:3.4,travelKind:'nom',pins:'5-Pin',lubed:true},
+    {pos:'4-5',r:4,c:5,cat:'Mechanical',brand:'Keychron',name:'Keychron Silk POM Switch - Heavy Banana',short:'Keychron Silk POM Heavy Banana',type:'Tactile',startF:null,startGf:null,operF:'65±15 gf',operGf:65,endF:null,endGf:null,preT:'2±0.4 mm',preMm:2,travel:'3.4±0.4 mm',travelMm:3.4,travelKind:'nom',pins:'5-Pin',lubed:true},
+    {pos:'4-6',r:4,c:6,cat:'Magnetic',brand:'Gateron',name:'Gateron Golden Dragon Switch',short:'Gateron Golden Dragon',type:'Linear',startF:'33±5 gf',startGf:33,operF:null,operGf:null,endF:'47±10 gf',endGf:47,preT:'Freely setting',preMm:null,travel:'3.5±0.1 mm',travelMm:3.5,travelKind:'nom',pins:null,lubed:true},
+    {pos:'4-7',r:4,c:7,cat:'Mechanical',brand:'Huano',name:'Huano Geisha Latte Switch',short:'Huano Geisha Latte',type:'Linear',startF:null,startGf:null,operF:'37±8 gf',operGf:37,endF:null,endGf:null,preT:'2±0.4 mm',preMm:2,travel:'3.6±0.2 mm',travelMm:3.6,travelKind:'nom',pins:'5-Pin',lubed:true},
+    {pos:'4-8',r:4,c:8,cat:'Mechanical',brand:'Huano',name:'Huano Obsidian Pro Switch',short:'Huano Obsidian Pro',type:'Linear',startF:null,startGf:null,operF:'65±15 gf',operGf:65,endF:null,endGf:null,preT:'2±0.4 mm',preMm:2,travel:'3.4±0.4 mm',travelMm:3.4,travelKind:'nom',pins:'5-Pin',lubed:true},
+    {pos:'4-9',r:4,c:9,cat:'Mechanical',brand:'Gateron',name:'Gateron G Pro 3.0 Switch - White',short:'Gateron G Pro 3.0 White',type:'Linear',startF:null,startGf:null,operF:'38±15 gf',operGf:38,endF:null,endGf:null,preT:'2.0±0.6 mm',preMm:2,travel:'4.0±0.6 mm',travelMm:4,travelKind:'nom',pins:'3-Pin',lubed:true},
+    {pos:'4-10',r:4,c:10,cat:'Magnetic',brand:'Gateron',name:'Gateron Jade Pro Switch',short:'Gateron Jade Pro',type:'Linear',startF:'36±5 gf',startGf:36,operF:null,operGf:null,endF:'50±10 gf',endGf:50,preT:'Freely setting',preMm:null,travel:'3.5±0.1 mm',travelMm:3.5,travelKind:'nom',pins:null,lubed:true},
+    {pos:'5-1',r:5,c:1,cat:'Magnetic',brand:'Gateron',name:'Gateron Jade Gaming Switch',short:'Gateron Jade Gaming',type:'Linear',startF:'36±5 gf',startGf:36,operF:null,operGf:null,endF:'50±10 gf',endGf:50,preT:'Freely setting',preMm:null,travel:'3.5±0.1 mm',travelMm:3.5,travelKind:'nom',pins:null,lubed:true},
+    {pos:'5-2',r:5,c:2,cat:'Magnetic',brand:'Gateron',name:'Gateron Jade Spark Switch',short:'Gateron Jade Spark',type:'Linear',startF:'33±5 gf',startGf:33,operF:null,operGf:null,endF:'45±10 gf',endGf:45,preT:'Freely setting',preMm:null,travel:'3.2±0.1 mm',travelMm:3.2,travelKind:'nom',pins:null,lubed:true},
+    {pos:'5-3',r:5,c:3,cat:'Mechanical',brand:'Gateron',name:'Gateron G Pro Switch - Yellow',short:'Gateron G Pro Yellow',type:'Linear',startF:null,startGf:null,operF:'50±15 gf',operGf:50,endF:null,endGf:null,preT:'2.0±0.6 mm',preMm:2,travel:'4.0 mm Max',travelMm:4,travelKind:'max',pins:'3-Pin',lubed:true},
+    {pos:'5-4',r:5,c:4,cat:'Mechanical',brand:'Gateron',name:'Gateron Ink V2 Switch - Black',short:'Gateron Ink V2 Black',type:'Linear',startF:null,startGf:null,operF:'60±15 gf',operGf:60,endF:null,endGf:null,preT:'2.0±0.6 mm',preMm:2,travel:'4.0 mm Max',travelMm:4,travelKind:'max',pins:'5-Pin',lubed:true},
+    {pos:'5-5',r:5,c:5,cat:'Mechanical',brand:'Gateron',name:'Gateron Box Ink V2 Switch - Black',short:'Gateron Box Ink V2 Black',type:'Linear',startF:null,startGf:null,operF:'60±15 gf',operGf:60,endF:null,endGf:null,preT:'1.2±0.3 mm',preMm:1.2,travel:'3.4+0.0/-0.4 mm',travelMm:3.4,travelKind:'nom',pins:'5-Pin',lubed:true},
+    {pos:'5-6',r:5,c:6,cat:'Mechanical',brand:'Gateron',name:'Gateron Oil King Switch',short:'Gateron Oil King',type:'Linear',startF:null,startGf:null,operF:'55±5 gf',operGf:55,endF:null,endGf:null,preT:'2.0±0.6 mm',preMm:2,travel:'4.0 mm Max',travelMm:4,travelKind:'max',pins:'5-Pin',lubed:true},
+    {pos:'5-7',r:5,c:7,cat:'Mechanical',brand:'Gateron',name:'Gateron G Pro 3.0 Switch - Red',short:'Gateron G Pro 3.0 Red',type:'Linear',startF:null,startGf:null,operF:'45±15 gf',operGf:45,endF:null,endGf:null,preT:'2.0±0.6 mm',preMm:2,travel:'4.0±0.6 mm',travelMm:4,travelKind:'nom',pins:'3-Pin',lubed:true},
+    {pos:'5-8',r:5,c:8,cat:'Mechanical',brand:'Gateron',name:'Gateron G Pro 3.0 Switch - Blue',short:'Gateron G Pro 3.0 Blue',type:'Clicky',startF:null,startGf:null,operF:'60±15 gf',operGf:60,endF:null,endGf:null,preT:'2.3±0.6 mm',preMm:2.3,travel:'4.0±0.6 mm',travelMm:4,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'5-9',r:5,c:9,cat:'Mechanical',brand:'Gateron',name:'Gateron G Pro 3.0 Switch - Brown',short:'Gateron G Pro 3.0 Brown',type:'Tactile',startF:null,startGf:null,operF:'55±15 gf',operGf:55,endF:null,endGf:null,preT:'2.0±0.6 mm',preMm:2,travel:'4.0±0.6 mm',travelMm:4,travelKind:'nom',pins:'3-Pin',lubed:true},
+    {pos:'5-10',r:5,c:10,cat:'Mechanical',brand:'Gateron',name:'Gateron G Pro 3.0 Switch - Yellow',short:'Gateron G Pro 3.0 Yellow',type:'Linear',startF:null,startGf:null,operF:'50±15 gf',operGf:50,endF:null,endGf:null,preT:'2.0±0.6 mm',preMm:2,travel:'4.0±0.6 mm',travelMm:4,travelKind:'nom',pins:'3-Pin',lubed:true},
+    {pos:'6-1',r:6,c:1,cat:'Mechanical',brand:'Gateron',name:'Gateron G Pro 3.0 Switch - Black',short:'Gateron G Pro 3.0 Black',type:'Linear',startF:null,startGf:null,operF:'60±15 gf',operGf:60,endF:null,endGf:null,preT:'2.0±0.6 mm',preMm:2,travel:'4.0±0.6 mm',travelMm:4,travelKind:'nom',pins:'3-Pin',lubed:true},
+    {pos:'6-2',r:6,c:2,cat:'Mechanical',brand:'Gateron',name:'Gateron Box Ink V2 Switch - Pink',short:'Gateron Box Ink V2 Pink',type:'Linear',startF:null,startGf:null,operF:'50±15 gf',operGf:50,endF:null,endGf:null,preT:'1.2±0.3 mm',preMm:1.2,travel:'3.4+0.0/-0.4 mm',travelMm:3.4,travelKind:'nom',pins:'5-Pin',lubed:true},
+    {pos:'6-3',r:6,c:3,cat:'Mechanical',brand:'Gateron',name:'Gateron Smoothie Switch',short:'Gateron Smoothie',type:'Linear',startF:null,startGf:null,operF:'45±10 gf',operGf:45,endF:null,endGf:null,preT:'2.0±0.6 mm',preMm:2,travel:'3.6±0.2 mm',travelMm:3.6,travelKind:'nom',pins:'5-Pin',lubed:true},
+    {pos:'6-4',r:6,c:4,cat:'Mechanical',brand:'Gateron',name:'Gateron Baby Kangaroo 2.0 Switch',short:'Gateron Baby Kangaroo 2.0',type:'Tactile',startF:null,startGf:null,operF:'59±8 gf',operGf:59,endF:null,endGf:null,preT:'2.0±0.5 mm',preMm:2,travel:'3.4 mm Max',travelMm:3.4,travelKind:'max',pins:'5-Pin',lubed:true},
+    {pos:'6-5',r:6,c:5,cat:'Mechanical',brand:'Gateron',name:'Gateron Baby Raccoon 2.0 Switch',short:'Gateron Baby Raccoon 2.0',type:'Linear',startF:null,startGf:null,operF:'55±8 gf',operGf:55,endF:null,endGf:null,preT:'2.0±0.5 mm',preMm:2,travel:'3.6±0.2 mm',travelMm:3.6,travelKind:'nom',pins:'5-Pin',lubed:true},
+    {pos:'6-6',r:6,c:6,cat:'Magnetic',brand:'Gateron',name:'Gateron Jade Air Switch',short:'Gateron Jade Air',type:'Linear',startF:'36±5 gf',startGf:36,operF:null,operGf:null,endF:'50±10 gf',endGf:50,preT:'Freely setting',preMm:null,travel:'3.5±0.1 mm',travelMm:3.5,travelKind:'nom',pins:null,lubed:true},
+    {pos:'6-7',r:6,c:7,cat:'Magnetic',brand:'Gateron',name:'Gateron Jade Ultra Switch',short:'Gateron Jade Ultra',type:'Linear',startF:'33±5 gf',startGf:33,operF:null,operGf:null,endF:'45±10 gf',endGf:45,preT:'Freely setting',preMm:null,travel:'3.2±0.1 mm',travelMm:3.2,travelKind:'nom',pins:null,lubed:true},
+    {pos:'6-8',r:6,c:8,cat:'Magnetic',brand:'Gateron',name:'Gateron Jade Delta Switch - Dark',short:'Gateron Jade Delta Dark',type:'Linear',startF:'36±5 gf',startGf:36,operF:null,operGf:null,endF:'50±10 gf',endGf:50,preT:'Freely setting',preMm:null,travel:'3.5±0.1 mm',travelMm:3.5,travelKind:'nom',pins:null,lubed:true},
+    {pos:'6-9',r:6,c:9,cat:'Mechanical',brand:'Gateron',name:'Gateron G Pro 3.0 Switch - Silver',short:'Gateron G Pro 3.0 Silver',type:'Linear',startF:null,startGf:null,operF:'45±15 gf',operGf:45,endF:null,endGf:null,preT:'1.2±0.3 mm',preMm:1.2,travel:'3.4+0.0/-0.4 mm',travelMm:3.4,travelKind:'nom',pins:'3-Pin',lubed:true},
+    {pos:'6-10',r:6,c:10,cat:'Mechanical',brand:'Gateron',name:'Gateron North Pole 2.0 Switch - Yellow',short:'Gateron North Pole 2.0 Yellow',type:'Linear',startF:null,startGf:null,operF:'50±10 gf',operGf:50,endF:null,endGf:null,preT:'2.0±0.5 mm',preMm:2,travel:'4.0 mm Max',travelMm:4,travelKind:'max',pins:'5-Pin',lubed:true},
+    {pos:'7-1',r:7,c:1,cat:'Mechanical',brand:'Kailh',name:'Kailh Box Switch - Red',short:'Kailh Box Red',type:'Linear',startF:null,startGf:null,operF:'45±10 gf',operGf:45,endF:null,endGf:null,preT:'1.8±0.4 mm',preMm:1.8,travel:'3.6±0.3 mm',travelMm:3.6,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'7-2',r:7,c:2,cat:'Mechanical',brand:'Kailh',name:'Kailh Box Switch - White',short:'Kailh Box White',type:'Clicky',startF:null,startGf:null,operF:'45±15 gf',operGf:45,endF:null,endGf:null,preT:'1.8±0.3 mm',preMm:1.8,travel:'3.6±0.3 mm',travelMm:3.6,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'7-3',r:7,c:3,cat:'Mechanical',brand:'Kailh',name:'Kailh Box Switch - Brown',short:'Kailh Box Brown',type:'Tactile',startF:null,startGf:null,operF:'45±10 gf',operGf:45,endF:null,endGf:null,preT:'2.0±0.4 mm',preMm:2,travel:'3.6±0.3 mm',travelMm:3.6,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'7-4',r:7,c:4,cat:'Mechanical',brand:'Kailh',name:'Kailh Box Switch - Black',short:'Kailh Box Black',type:'Linear',startF:null,startGf:null,operF:'60±10 gf',operGf:60,endF:null,endGf:null,preT:'1.8±0.4 mm',preMm:1.8,travel:'3.6±0.3 mm',travelMm:3.6,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'7-5',r:7,c:5,cat:'Mechanical',brand:'Kailh',name:'Kailh Box Switch - Jade',short:'Kailh Box Jade',type:'Clicky',startF:null,startGf:null,operF:'50±20 gf',operGf:50,endF:null,endGf:null,preT:'1.8±0.4 mm',preMm:1.8,travel:'3.6±0.3 mm',travelMm:3.6,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'7-6',r:7,c:6,cat:'Mechanical',brand:'Kailh',name:'Kailh Box Switch - Navy',short:'Kailh Box Navy',type:'Clicky',startF:null,startGf:null,operF:'75±20 gf',operGf:75,endF:null,endGf:null,preT:'1.8±0.4 mm',preMm:1.8,travel:'3.6±0.3 mm',travelMm:3.6,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'7-7',r:7,c:7,cat:'Mechanical',brand:'Kailh',name:'Kailh Box Cream Pro Switch',short:'Kailh Box Cream Pro',type:'Linear',startF:null,startGf:null,operF:'45±10 gf',operGf:45,endF:null,endGf:null,preT:'1.7±0.4 mm',preMm:1.7,travel:'4.0±0.3 mm',travelMm:4,travelKind:'nom',pins:'5-Pin',lubed:true},
+    {pos:'7-8',r:7,c:8,cat:'Mechanical',brand:'Kailh',name:'Kailh White Owl Box Switch',short:'Kailh White Owl',type:'Clicky',startF:null,startGf:null,operF:'46±20 gf',operGf:46,endF:null,endGf:null,preT:'1.8±0.4 mm',preMm:1.8,travel:'3.6±0.3 mm',travelMm:3.6,travelKind:'nom',pins:'5-Pin',lubed:null},
+    {pos:'7-9',r:7,c:9,cat:'Mechanical',brand:'Kailh',name:'Kailh Red Bean Pudding Box Switch',short:'Kailh Red Bean Pudding',type:'Linear',startF:null,startGf:null,operF:'45±10 gf',operGf:45,endF:null,endGf:null,preT:'1.8±0.4 mm',preMm:1.8,travel:'3.6±0.3 mm',travelMm:3.6,travelKind:'nom',pins:'5-Pin',lubed:null},
+    {pos:'7-10',r:7,c:10,cat:'Mechanical',brand:'Kailh',name:'Kailh Midnight Pro Silent Linear Switch',short:'Kailh Midnight Pro Linear',type:'Linear',startF:null,startGf:null,operF:'45±10 gf',operGf:45,endF:null,endGf:null,preT:'1.9±0.4 mm',preMm:1.9,travel:'4.0±0.4 mm',travelMm:4,travelKind:'nom',pins:'5-Pin',lubed:true},
+    {pos:'8-1',r:8,c:1,cat:'Mechanical',brand:'Kailh',name:'Kailh Midnight Pro Silent Tactile Switch',short:'Kailh Midnight Pro Tactile',type:'Tactile',startF:null,startGf:null,operF:'45±10 gf',operGf:45,endF:null,endGf:null,preT:'1.9±0.4 mm',preMm:1.9,travel:'3.7±0.3 mm',travelMm:3.7,travelKind:'nom',pins:'5-Pin',lubed:true},
+    {pos:'8-2',r:8,c:2,cat:'Mechanical',brand:'Kailh',name:'Kailh Super Speed Switch - Silver',short:'Kailh Super Speed Silver',type:'Linear',startF:null,startGf:null,operF:'38±10 gf',operGf:38,endF:null,endGf:null,preT:'1.1+0.3/-0.2 mm',preMm:1.1,travel:'3.5±0.4 mm',travelMm:3.5,travelKind:'nom',pins:'3-Pin',lubed:true},
+    {pos:'8-3',r:8,c:3,cat:'Mechanical',brand:'Kailh',name:'Kailh Super Speed Switch - Copper',short:'Kailh Super Speed Copper',type:'Tactile',startF:null,startGf:null,operF:'38±10 gf',operGf:38,endF:null,endGf:null,preT:'1.1+0.3/-0.2 mm',preMm:1.1,travel:'3.5±0.4 mm',travelMm:3.5,travelKind:'nom',pins:'3-Pin',lubed:true},
+    {pos:'8-4',r:8,c:4,cat:'Mechanical',brand:'Kailh',name:'Kailh Super Speed Switch - Bronze',short:'Kailh Super Speed Bronze',type:'Clicky',startF:null,startGf:null,operF:'48±10 gf',operGf:48,endF:null,endGf:null,preT:'1.1+0.3/-0.2 mm',preMm:1.1,travel:'3.5±0.4 mm',travelMm:3.5,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'8-5',r:8,c:5,cat:'Mechanical',brand:'Kailh',name:'Kailh Super Speed Switch - Red',short:'Kailh Super Speed Red',type:'Linear',startF:null,startGf:null,operF:'37±10 gf',operGf:37,endF:null,endGf:null,preT:'1.8±0.5 mm',preMm:1.8,travel:'4.0±0.4 mm',travelMm:4,travelKind:'nom',pins:'3-Pin',lubed:true},
+    {pos:'8-6',r:8,c:6,cat:'Mechanical',brand:'Kailh',name:'Kailh Box V2 Switch - Red Gold-plated Spring',short:'Kailh Box V2 Red',type:'Linear',startF:null,startGf:null,operF:'40±10 gf',operGf:40,endF:null,endGf:null,preT:'1.8±0.4 mm',preMm:1.8,travel:'3.6±0.3 mm',travelMm:3.6,travelKind:'nom',pins:'5-Pin',lubed:true},
+    {pos:'8-7',r:8,c:7,cat:'Mechanical',brand:'Kailh',name:'Kailh Box V2 Switch - Brown Gold-plated Spring',short:'Kailh Box V2 Brown',type:'Tactile',startF:null,startGf:null,operF:'45±10 gf',operGf:45,endF:null,endGf:null,preT:'2.0±0.4 mm',preMm:2,travel:'3.6±0.3 mm',travelMm:3.6,travelKind:'nom',pins:'5-Pin',lubed:true},
+    {pos:'8-8',r:8,c:8,cat:'Mechanical',brand:'Kailh',name:'Kailh Box V2 Switch - White Gold-plated Spring',short:'Kailh Box V2 White',type:'Clicky',startF:null,startGf:null,operF:'45±15 gf',operGf:45,endF:null,endGf:null,preT:'1.8±0.4 mm',preMm:1.8,travel:'3.6±0.3 mm',travelMm:3.6,travelKind:'nom',pins:'5-Pin',lubed:null},
+    {pos:'8-9',r:8,c:9,cat:'Mechanical',brand:'Kailh',name:'Kailh BOX Heavy Switch - Pale Blue',short:'Kailh Box Pale Blue',type:'Clicky',startF:null,startGf:null,operF:'60±15 gf',operGf:60,endF:null,endGf:null,preT:'1.8±0.4 mm',preMm:1.8,travel:'3.6±0.3 mm',travelMm:3.6,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'8-10',r:8,c:10,cat:'Mechanical',brand:'Kailh',name:'Kailh BOX Heavy Switch - Dark Yellow',short:'Kailh Box Dark Yellow',type:'Linear',startF:null,startGf:null,operF:'70±10 gf',operGf:70,endF:null,endGf:null,preT:'2.0±0.4 mm',preMm:2,travel:'3.6±0.3 mm',travelMm:3.6,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'9-1',r:9,c:1,cat:'Mechanical',brand:'Kailh',name:'Kailh BOX Heavy Switch - Burnt Orange',short:'Kailh Box Burnt Orange',type:'Tactile',startF:null,startGf:null,operF:'60±15 gf',operGf:60,endF:null,endGf:null,preT:'1.8±0.4 mm',preMm:1.8,travel:'3.6±0.3 mm',travelMm:3.6,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'9-2',r:9,c:2,cat:'Mechanical',brand:'Kailh',name:'Kailh Coco Pink Box V2 Switch',short:'Kailh Coco Pink Box V2',type:'Linear',startF:null,startGf:null,operF:'40±10 gf',operGf:40,endF:null,endGf:null,preT:'1.8±0.4 mm',preMm:1.8,travel:'3.6±0.3 mm',travelMm:3.6,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'9-3',r:9,c:3,cat:'Mechanical',brand:'Kailh',name:'Kailh Box Summer Clicky Switch',short:'Kailh Box Summer',type:'Clicky',startF:null,startGf:null,operF:'50±15 gf',operGf:50,endF:null,endGf:null,preT:'1.8±0.4 mm',preMm:1.8,travel:'3.6±0.3 mm',travelMm:3.6,travelKind:'nom',pins:'5-Pin',lubed:null},
+    {pos:'9-4',r:9,c:4,cat:'Mechanical',brand:'Kailh',name:'Kailh Polia Tactile Switch',short:'Kailh Polia Tactile',type:'Tactile',startF:null,startGf:null,operF:'45±10 gf',operGf:45,endF:null,endGf:null,preT:'1.9±0.6 mm',preMm:1.9,travel:'3.8±0.6 mm',travelMm:3.8,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'9-5',r:9,c:5,cat:'Mechanical',brand:'Kailh',name:'Kailh Canary Tactile Switch',short:'Kailh Canary Tactile',type:'Tactile',startF:null,startGf:null,operF:'42±10 gf',operGf:42,endF:null,endGf:null,preT:'2.0±0.4 mm',preMm:2,travel:'4.0±0.4 mm',travelMm:4,travelKind:'nom',pins:'5-Pin',lubed:null},
+    {pos:'9-6',r:9,c:6,cat:'Mechanical',brand:'Kailh',name:'Kailh Speed Switch - Gold',short:'Kailh Speed Gold',type:'Clicky',startF:null,startGf:null,operF:'50±10 gf',operGf:50,endF:null,endGf:null,preT:'1.4±0.4 mm',preMm:1.4,travel:'3.5±0.4 mm',travelMm:3.5,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'9-7',r:9,c:7,cat:'Mechanical',brand:'Kailh',name:'Kailh Speed Switch - Silver',short:'Kailh Speed Silver',type:'Linear',startF:null,startGf:null,operF:'40±10 gf',operGf:40,endF:null,endGf:null,preT:'1.1±0.4 mm',preMm:1.1,travel:'3.5±0.4 mm',travelMm:3.5,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'9-8',r:9,c:8,cat:'Mechanical',brand:'Kailh',name:'Kailh Speed Switch - Copper',short:'Kailh Speed Copper',type:'Tactile',startF:null,startGf:null,operF:'40±10 gf',operGf:40,endF:null,endGf:null,preT:'1.1±0.4 mm',preMm:1.1,travel:'3.5±0.4 mm',travelMm:3.5,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'9-9',r:9,c:9,cat:'Mechanical',brand:'Kailh',name:'Kailh Speed Switch - Bronze',short:'Kailh Speed Bronze',type:'Clicky',startF:null,startGf:null,operF:'50±10 gf',operGf:50,endF:null,endGf:null,preT:'1.1±0.4 mm',preMm:1.1,travel:'3.5±0.4 mm',travelMm:3.5,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'9-10',r:9,c:10,cat:'Mechanical',brand:'Kailh',name:'Kailh Speed Switch - Pink',short:'Kailh Speed Pink',type:'Clicky',startF:null,startGf:null,operF:'50±10 gf',operGf:50,endF:null,endGf:null,preT:'1.1±0.4 mm',preMm:1.1,travel:'3.5±0.4 mm',travelMm:3.5,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'10-1',r:10,c:1,cat:'Mechanical',brand:'Kailh',name:'Kailh Pro Switch - Burgundy',short:'Kailh Pro Burgundy',type:'Linear',startF:null,startGf:null,operF:'50±10 gf',operGf:50,endF:null,endGf:null,preT:'1.7±0.6 mm',preMm:1.7,travel:'3.6±0.6 mm',travelMm:3.6,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'10-2',r:10,c:2,cat:'Mechanical',brand:'Kailh',name:'Kailh Pro Switch - Purple',short:'Kailh Pro Purple',type:'Tactile',startF:null,startGf:null,operF:'50±10 gf',operGf:50,endF:null,endGf:null,preT:'1.7±0.6 mm',preMm:1.7,travel:'3.6±0.6 mm',travelMm:3.6,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'10-3',r:10,c:3,cat:'Mechanical',brand:'Kailh',name:'Kailh Pro Switch - Light Green',short:'Kailh Pro Light Green',type:'Clicky',startF:null,startGf:null,operF:'50±10 gf',operGf:50,endF:null,endGf:null,preT:'1.7±0.6 mm',preMm:1.7,travel:'3.6±0.6 mm',travelMm:3.6,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'10-4',r:10,c:4,cat:'Mechanical',brand:'Kailh',name:'Kailh Speed Pro Heavy Switch - Sage',short:'Kailh Speed Pro Sage',type:'Clicky',startF:null,startGf:null,operF:'70±15 gf',operGf:70,endF:null,endGf:null,preT:'1.7±0.6 mm',preMm:1.7,travel:'3.6±0.6 mm',travelMm:3.6,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'10-5',r:10,c:5,cat:'Mechanical',brand:'Kailh',name:'Kailh Speed Pro Heavy Switch - Plum',short:'Kailh Speed Pro Plum',type:'Tactile',startF:null,startGf:null,operF:'70±15 gf',operGf:70,endF:null,endGf:null,preT:'1.7±0.6 mm',preMm:1.7,travel:'3.6±0.6 mm',travelMm:3.6,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'10-6',r:10,c:6,cat:'Mechanical',brand:'Kailh',name:'Kailh Speed Pro Heavy Switch - Berry',short:'Kailh Speed Pro Berry',type:'Linear',startF:null,startGf:null,operF:'70±15 gf',operGf:70,endF:null,endGf:null,preT:'1.7±0.6 mm',preMm:1.7,travel:'3.6±0.6 mm',travelMm:3.6,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'10-7',r:10,c:7,cat:'Mechanical',brand:'Kailh',name:'Kailh Speed Pro Heavy Switch - Navy',short:'Kailh Speed Pro Navy',type:'Clicky',startF:null,startGf:null,operF:'70±20 gf',operGf:70,endF:null,endGf:null,preT:'1.2±0.5 mm',preMm:1.2,travel:'3.5±0.4 mm',travelMm:3.5,travelKind:'nom',pins:'3-Pin',lubed:null},
+    {pos:'10-8',r:10,c:8,cat:'Mechanical',brand:'Kailh',name:'Kailh Deep Sea Silent Pro Box Switch - Tactile Whale',short:'Kailh Box Whale',type:'Tactile',startF:null,startGf:null,operF:'40±10 gf',operGf:40,endF:null,endGf:null,preT:'1.8±0.4 mm',preMm:1.8,travel:'3.6±0.4 mm',travelMm:3.6,travelKind:'nom',pins:'3-Pin',lubed:true},
+    {pos:'10-9',r:10,c:9,cat:'Mechanical',brand:'Kailh',name:'Kailh Deep Sea Silent Pro Box Switch - Linear Islet',short:'Kailh Box Islet',type:'Linear',startF:null,startGf:null,operF:'45±10 gf',operGf:45,endF:null,endGf:null,preT:'2.0±0.4 mm',preMm:2,travel:'3.6±0.4 mm',travelMm:3.6,travelKind:'nom',pins:'3-Pin',lubed:true},
+    {pos:'10-10',r:10,c:10,cat:'Mechanical',brand:'Kailh',name:'Kailh Box Winter Tactile Switch',short:'Kailh Box Winter',type:'Tactile',startF:null,startGf:null,operF:'38±10 gf',operGf:38,endF:null,endGf:null,preT:'2.0±0.4 mm',preMm:2,travel:'3.6±0.3 mm',travelMm:3.6,travelKind:'nom',pins:'5-Pin',lubed:true}
+  ]
+
+  var TAGS = ['thocky', 'clacky', 'poppy', 'scratchy', 'smooth', 'rattly', 'heavy', 'light']
+  var VERDICTS = ['like', 'dislike']
+
+  // Approximate colourways, matched as substrings of the switch name. Longest
+  // key wins (sorted below), so 'light banana' beats 'banana' and 'oil king'
+  // beats 'king'. A scanning aid for the eye, never a spec -- which is why an
+  // unmatched name gets a neutral dot rather than a guess.
+  var COLOURWAYS = [
+    ['ultra-fast lime silent banana', '#c9d94a'], ['ultra-fast lime banana', '#cfe04e'],
+    ['ultra-fast lime silent red', '#b6cf3f'], ['ultra-fast lime', '#a8c63a'],
+    ['red bean pudding', '#b5544c'], ['burnt orange', '#c2652b'], ['light banana', '#f0dd8a'],
+    ['heavy banana', '#d9b23e'], ['dark yellow', '#c8a015'], ['light green', '#7fc26b'],
+    ['pale blue', '#9fc3dd'], ['coco pink', '#e59aa8'], ['geisha latte', '#c8a583'],
+    ['golden dragon', '#d4a53a'], ['oil king', '#3b3f4a'], ['north pole', '#dfe6ea'],
+    ['baby kangaroo', '#c98b5e'], ['baby raccoon', '#8d8f96'], ['obsidian', '#2b2d31'],
+    ['midnight', '#2c3550'], ['burgundy', '#7d2b39'], ['smoothie', '#e3b7c8'],
+    ['nebula', '#6b5b95'], ['banana', '#e8c15c'], ['islet', '#4d7f8f'], ['whale', '#3f5a72'],
+    ['canary', '#e6d24a'], ['polia', '#b98fc4'], ['summer', '#4fb3a5'], ['winter', '#a8c8dc'],
+    ['sage', '#8fa382'], ['plum', '#7a4a72'], ['berry', '#9c3358'], ['navy', '#26365e'],
+    ['jade', '#2f9e6f'], ['mint', '#8fd6bd'], ['lime', '#a8c63a'], ['owl', '#e4e1d8'],
+    ['cream', '#eee3cc'], ['bronze', '#a9772f'], ['copper', '#b06a37'], ['silver', '#c3c8cc'],
+    ['gold', '#c9a227'], ['purple', '#6f4a9c'], ['pink', '#e08fb0'], ['orange', '#d2762c'],
+    ['yellow', '#e3c02f'], ['green', '#4a9e5c'], ['brown', '#8a5a35'], ['blue', '#3a6ea8'],
+    ['black', '#2f3236'], ['white', '#e9ebec'], ['red', '#c0392b'],
+    ['ink', '#31343d'], ['phantom', '#5b6068'], ['jupiter', '#b8763f'], ['mahjong', '#3f7d5c'],
+    ['spark', '#e0954a'], ['air', '#cfe2ea'], ['ultra', '#4a8fb0'], ['delta', '#454b57'],
+    ['gaming', '#2f9e6f'], ['pro', '#7d848a']
+  ].sort(function (a, b) { return b[0].length - a[0].length })
+
+  function swatchFor (name) {
+    var n = name.toLowerCase()
+    for (var i = 0; i < COLOURWAYS.length; i++) {
+      if (n.indexOf(COLOURWAYS[i][0]) >= 0) return COLOURWAYS[i][1]
+    }
+    return null
+  }
+
+  var byPos = new Map()
+  SWITCHES.forEach(function (sw, i) {
+    sw.i = i
+    sw.swatch = swatchFor(sw.name)
+    // Magnetic switches have no operating force -- actuation is set in software,
+    // so there is no single point at which to measure one. Their spring runs
+    // from startGf at the top to endGf at the bottom, so the midpoint is what
+    // compares honestly against a mechanical switch's operating force. The
+    // table says so rather than printing it as if it were a spec.
+    sw.sortForceGf = sw.operGf != null ? sw.operGf
+      : (sw.startGf != null && sw.endGf != null) ? (sw.startGf + sw.endGf) / 2
+      : null
+    sw.blob = (sw.pos + ' ' + sw.name + ' ' + sw.short + ' ' + sw.brand + ' ' +
+      sw.type + ' ' + sw.cat).toLowerCase()
+    byPos.set(sw.pos, sw)
+  })
+
+  /* ---------- storage ---------- */
+
+  var KEY = 'shapepilot:switch-tester:v1'
+  var UI_KEY = KEY + ':ui'
+  var BACKUP_KEY = KEY + ':backup'
+
+  // The probe sits entirely inside the try: Safari throws on the localStorage
+  // getter itself for a page opened from disk, so `typeof localStorage` is
+  // already too late.
+  var store = (function () {
+    try {
+      var ls = window.localStorage
+      ls.setItem(KEY + ':probe', '1')
+      ls.removeItem(KEY + ':probe')
+      return {
+        state: 'ok',
+        reason: '',
+        get: function (k) { try { return ls.getItem(k) } catch (e) { return null } },
+        set: function (k, v) { ls.setItem(k, v) },
+        del: function (k) { try { ls.removeItem(k) } catch (e) {} }
+      }
+    } catch (err) {
+      return {
+        state: 'blocked',
+        reason: (err && err.name) || 'unknown',
+        get: function () { return null },
+        set: function () {},
+        del: function () {}
+      }
+    }
+  })()
+
+  var DEFAULT_MARK = Object.freeze({
+    verdict: null, want: false, stars: 0, tried: false, tags: Object.freeze([]), note: ''
+  })
+
+  function readMark (raw) {
+    if (typeof raw !== 'object' || raw === null) return null
+    return {
+      verdict: VERDICTS.indexOf(raw.verdict) >= 0 ? raw.verdict : null,
+      want: raw.want === true,
+      tried: raw.tried === true,
+      stars: (typeof raw.stars === 'number' && raw.stars >= 0 && raw.stars <= 5)
+        ? Math.round(raw.stars) : 0,
+      tags: Array.isArray(raw.tags)
+        ? TAGS.filter(function (t) { return raw.tags.indexOf(t) >= 0 }) : [],
+      note: typeof raw.note === 'string' ? raw.note.slice(0, 2000) : ''
+    }
+  }
+
+  function isEmptyMark (m) {
+    return !m.verdict && !m.want && !m.tried && m.stars === 0 &&
+      m.tags.length === 0 && m.note === ''
+  }
+
+  // Storage is untrusted: it may have been written by an older build, by hand,
+  // or -- on Chrome, where every file:// page shares one bucket -- by something
+  // else entirely. Rebuild every field against the default rather than trusting
+  // the shape.
+  function readBlob (text) {
+    if (!text) return null
+    var raw
+    try { raw = JSON.parse(text) } catch (e) { return null }
+    if (typeof raw !== 'object' || raw === null) return null
+    if (typeof raw.schema === 'number' && raw.schema > 1) return { future: true }
+    var marks = {}
+    var src = (typeof raw.marks === 'object' && raw.marks !== null) ? raw.marks : {}
+    Object.keys(src).forEach(function (pos) {
+      if (!byPos.has(pos)) return
+      var m = readMark(src[pos])
+      if (m && !isEmptyMark(m)) marks[pos] = m
+    })
+    return { schema: 1, sku: 'Z156', updatedAt: raw.updatedAt || null, marks: marks }
+  }
+
+  var state = {
+    view: 'grid',
+    sort: { key: 'pos', dir: 1 },
+    focusedPos: '1-1',
+    marks: {},
+    filters: {
+      q: '', type: new Set(), cat: new Set(), brand: new Set(),
+      verdict: new Set(), tags: new Set(), want: null, tried: null, minStars: 0
+    }
+  }
+  var visible = new Set()
+  var dirty = 0
+  var lastTrigger = null
+  var openPos = null
+
+  function snapshot () {
+    return { schema: 1, sku: 'Z156', updatedAt: new Date().toISOString(), marks: state.marks }
+  }
+
+  function save () {
+    if (store.state !== 'ok') { dirty++; paintStorage(); return }
+    try {
+      store.set(KEY, JSON.stringify(snapshot()))
+      dirty = 0
+    } catch (err) {
+      // A passing probe does not promise the writes keep working: a private
+      // window can report a zero quota only when you actually write. One
+      // failure is enough to stop calling this persistent.
+      store.state = 'failed'
+      store.reason = (err && err.name) || 'unknown'
+      dirty++
+    }
+    paintStorage()
+  }
+
+  function markFor (pos) { return state.marks[pos] || DEFAULT_MARK }
+
+  function ensureMark (pos) {
+    if (!state.marks[pos]) {
+      state.marks[pos] = { verdict: null, want: false, stars: 0, tried: false, tags: [], note: '' }
+    }
+    return state.marks[pos]
+  }
+
+  function commit (pos) {
+    if (state.marks[pos] && isEmptyMark(state.marks[pos])) delete state.marks[pos]
+    save()
+    paintCell(pos)
+    paintRow(pos)
+    paintCounters()
+    refilter()
+  }
+
+  /* ---------- element helpers ---------- */
+
+  function el (tag, cls, text) {
+    var node = document.createElement(tag)
+    if (cls) node.className = cls
+    if (text != null) node.textContent = text
+    return node
+  }
+  function $ (id) { return document.getElementById(id) }
+  function dash (v) { return v == null || v === '' ? '—' : v }
+
+  /* ---------- storage banner ---------- */
+
+  var bannerEl = $('storage-banner')
+
+  function paintStorage () {
+    var titleMark = dirty > 0 && store.state !== 'ok' ? '• ' : ''
+    document.title = titleMark + 'Switch Tester 100'
+    if (store.state === 'ok') { bannerEl.hidden = true; return }
+    bannerEl.hidden = false
+    if (bannerEl.dataset.built === '1') {
+      $('banner-count').textContent = dirty === 0 ? 'Nothing marked yet.'
+        : dirty + (dirty === 1 ? ' change' : ' changes') + ' this session are not saved anywhere but this tab.'
+      return
+    }
+    bannerEl.dataset.built = '1'
+    var b = el('b', null, 'This browser will not let the page save.')
+    var why = el('span', null, store.state === 'blocked'
+      ? ' Safari blocks storage for pages opened straight from disk (' + store.reason + ').'
+      : ' Writing to storage failed (' + store.reason + ') — a private window, or a full disk.')
+    var count = el('div', null, '')
+    count.id = 'banner-count'
+    var row = el('div', 'row')
+    var exp = el('button', 'tool-btn', 'Export now')
+    exp.type = 'button'
+    exp.addEventListener('click', exportMarks)
+    row.appendChild(exp)
+    var det = el('details')
+    det.appendChild(el('summary', null, 'Make this stick'))
+    var p = el('p')
+    p.appendChild(document.createTextNode('Serve the file instead of opening it from disk: '))
+    p.appendChild(el('code', null, 'cd docs && python3 -m http.server 8000'))
+    p.appendChild(document.createTextNode(' then open '))
+    p.appendChild(el('code', null, 'http://localhost:8000/switch-tester.html'))
+    p.appendChild(document.createTextNode('. That is a different origin, so import your exported JSON once.'))
+    det.appendChild(p)
+    bannerEl.appendChild(b)
+    bannerEl.appendChild(why)
+    bannerEl.appendChild(count)
+    bannerEl.appendChild(row)
+    bannerEl.appendChild(det)
+    paintStorage()
+  }
+
+  /* ---------- filters ---------- */
+
+  var FILTER_GROUPS = [
+    { key: 'type', label: 'Type', values: ['Linear', 'Tactile', 'Clicky'] },
+    { key: 'cat', label: 'Kind', values: ['Mechanical', 'Magnetic'] },
+    { key: 'brand', label: 'Brand', values: ['Keychron', 'Gateron', 'Kailh', 'Huano'] },
+    { key: 'verdict', label: 'Verdict', values: ['like', 'dislike', 'none'],
+      labels: { like: 'Liked', dislike: 'Disliked', none: 'Unmarked' } },
+    { key: 'tags', label: 'Feel', values: TAGS }
+  ]
+
+  function buildFilters () {
+    var host = $('filters')
+    FILTER_GROUPS.forEach(function (group) {
+      var wrap = el('div', 'fgroup')
+      wrap.appendChild(el('span', 'flabel', group.label))
+      group.values.forEach(function (value) {
+        var chip = el('button', 'chip', group.labels ? group.labels[value] : value)
+        chip.type = 'button'
+        chip.setAttribute('aria-pressed', 'false')
+        chip.addEventListener('click', function () {
+          var set = state.filters[group.key]
+          if (set.has(value)) set['delete'](value); else set.add(value)
+          chip.setAttribute('aria-pressed', set.has(value) ? 'true' : 'false')
+          refilter()
+        })
+        wrap.appendChild(chip)
+      })
+      host.appendChild(wrap)
+    })
+
+    var flags = el('div', 'fgroup')
+    flags.appendChild(el('span', 'flabel', 'Marks'))
+    ;[['want', 'Want to buy'], ['tried', 'Tried'], ['untried', 'Not tried']].forEach(function (pair) {
+      var chip = el('button', 'chip', pair[1])
+      chip.type = 'button'
+      chip.setAttribute('aria-pressed', 'false')
+      chip.addEventListener('click', function () {
+        var f = state.filters
+        if (pair[0] === 'want') f.want = f.want === true ? null : true
+        if (pair[0] === 'tried') { f.tried = f.tried === true ? null : true }
+        if (pair[0] === 'untried') { f.tried = f.tried === false ? null : false }
+        flags.querySelectorAll('.chip').forEach(function (c, idx) {
+          var on = idx === 0 ? f.want === true : idx === 1 ? f.tried === true : f.tried === false
+          c.setAttribute('aria-pressed', on ? 'true' : 'false')
+        })
+        refilter()
+      })
+      flags.appendChild(chip)
+    })
+    var clear = el('button', 'chip', 'Clear all')
+    clear.type = 'button'
+    clear.addEventListener('click', clearFilters)
+    flags.appendChild(clear)
+    host.appendChild(flags)
+
+    var hint = el('p', 'fhint',
+      'Chips within a group are OR; groups are AND. In the grid, filtered-out switches dim rather than disappear so the layout keeps matching the tester.')
+    host.appendChild(hint)
+  }
+
+  function clearFilters () {
+    var f = state.filters
+    f.q = ''
+    ;['type', 'cat', 'brand', 'verdict', 'tags'].forEach(function (k) { f[k].clear() })
+    f.want = null; f.tried = null; f.minStars = 0
+    $('search').value = ''
+    $('filters').querySelectorAll('.chip').forEach(function (c) { c.setAttribute('aria-pressed', 'false') })
+    refilter()
+  }
+
+  // A collapsed panel must never hide the fact that a filter is on, or the
+  // "why am I only seeing twelve switches" moment is unanswerable.
+  function paintFilterSummary () {
+    var f = state.filters
+    var n = f.type.size + f.cat.size + f.brand.size + f.verdict.size + f.tags.size +
+      (f.want !== null ? 1 : 0) + (f.tried !== null ? 1 : 0) +
+      (f.minStars ? 1 : 0) + (f.q ? 1 : 0)
+    var summary = $('filter-summary')
+    summary.textContent = 'Filters'
+    if (n) summary.appendChild(el('span', 'on', ' · ' + n + ' active'))
+  }
+
+  function matches (sw) {
+    var f = state.filters
+    var m = markFor(sw.pos)
+    if (f.type.size && !f.type.has(sw.type)) return false
+    if (f.cat.size && !f.cat.has(sw.cat)) return false
+    if (f.brand.size && !f.brand.has(sw.brand)) return false
+    if (f.verdict.size && !f.verdict.has(m.verdict || 'none')) return false
+    if (f.tags.size) {
+      var hit = m.tags.some(function (t) { return f.tags.has(t) })
+      if (!hit) return false
+    }
+    if (f.want !== null && m.want !== f.want) return false
+    if (f.tried !== null && m.tried !== f.tried) return false
+    if (f.minStars && m.stars < f.minStars) return false
+    if (f.q && sw.blob.indexOf(f.q) < 0 && m.note.toLowerCase().indexOf(f.q) < 0) return false
+    return true
+  }
+
+  function refilter () {
+    visible.clear()
+    SWITCHES.forEach(function (sw) { if (matches(sw)) visible.add(sw.pos) })
+    SWITCHES.forEach(function (sw) {
+      cellByPos.get(sw.pos).classList.toggle('is-dim', !visible.has(sw.pos))
+      rowByPos.get(sw.pos).hidden = !visible.has(sw.pos)
+    })
+    paintList()
+    paintFilterSummary()
+    // The shopping list carries its own count, and "showing all 100" above a
+    // list of two reads as a contradiction.
+    $('status').hidden = state.view === 'list'
+    $('status').textContent = visible.size === 100
+      ? 'Showing all 100 switches.'
+      : 'Showing ' + visible.size + ' of 100 switches.'
+  }
+
+  /* ---------- grid ---------- */
+
+  var gridEl = $('grid')
+  var cellByPos = new Map()
+  var rowByPos = new Map()
+
+  function cellLabel (sw) {
+    var m = markFor(sw.pos)
+    var bits = [sw.pos + '.', sw.name + ',', sw.type.toLowerCase(), sw.cat.toLowerCase() + ',']
+    bits.push(sw.sortForceGf != null ? Math.round(sw.sortForceGf) + ' grams.' : 'force not stated.')
+    var marks = []
+    if (m.tried) marks.push('tried')
+    if (m.verdict) marks.push(m.verdict === 'like' ? 'liked' : 'disliked')
+    if (m.stars) marks.push(m.stars + ' stars')
+    if (m.want) marks.push('want to buy')
+    if (m.note) marks.push('has a note')
+    bits.push(marks.length ? marks.join(', ') + '.' : 'unmarked.')
+    return bits.join(' ')
+  }
+
+  function buildGrid () {
+    var frag = document.createDocumentFragment()
+    frag.appendChild(el('div', 'colhead', ''))
+    for (var c = 1; c <= 10; c++) frag.appendChild(el('div', 'colhead', String(c)))
+    for (var r = 1; r <= 10; r++) {
+      var row = el('div', 'grid-row')
+      row.setAttribute('role', 'row')
+      row.style.display = 'contents'
+      var head = el('div', 'rowhead', String(r))
+      head.setAttribute('aria-hidden', 'true')
+      row.appendChild(head)
+      for (var c2 = 1; c2 <= 10; c2++) {
+        var pos = r + '-' + c2
+        var sw = byPos.get(pos)
+        var cell = el('button', 'cell')
+        cell.type = 'button'
+        cell.setAttribute('role', 'gridcell')
+        cell.dataset.pos = pos
+        cell.tabIndex = pos === '1-1' ? 0 : -1
+        cell.title = sw.name
+
+        var top = el('div', 'cpos')
+        var dot = el('i', 'swatch')
+        dot.setAttribute('aria-hidden', 'true')
+        if (sw.swatch) dot.style.background = sw.swatch
+        top.appendChild(dot)
+        top.appendChild(document.createTextNode(pos))
+        cell.appendChild(top)
+        cell.appendChild(el('div', 'cname', sw.short))
+        cell.appendChild(el('div', 'ctype', sw.type))
+
+        var marks = el('div', 'marks')
+        marks.setAttribute('aria-hidden', 'true')
+        marks.appendChild(el('span', 'm-verdict', ''))
+        marks.appendChild(el('span', 'm-stars', ''))
+        cell.appendChild(marks)
+
+        row.appendChild(cell)
+        cellByPos.set(pos, cell)
+      }
+      frag.appendChild(row)
+    }
+    gridEl.appendChild(frag)
+  }
+
+  function paintCell (pos) {
+    var cell = cellByPos.get(pos)
+    var m = markFor(pos)
+    cell.classList.toggle('is-tried', m.tried)
+    cell.classList.toggle('is-want', m.want)
+    cell.classList.toggle('v-like', m.verdict === 'like')
+    cell.classList.toggle('v-dislike', m.verdict === 'dislike')
+    var v = cell.querySelector('.m-verdict')
+    v.textContent = m.verdict === 'like' ? '✓' : m.verdict === 'dislike' ? '✕' : ''
+    v.className = 'm-verdict' + (m.verdict ? ' ' + m.verdict : '')
+    cell.querySelector('.m-stars').textContent = m.stars ? String(m.stars) : ''
+    cell.setAttribute('aria-label', cellLabel(byPos.get(pos)))
+  }
+
+  // The only writer of tabindex. Two code paths touching it is how a roving
+  // tabindex desyncs and the grid stops being keyboard-reachable.
+  function setFocusedPos (pos, focus) {
+    if (!byPos.has(pos)) return
+    cellByPos.get(state.focusedPos).tabIndex = -1
+    state.focusedPos = pos
+    var cell = cellByPos.get(pos)
+    cell.tabIndex = 0
+    if (focus) cell.focus()
+    paintReadout(pos)
+  }
+
+  function paintReadout (pos) {
+    var out = $('readout')
+    out.textContent = ''
+    if (!pos) return
+    var sw = byPos.get(pos)
+    out.appendChild(el('span', 'rpos', sw.pos))
+    out.appendChild(el('span', 'rname', sw.name))
+    var force = sw.operF || (sw.startF && sw.endF ? sw.startF + ' → ' + sw.endF : null)
+    out.appendChild(el('span', 'rspec', '· ' + sw.type + ' ' + sw.cat.toLowerCase() +
+      ' · ' + dash(force) + ' · ' + dash(sw.travel) + ' travel'))
+  }
+
+  var ARROWS = { ArrowRight: [0, 1], ArrowLeft: [0, -1], ArrowUp: [-1, 0], ArrowDown: [1, 0] }
+
+  gridEl.addEventListener('keydown', function (e) {
+    var cur = byPos.get(state.focusedPos)
+    if (!cur) return
+    var r = cur.r, c = cur.c, d = ARROWS[e.key]
+    if (d) { r += d[0]; c += d[1] }
+    else if (e.key === 'Home') { c = 1; if (e.ctrlKey || e.metaKey) r = 1 }
+    else if (e.key === 'End') { c = 10; if (e.ctrlKey || e.metaKey) r = 10 }
+    else if (e.key === 'PageUp') r = 1
+    else if (e.key === 'PageDown') r = 10
+    else return
+    // Clamp, never wrap: the grid is a physical object, and wrapping from 1-10
+    // to 2-1 is not a movement any hand makes across the tester.
+    r = Math.min(10, Math.max(1, r))
+    c = Math.min(10, Math.max(1, c))
+    e.preventDefault()
+    setFocusedPos(r + '-' + c, true)
+  })
+
+  gridEl.addEventListener('click', function (e) {
+    var cell = e.target.closest('.cell')
+    if (cell) openDetail(cell.dataset.pos, cell)
+  })
+  gridEl.addEventListener('mouseover', function (e) {
+    var cell = e.target.closest('.cell')
+    if (cell) paintReadout(cell.dataset.pos)
+  })
+  gridEl.addEventListener('focusin', function (e) {
+    var cell = e.target.closest('.cell')
+    if (cell && cell.dataset.pos !== state.focusedPos) setFocusedPos(cell.dataset.pos, false)
+  })
+
+  /* ---------- table ---------- */
+
+  var COLUMNS = [
+    { key: 'pos', label: 'Pos', get: function (s) { return s.pos }, sort: function (s) { return s.i }, stick: true },
+    { key: 'name', label: 'Switch', get: function (s) { return s.name }, sort: function (s) { return s.name.toLowerCase() }, cls: 'nm' },
+    { key: 'brand', label: 'Brand', get: function (s) { return s.brand }, sort: function (s) { return s.brand } },
+    { key: 'cat', label: 'Kind', get: function (s) { return s.cat }, sort: function (s) { return s.cat } },
+    { key: 'type', label: 'Type', get: function (s) { return s.type }, sort: function (s) { return s.type } },
+    { key: 'force', label: 'Force', sort: function (s) { return s.sortForceGf }, num: true, render: forceCell },
+    { key: 'pre', label: 'Pre-travel', get: function (s) { return dash(s.preT) }, sort: function (s) { return s.preMm }, num: true },
+    { key: 'travel', label: 'Travel', sort: function (s) { return s.travelMm }, num: true, render: travelCell },
+    { key: 'pins', label: 'Pins', get: function (s) { return dash(s.pins) }, sort: function (s) { return s.pins } },
+    { key: 'lubed', label: 'Pre-lubed', get: function (s) { return s.lubed ? 'Yes' : '—' }, sort: function (s) { return s.lubed ? 0 : 1 } },
+    { key: 'verdict', label: 'Verdict', mark: true, sort: function (s) { var v = markFor(s.pos).verdict; return v === 'like' ? 0 : v === 'dislike' ? 1 : 2 }, render: verdictCell },
+    { key: 'stars', label: 'Rating', mark: true, sort: function (s) { return -markFor(s.pos).stars }, num: true, get: function (s) { var m = markFor(s.pos); return m.stars ? String(m.stars) : '—' } },
+    { key: 'want', label: 'Want', mark: true, sort: function (s) { return markFor(s.pos).want ? 0 : 1 }, get: function (s) { return markFor(s.pos).want ? '✓' : '' } },
+    { key: 'tried', label: 'Tried', mark: true, sort: function (s) { return markFor(s.pos).tried ? 0 : 1 }, get: function (s) { return markFor(s.pos).tried ? '✓' : '' } },
+    { key: 'note', label: 'Note', mark: true, sort: function (s) { return markFor(s.pos).note ? 0 : 1 }, get: function (s) { return markFor(s.pos).note }, cls: 'nm' }
+  ]
+
+  function forceCell (td, sw) {
+    td.textContent = sw.operF ? sw.operF
+      : (sw.startF && sw.endF) ? sw.startF + ' → ' + sw.endF : '—'
+    if (!sw.operF && sw.sortForceGf != null) {
+      td.appendChild(el('span', 'hint', 'sorts at ' + sw.sortForceGf + ' gf mid'))
+    }
+  }
+
+  function travelCell (td, sw) {
+    td.textContent = dash(sw.travel)
+    if (sw.travelKind === 'max') td.appendChild(el('span', 'hint', 'max'))
+    if (sw.travelKind === 'range') td.appendChild(el('span', 'hint', 'range'))
+  }
+
+  function verdictCell (td, sw) {
+    var v = markFor(sw.pos).verdict
+    td.textContent = v === 'like' ? 'Like' : v === 'dislike' ? 'Dislike' : '—'
+    td.className = v ? 'v-' + v : ''
+  }
+
+  function buildTable () {
+    var head = $('thead-row')
+    COLUMNS.forEach(function (col) {
+      var th = el('th')
+      if (col.stick) th.className = 'stuck'
+      var btn = el('button')
+      btn.type = 'button'
+      btn.appendChild(document.createTextNode(col.label))
+      btn.appendChild(el('span', 'arrow', ''))
+      btn.addEventListener('click', function () { sortBy(col.key) })
+      th.appendChild(btn)
+      th.dataset.key = col.key
+      head.appendChild(th)
+    })
+
+    var body = $('tbody')
+    var frag = document.createDocumentFragment()
+    SWITCHES.forEach(function (sw) {
+      var tr = el('tr')
+      tr.dataset.pos = sw.pos
+      COLUMNS.forEach(function (col) {
+        var td = el('td')
+        if (col.cls) td.className = col.cls
+        if (col.num) td.classList.add('num')
+        if (col.stick) td.classList.add('stuck')
+        td.dataset.col = col.key
+        tr.appendChild(td)
+      })
+      rowByPos.set(sw.pos, tr)
+      frag.appendChild(tr)
+    })
+    body.appendChild(frag)
+    SWITCHES.forEach(function (sw) { paintRow(sw.pos) })
+
+    body.addEventListener('click', function (e) {
+      var tr = e.target.closest('tr')
+      if (tr && tr.dataset.pos) openDetail(tr.dataset.pos, tr)
+    })
+  }
+
+  function paintRow (pos) {
+    var tr = rowByPos.get(pos)
+    if (!tr) return
+    var sw = byPos.get(pos)
+    COLUMNS.forEach(function (col, idx) {
+      var td = tr.children[idx]
+      td.textContent = ''
+      td.className = (col.cls || '') + (col.num ? ' num' : '') + (col.stick ? ' stuck' : '')
+      if (col.render) col.render(td, sw)
+      else td.textContent = col.get(sw)
+    })
+  }
+
+  function sortBy (key) {
+    if (state.sort.key === key) state.sort.dir = -state.sort.dir
+    else { state.sort.key = key; state.sort.dir = 1 }
+    applySort()
+    saveUi()
+  }
+
+  function cmp (a, b, dir) {
+    // Nulls last in both directions -- otherwise ascending by force buries the
+    // whole magnetic family at the top, where it means nothing.
+    if (a == null) return b == null ? 0 : 1
+    if (b == null) return -1
+    if (typeof a === 'string') return a.localeCompare(b) * dir
+    return (a - b) * dir
+  }
+
+  function applySort () {
+    var col = COLUMNS.filter(function (c) { return c.key === state.sort.key })[0] || COLUMNS[0]
+    var dir = state.sort.dir
+    var sorted = SWITCHES.slice().sort(function (x, y) {
+      return cmp(col.sort(x), col.sort(y), dir) || (x.i - y.i)
+    })
+    var frag = document.createDocumentFragment()
+    sorted.forEach(function (sw) { frag.appendChild(rowByPos.get(sw.pos)) })
+    $('tbody').appendChild(frag)
+    $('thead-row').querySelectorAll('th').forEach(function (th) {
+      var arrow = th.querySelector('.arrow')
+      arrow.textContent = th.dataset.key === state.sort.key ? (dir > 0 ? '▲' : '▼') : ''
+      if (th.dataset.key === state.sort.key) {
+        th.setAttribute('aria-sort', dir > 0 ? 'ascending' : 'descending')
+      } else th.removeAttribute('aria-sort')
+    })
+  }
+
+  /* ---------- shopping list ---------- */
+
+  function paintList () {
+    var host = $('list-body')
+    host.textContent = ''
+    var picks = SWITCHES.filter(function (sw) {
+      return markFor(sw.pos).want && visible.has(sw.pos)
+    })
+    $('list-count').textContent = picks.length
+      ? picks.length + (picks.length === 1 ? ' switch' : ' switches')
+      : ''
+    if (!picks.length) {
+      host.appendChild(el('p', 'empty',
+        'Nothing flagged yet. Open a switch and tick "Want to buy" — it lands here, ready to print.'))
+      return
+    }
+    picks.forEach(function (sw) {
+      var m = markFor(sw.pos)
+      var card = el('div', 'buy')
+      card.appendChild(el('h3', null, sw.name))
+      var meta = sw.pos + ' · ' + sw.brand + ' · ' + sw.type + ' ' + sw.cat.toLowerCase()
+      if (m.stars) meta += ' · ' + m.stars + '/5'
+      if (m.verdict === 'like') meta += ' · liked'
+      card.appendChild(el('div', 'meta', meta))
+      var force = sw.operF || (sw.startF && sw.endF ? sw.startF + ' → ' + sw.endF : null)
+      card.appendChild(el('div', 'specs',
+        dash(force) + ' · ' + dash(sw.travel) + ' travel · pre-travel ' + dash(sw.preT) +
+        ' · ' + dash(sw.pins) + ' · ' + (sw.lubed ? 'factory pre-lubed' : 'lube not stated')))
+      if (m.tags.length) {
+        var tags = el('div', 'tags')
+        m.tags.forEach(function (t) { tags.appendChild(el('span', null, t)) })
+        card.appendChild(tags)
+      }
+      if (m.note) card.appendChild(el('div', 'note', m.note))
+      host.appendChild(card)
+    })
+  }
+
+  /* ---------- counters ---------- */
+
+  function paintCounters () {
+    var tried = 0, liked = 0, want = 0
+    SWITCHES.forEach(function (sw) {
+      var m = markFor(sw.pos)
+      if (m.tried) tried++
+      if (m.verdict === 'like') liked++
+      if (m.want) want++
+    })
+    $('c-tried').textContent = tried
+    $('c-liked').textContent = liked
+    $('c-want').textContent = want
+  }
+
+  /* ---------- detail panel ---------- */
+
+  var dlg = $('detail')
+  var noteTimer = null
+
+  var SPEC_ROWS = [
+    ['Kind', function (s) { return s.cat }],
+    ['Type', function (s) { return s.type }],
+    ['Brand', function (s) { return s.brand }],
+    ['Operating force', function (s) { return dash(s.operF) }],
+    ['Initial force', function (s) { return dash(s.startF) }],
+    ['Bottom-out force', function (s) { return dash(s.endF) }],
+    ['Pre-travel', function (s) { return dash(s.preT) }],
+    ['Total travel', function (s) { return dash(s.travel) }],
+    ['Pins', function (s) { return dash(s.pins) }],
+    ['Factory pre-lubed', function (s) { return s.lubed ? 'Yes' : 'Not stated' }]
+  ]
+
+  function buildDetailControls () {
+    var stars = $('d-stars')
+    for (var i = 1; i <= 5; i++) {
+      var b = el('button', null, String(i))
+      b.type = 'button'
+      b.dataset.stars = String(i)
+      b.setAttribute('aria-pressed', 'false')
+      b.setAttribute('aria-label', i + (i === 1 ? ' star' : ' stars'))
+      stars.appendChild(b)
+    }
+    var clear = el('button', 'clear', 'Clear')
+    clear.type = 'button'
+    clear.dataset.stars = '0'
+    stars.appendChild(clear)
+    stars.addEventListener('click', function (e) {
+      var btn = e.target.closest('button')
+      if (!btn || !openPos) return
+      var n = Number(btn.dataset.stars)
+      var m = ensureMark(openPos)
+      m.stars = m.stars === n ? 0 : n
+      paintDetail()
+      commit(openPos)
+    })
+
+    var tagHost = $('d-tags')
+    TAGS.forEach(function (tag) {
+      var chip = el('button', 'chip', tag)
+      chip.type = 'button'
+      chip.dataset.tag = tag
+      chip.setAttribute('aria-pressed', 'false')
+      tagHost.appendChild(chip)
+    })
+    tagHost.addEventListener('click', function (e) {
+      var chip = e.target.closest('button')
+      if (!chip || !openPos) return
+      var m = ensureMark(openPos)
+      var tag = chip.dataset.tag
+      var at = m.tags.indexOf(tag)
+      if (at >= 0) m.tags.splice(at, 1)
+      // Rebuilt through TAGS so the stored order is always canonical.
+      else m.tags = TAGS.filter(function (t) { return t === tag || m.tags.indexOf(t) >= 0 })
+      paintDetail()
+      commit(openPos)
+    })
+
+    $('d-verdict').addEventListener('click', function (e) {
+      var btn = e.target.closest('button')
+      if (!btn || !openPos) return
+      var m = ensureMark(openPos)
+      m.verdict = m.verdict === btn.dataset.v ? null : btn.dataset.v
+      if (m.verdict) m.tried = true
+      paintDetail()
+      commit(openPos)
+    })
+
+    $('d-tried').addEventListener('change', function () {
+      if (!openPos) return
+      ensureMark(openPos).tried = this.checked
+      commit(openPos)
+    })
+    $('d-want').addEventListener('change', function () {
+      if (!openPos) return
+      ensureMark(openPos).want = this.checked
+      commit(openPos)
+    })
+
+    var note = $('d-note')
+    note.addEventListener('input', function () {
+      if (!openPos) return
+      ensureMark(openPos).note = note.value.slice(0, 2000)
+      clearTimeout(noteTimer)
+      noteTimer = setTimeout(function () { flushNote() }, 400)
+    })
+    note.addEventListener('blur', flushNote)
+
+    $('d-prev').addEventListener('click', function () { step(-1) })
+    $('d-next').addEventListener('click', function () { step(1) })
+    $('d-close').addEventListener('click', closeDetail)
+
+    dlg.addEventListener('keydown', function (e) {
+      if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return
+      if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1) }
+      if (e.key === 'ArrowRight') { e.preventDefault(); step(1) }
+    })
+
+    // Escape and the backdrop close the dialog natively, so the close event is
+    // the only hook for those. Our own Close button does not wait for it --
+    // restoreFocus is idempotent, and belt-and-braces beats a stranded focus
+    // ring on an element inside a hidden dialog.
+    dlg.addEventListener('close', function () {
+      flushNote()
+      restoreFocus()
+    })
+  }
+
+  function restoreFocus () {
+    openPos = null
+    var target = lastTrigger && lastTrigger.isConnected
+      ? lastTrigger : cellByPos.get(state.focusedPos)
+    if (target) target.focus()
+  }
+
+  function closeDetail () {
+    flushNote()
+    dlg.close()
+    restoreFocus()
+  }
+
+  function flushNote () {
+    clearTimeout(noteTimer)
+    noteTimer = null
+    if (openPos) commit(openPos)
+  }
+
+  function step (delta) {
+    if (!openPos) return
+    flushNote()
+    var next = byPos.get(openPos).i + delta
+    if (next < 0 || next >= SWITCHES.length) return
+    openPos = SWITCHES[next].pos
+    setFocusedPos(openPos, false)
+    // Closing must return focus to where you actually are, not to the cell you
+    // opened ten switches ago.
+    lastTrigger = cellByPos.get(openPos)
+    paintDetail()
+    $('d-name').focus()
+  }
+
+  function openDetail (pos, trigger) {
+    lastTrigger = trigger || null
+    openPos = pos
+    setFocusedPos(pos, false)
+    paintDetail()
+    if (!dlg.open) dlg.showModal()
+    $('d-name').focus()
+  }
+
+  function paintDetail () {
+    var sw = byPos.get(openPos)
+    var m = markFor(openPos)
+    $('d-pos').textContent = 'POSITION ' + sw.pos
+    $('d-name').textContent = sw.name
+    $('d-sub').textContent = sw.brand + ' · ' + sw.type + ' ' + sw.cat.toLowerCase()
+    var sw8 = $('d-swatch')
+    sw8.style.background = sw.swatch || 'transparent'
+
+    var specs = $('d-specs')
+    specs.textContent = ''
+    SPEC_ROWS.forEach(function (row) {
+      var tr = el('tr')
+      tr.appendChild(el('th', null, row[0]))
+      var td = el('td', null, row[1](sw))
+      if (row[0] === 'Total travel' && sw.travelKind === 'max') td.appendChild(el('span', 'hint', ' max'))
+      if (row[0] === 'Pre-travel' && sw.preMm == null && sw.cat === 'Magnetic') {
+        td.appendChild(el('span', 'hint', ' set in software'))
+      }
+      tr.appendChild(td)
+      specs.appendChild(tr)
+    })
+
+    $('d-verdict').querySelectorAll('button').forEach(function (b) {
+      b.setAttribute('aria-pressed', m.verdict === b.dataset.v ? 'true' : 'false')
+    })
+    $('d-stars').querySelectorAll('button').forEach(function (b) {
+      var n = Number(b.dataset.stars)
+      b.setAttribute('aria-pressed', n > 0 && n <= m.stars ? 'true' : 'false')
+    })
+    $('d-tags').querySelectorAll('button').forEach(function (b) {
+      b.setAttribute('aria-pressed', m.tags.indexOf(b.dataset.tag) >= 0 ? 'true' : 'false')
+    })
+    $('d-tried').checked = m.tried
+    $('d-want').checked = m.want
+    if ($('d-note').value !== m.note) $('d-note').value = m.note
+    $('d-prev').disabled = sw.i === 0
+    $('d-next').disabled = sw.i === SWITCHES.length - 1
+  }
+
+  /* ---------- export / import ---------- */
+
+  function stamp () {
+    var d = new Date()
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' +
+      String(d.getDate()).padStart(2, '0')
+  }
+
+  function exportMarks () {
+    var json = JSON.stringify(snapshot(), null, 2)
+    var name = 'switch-tester-marks-' + stamp() + '.json'
+    try {
+      var blob = new Blob([json], { type: 'application/json' })
+      var url = URL.createObjectURL(blob)
+      var a = el('a')
+      a.href = url
+      a.download = name
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setTimeout(function () { URL.revokeObjectURL(url) }, 1000)
+      dirty = 0
+      paintStorage()
+      $('status').textContent = 'Exported ' + name + '.'
+    } catch (err) {
+      // Downloads can be blocked outright; the JSON still has to be reachable.
+      showTextIo('Export', 'Copy this and save it as ' + name + '.', json, 'Select all', function () {
+        $('io-text').select()
+      })
+    }
+  }
+
+  function importMarks (text) {
+    var incoming = readBlob(text)
+    if (!incoming) {
+      $('status').textContent = 'That file was not readable as switch-tester marks.'
+      return
+    }
+    if (incoming.future) {
+      $('status').textContent = 'That file was written by a newer version of this page. Nothing was changed.'
+      return
+    }
+    var incomingCount = Object.keys(incoming.marks).length
+    var currentCount = Object.keys(state.marks).length
+    var overwrites = Object.keys(incoming.marks).filter(function (p) { return state.marks[p] }).length
+    var message = 'Import ' + incomingCount + (incomingCount === 1 ? ' marked switch' : ' marked switches') + '?'
+    if (currentCount) {
+      message += '\n\nYou have ' + currentCount + ' marked now; ' + overwrites +
+        ' would be overwritten and the rest kept.'
+    }
+    if (!window.confirm(message)) { $('status').textContent = 'Import cancelled.'; return }
+    if (store.state === 'ok') {
+      try { store.set(BACKUP_KEY, JSON.stringify(snapshot())) } catch (e) {}
+    }
+    Object.keys(incoming.marks).forEach(function (pos) { state.marks[pos] = incoming.marks[pos] })
+    save()
+    SWITCHES.forEach(function (sw) { paintCell(sw.pos); paintRow(sw.pos) })
+    paintCounters()
+    refilter()
+    if (openPos) paintDetail()
+    $('status').textContent = 'Imported ' + incomingCount + '. Your previous marks were backed up in this browser.'
+  }
+
+  var ioDlg = $('text-io')
+  var ioAction = null
+
+  function showTextIo (title, help, text, actionLabel, action) {
+    $('io-title').textContent = title
+    $('io-help').textContent = help
+    $('io-text').value = text
+    $('io-action').textContent = actionLabel
+    ioAction = action
+    ioDlg.showModal()
+    $('io-title').focus()
+  }
+
+  $('io-action').addEventListener('click', function () { if (ioAction) ioAction() })
+  $('io-close').addEventListener('click', function () { ioDlg.close() })
+
+  $('btn-export').addEventListener('click', exportMarks)
+  $('btn-import').addEventListener('click', function () { $('file-input').click() })
+  $('file-input').addEventListener('change', function () {
+    var file = this.files && this.files[0]
+    if (!file) return
+    var reader = new FileReader()
+    reader.onload = function () { importMarks(String(reader.result)) }
+    reader.onerror = function () {
+      showTextIo('Import', 'That file could not be read. Paste its contents here instead.', '',
+        'Import pasted text', function () { ioDlg.close(); importMarks($('io-text').value) })
+    }
+    reader.readAsText(file)
+    this.value = ''
+  })
+  $('btn-print').addEventListener('click', function () {
+    setView('list')
+    window.print()
+  })
+
+  /* ---------- views ---------- */
+
+  function setView (view) {
+    state.view = view
+    $('view-grid').hidden = view !== 'grid'
+    $('view-table').hidden = view !== 'table'
+    $('view-list').hidden = view !== 'list'
+    $('readout').hidden = view !== 'grid'
+    $('status').hidden = view === 'list'
+    document.querySelectorAll('.seg button').forEach(function (b) {
+      b.setAttribute('aria-pressed', b.dataset.view === view ? 'true' : 'false')
+    })
+    saveUi()
+  }
+
+  document.querySelectorAll('.seg button').forEach(function (b) {
+    b.addEventListener('click', function () { setView(b.dataset.view) })
+  })
+
+  $('search').addEventListener('input', function () {
+    state.filters.q = this.value.trim().toLowerCase()
+    refilter()
+  })
+
+  function saveUi () {
+    if (store.state !== 'ok') return
+    try { store.set(UI_KEY, JSON.stringify({ view: state.view, sort: state.sort })) } catch (e) {}
+  }
+
+  function loadUi () {
+    var raw = store.get(UI_KEY)
+    if (!raw) return
+    try {
+      var ui = JSON.parse(raw)
+      if (ui && (ui.view === 'grid' || ui.view === 'table' || ui.view === 'list')) state.view = ui.view
+      if (ui && ui.sort && typeof ui.sort.key === 'string') {
+        var known = COLUMNS.some(function (c) { return c.key === ui.sort.key })
+        if (known) state.sort = { key: ui.sort.key, dir: ui.sort.dir === -1 ? -1 : 1 }
+      }
+    } catch (e) { /* ignore a corrupt view preference */ }
+  }
+
+  /* ---------- flush on the way out ---------- */
+
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') flushNote()
+  })
+  window.addEventListener('pagehide', flushNote)
+  window.addEventListener('beforeunload', function (e) {
+    // Only when the page cannot persist and there is something to lose.
+    if (store.state === 'ok' || dirty === 0) return
+    e.preventDefault()
+    e.returnValue = ''
+  })
+
+  /* ---------- boot ---------- */
+
+  // The seed block is read before storage, so a copy of this page saved with
+  // marks baked in still opens with them.
+  var seeded = null
+  try {
+    var seedText = $('seed').textContent
+    if (seedText && seedText.trim() !== 'null') seeded = readBlob(seedText)
+  } catch (e) { seeded = null }
+
+  var stored = readBlob(store.get(KEY))
+  var initial = (stored && !stored.future) ? stored : (seeded && !seeded.future ? seeded : null)
+  if (initial) state.marks = initial.marks
+
+  buildFilters()
+  $('filter-wrap').open = window.matchMedia('(min-width: 760px)').matches
+  buildGrid()
+  buildTable()
+  buildDetailControls()
+  loadUi()
+  setView(state.view)
+  applySort()
+  SWITCHES.forEach(function (sw) { paintCell(sw.pos) })
+  paintCounters()
+  refilter()
+  setFocusedPos(state.focusedPos, false)
+  paintStorage()
+})()
+</script>
+</body>
+</html>
