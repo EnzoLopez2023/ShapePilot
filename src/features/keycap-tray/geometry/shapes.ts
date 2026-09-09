@@ -1,9 +1,12 @@
 // Rounded-rect generation and the pocket sizing formula.
 import type { Polygon, Ring, Vec2 } from '../../../geometry/vec.ts'
-import { normalizeAngleDeg, quantizeRing, reflectRingInBox, rotateRing, translateRing } from '../../../geometry/vec.ts'
+import { translateRing } from '../../../geometry/vec.ts'
 import { rectRing, roundedRectRing, unitRing } from '../../../geometry/primitives.ts'
+// Moved to shared geometry when the tool tray needed the same transform.
+import { applyPocketTransform } from '../../../geometry/pocketTransform.ts'
 
 export { rectRing, roundedRectRing, unitRing }
+export { applyPocketTransform }
 
 export interface PocketSizing {
   /** Key pitch. 19.05 mm is the ANSI standard and should not change. */
@@ -49,22 +52,6 @@ export interface PocketLike {
   shape?: 'rect' | 'iso-enter'
 }
 
-/**
- * The per-pocket transform, applied to a base ring built at the origin with an
- * un-rotated footprint of `w0 x h0`: reflect inside that box, then rotate about
- * its centre. Order matters -- reflecting first keeps mirror/flip meaningful in
- * the pocket's own frame regardless of angle. Callers still translate by (x, y).
- */
-export function applyPocketTransform(local: Ring, w0: number, h0: number, p: PocketLike): Ring {
-  const deg = normalizeAngleDeg(p.rotationDeg ?? 0)
-  if (!p.mirrorX && !p.flipY && !deg) return local
-  let ring = local
-  if (p.mirrorX || p.flipY) ring = reflectRingInBox(ring, w0, h0, !!p.mirrorX, !!p.flipY)
-  if (deg) ring = rotateRing(ring, deg, w0 / 2, h0 / 2)
-  // Snap transcendental rotation coordinates onto the QUANTUM grid the boolean
-  // and T-junction passes assume; the plain (un-transformed) path is untouched.
-  return quantizeRing(ring)
-}
 
 export function effectivePocketCornerRadius(p: PocketLike, s: PocketSizing): number {
   const requested = p.cornerRadiusMm ?? s.cornerRadius
