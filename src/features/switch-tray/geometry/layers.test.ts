@@ -3,7 +3,7 @@ import { test } from 'vitest'
 import {
   buildBands, buildFeetMesh, buildNameplateMesh, buildSwitchTrayMesh, nameplateBox, placeGlyphs,
 } from './layers.ts'
-import { feetRects } from './feet.ts'
+import { seatFeet } from './feet.ts'
 import { planFill } from './fill.ts'
 import { checkNameplate, checkNameplatePlacement, validateDesign } from './validate.ts'
 import { checkManifold } from '../../../geometry/mesh.ts'
@@ -41,7 +41,8 @@ function planFor(d: SwitchTrayDesign) {
     // The page reserves the name's box too, so the cells give way to it rather
     // than the two overlapping. A helper that skipped it would have every
     // nameplate test running against a layout the app never produces.
-    blockers: [...feetRects(d.profile, d.feet), ...nameplateBox(d, d.nameplate ? OUTLINES : null)],
+    blockers: [...seatFeet(d, nameplateBox(d, d.nameplate ? OUTLINES : null)),
+      ...nameplateBox(d, d.nameplate ? OUTLINES : null)],
     keepoutMm: cellKeepoutMm(d.plate, d.switch),
     marginMm: d.fill.marginMm,
     pitchXMm: d.fill.pitchXMm,
@@ -135,7 +136,7 @@ test('a bottom tray is built shorter than a stacked one, and is not called short
 
   // ...and the posts that would be far too short to stack on are correct here.
   const issues = validateDesign(bottom, planFor(bottom), {
-    fittedFeet: feetRects(bottom.profile, bottom.feet).length, mesh: bottomMesh,
+    fittedFeet: seatFeet(bottom).length, mesh: bottomMesh,
   })
   assert.deepEqual(issues, [], JSON.stringify(issues, null, 2))
 })
@@ -177,7 +178,7 @@ test('a well-formed tray raises no issues', () => {
   const plan = planFor(d)
   const mesh = buildSwitchTrayMesh(d, plan)
   const issues = validateDesign(d, plan, {
-    fittedFeet: feetRects(d.profile, d.feet).length, mesh,
+    fittedFeet: seatFeet(d).length, mesh,
   })
   assert.deepEqual(issues, [], JSON.stringify(issues, null, 2))
 })
@@ -293,7 +294,7 @@ test('the name reserves its own space, and the cells give way', () => {
 
   const free = planFill({
     region: profileToMulti(d.profile),
-    blockers: feetRects(d.profile, d.feet),
+    blockers: seatFeet(d),
     keepoutMm: cellKeepoutMm(d.plate, d.switch),
     marginMm: d.fill.marginMm,
     pitchXMm: d.fill.pitchXMm,
@@ -304,7 +305,7 @@ test('the name reserves its own space, and the cells give way', () => {
   }).fitted
   const withName = planFill({
     region: profileToMulti(d.profile),
-    blockers: [...feetRects(d.profile, d.feet), ...box],
+    blockers: [...seatFeet(d), ...box],
     keepoutMm: cellKeepoutMm(d.plate, d.switch),
     marginMm: d.fill.marginMm,
     pitchXMm: d.fill.pitchXMm,
@@ -393,7 +394,7 @@ test('a well-named tray raises nothing at all', () => {
   const glyphs = glyphsFor(d)
   const mesh = buildSwitchTrayMesh(d, planFor(d), { nameplateOutlines: OUTLINES })
   const issues = validateDesign(d, planFor(d), {
-    fittedFeet: feetRects(d.profile, d.feet).length,
+    fittedFeet: seatFeet(d).length,
     mesh,
     nameplateGlyphs: glyphs,
     nameplateSolid: buildBands(d, planFor(d), glyphs).nameplateSolid,

@@ -2,13 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, IconButton, Stack, Tooltip, useTheme } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import RemoveIcon from '@mui/icons-material/Remove'
-import type { MultiPolygon, Ring } from '../../../geometry/vec.ts'
+import type { MultiPolygon, Polygon, Ring } from '../../../geometry/vec.ts'
 import { multiBBox } from '../../../geometry/vec.ts'
 import { profileToMulti } from '../../../model/trayProfile.ts'
 import { cellHoleMm, cellKeepoutMm } from '../model/defaults.ts'
 import type { SwitchTrayDesign } from '../model/types.ts'
 import type { FillPlan } from '../geometry/fill.ts'
-import { feetRects } from '../geometry/feet.ts'
 import { nameplateStyleOf, placeGlyphs } from '../geometry/layers.ts'
 
 const ringToPath = (r: Ring): string =>
@@ -21,6 +20,8 @@ export interface SwitchTrayCanvasProps {
   inset: { left: number; right: number; top: number; bottom: number }
   fitToken: number
   showHousings: boolean
+  /** Post footprints, seated by the page -- edge posts depend on the fill. */
+  feet: readonly Polygon[]
   onToggleCell: (col: number, row: number) => void
   /** Glyph outlines centred on their own bounds, or null while the font loads. */
   nameplateOutlines: MultiPolygon | null
@@ -36,7 +37,7 @@ export interface SwitchTrayCanvasProps {
  * back). Everything else is pan and zoom.
  */
 export function SwitchTrayCanvas({
-  design, plan, inset, fitToken, showHousings, onToggleCell,
+  design, plan, inset, fitToken, showHousings, feet, onToggleCell,
   nameplateOutlines, onMoveNameplate,
 }: SwitchTrayCanvasProps) {
   const theme = useTheme()
@@ -56,9 +57,7 @@ export function SwitchTrayCanvas({
     () => profileToMulti(design.profile), [design.profile])
   const profilePath = useMemo(
     () => profileRings.flatMap(poly => poly.map(ringToPath)).join(' '), [profileRings])
-  const footPaths = useMemo(
-    () => feetRects(design.profile, design.feet).map(rect => ringToPath(rect[0])),
-    [design.profile, design.feet])
+  const footPaths = useMemo(() => feet.map(rect => ringToPath(rect[0]!)), [feet])
 
   const holeMm = cellHoleMm(design.plate, design.switch)
   const keepoutMm = cellKeepoutMm(design.plate, design.switch)

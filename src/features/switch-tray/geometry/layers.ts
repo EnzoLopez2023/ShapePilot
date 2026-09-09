@@ -21,7 +21,7 @@ import { profileToMulti } from '../../../model/trayProfile.ts'
 import { cellHoleMm, cellKeepoutMm, feetHeightMm } from '../model/defaults.ts'
 import type { NameplateStyle, SwitchTrayDesign } from '../model/types.ts'
 import type { FillPlan } from './fill.ts'
-import { FOOT_WELD_MM, feetRects } from './feet.ts'
+import { FOOT_WELD_MM, seatFeet } from './feet.ts'
 
 /** Segments per 90° corner on a cell. 0.5 mm radius, so 8 is already invisible. */
 const CELL_CORNER_SEGMENTS = 8
@@ -188,6 +188,12 @@ export interface SwitchTrayMeshOptions {
    * always welds everything into one mesh.
    */
   omitSeparateParts?: boolean
+  /**
+   * The post footprints. Defaults to seating them here, but the page passes the
+   * ones it already computed: edge posts depend on the fill, so recomputing
+   * risks the mesh disagreeing with the canvas it was previewed on.
+   */
+  feetRects?: readonly Polygon[]
 }
 
 export function buildSwitchTrayMesh(
@@ -220,7 +226,9 @@ export function buildSwitchTrayMesh(
     b.addHorizontal(bands.recess, bands.plateTopZ, 'up')
   }
 
-  if (!(opts?.omitSeparateParts && design.feet?.separate)) addFeet(b, design)
+  if (!(opts?.omitSeparateParts && design.feet?.separate)) {
+    addFeet(b, design, opts?.feetRects ?? seatFeet(design))
+  }
   // Only a raised nameplate is added to the plate. An inlay or an inset is
   // already accounted for -- it was taken out of it above.
   if (style === 'raised' && !opts?.omitSeparateParts && glyphs.length) {
@@ -236,23 +244,31 @@ export function buildSwitchTrayMesh(
  * seeing a zero-gap contact. Shared by the welded preview and the separate-body
  * export, exactly as the keycap tray's corner spacers are.
  */
-function addFeet(b: MeshBuilder, design: SwitchTrayDesign): void {
+function addFeet(b: MeshBuilder, design: SwitchTrayDesign, rects: readonly Polygon[]): void {
   const feet = design.feet
   const height = feetHeightMm(feet)
   if (!feet || !(height > 0) || !(feet.sizeMm > 0)) return
   const z1 = height + FOOT_WELD_MM
-  for (const rect of feetRects(design.profile, feet)) {
+  for (const rect of rects) {
     b.addHorizontal([rect], 0, 'down')
     b.addHorizontal([rect], z1, 'up')
     b.addWalls([rect], 0, z1)
   }
 }
 
-/** The posts alone, for a two-filament export. Null unless `separate` is set. */
-export function buildFeetMesh(design: SwitchTrayDesign): Mesh | null {
+/**
+ * The posts alone, for a two-filament export. Null unless `separate` is set.
+ *
+ * `rects` defaults to seating them here, but the page passes the ones it has
+ * already computed -- edge posts depend on the fill, so recomputing risks the
+ * export and the preview disagreeing.
+ */
+export function buildFeetMesh(
+  design: SwitchTrayDesign, rects?: readonly Polygon[],
+): Mesh | null {
   if (!design.feet?.separate || !(feetHeightMm(design.feet) > 0)) return null
   const b = new MeshBuilder()
-  addFeet(b, design)
+  addFeet(b, design, rects ?? seatFeet(design))
   return b.finish()
 }
 

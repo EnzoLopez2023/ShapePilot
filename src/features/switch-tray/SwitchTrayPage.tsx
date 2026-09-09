@@ -19,7 +19,7 @@ import { EmptyState, LoadingState } from '../../components/LoadingState.tsx'
 import { formatUpdated } from '../keycap-projects/model/formatUpdated.ts'
 import { cellKeepoutMm, emptyDesign } from './model/defaults.ts'
 import { planFill } from './geometry/fill.ts'
-import { feetRects } from './geometry/feet.ts'
+import { seatFeet } from './geometry/feet.ts'
 import {
   buildBands, buildFeetMesh, buildNameplateMesh, buildSwitchTrayMesh, nameplateBox, placeGlyphs,
 } from './geometry/layers.ts'
@@ -92,19 +92,22 @@ export default function SwitchTrayPage() {
     return () => { cancelled = true }
   }, [design.name, npFontSizeMm])
 
-  // The posts are placed against the outline alone, and the fill then treats
-  // their footprints as occupied -- which is what keeps a cell off a post
-  // without the two needing to know about each other.
-  const fitted = useMemo(
-    () => feetRects(design.profile, design.feet), [design.profile, design.feet])
-
   // The name has to sit on solid plate, so the fill treats its box as occupied
   // and drops the cells under it -- deliberately, rather than the two
   // overlapping. Recomputed when the glyphs resolve, which is one reflow on
   // open and none after.
-  const reserved = useMemo(
-    () => [...fitted, ...nameplateBox(design, nameplatePolys)],
-    [fitted, design, nameplatePolys])
+  const nameBox = useMemo(
+    () => nameplateBox(design, nameplatePolys), [design, nameplatePolys])
+
+  // Corner posts are placed against the outline alone; the edge posts need to
+  // know where the cells landed, so `seatFeet` runs the fill once itself. This
+  // is the one place they are computed -- the canvas and the mesher are handed
+  // the answer rather than repeating it.
+  const fitted = useMemo(
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    () => seatFeet(design, nameBox), [design.revision, nameBox])
+
+  const reserved = useMemo(() => [...fitted, ...nameBox], [fitted, nameBox])
 
   const plan = useMemo(
     () => planFill({
@@ -130,12 +133,14 @@ export default function SwitchTrayPage() {
   // options already omits the nameplate and, when `feet.separate` is set, the
   // feet -- so it *is* the body-only mesh.
   const mesh = useMemo(
-    () => buildSwitchTrayMesh(
-      design, plan, nameplatePolys ? { nameplateOutlines: nameplatePolys } : undefined),
-    [design, plan, nameplatePolys])
+    () => buildSwitchTrayMesh(design, plan, {
+      feetRects: fitted,
+      ...(nameplatePolys ? { nameplateOutlines: nameplatePolys } : {}),
+    }),
+    [design, plan, nameplatePolys, fitted])
   const nameplateMesh = useMemo(
     () => buildNameplateMesh(design, plan, nameplatePolys), [design, plan, nameplatePolys])
-  const feetMesh = useMemo(() => buildFeetMesh(design), [design])
+  const feetMesh = useMemo(() => buildFeetMesh(design, fitted), [design, fitted])
   const extraParts = useMemo<ExtraPart[]>(() => {
     const parts: ExtraPart[] = []
     if (nameplateMesh) parts.push({ mesh: nameplateMesh, suffix: 'nameplate', label: 'nameplate' })
@@ -144,9 +149,9 @@ export default function SwitchTrayPage() {
   }, [nameplateMesh, feetMesh])
   const bodyMesh = useMemo(
     () => (extraParts.length
-      ? buildSwitchTrayMesh(design, plan, { omitSeparateParts: true })
+      ? buildSwitchTrayMesh(design, plan, { omitSeparateParts: true, feetRects: fitted })
       : mesh),
-    [design, plan, extraParts, mesh])
+    [design, plan, extraParts, mesh, fitted])
 
   const issues = useMemo(
     () => {
@@ -368,6 +373,7 @@ export default function SwitchTrayPage() {
               inset={CANVAS_INSET}
               fitToken={fitToken}
               showHousings={settings.showHousings}
+              feet={fitted}
               onToggleCell={d.toggleCell}
               nameplateOutlines={nameplatePolys}
               onMoveNameplate={(dx, dy) => d.replace(nd => (nd.nameplate

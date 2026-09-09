@@ -12,6 +12,11 @@
 // when the material around it is solid out to one raster cell beyond its
 // keep-out, so the planner never claims a cell that does not fit.
 import type { MultiPolygon, Polygon, Vec2 } from '../../../geometry/vec.ts'
+import { translateRing } from '../../../geometry/vec.ts'
+import { rectRing } from '../../../geometry/primitives.ts'
+import { profileToMulti } from '../../../model/trayProfile.ts'
+import { cellKeepoutMm } from '../model/defaults.ts'
+import type { SwitchTrayDesign } from '../model/types.ts'
 
 // The mask itself lives in `src/geometry/solidMask.ts`, shared with the tool
 // tray. Re-exported here because `SolidMask` and `RASTER_MM` are part of this
@@ -210,3 +215,35 @@ export function planFill(req: FillRequest, mask?: SolidMask): FillPlan {
     rows: lattice.rows,
   }
 }
+
+/**
+ * The fill request a design implies. One place, because the page, the mesher,
+ * the post seating and the tests all have to ask the same question of the same
+ * lattice -- and did so from four hand-copied literals before this existed.
+ */
+export function fillRequestFor(
+  design: SwitchTrayDesign, blockers: readonly Polygon[],
+): FillRequest {
+  return {
+    region: profileToMulti(design.profile),
+    blockers: [...blockers],
+    keepoutMm: cellKeepoutMm(design.plate, design.switch),
+    marginMm: design.fill.marginMm,
+    pitchXMm: design.fill.pitchXMm,
+    pitchYMm: design.fill.pitchYMm,
+    stagger: design.fill.stagger,
+    origin: design.fill.origin,
+    spreadEvenly: design.fill.spreadEvenly,
+    skippedCells: design.skippedCells,
+  }
+}
+
+/**
+ * Each planned cell as the square it actually claims, for anything that has to
+ * keep off them. The keep-out, not the hole: a switch's body needs the whole
+ * recess, and a post touching the recess wall is a post in the way.
+ */
+export const cellRects = (plan: FillPlan, keepoutMm: number): Polygon[] =>
+  plan.cells.map(c => [translateRing(
+    rectRing(keepoutMm, keepoutMm), c.cx - keepoutMm / 2, c.cy - keepoutMm / 2,
+  )])

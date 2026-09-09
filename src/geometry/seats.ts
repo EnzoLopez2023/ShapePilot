@@ -41,6 +41,32 @@ export const fitsOn = (rect: Polygon, region: MultiPolygon): boolean =>
   multiArea(difference([rect], region)) < 1e-6
 
 /**
+ * The first of several candidate seats that fits, or null if none does.
+ *
+ * Candidates are tried in order and each walks inward on its own, so "slide
+ * along this edge looking for somewhere clear" is a list of candidates rather
+ * than a special case in here.
+ */
+export function firstSeat(
+  region: MultiPolygon,
+  sizeMm: number,
+  candidates: readonly Seat[],
+  options: SeatSearchOptions = {},
+): Polygon | null {
+  const { insetMm, stepMm, maxMm } = { ...DEFAULTS, ...options }
+  if (sizeMm <= 0) return null
+
+  for (const seat of candidates) {
+    for (let inset = insetMm; inset <= maxMm; inset += stepMm) {
+      const [x, y] = seat(inset)
+      const rect: Polygon = [translateRing(rectRing(sizeMm, sizeMm), x, y)]
+      if (fitsOn(rect, region)) return rect
+    }
+  }
+  return null
+}
+
+/**
  * The seat footprints that fit, in the order the seats were given. A seat that
  * finds nothing solid within `maxMm` contributes nothing, so the result can be
  * shorter than `seats` -- that shortfall is what a "2/4 posts fit" readout is
@@ -52,16 +78,10 @@ export function findSeats(
   seats: readonly Seat[],
   options: SeatSearchOptions = {},
 ): Polygon[] {
-  const { insetMm, stepMm, maxMm } = { ...DEFAULTS, ...options }
-  if (sizeMm <= 0) return []
-
   const rects: Polygon[] = []
   for (const seat of seats) {
-    for (let inset = insetMm; inset <= maxMm; inset += stepMm) {
-      const [x, y] = seat(inset)
-      const rect: Polygon = [translateRing(rectRing(sizeMm, sizeMm), x, y)]
-      if (fitsOn(rect, region)) { rects.push(rect); break }
-    }
+    const rect = firstSeat(region, sizeMm, [seat], options)
+    if (rect) rects.push(rect)
   }
   return rects
 }

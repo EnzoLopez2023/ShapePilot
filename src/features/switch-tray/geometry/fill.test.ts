@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 import { buildSolidMask, cellKey, planFill, type FillRequest } from './fill.ts'
-import { feetRects } from './feet.ts'
+import { cornerRects } from './feet.ts'
 import { profileToMulti } from '../../../model/trayProfile.ts'
 import { multiArea, translateRing } from '../../../geometry/vec.ts'
 import { difference } from '../../../geometry/boolean.ts'
@@ -102,7 +102,7 @@ test('spreading opens the pitch up without losing a cell', () => {
 test('a post takes the cells that would have stood on it', () => {
   const profile: TrayProfile = { kind: 'preset', id: 'systainer-s76-plain' }
   const region = profileToMulti(profile)
-  const blockers = feetRects(profile, { heightMm: 17, sizeMm: 12, pattern: 'corners' })
+  const blockers = cornerRects(profile, { heightMm: 17, sizeMm: 12, pattern: 'corners' })
   assert.equal(blockers.length, 4)
   const free = planFill(req(region)).fitted
   const blocked = planFill(req(region, { blockers })).fitted

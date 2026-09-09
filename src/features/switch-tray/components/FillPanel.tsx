@@ -290,7 +290,7 @@ export default function FillPanel(props: FillPanelProps) {
               <Typography variant="body2" color="text.secondary">
                 One more would need {budget.nextTierHeightMm.toFixed(1)} mm.
                 {withLid !== null && budget.nextTierHeightMm <= withLid
-                  && ` It would fit the ${withLid} mm to the closed lid, but the lid&rsquo;s`
+                  && ` It would fit the ${withLid} mm to the closed lid, but the lid\u2019s`
                      + ' recess is inset from the case walls, so a full-width tray cannot use it.'}
               </Typography>
             )}
