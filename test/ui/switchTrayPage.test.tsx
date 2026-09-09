@@ -126,9 +126,11 @@ test('switching to Choc changes the switch, the plate and the stacking pitch', a
   await user.click(screen.getByRole('combobox', { name: 'Switch' }))
   await user.click(await screen.findByRole('option', { name: 'Kailh Choc v1' }))
 
-  // Half the switch, so two more trays fit the same case.
+  // Half the switch, so an extra tray fits the same case. Three, not four,
+  // because the budget is the S76's 48 mm base cavity rather than the 63 mm
+  // estimate this used to be measured against.
   await waitFor(() => expect(screen.getByText(/15\.0 mm per tier/)).toBeTruthy())
-  assert.ok(screen.getByText(/4 trays fit/))
+  assert.ok(screen.getByText(/3 trays fit/))
 })
 
 test('the bottom of the stack is a build you can switch to and export', async () => {

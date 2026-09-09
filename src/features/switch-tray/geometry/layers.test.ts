@@ -97,12 +97,12 @@ test('the tier pitch is the switch, not the plate', () => {
   const choc = stackBudget(tray('shelf', CHOC_V1))
   assert.ok(Math.abs(mx.tierPitchMm - 20.4) < 1e-9)
   assert.ok(Math.abs(choc.tierPitchMm - 15.0) < 1e-9)
-  // Half the switch, so Choc buys two extra trays in the same case.
+  // Half the switch, so Choc buys an extra tray in the same case.
   assert.ok(choc.tiers !== null && mx.tiers !== null && choc.tiers > mx.tiers)
-  assert.equal(choc.tiers, 4)
+  assert.equal(choc.tiers, 3)
 })
 
-test('a third MX tray misses the S76 by a third of a millimetre', () => {
+test('a third MX tray does not fit the S76 base, and by how much', () => {
   // Worth pinning, because it is the number that decides whether the case
   // holds 2 trays or 3, and because it moved once already: before the bottom
   // tray's posts carried the same 0.5 mm clearance as a stacked one, three
@@ -111,9 +111,14 @@ test('a third MX tray misses the S76 by a third of a millimetre', () => {
   assert.equal(stackBudget(mx).tiers, 2)
   const three = stackHeightMm(mx, 3)
   assert.ok(three > 63 && three < 64, `three MX trays came to ${three} mm`)
-  // The 63 mm is an estimate, not a measurement, so the answer is sensitive to
-  // it: a case half a millimetre taller holds the third tray.
+  // The budget is now the case's *base cavity* -- 48 mm, from Festool's
+  // published 258 x 164 x 67 internal less the lid recess -- which replaced a
+  // 63 mm estimate derived from the outer height. Three MX trays come to ~63.3,
+  // so they miss the base by a wide margin and would need the lid recess, which
+  // is inset from the walls and cannot take a full-footprint tray.
   assert.equal(stackBudget({ ...mx, caseClearHeightMm: 63.5 }).tiers, 3)
+  // And the answer is still sensitive at its own boundary.
+  assert.equal(stackBudget({ ...mx, caseClearHeightMm: 63 }).tiers, 2)
 })
 
 test('a bottom tray is built shorter than a stacked one, and is not called short for it', () => {

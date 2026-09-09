@@ -9,6 +9,7 @@ import {
   requiredFeetHeightMm, wallAtPitchMm,
 } from '../model/defaults.ts'
 import { stackBudget } from '../model/stack.ts'
+import { profileTotalClearHeight } from '../../../model/trayProfile.ts'
 import type { FeetSettings, FillSettings, SwitchTrayDesign } from '../model/types.ts'
 import type { FillPlan } from '../geometry/fill.ts'
 import { feetWanted } from '../geometry/feet.ts'
@@ -40,6 +41,10 @@ export default function FillPanel(props: FillPanelProps) {
   const heading = (t: string) => <Typography variant="h3" component="h2">{t}</Typography>
 
   const budget = stackBudget(design)
+  // The budget is the case's base cavity. The lid adds a recess on top, but it
+  // is inset from the walls, so a full-footprint tray cannot use it -- worth
+  // saying, because the two numbers differ by a whole tier.
+  const withLid = profileTotalClearHeight(design.profile)
   const floor = minPitchMm(design.plate, design.switch)
   const wall = Math.min(
     wallAtPitchMm(plan.pitchXMm, design.plate, design.switch),
@@ -284,6 +289,9 @@ export default function FillPanel(props: FillPanelProps) {
             {budget.nextTierHeightMm !== null && budget.tiers > 0 && (
               <Typography variant="body2" color="text.secondary">
                 One more would need {budget.nextTierHeightMm.toFixed(1)} mm.
+                {withLid !== null && budget.nextTierHeightMm <= withLid
+                  && ` It would fit the ${withLid} mm to the closed lid, but the lid&rsquo;s`
+                     + ' recess is inset from the case walls, so a full-width tray cannot use it.'}
               </Typography>
             )}
             <Typography variant="body2" color="text.secondary">
@@ -291,12 +299,12 @@ export default function FillPanel(props: FillPanelProps) {
             </Typography>
           </>
         )}
-        <Tooltip title="Clear height inside the case, floor to lid. The Systainer presets carry a provisional 63 mm — measure yours and put the real number here.">
+        <Tooltip title="Usable height in the case's base cavity. The Systainer presets carry 48 mm — Festool publish 258 x 164 x 67 mm internal, the rest of that 67 being the lid's own recess, which is inset from the walls. Still a retailer's figure rather than a caliper reading, so measure yours and put the real number here.">
           <span>
             <LengthField
               label="Case clear height"
               imperial={imperial}
-              valueMm={budget.clearHeightMm ?? 63}
+              valueMm={budget.clearHeightMm ?? 48}
               onChangeMm={v => onDesign(d => ({ ...d, caseClearHeightMm: v }))}
             />
           </span>
