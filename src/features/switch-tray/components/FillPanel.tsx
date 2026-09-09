@@ -299,7 +299,7 @@ export default function FillPanel(props: FillPanelProps) {
             </Typography>
           </>
         )}
-        <Tooltip title="Usable height in the case's base cavity. The Systainer presets carry 48 mm — Festool publish 258 x 164 x 67 mm internal, the rest of that 67 being the lid's own recess, which is inset from the walls. Still a retailer's figure rather than a caliper reading, so measure yours and put the real number here.">
+        <Tooltip title="Usable height in the case's base cavity. The Systainer presets carry 48 mm, measured with calipers on a real SYS3 S 76 — Festool publish 258 x 164 x 67 mm internal, the remaining 19 being the lid's own recess, which is inset from the walls and so unusable by a full-width tray. Override it for a different case.">
           <span>
             <LengthField
               label="Case clear height"

@@ -51,12 +51,13 @@ export interface ProfilePreset {
    *
    * Festool's published figures for the SYS3 S 76: external 265 x 171 x 71,
    * internal 258 x 164 x 67. The 67 is floor-to-lid with the case shut; the
-   * base cavity alone is about 48, the rest being the lid's own recess. See
+   * base cavity is 48 of it, the rest being the lid's own recess. See
    * `lidRecessHeightMm`.
    *
-   * This replaced an estimate of 63 mm derived from the outer height. It is
-   * still a retailer's figure rather than a caliper reading, so every designer
-   * that uses it lets the user override it.
+   * The 48 is MEASURED -- confirmed with calipers against a physical S 76 on
+   * 2026-09-09. It replaced an estimate of 63 derived from the outer height.
+   * Designers still let the user override it, because a different case in the
+   * same family is a different number, not because this one is in doubt.
    */
   baseCavityHeightMm: number
   /**

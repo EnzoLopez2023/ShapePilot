@@ -111,11 +111,12 @@ test('a third MX tray does not fit the S76 base, and by how much', () => {
   assert.equal(stackBudget(mx).tiers, 2)
   const three = stackHeightMm(mx, 3)
   assert.ok(three > 63 && three < 64, `three MX trays came to ${three} mm`)
-  // The budget is now the case's *base cavity* -- 48 mm, from Festool's
-  // published 258 x 164 x 67 internal less the lid recess -- which replaced a
-  // 63 mm estimate derived from the outer height. Three MX trays come to ~63.3,
-  // so they miss the base by a wide margin and would need the lid recess, which
-  // is inset from the walls and cannot take a full-footprint tray.
+  // The budget is the case's *base cavity* -- 48 mm, measured with calipers and
+  // consistent with Festool's published 258 x 164 x 67 internal less the lid
+  // recess. It replaced a 63 mm estimate derived from the outer height, which
+  // was simply wrong. Three MX trays come to ~63.3, so they miss the base by a
+  // wide margin and would need the lid recess -- which is inset from the walls
+  // and cannot take a full-footprint tray.
   assert.equal(stackBudget({ ...mx, caseClearHeightMm: 63.5 }).tiers, 3)
   // And the answer is still sensitive at its own boundary.
   assert.equal(stackBudget({ ...mx, caseClearHeightMm: 63 }).tiers, 2)

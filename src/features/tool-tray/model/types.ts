@@ -137,7 +137,7 @@ export interface ToolTrayDesign {
   pockets: ToolPocket[]
   feet?: TrayFeet
   undersideReliefs?: UndersideReliefMode
-  /** Overrides the profile's own figure, which is a retailer's number. */
+  /** Overrides the profile's own measured figure, for a different case. */
   caseClearHeightMm?: number
   /** Bumped on every mutation; what the geometry useMemos key on. */
   revision: number
