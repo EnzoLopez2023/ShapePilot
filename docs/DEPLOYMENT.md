@@ -399,6 +399,8 @@ verification period, so in practice that is nothing.
 | `009-filament-inventory` | Filaments page (tick which Bambu Lab spools and refills you own) | None taken -- same policy as `006` and `007`, chosen again for this release. `filament_inventory` is a new table no prior release reads, so a failed verification loses only the ticks entered during it; every other table is untouched by this migration. |
 | `010-switch-trays` | Switch tray designer (a plate mechanical switches pass through, auto-filled, with posts underneath) | None taken -- same policy as `006`, `007` and `009`. `switch_tray_designs` is a new table no prior release reads and nothing else references, so a failed verification loses only the switch trays saved during it; every other table is untouched by this migration. |
 
+| `011-tool-trays` | Tool tray designer (pockets of different shapes and depths for a printer tool kit, on the shared Systainer outlines) | **Not yet deployed.** This is the first migration under the automatic-snapshot policy below, so this row is a placeholder: record the artifact id `ensurePreMigrationSnapshot` writes to the deploy log, and do not leave it as a choice. `tool_tray_designs` is a new table no prior release reads and nothing else references. |
+
 Every row above says "none taken", which is the honest record of a policy that
 depended on somebody remembering a manual step before a deploy they were already
 in the middle of. From `011` onward the column is no longer a decision: the

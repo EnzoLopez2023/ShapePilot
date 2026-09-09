@@ -424,6 +424,30 @@ export const SWITCH_TRAY_STATEMENTS: readonly string[] = [
   ON switch_tray_designs (owner_tenant_id, owner_oid, updated_at DESC)`,
 ]
 
+export const TOOL_TRAY_STATEMENTS: readonly string[] = [
+  `CREATE TABLE tool_tray_designs (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_tenant_id   TEXT    NOT NULL,
+  owner_oid         TEXT    NOT NULL,
+  name              TEXT    NOT NULL,
+  notes             TEXT,
+  profile_kind      TEXT    NOT NULL,
+  profile_json      TEXT    NOT NULL,
+  height_mm         REAL    NOT NULL,
+  layer_height_mm   REAL    NOT NULL,
+  min_floor_mm      REAL    NOT NULL,
+  pockets_json      TEXT    NOT NULL,
+  pocket_count      INTEGER NOT NULL,
+  feet_json         TEXT,
+  underside_relief  TEXT,
+  case_clear_mm     REAL,
+  created_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at        TEXT    NOT NULL DEFAULT (datetime('now'))
+)`,
+  `CREATE INDEX idx_tool_trays_owner
+  ON tool_tray_designs (owner_tenant_id, owner_oid, updated_at DESC)`,
+]
+
 /** Tables ShapePilot owns and reconciles. Order is the reconciliation order. */
 export const OWNED_LEGACY_TABLES = [
   'keycap_tray_designs',

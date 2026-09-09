@@ -35,6 +35,7 @@ export const EMPTY_SEED_DOMAIN_TABLES = [
   'legacy_import_rows',
   'legacy_import_runs',
   'switch_tray_designs',
+  'tool_tray_designs',
 ] as const
 
 interface ExpectedOwner {

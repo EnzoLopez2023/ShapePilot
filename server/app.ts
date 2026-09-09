@@ -29,6 +29,7 @@ import { createFilamentRouter } from './routes/filaments.ts'
 import { createKeycapProjectRouter } from './routes/keycapProjects.ts'
 import { createKeycapTrayRouter } from './routes/keycapTrays.ts'
 import { createSwitchTrayRouter } from './routes/switchTrays.ts'
+import { createToolTrayRouter } from './routes/toolTrays.ts'
 import { createSettingsRouter } from './routes/settings.ts'
 import { createVersionRouter } from './routes/version.ts'
 
@@ -115,6 +116,7 @@ export function createApp(options: CreateAppOptions): Express {
 
   app.use('/api/keycap-trays', authenticated, createKeycapTrayRouter(repos))
   app.use('/api/switch-trays', authenticated, createSwitchTrayRouter(repos))
+  app.use('/api/tool-trays', authenticated, createToolTrayRouter(repos))
   app.use('/api/keycap-projects', authenticated, createKeycapProjectRouter(repos))
   app.use('/api/design-documents', authenticated, createDesignDocumentRouter(repos))
   // Asset bytes never touch express.json, which only parses application/json;

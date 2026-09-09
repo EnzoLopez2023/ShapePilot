@@ -22,6 +22,7 @@ import { migration007 } from './migrations/007-locating-posts.ts'
 import { migration008 } from './migrations/008-tray-nameplate.ts'
 import { migration009 } from './migrations/009-filament-inventory.ts'
 import { migration010 } from './migrations/010-switch-trays.ts'
+import { migration011 } from './migrations/011-tool-trays.ts'
 import {
   APP_MARKER, SCHEMA_MARKER_FORMAT, schemaMarkerOf, schemaObjectsHash,
 } from './identity.ts'
@@ -38,7 +39,7 @@ export interface Migration {
 
 export const MIGRATIONS: readonly Migration[] =
   [migration001, migration002, migration003, migration004, migration005, migration006, migration007,
-    migration008, migration009, migration010]
+    migration008, migration009, migration010, migration011]
 
 export const migrationChecksum = (migration: Migration): string =>
   createHash('sha256')

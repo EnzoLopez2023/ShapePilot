@@ -335,6 +335,65 @@ export interface SwitchTrayRepository {
   deleteDesign(owner: Owner, id: string): Promise<boolean>
 }
 
+export interface ToolTrayRecord {
+  id: string
+  name: string
+  notes?: string
+  profile: { kind: TrayProfileKind } & Record<string, unknown>
+  /** Underside to rim. Every pocket depth is measured DOWN from this. */
+  heightMm: number
+  layerHeightMm: number
+  minFloorMm: number
+  /**
+   * The pockets, whole. Each carries its own ordered steps, so this is nested
+   * rather than flat -- which is why it is one blob and not a row table.
+   */
+  pockets: Record<string, unknown>[]
+  feet?: Record<string, unknown>
+  /** What to do about the case's own underside lift recesses. */
+  undersideReliefs?: string
+  /** Override for the profile preset's own base-cavity height, mm. */
+  caseClearHeightMm?: number
+  createdAt: string
+  updatedAt: string
+  revision: number
+}
+
+export interface ToolTraySummary {
+  id: string
+  name: string
+  notes?: string
+  profileKind: TrayProfileKind
+  /** Denormalised, so the list never parses the pockets blob to count them. */
+  pocketCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+/** The write payload; matches what the client sends. */
+export interface ToolTrayInput {
+  name: string
+  notes?: string | null
+  profile: { kind?: unknown } & Record<string, unknown>
+  heightMm: unknown
+  layerHeightMm: unknown
+  minFloorMm: unknown
+  pockets: unknown
+  /** Null or absent clears the feet; an object sets them. */
+  feet?: unknown
+  undersideReliefs?: string | null
+  caseClearHeightMm?: number | null
+}
+
+export interface ToolTrayRepository {
+  listDesigns(owner: Owner): Promise<ToolTraySummary[]>
+  getDesign(owner: Owner, id: string): Promise<ToolTrayRecord | null>
+  createDesign(owner: Owner, input: ToolTrayInput): Promise<{ id: string }>
+  updateDesign(owner: Owner, id: string, input: ToolTrayInput): Promise<boolean>
+  cloneDesign(owner: Owner, id: string, name?: string): Promise<{ id: string } | null>
+  deleteDesign(owner: Owner, id: string): Promise<boolean>
+}
+
 export class DuplicateLibraryPocketError extends Error {
   readonly pocketName: string
   constructor(pocketName: string) {
@@ -607,6 +666,7 @@ export interface Repositories {
   audit: AuditRepository
   keycapTrays: KeycapTrayRepository
   switchTrays: SwitchTrayRepository
+  toolTrays: ToolTrayRepository
   keycapProjects: KeycapProjectRepository
   designDocuments: DesignDocumentRepository
   designAssets: DesignAssetRepository

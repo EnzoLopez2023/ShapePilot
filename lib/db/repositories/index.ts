@@ -9,6 +9,7 @@ import { createKeycapTrayRepository } from './keycapTrays.ts'
 import { createMembershipRepository } from './memberships.ts'
 import { createSettingsRepository } from './settings.ts'
 import { createSwitchTrayRepository } from './switchTrays.ts'
+import { createToolTrayRepository } from './toolTrays.ts'
 
 /** Bind every repository to one open database. */
 export const createRepositories = (database: AppDatabase): Repositories => ({
@@ -17,6 +18,7 @@ export const createRepositories = (database: AppDatabase): Repositories => ({
   audit: createAuditRepository(database.handle),
   keycapTrays: createKeycapTrayRepository(database.handle),
   switchTrays: createSwitchTrayRepository(database.handle),
+  toolTrays: createToolTrayRepository(database.handle),
   keycapProjects: createKeycapProjectRepository(database.handle),
   designDocuments: createDesignDocumentRepository(database.handle),
   designAssets: createDesignAssetRepository(database.handle),

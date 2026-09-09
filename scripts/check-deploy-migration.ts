@@ -89,6 +89,12 @@ const ROLLBACK_COMPATIBLE_LEDGER = [
     name: 'switch trays',
     checksum: 'c7ab92c4b21c54a619a2eb5b8aacf040ca28448285dc51aa94c0c195c7437489',
   },
+  {
+    ordinal: 10,
+    id: '011-tool-trays',
+    name: 'tool trays',
+    checksum: '8d1eb2e4d5fe39db42cf9aa731a9ec9748955e98a06e1030909393d2992fb361',
+  },
 ] as const
 
 const REQUIRED_TABLES = [
@@ -108,6 +114,7 @@ const REQUIRED_TABLES = [
   'legacy_import_rows',
   'legacy_import_runs',
   'switch_tray_designs',
+  'tool_tray_designs',
   'schema_migrations',
 ] as const
 
