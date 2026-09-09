@@ -1,12 +1,11 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback } from 'react'
+import { useDesignHistory } from '../../../state/useDesignHistory.ts'
 import { emptyDesign } from '../model/defaults.ts'
 import type {
   FeetSettings, FillSettings, Nameplate, PlateSettings, SwitchProfile, SwitchTrayDesign,
   TrayProfile,
 } from '../model/types.ts'
 import { cellKey } from '../geometry/fill.ts'
-
-const HISTORY_LIMIT = 50
 
 export interface SwitchTrayDesignApi {
   design: SwitchTrayDesign
@@ -27,29 +26,10 @@ export interface SwitchTrayDesignApi {
 }
 
 export function useSwitchTrayDesign(initial?: SwitchTrayDesign): SwitchTrayDesignApi {
-  const [design, setDesignState] = useState<SwitchTrayDesign>(() => initial ?? emptyDesign())
-  const past = useRef<SwitchTrayDesign[]>([])
-  const future = useRef<SwitchTrayDesign[]>([])
-  const [, forceHistory] = useState(0)
-
-  // Every mutation goes through here so history and the revision counter stay
-  // in step. `revision` is what the fill and mesh useMemos key on.
-  const replace = useCallback((mutate: (d: SwitchTrayDesign) => SwitchTrayDesign) => {
-    setDesignState(prev => {
-      past.current = [...past.current.slice(-HISTORY_LIMIT + 1), prev]
-      future.current = []
-      return { ...mutate(prev), revision: prev.revision + 1 }
-    })
-    forceHistory(n => n + 1)
-  }, [])
-
-  /** Opening a different tray is not an edit -- it starts a new history. */
-  const setDesign = useCallback((d: SwitchTrayDesign) => {
-    past.current = []
-    future.current = []
-    setDesignState({ ...d, revision: 0 })
-    forceHistory(n => n + 1)
-  }, [])
+  // History, the revision counter and undo/redo are shared with the other
+  // designers; `revision` is what the fill and mesh useMemos key on.
+  const { design, canUndo, canRedo, replace, setDesign, undo, redo } =
+    useDesignHistory<SwitchTrayDesign>(() => initial ?? emptyDesign())
 
   const setProfile = useCallback((profile: TrayProfile) => {
     // The outline decides which cells exist, so the old skips no longer name
@@ -100,30 +80,10 @@ export function useSwitchTrayDesign(initial?: SwitchTrayDesign): SwitchTrayDesig
     replace(d => ({ ...d, skippedCells: undefined }))
   }, [replace])
 
-  const undo = useCallback(() => {
-    const prev = past.current.pop()
-    if (!prev) return
-    setDesignState(current => {
-      future.current = [...future.current, current]
-      return prev
-    })
-    forceHistory(n => n + 1)
-  }, [])
-
-  const redo = useCallback(() => {
-    const next = future.current.pop()
-    if (!next) return
-    setDesignState(current => {
-      past.current = [...past.current, current]
-      return next
-    })
-    forceHistory(n => n + 1)
-  }, [])
-
   return {
     design,
-    canUndo: past.current.length > 0,
-    canRedo: future.current.length > 0,
+    canUndo,
+    canRedo,
     setDesign,
     replace,
     setProfile,

@@ -1,12 +1,11 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
+import { useDesignHistory } from '../../../state/useDesignHistory.ts'
 import type { Pocket, TrayDesign, TrayProfile } from '../model/types.ts'
 import type { PocketSizing } from '../geometry/shapes.ts'
 import { pocketHeight, pocketRing, pocketWidth } from '../geometry/shapes.ts'
 import type { BBox } from '../../../geometry/vec.ts'
 import { ringBBox } from '../../../geometry/vec.ts'
 import { emptyDesign } from '../model/presets.ts'
-
-const HISTORY_LIMIT = 50
 
 export interface TrayDesignApi {
   design: TrayDesign
@@ -28,32 +27,18 @@ export interface TrayDesignApi {
 }
 
 export function useTrayDesign(initial?: TrayDesign): TrayDesignApi {
-  const [design, setDesignState] = useState<TrayDesign>(() => initial ?? emptyDesign())
-  const [selection, setSelectionState] = useState<Set<string>>(new Set())
-  const past = useRef<TrayDesign[]>([])
-  const future = useRef<TrayDesign[]>([])
-  const [, forceHistory] = useState(0)
-
-  // Every mutation goes through here so history and the revision counter stay in
-  // step. `revision` is what the mesh useMemo keys on -- deep-comparing an
+  // History, the revision counter and undo/redo are shared with the other
+  // designers. `revision` is what the mesh useMemo keys on -- deep-comparing an
   // 80-pocket array on every render would cost more than the counter it replaces.
-  const replace = useCallback((mutate: (d: TrayDesign) => TrayDesign) => {
-    setDesignState(prev => {
-      past.current = [...past.current.slice(-HISTORY_LIMIT + 1), prev]
-      future.current = []
-      const next = mutate(prev)
-      return { ...next, revision: prev.revision + 1 }
-    })
-    forceHistory(n => n + 1)
-  }, [])
+  const history = useDesignHistory<TrayDesign>(() => initial ?? emptyDesign())
+  const { design, canUndo, canRedo, replace, undo, redo } = history
+  const [selection, setSelectionState] = useState<Set<string>>(new Set())
 
+  /** Opening a different tray also drops the selection -- those ids are gone. */
   const setDesign = useCallback((d: TrayDesign) => {
-    past.current = []
-    future.current = []
     setSelectionState(new Set())
-    setDesignState({ ...d, revision: 0 })
-    forceHistory(n => n + 1)
-  }, [])
+    history.setDesign(d)
+  }, [history])
 
   const addPocket = useCallback((units: number, x: number, y: number, extra: Partial<Pocket> = {}) => {
     const id = crypto.randomUUID()
@@ -98,34 +83,15 @@ export function useTrayDesign(initial?: TrayDesign): TrayDesignApi {
     })
   }, [])
 
-  const undo = useCallback(() => {
-    const prev = past.current.pop()
-    if (!prev) return
-    setDesignState(cur => {
-      future.current = [...future.current, cur]
-      return { ...prev, revision: cur.revision + 1 }
-    })
-    forceHistory(n => n + 1)
-  }, [])
-
-  const redo = useCallback(() => {
-    const next = future.current.pop()
-    if (!next) return
-    setDesignState(cur => {
-      past.current = [...past.current, cur]
-      return { ...next, revision: cur.revision + 1 }
-    })
-    forceHistory(n => n + 1)
-  }, [])
-
   return useMemo(() => ({
     design, selection,
-    canUndo: past.current.length > 0,
-    canRedo: future.current.length > 0,
+    canUndo,
+    canRedo,
     setDesign, replace, addPocket, movePockets, updatePocket, removePockets,
     setProfile, setSizing, setSelection, toggleSelection, undo, redo,
-  }), [design, selection, setDesign, replace, addPocket, movePockets, updatePocket,
-       removePockets, setProfile, setSizing, setSelection, toggleSelection, undo, redo])
+  }), [design, selection, canUndo, canRedo, setDesign, replace, addPocket, movePockets,
+       updatePocket, removePockets, setProfile, setSizing, setSelection, toggleSelection,
+       undo, redo])
 }
 
 /**

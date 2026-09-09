@@ -1,11 +1,12 @@
 // The whole solid as an ordered list of z-bands. Two rules turn this into a
 // mesh, and both are closed-form -- no 3D boolean anywhere.
 import type { MultiPolygon, Polygon, Vec2 } from '../../../geometry/vec.ts'
-import { multiArea, multiBBox, pointInRing, translateRing } from '../../../geometry/vec.ts'
+import { multiBBox, pointInRing, translateRing } from '../../../geometry/vec.ts'
 import { difference, punchDisjointFast, union, unionDisjointFast } from '../../../geometry/boolean.ts'
-import { pocketRing, rectRing, locatingPostSlotCenters } from './shapes.ts'
+import { pocketRing, locatingPostSlotCenters } from './shapes.ts'
 import { circleRing } from '../../../geometry/primitives.ts'
 import { insertTJunctions } from '../../../geometry/tjunction.ts'
+import { cornerSeats, findSeats } from '../../../geometry/seats.ts'
 import type { Mesh } from '../../../geometry/mesh.ts'
 import { MeshBuilder } from '../../../geometry/mesh.ts'
 import type { Pocket, TrayDesign } from '../model/types.ts'
@@ -66,49 +67,28 @@ export function buildRegions(design: TrayDesign): TrayRegions {
   }
 }
 
-// Gap from the tray's outer edge to a corner post, and the amount a post dips
-// back into the rim so a slicer unions the two solids instead of seeing a
-// zero-gap contact.
-const SPACER_INSET_MM = 2
-const SPACER_INSET_STEP_MM = 1
-// How far a corner search gives up. The Systainer notched preset's own corner
-// chamfer only needs ~6 mm; this leaves headroom for a bigger notch or a
-// pocket sitting in the way, without searching so far the post stops meaning
-// "this corner" at all.
-const SPACER_INSET_MAX_MM = 40
+/** How far a post dips back into the rim so a slicer unions the two solids
+ *  instead of seeing a zero-gap contact. */
 const SPACER_WELD_MM = 0.05
 
 /**
  * The corner posts that actually fit. Profile bounding-box corners are not
  * always solid material -- the Systainer notched preset chamfers all four, so
  * the nominal inset can land entirely in the notch -- so each corner searches
- * progressively deeper (both axes together, toward the tray centre) until it
- * finds a spot that sits wholly on the rim, or gives up at SPACER_INSET_MAX_MM.
- * A pocket placed right in a corner is handled the same way: the post just
- * lands a little further in than the bare minimum.
+ * progressively deeper toward the tray centre until it finds a spot that sits
+ * wholly on the rim, or gives up. A pocket placed right in a corner is handled
+ * the same way: the post just lands a little further in than the bare minimum.
+ * The search itself is in `src/geometry/seats.ts`, shared with the switch
+ * tray's feet.
  */
 export function cornerSpacerRects(design: TrayDesign, top?: MultiPolygon): Polygon[] {
   const cs = design.cornerSpacers
   if (!cs || cs.heightMm <= 0 || cs.sizeMm <= 0) return []
+  // Searched against the *rim* -- the profile after pockets are cut -- so a
+  // spacer never overhangs a pocket it would otherwise sit half over.
   const rim = top ?? buildRegions(design).top
   const bb = multiBBox(profileToMulti(design.profile))
-  const s = cs.sizeMm
-
-  const corners: [1 | -1, 1 | -1][] = [[1, 1], [-1, 1], [-1, -1], [1, -1]]
-  const originAt = (dir: [1 | -1, 1 | -1], inset: number): [number, number] => [
-    dir[0] === 1 ? bb.minX + inset : bb.maxX - inset - s,
-    dir[1] === 1 ? bb.minY + inset : bb.maxY - inset - s,
-  ]
-
-  const rects: Polygon[] = []
-  for (const dir of corners) {
-    for (let inset = SPACER_INSET_MM; inset <= SPACER_INSET_MAX_MM; inset += SPACER_INSET_STEP_MM) {
-      const [x, y] = originAt(dir, inset)
-      const rect: Polygon = [translateRing(rectRing(s, s), x, y)]
-      if (multiArea(difference([rect], rim)) < 1e-6) { rects.push(rect); break }
-    }
-  }
-  return rects
+  return findSeats(rim, cs.sizeMm, cornerSeats(bb, cs.sizeMm))
 }
 
 // How far a locating post's tube dips below the pocket floor, so the slicer
