@@ -23,16 +23,18 @@
 // leaving a crack. The keycap tray says the same thing about `base - top`; this
 // is that property, N times.
 import type { MultiPolygon, Polygon } from '../../../geometry/vec.ts'
-import { difference, punchDisjointFast, union, unionDisjointFast } from '../../../geometry/boolean.ts'
+import {
+  difference, intersection, punchDisjointFast, union, unionDisjointFast,
+} from '../../../geometry/boolean.ts'
 import { insertTJunctions } from '../../../geometry/tjunction.ts'
 import type { Mesh } from '../../../geometry/mesh.ts'
 import { MeshBuilder } from '../../../geometry/mesh.ts'
 import { profileToMulti, profileUndersideReliefs } from '../../../model/trayProfile.ts'
 import { cornerSeats, edgeMidSeats, findSeats } from '../../../geometry/seats.ts'
-import { multiBBox } from '../../../geometry/vec.ts'
-import type { ToolTrayDesign } from '../model/types.ts'
+import { multiArea, multiBBox } from '../../../geometry/vec.ts'
+import type { ToolPocket, ToolTrayDesign } from '../model/types.ts'
 import { snapDown, THRESHOLDS } from '../model/thresholds.ts'
-import { deepestStepMm, pocketRingsAtDepth } from './shapes.ts'
+import { deepestStepMm, fingerAccessRings, stepRings } from './shapes.ts'
 
 /** How far feet dip up into the tray, so a slicer welds the two solids. */
 const FOOT_WELD_MM = 0.05
@@ -70,6 +72,78 @@ const punch = (outer: MultiPolygon, holes: MultiPolygon): MultiPolygon => {
   return punchDisjointFast(outer, holes) ?? difference(outer, holes)
 }
 
+/** Where a depth measured down from the rim puts a floor. */
+export const levelOf = (depthMm: number | null, design: ToolTrayDesign): number =>
+  depthMm === null ? 0 : Math.max(0, snapDown(design.heightMm - depthMm, design.layerHeightMm))
+
+/** The tallest underside relief, or 0 when the case has none. */
+/** The tallest underside relief, or 0 when the case has none. */
+const reliefHeight = (design: ToolTrayDesign): number => {
+  let h = 0
+  for (const r of profileUndersideReliefs(design.profile)) if (r.heightMm > h) h = r.heightMm
+  return h
+}
+
+/**
+ * The height a lifted floor sits at: the relief roof, snapped to a whole layer.
+ *
+ * A step that opts into `liftOverKeepOut` keeps its own floor everywhere except
+ * over a lift recess, where it is held up to here so a thin roof bridges the
+ * recess instead of opening into it.
+ */
+export const liftedFloorMm = (design: ToolTrayDesign): number =>
+  snapDown(reliefHeight(design) + THRESHOLDS.reliefRoofMm, design.layerHeightMm)
+
+/** One region a pocket removes, and the height its floor sits at. */
+interface Contribution { level: number; polys: Polygon[] }
+
+/**
+ * Everything one pocket removes, split by the height each part's floor sits at.
+ *
+ * The only thing that splits a single step across two levels is
+ * `liftOverKeepOut`: the part of it over a lift recess is held up to the relief
+ * roof and the rest keeps its own floor. Doing that here rather than in the
+ * band loop is what makes the flag real -- it was declared, and honoured by the
+ * validator, while the mesher ignored it, so setting it silenced the warning
+ * and left the hole.
+ */
+function contributionsFor(design: ToolTrayDesign, pocket: ToolPocket): Contribution[] {
+  const deepest = deepestStepMm(pocket) ?? design.heightMm
+  const lifting = design.undersideReliefs !== 'ignore' && reliefHeight(design) > 0
+  const keepOuts = lifting ? reliefKeepOuts(design) : []
+  const roof = liftedFloorMm(design)
+  const out: Contribution[] = []
+
+  for (const step of pocket.steps) {
+    const level = levelOf(step.depthMm, design)
+    const rings = stepRings(pocket, step)
+    if (!rings.length) continue
+
+    if (!step.liftOverKeepOut || !keepOuts.length || level >= roof) {
+      out.push({ level, polys: rings })
+      continue
+    }
+    // Split it: clear of the recesses at its own floor, over them at the roof.
+    const mp = unionAll(rings)
+    const ko = unionAll(keepOuts)
+    const below = difference(mp, ko)
+    const over = intersection(mp, ko)
+    if (multiArea(below) > 1e-9) out.push({ level, polys: below })
+    if (multiArea(over) > 1e-9) out.push({ level: roof, polys: over })
+  }
+
+  const fa = pocket.fingerAccess
+  if (fa) {
+    const rings = fingerAccessRings(pocket, fa)
+    if (rings.length) out.push({ level: levelOf(fa.depthMm ?? deepest, design), polys: rings })
+  }
+  return out
+}
+
+/** Every contribution in the tray, so levels and regions come from one place. */
+const allContributions = (design: ToolTrayDesign): Contribution[] =>
+  design.pockets.flatMap(pocket => contributionsFor(design, pocket))
+
 /**
  * Every distinct floor height in the tray, ascending, including 0 and the rim.
  *
@@ -85,65 +159,44 @@ export function resolveLevels(design: ToolTrayDesign): number[] {
       if (r.heightMm > 0 && r.heightMm < top) set.add(r.heightMm)
     }
   }
-
-  for (const p of design.pockets) {
-    const deepest = deepestStepMm(p) ?? top
-    for (const s of p.steps) set.add(levelOf(s.depthMm, design))
-    const fa = p.fingerAccess
-    if (fa) set.add(levelOf(fa.depthMm ?? deepest, design))
-  }
+  for (const c of allContributions(design)) set.add(c.level)
 
   return [...set].filter(z => z >= 0 && z <= top).sort((a, b) => a - b)
-}
-
-/** Where a depth measured down from the rim puts a floor. */
-export const levelOf = (depthMm: number | null, design: ToolTrayDesign): number =>
-  depthMm === null ? 0 : Math.max(0, snapDown(design.heightMm - depthMm, design.layerHeightMm))
-
-/**
- * Which depth value a given level came from, so `pocketRingsAtDepth` can be
- * asked the question in the units the design stores.
- *
- * A level is shared by every depth that snaps to it, so this asks each pocket
- * about its own steps rather than inverting the snap -- inverting would be
- * ambiguous whenever two depths round to the same layer.
- */
-function ringsAtLevel(design: ToolTrayDesign, level: number): MultiPolygon {
-  const polys: Polygon[] = []
-  for (const p of design.pockets) {
-    const deepest = deepestStepMm(p) ?? design.heightMm
-    const depths = new Set<number | null>()
-    for (const s of p.steps) if (levelOf(s.depthMm, design) === level) depths.add(s.depthMm)
-    const fa = p.fingerAccess
-    if (fa) {
-      const d = fa.depthMm ?? deepest
-      if (levelOf(d, design) === level) depths.add(d)
-    }
-    for (const d of depths) polys.push(...pocketRingsAtDepth(p, d, deepest))
-  }
-  return unionAll(polys)
 }
 
 export function buildRegions(design: ToolTrayDesign): ToolTrayRegions {
   const profile = profileToMulti(design.profile)
   const levels = resolveLevels(design)
+  const contributions = allContributions(design)
+  const ringsAtLevel = (level: number): MultiPolygon =>
+    unionAll(contributions.filter(c => c.level === level).flatMap(c => c.polys))
   const generating = design.undersideReliefs === 'generate'
   const reliefs = generating
     ? unionAll(profileUndersideReliefs(design.profile).map(r => [r.ring]))
     : []
 
   // Band i spans levels[i] .. levels[i+1].
+  //
+  // TWO derivations, deliberately, and the reason is the whole point of
+  // `ceilingsDown`. Pockets only ever remove MORE material going up, so their
+  // chain is monotone and each band is punched out of the band below it -- that
+  // is what keeps a floor built from its neighbours' own vertices.
+  //
+  // The relief is the opposite: it is cut from the BOTTOM up and stops at its
+  // own height, so it must be applied per band against that band's z rather
+  // than inherited. Folding it into the chain instead propagated it through
+  // every band above and removed the relief over the tray's whole height --
+  // 21 mm of it instead of 5, four times too much material.
+  const reliefTop = reliefHeight(design)
+  const chain: MultiPolygon[] = []
   const raw: MultiPolygon[] = []
   for (let i = 0; i + 1 < levels.length; i++) {
-    const below = i === 0 ? profile : raw[i - 1]!
-    let region = punch(below, ringsAtLevel(design, levels[i]!))
-    // The relief is the one thing cut from the BOTTOM up, so it applies only to
-    // bands below its own height and makes the band above wider -- the sole
-    // source of a downward-facing interior face.
-    if (generating && reliefs.length && levels[i]! < reliefHeight(design)) {
-      region = punch(region, reliefs)
-    }
-    raw.push(region)
+    const below = i === 0 ? profile : chain[i - 1]!
+    const pocketed = punch(below, ringsAtLevel(levels[i]!))
+    chain.push(pocketed)
+    raw.push(generating && reliefs.length && levels[i]! < reliefTop
+      ? punch(pocketed, reliefs)
+      : pocketed)
   }
 
   const rawFloorsUp: MultiPolygon[] = [[]]
@@ -172,12 +225,6 @@ export function buildRegions(design: ToolTrayDesign): ToolTrayRegions {
     floorsUp: flat.slice(n, 2 * n),
     ceilingsDown: flat.slice(2 * n, 3 * n),
   }
-}
-
-const reliefHeight = (design: ToolTrayDesign): number => {
-  let h = 0
-  for (const r of profileUndersideReliefs(design.profile)) if (r.heightMm > h) h = r.heightMm
-  return h
 }
 
 export interface ToolTrayMeshOptions {

@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'vitest'
-import { buildRegions, buildToolTrayMesh, levelOf, resolveLevels } from './bands.ts'
+import {
+  buildRegions, buildToolTrayMesh, levelOf, liftedFloorMm, reliefKeepOuts, resolveLevels,
+} from './bands.ts'
 import { deepestStepMm, fingerAccessRings, pocketFootprint, stepRings } from './shapes.ts'
 import { emptyDesign } from '../model/defaults.ts'
 import { PART_PRESETS, getPartPreset } from '../model/partPresets.ts'
@@ -9,7 +11,7 @@ import { checkManifold } from '../../../geometry/mesh.ts'
 import type { Polygon } from '../../../geometry/vec.ts'
 import { multiArea } from '../../../geometry/vec.ts'
 import { intersection, union, unionDisjointFast } from '../../../geometry/boolean.ts'
-import { profileToMulti } from '../../../model/trayProfile.ts'
+import { profileToMulti, profileUndersideReliefs } from '../../../model/trayProfile.ts'
 
 let seq = 0
 const pocket = (p: Partial<ToolPocket> & { steps: PocketStep[] }): ToolPocket => ({
@@ -257,6 +259,135 @@ describe('the band structure itself', () => {
     assert.equal(buildRegions(tray(many, {
       profile: { kind: 'rect', widthMm: 300, heightMm: 100 },
     })).bands.length, 2)
+  })
+})
+
+describe('generating the underside reliefs', () => {
+  const mode = (m: 'ignore' | 'avoid' | 'generate'): ToolTrayDesign =>
+    tray([bin(60, 70, 40, 30, 12)], { undersideReliefs: m })
+
+  const reliefArea = (): number =>
+    profileUndersideReliefs(mode('generate').profile)
+      .reduce((sum, r) => sum + multiArea([[r.ring]]), 0)
+
+  test('only generating cuts anything -- ignore and avoid are the same solid', () => {
+    const a = checkManifold(buildToolTrayMesh(mode('ignore'), { omitSeparateParts: true })).volume
+    const b = checkManifold(buildToolTrayMesh(mode('avoid'), { omitSeparateParts: true })).volume
+    assert.ok(Math.abs(a - b) / a < 1e-9, 'avoid is a check, not geometry')
+  })
+
+  test('it removes exactly the relief footprint times its height, and no more', () => {
+    // The bug this pins: the relief was folded into the pocket chain, which
+    // derives each band from the band below, so it propagated through every
+    // band above and cut the relief over the tray's whole height -- 21 mm
+    // instead of 5, four times too much. The relief is applied per band now.
+    const plain = checkManifold(buildToolTrayMesh(mode('ignore'), { omitSeparateParts: true }))
+    const cut = checkManifold(buildToolTrayMesh(mode('generate'), { omitSeparateParts: true }))
+    const height = Math.max(
+      0, ...profileUndersideReliefs(mode('generate').profile).map(r => r.heightMm))
+    const want = reliefArea() * height
+    const got = plain.volume - cut.volume
+    assert.ok(Math.abs(got - want) / want < 1e-4,
+      `generate removed ${got.toFixed(2)} mm3, expected ${want.toFixed(2)}`)
+  })
+
+  test('it is the only thing that makes a band wider than the one below', () => {
+    // Which is what `ceilingsDown` exists for: a downward-facing interior face.
+    const plain = buildRegions(mode('ignore'))
+    assert.ok(plain.ceilingsDown.every(c => multiArea(c) < 1e-9))
+
+    const cut = buildRegions(mode('generate'))
+    const widened = cut.ceilingsDown
+      .map((c, i) => (multiArea(c) > 1e-9 ? i : -1)).filter(i => i >= 0)
+    assert.equal(widened.length, 1, 'exactly one interface should have a down face')
+    // ...and its area is the relief footprint: those are the roofs.
+    assert.ok(Math.abs(multiArea(cut.ceilingsDown[widened[0]!]!) - reliefArea()) < 1e-6)
+  })
+
+  test('the generated solid is still watertight', () => {
+    const report = checkManifold(buildToolTrayMesh(mode('generate')))
+    assert.equal(report.danglingEdges, 0)
+    assert.ok(report.ok)
+  })
+
+  test('an outline with no reliefs is unaffected by the mode', () => {
+    const plain = { kind: 'rect' as const, widthMm: 200, heightMm: 140 }
+    const a = checkManifold(buildToolTrayMesh(
+      { ...mode('ignore'), profile: plain }, { omitSeparateParts: true })).volume
+    const b = checkManifold(buildToolTrayMesh(
+      { ...mode('generate'), profile: plain }, { omitSeparateParts: true })).volume
+    assert.equal(a, b)
+  })
+})
+
+describe('liftOverKeepOut', () => {
+  // The flag was declared, and the VALIDATOR honoured it, while the mesher
+  // ignored it -- so setting it silenced the warning and left the hole. These
+  // pin that it now changes the solid, not just the message.
+  const overRecess = (lift: boolean): ToolTrayDesign => {
+    const step: PocketStep = {
+      shape: { kind: 'rect', widthMm: 30, heightMm: 20 },
+      depthMm: 19,
+      ...(lift ? { liftOverKeepOut: true } : {}),
+    }
+    return tray([pocket({ x: 6, y: 37, widthMm: 30, heightMm: 20, steps: [step] })],
+      { undersideReliefs: 'avoid' })
+  }
+
+  test('lifting adds a level at the relief roof', () => {
+    const plain = resolveLevels(overRecess(false))
+    const lifted = resolveLevels(overRecess(true))
+    const roof = liftedFloorMm(overRecess(true))
+    assert.equal(roof, 6.2, 'a 5 mm relief plus a 1.2 mm roof, on whole layers')
+    assert.ok(!plain.includes(roof))
+    assert.ok(lifted.includes(roof))
+  })
+
+  test('lifting leaves material the unlifted pocket removed, and exactly that much', () => {
+    const plain = checkManifold(buildToolTrayMesh(overRecess(false), { omitSeparateParts: true }))
+    const lifted = checkManifold(buildToolTrayMesh(overRecess(true), { omitSeparateParts: true }))
+    assert.equal(plain.danglingEdges, 0)
+    assert.equal(lifted.danglingEdges, 0)
+
+    // The gain is the part of the pocket over a keep-out, times the height the
+    // floor was raised through. Computed from the keep-outs and the design
+    // rather than from buildRegions, so this is an independent number.
+    const d = overRecess(true)
+    const ring = unionDisjointFast(stepRings(d.pockets[0]!, d.pockets[0]!.steps[0]!))
+      ?? union(...stepRings(d.pockets[0]!, d.pockets[0]!.steps[0]!).map(x => [x]))
+    const ko = unionDisjointFast(reliefKeepOuts(d))
+      ?? union(...reliefKeepOuts(d).map(x => [x]))
+    const over = multiArea(intersection(ring, ko))
+    assert.ok(over > 1e-6, 'the fixture is meant to sit over a recess')
+
+    const raised = liftedFloorMm(d) - levelOf(19, d)
+    assert.ok(raised > 0)
+    const want = over * raised
+    const got = lifted.volume - plain.volume
+    assert.ok(Math.abs(got - want) / want < 1e-4,
+      `lift gained ${got.toFixed(4)} mm3, expected ${want.toFixed(4)}`)
+  })
+
+  test('a lifted step keeps its own floor everywhere else', () => {
+    // Only the part over a recess moves. Away from one, lifting changes nothing.
+    const clear = (lift: boolean): ToolTrayDesign => {
+      const step: PocketStep = {
+        shape: { kind: 'rect', widthMm: 30, heightMm: 20 },
+        depthMm: 19,
+        ...(lift ? { liftOverKeepOut: true } : {}),
+      }
+      return tray([pocket({ x: 100, y: 70, widthMm: 30, heightMm: 20, steps: [step] })],
+        { undersideReliefs: 'avoid' })
+    }
+    const a = checkManifold(buildToolTrayMesh(clear(false), { omitSeparateParts: true })).volume
+    const b = checkManifold(buildToolTrayMesh(clear(true), { omitSeparateParts: true })).volume
+    assert.ok(Math.abs(a - b) / a < 1e-9, 'a pocket clear of every recess should not move')
+  })
+
+  test("'ignore' means the flag does nothing at all", () => {
+    const lift = { ...overRecess(true), undersideReliefs: 'ignore' as const }
+    const plain = { ...overRecess(false), undersideReliefs: 'ignore' as const }
+    assert.deepEqual(resolveLevels(lift), resolveLevels(plain))
   })
 })
 
