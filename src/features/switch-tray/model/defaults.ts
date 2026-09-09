@@ -129,7 +129,16 @@ export function defaultFeet(plate: PlateSettings, s: SwitchProfile): FeetSetting
   return {
     tier: 'stacked',
     heightMm: roundUp(requiredFeetHeightMm(plate, s)),
-    sizeMm: 12,
+    /**
+     * 10 mm, not 12. On the notched S 76 a 10 mm post seats in the pockets
+     * beside the edge notches with room to spare, so switching to "Corners and
+     * edges" costs no switches at all; a 12 mm one fits too, but only just, and
+     * seating it perturbs the lattice by a single cell. See `geometry/feet.ts`.
+     *
+     * A saved tray keeps whatever size it was saved with -- this is only what a
+     * new one starts at.
+     */
+    sizeMm: 10,
     pattern: 'corners',
     bottomTierHeightMm: roundUp(bottomTierFeetHeightMm(plate, s)),
   }

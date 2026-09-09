@@ -67,18 +67,32 @@ describe('edge posts cost no switches', () => {
     assert.equal(cellsWith(eight), cellsWith(four))
   })
 
-  test('at the default 12 mm post it costs at most one switch, not four', () => {
-    // Honest about the limit. The notched outline's free pockets take a 10 mm
-    // post outright; a 12 mm one fits too, but seating it perturbs the lattice
-    // by a single cell -- the fill counts at the requested pitch and only then
-    // spreads, so a post clear of the spread layout can still move the target.
-    // Worth pinning, because the old middle-of-each-side seating cost FOUR.
+  test('at the DEFAULT post size it costs nothing -- which is why the default is 10 mm', () => {
+    // The reason `defaultFeet` seats 10 mm rather than 12: the notched
+    // outline's free pockets take a 10 mm post with room to spare, so choosing
+    // "Corners and edges" on a fresh tray is free. Guarded, so moving the
+    // default without re-checking this fails loudly rather than quietly
+    // costing a switch.
     const size = defaultFeet(defaultPlate('shelf', MX), MX).sizeMm
-    assert.equal(size, 12, 'the default post size moved; re-check this bound')
-    const four = { ...tray('corners'), feet: { ...tray('corners').feet!, sizeMm: size } }
-    const eight = { ...tray('corners+edges'), feet: { ...tray('corners+edges').feet!, sizeMm: size } }
-    const lost = cellsWith(four) - cellsWith(eight)
-    assert.ok(lost >= 0 && lost <= 1, `eight posts cost ${lost} switches`)
+    assert.equal(size, 10, 'the default post size moved; re-check what it costs')
+    const at = (pattern: 'corners' | 'corners+edges') => {
+      const d = tray(pattern)
+      return cellsWith({ ...d, feet: { ...d.feet!, sizeMm: size } })
+    }
+    assert.equal(at('corners+edges'), at('corners'))
+  })
+
+  test('a 12 mm post costs at most one switch, not the old four', () => {
+    // Kept as the documented limit of the approach. A 12 mm post fits the
+    // pockets too, but only just, and seating it perturbs the lattice by a
+    // single cell -- the fill counts at the requested pitch and only then
+    // spreads, so a post clear of the spread layout can still move the target.
+    const at = (pattern: 'corners' | 'corners+edges') => {
+      const d = tray(pattern)
+      return cellsWith({ ...d, feet: { ...d.feet!, sizeMm: 12 } })
+    }
+    const lost = at('corners') - at('corners+edges')
+    assert.ok(lost >= 0 && lost <= 1, `eight 12 mm posts cost ${lost} switches`)
   })
 
   test('no post overlaps a planned cell, or the margin that cell needs', () => {
