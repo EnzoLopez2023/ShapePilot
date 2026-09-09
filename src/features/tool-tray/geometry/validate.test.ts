@@ -170,11 +170,8 @@ describe('floors', () => {
 })
 
 describe('the case and the plate', () => {
-  test('a stack budget is reported against the base cavity', () => {
-    const issues = checkCase(tray([], { heightMm: 21 }))
-    assert.deepEqual(codes(issues), ['stack-budget'])
-    // 48 / 21 -> 2.
-    assert.match(issues[0]!.message, /^2 of these stack in the 48 mm base cavity/)
+  test('a tray that fits the base cavity says nothing -- the panel reports the budget', () => {
+    assert.deepEqual(codes(checkCase(tray([], { heightMm: 21 }))), [])
   })
 
   test('a tray taller than the base cavity says the lid recess cannot help', () => {
@@ -185,8 +182,10 @@ describe('the case and the plate', () => {
   })
 
   test('an override beats the profile', () => {
-    const issues = checkCase(tray([], { heightMm: 21, caseClearHeightMm: 63 }))
-    assert.match(issues[0]!.message, /3 of these stack in the 63 mm/)
+    // 55 mm fits a 63 mm override but not the 48 mm the preset carries.
+    assert.deepEqual(codes(checkCase(tray([], { heightMm: 55 }))), ['taller-than-case'])
+    assert.deepEqual(
+      codes(checkCase(tray([], { heightMm: 55, caseClearHeightMm: 63 }))), [])
   })
 
   test('the notched outline fits the X2D plate, but only just', () => {
@@ -255,7 +254,7 @@ describe('validateDesign', () => {
     const d = tray([bin(40, 60, 40, 30, 12), bin(100, 60, 40, 30, 19)])
     const issues = validateDesign(d, { mesh: buildToolTrayMesh(d) })
     assert.equal(hasErrors(issues), false)
-    assert.deepEqual(codes(issues).filter(c => c !== 'stack-budget'), ['plate-margin-tight'])
+    assert.deepEqual(codes(issues), ['plate-margin-tight'])
   })
 
   test('errors are surfaced together, not one at a time', () => {

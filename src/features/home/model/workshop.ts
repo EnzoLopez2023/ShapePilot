@@ -5,10 +5,12 @@
 // endpoints is a dashboard that drifts from the pages it summarises.
 import type { DesignSummary } from '../../keycap-tray/service.ts'
 import type { SwitchTraySummary } from '../../switch-tray/service.ts'
+import type { ToolTraySummary } from '../../tool-tray/service.ts'
 import type { ProjectSummary } from '../../keycap-projects/model/types.ts'
 import type { DocumentSummary } from '../../../services/designDocuments.ts'
 
-export type WorkKind = 'tray' | 'switch-tray' | 'shaper' | 'bambu' | 'playground'
+export type WorkKind =
+  | 'tray' | 'switch-tray' | 'tool-tray' | 'shaper' | 'bambu' | 'playground'
 
 export interface LatestWork {
   kind: WorkKind
@@ -28,6 +30,7 @@ export interface WorkshopTotals {
   trays: number
   pockets: number
   switchTrays: number
+  toolTrays: number
   /** Solids and paths across the Shaper, Bambu and Playground documents. */
   objects: number
   /** Caps catalogued across every project's set. */
@@ -50,78 +53,120 @@ const newest = <T extends { updatedAt: string }>(rows: readonly T[]): T | null =
   rows.reduce<T | null>(
     (best, row) => (best === null || row.updatedAt > best.updatedAt ? row : best), null)
 
-const DOCUMENT_HREF: Record<Exclude<WorkKind, 'tray' | 'switch-tray'>, string> = {
+const DOCUMENT_HREF: Record<Exclude<WorkKind, 'tray' | 'switch-tray' | 'tool-tray'>, string> = {
   shaper: '/shaper-designer',
   bambu: '/bambu-designer',
   playground: '/playground',
 }
 
-export function summarise(
-  projects: readonly ProjectSummary[],
-  trays: readonly DesignSummary[],
-  documents: readonly DocumentSummary[],
-  switchTrays: readonly SwitchTraySummary[] = [],
-): Workshop {
+export interface WorkshopSources {
+  projects?: readonly ProjectSummary[]
+  trays?: readonly DesignSummary[]
+  documents?: readonly DocumentSummary[]
+  switchTrays?: readonly SwitchTraySummary[]
+  toolTrays?: readonly ToolTraySummary[]
+}
+
+/**
+ * Which kind wins when two things were touched at the same moment.
+ *
+ * Higher wins. The keycap tray is first because it is the capability this
+ * workbench was built around; the other trays beat a document for the same
+ * reason. Written as a rank rather than a chain of ternaries because the chain
+ * did not survive a third source and would not survive a fifth.
+ */
+const RANK: Record<WorkKind, number> = {
+  tray: 5,
+  'switch-tray': 4,
+  'tool-tray': 3,
+  shaper: 1,
+  bambu: 1,
+  playground: 1,
+}
+
+export function summarise(sources: WorkshopSources = {}): Workshop {
+  const projects = sources.projects ?? []
+  const trays = sources.trays ?? []
+  const documents = sources.documents ?? []
+  const switchTrays = sources.switchTrays ?? []
+  const toolTrays = sources.toolTrays ?? []
+
   const totals: WorkshopTotals = {
     projects: projects.length,
     trays: trays.length,
     pockets: trays.reduce((sum, tray) => sum + tray.pocketCount, 0),
     switchTrays: switchTrays.length,
+    toolTrays: toolTrays.length,
     objects: documents.reduce((sum, doc) => sum + doc.objectCount, 0),
     caps: projects.reduce((sum, project) => sum + project.capCount, 0),
   }
 
-  const newestTray = newest(trays)
-  const newestDocument = newest(documents)
-  const newestSwitchTray = newest(switchTrays)
+  // One candidate per source, then a single reduce. Every source contributes
+  // its own already-shaped `LatestWork`, so adding a sixth is one entry here
+  // and nothing else.
+  const candidates: LatestWork[] = []
+  const tray = newest(trays)
+  if (tray) {
+    candidates.push({
+      kind: 'tray',
+      id: tray.id,
+      name: tray.name,
+      context: tray.projectName,
+      updatedAt: tray.updatedAt,
+      pieces: tray.pocketCount,
+      href: `/keycap-tray/${tray.id}`,
+    })
+  }
+  const switchTray = newest(switchTrays)
+  if (switchTray) {
+    candidates.push({
+      kind: 'switch-tray',
+      id: switchTray.id,
+      name: switchTray.name,
+      context: switchTray.switchLabel || null,
+      updatedAt: switchTray.updatedAt,
+      // A switch tray generates its cells rather than storing them.
+      pieces: 0,
+      href: `/switch-tray/${switchTray.id}`,
+    })
+  }
+  const toolTray = newest(toolTrays)
+  if (toolTray) {
+    candidates.push({
+      kind: 'tool-tray',
+      id: toolTray.id,
+      name: toolTray.name,
+      context: null,
+      updatedAt: toolTray.updatedAt,
+      pieces: toolTray.pocketCount,
+      href: `/tool-tray/${toolTray.id}`,
+    })
+  }
+  const document = newest(documents)
+  if (document) {
+    candidates.push({
+      kind: document.kind,
+      id: document.id,
+      name: document.name,
+      context: null,
+      updatedAt: document.updatedAt,
+      pieces: document.objectCount,
+      href: DOCUMENT_HREF[document.kind],
+    })
+  }
 
-  // A tray, a switch tray and a document can be equally recent; the keycap tray
-  // wins the tie because it is the capability this workbench was built around,
-  // and a switch tray beats a document for the same reason a tray does.
-  const newestOther = newestDocument && newestSwitchTray
-    ? (newestSwitchTray.updatedAt >= newestDocument.updatedAt ? 'switch' : 'document')
-    : newestSwitchTray ? 'switch' : newestDocument ? 'document' : null
-  const otherUpdatedAt = newestOther === 'switch'
-    ? newestSwitchTray?.updatedAt
-    : newestDocument?.updatedAt
-
-  const latest: LatestWork | null =
-    newestTray && (otherUpdatedAt === undefined || newestTray.updatedAt >= otherUpdatedAt)
-      ? {
-        kind: 'tray',
-        id: newestTray.id,
-        name: newestTray.name,
-        context: newestTray.projectName,
-        updatedAt: newestTray.updatedAt,
-        pieces: newestTray.pocketCount,
-        href: `/keycap-tray/${newestTray.id}`,
-      }
-      : newestOther === 'switch' && newestSwitchTray
-        ? {
-          kind: 'switch-tray',
-          id: newestSwitchTray.id,
-          name: newestSwitchTray.name,
-          context: newestSwitchTray.switchLabel || null,
-          updatedAt: newestSwitchTray.updatedAt,
-          pieces: 0,
-          href: `/switch-tray/${newestSwitchTray.id}`,
-        }
-        : newestDocument
-          ? {
-            kind: newestDocument.kind,
-            id: newestDocument.id,
-            name: newestDocument.name,
-            context: null,
-            updatedAt: newestDocument.updatedAt,
-            pieces: newestDocument.objectCount,
-            href: DOCUMENT_HREF[newestDocument.kind],
-          }
-          : null
+  const latest = candidates.reduce<LatestWork | null>((best, c) => {
+    if (!best) return c
+    if (c.updatedAt > best.updatedAt) return c
+    if (c.updatedAt === best.updatedAt && RANK[c.kind] > RANK[best.kind]) return c
+    return best
+  }, null)
 
   return {
     totals,
     latest,
-    empty: !projects.length && !trays.length && !documents.length && !switchTrays.length,
+    empty: !projects.length && !trays.length && !documents.length
+      && !switchTrays.length && !toolTrays.length,
   }
 }
 

@@ -1,0 +1,170 @@
+// The tool tray's design state: history from the shared hook, plus the pocket
+// operations that are actually about a tool tray.
+//
+// Closer to the keycap tray than the switch tray, because pockets are PLACED
+// rather than generated -- so there is a selection, and moving something is a
+// real edit rather than a parameter change.
+import { useCallback, useMemo, useState } from 'react'
+import { useDesignHistory } from '../../../state/useDesignHistory.ts'
+import type { TrayProfile } from '../../../model/trayProfile.ts'
+import { emptyDesign } from '../model/defaults.ts'
+import { freeSpotFor } from '../geometry/place.ts'
+import type { PartPreset } from '../model/partPresets.ts'
+import type {
+  ToolPocket, ToolTrayDesign, TrayFeet, UndersideReliefMode,
+} from '../model/types.ts'
+
+export interface ToolTrayDesignApi {
+  design: ToolTrayDesign
+  selection: Set<string>
+  canUndo: boolean
+  canRedo: boolean
+  setDesign: (d: ToolTrayDesign) => void
+  replace: (mutate: (d: ToolTrayDesign) => ToolTrayDesign) => void
+  /**
+   * Drop a preset into the first free spot, copying its steps. Returns the id.
+   *
+   * The spot is chosen INSIDE the mutator, against the design as it is when the
+   * update applies -- so several drops in one React batch do not all land on
+   * the same place.
+   */
+  addFromPreset: (preset: PartPreset) => string
+  addPocket: (pocket: Omit<ToolPocket, 'id'>) => string
+  movePockets: (ids: Iterable<string>, dx: number, dy: number) => void
+  updatePocket: (id: string, patch: Partial<ToolPocket>) => void
+  removePockets: (ids: Iterable<string>) => void
+  setProfile: (p: TrayProfile) => void
+  setHeight: (mm: number) => void
+  setLayerHeight: (mm: number) => void
+  setMinFloor: (mm: number) => void
+  setFeet: (feet: TrayFeet | undefined) => void
+  setUndersideReliefs: (mode: UndersideReliefMode) => void
+  setCaseClearHeight: (mm: number | undefined) => void
+  setSelection: (ids: Iterable<string>) => void
+  toggleSelection: (id: string, additive: boolean) => void
+  undo: () => void
+  redo: () => void
+}
+
+const newId = (): string => crypto.randomUUID()
+
+export function useToolTrayDesign(initial?: ToolTrayDesign): ToolTrayDesignApi {
+  const history = useDesignHistory<ToolTrayDesign>(() => initial ?? emptyDesign())
+  const { design, canUndo, canRedo, replace, undo, redo } = history
+  const [selection, setSelectionState] = useState<Set<string>>(new Set())
+
+  /** Opening a different tray also drops the selection -- those ids are gone. */
+  const setDesign = useCallback((d: ToolTrayDesign) => {
+    setSelectionState(new Set())
+    history.setDesign(d)
+  }, [history])
+
+  const addPocket = useCallback((pocket: Omit<ToolPocket, 'id'>) => {
+    const id = newId()
+    replace(d => ({ ...d, pockets: [...d.pockets, { ...pocket, id }] }))
+    setSelectionState(new Set([id]))
+    return id
+  }, [replace])
+
+  const addFromPreset = useCallback((preset: PartPreset) => {
+    const id = newId()
+    replace(d => {
+      const { x, y } = freeSpotFor(d, preset)
+      return {
+        ...d,
+        pockets: [...d.pockets, {
+          id,
+          kind: preset.kind,
+          label: preset.label,
+          presetId: preset.id,
+          x, y,
+          widthMm: preset.widthMm,
+          heightMm: preset.heightMm,
+          // COPIED, not referenced: a tray keeps printing the same after a
+          // catalogue edit, and `presetId` rides along as provenance only.
+          steps: preset.steps.map(s => ({ ...s })),
+        }],
+      }
+    })
+    setSelectionState(new Set([id]))
+    return id
+  }, [replace])
+
+  const movePockets = useCallback((ids: Iterable<string>, dx: number, dy: number) => {
+    const moving = new Set(ids)
+    if (!moving.size || (!dx && !dy)) return
+    replace(d => ({
+      ...d,
+      pockets: d.pockets.map(p => (moving.has(p.id) ? { ...p, x: p.x + dx, y: p.y + dy } : p)),
+    }))
+  }, [replace])
+
+  const updatePocket = useCallback((id: string, patch: Partial<ToolPocket>) => {
+    replace(d => ({
+      ...d,
+      pockets: d.pockets.map(p => (p.id === id ? { ...p, ...patch } : p)),
+    }))
+  }, [replace])
+
+  const removePockets = useCallback((ids: Iterable<string>) => {
+    const going = new Set(ids)
+    if (!going.size) return
+    replace(d => ({ ...d, pockets: d.pockets.filter(p => !going.has(p.id)) }))
+    setSelectionState(prev => new Set([...prev].filter(id => !going.has(id))))
+  }, [replace])
+
+  const setProfile = useCallback((profile: TrayProfile) => {
+    // Unlike the switch tray, a new outline does NOT invalidate the pockets --
+    // they are placed, not generated, so they stay where the user put them. The
+    // validator says which ones no longer fit rather than silently moving them.
+    replace(d => ({ ...d, profile }))
+  }, [replace])
+
+  const setHeight = useCallback((heightMm: number) => {
+    replace(d => ({ ...d, heightMm }))
+  }, [replace])
+
+  const setLayerHeight = useCallback((layerHeightMm: number) => {
+    replace(d => ({ ...d, layerHeightMm }))
+  }, [replace])
+
+  const setMinFloor = useCallback((minFloorMm: number) => {
+    replace(d => ({ ...d, minFloorMm }))
+  }, [replace])
+
+  const setFeet = useCallback((feet: TrayFeet | undefined) => {
+    replace(d => ({ ...d, feet }))
+  }, [replace])
+
+  const setUndersideReliefs = useCallback((undersideReliefs: UndersideReliefMode) => {
+    replace(d => ({ ...d, undersideReliefs }))
+  }, [replace])
+
+  const setCaseClearHeight = useCallback((caseClearHeightMm: number | undefined) => {
+    replace(d => ({ ...d, caseClearHeightMm }))
+  }, [replace])
+
+  const setSelection = useCallback((ids: Iterable<string>) => {
+    setSelectionState(new Set(ids))
+  }, [])
+
+  const toggleSelection = useCallback((id: string, additive: boolean) => {
+    setSelectionState(prev => {
+      if (!additive) return prev.has(id) && prev.size === 1 ? new Set() : new Set([id])
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  return useMemo(() => ({
+    design, selection, canUndo, canRedo,
+    setDesign, replace, addFromPreset, addPocket, movePockets, updatePocket, removePockets,
+    setProfile, setHeight, setLayerHeight, setMinFloor, setFeet, setUndersideReliefs,
+    setCaseClearHeight, setSelection, toggleSelection, undo, redo,
+  }), [design, selection, canUndo, canRedo, setDesign, replace, addFromPreset, addPocket,
+    movePockets, updatePocket, removePockets, setProfile, setHeight, setLayerHeight,
+    setMinFloor, setFeet, setUndersideReliefs, setCaseClearHeight, setSelection,
+    toggleSelection, undo, redo])
+}

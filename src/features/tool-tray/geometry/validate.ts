@@ -261,33 +261,26 @@ export function checkFloors(d: ToolTrayDesign, material: MaterialId): Issue[] {
   return dedupe(out)
 }
 
-/** Does the tray, and a stack of them, fit the case? */
+/**
+ * Does the tray fit the case at all?
+ *
+ * Only the failure. How many stack is information, not a warning, and the panel
+ * says it beside the case fields where it belongs -- reporting it here as well
+ * put the same sentence on screen twice.
+ */
 export function checkCase(d: ToolTrayDesign): Issue[] {
   const clear = d.caseClearHeightMm ?? profileInternalClearHeight(d.profile)
-  if (clear === null) return []
-  const out: Issue[] = []
+  if (clear === null || d.heightMm <= clear) return []
   const total = profileTotalClearHeight(d.profile)
-
-  if (d.heightMm > clear) {
-    out.push({
-      code: 'taller-than-case',
-      severity: 'warning',
-      message: `The tray is ${d.heightMm} mm and the case's base cavity is ${clear} mm.`
-        + (total !== null && d.heightMm <= total
-          ? ` It would fit the ${total} mm to the closed lid, but the lid's recess is inset`
-            + ' from the case walls, so a full-width tray cannot use it.'
-          : ''),
-    })
-  } else {
-    const tiers = Math.floor(clear / d.heightMm)
-    out.push({
-      code: 'stack-budget',
-      severity: 'warning',
-      message: `${tiers} of these stack in the ${clear} mm base cavity `
-        + `(${(tiers * d.heightMm).toFixed(1)} mm used).`,
-    })
-  }
-  return out
+  return [{
+    code: 'taller-than-case',
+    severity: 'warning',
+    message: `The tray is ${d.heightMm} mm and the case's base cavity is ${clear} mm.`
+      + (total !== null && d.heightMm <= total
+        ? ` It would fit the ${total} mm to the closed lid, but the lid's recess is inset`
+          + ' from the case walls, so a full-width tray cannot use it.'
+        : ''),
+  }]
 }
 
 /** Does it fit the printer, with room for a brim? */

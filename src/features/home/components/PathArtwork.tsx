@@ -233,6 +233,41 @@ export function SwitchArtwork() {
 }
 
 /** A solid, a hole, and the boolean between them. */
+/**
+ * A tool tray: pockets of different sizes AND different depths, which is the
+ * whole point of that designer. Depth is drawn as fill opacity, the same
+ * language its canvas uses.
+ */
+export function ToolArtwork() {
+  const pockets: { x: number; y: number; w: number; h: number; depth: number }[] = [
+    { x: 18, y: 16, w: 14, h: 44, depth: 0.9 },
+    { x: 36, y: 16, w: 14, h: 44, depth: 0.9 },
+    { x: 54, y: 16, w: 14, h: 44, depth: 0.9 },
+    { x: 76, y: 16, w: 34, h: 20, depth: 0.5 },
+    { x: 76, y: 40, w: 34, h: 20, depth: 0.5 },
+    { x: 118, y: 16, w: 30, h: 26, depth: 1 },
+    { x: 118, y: 46, w: 30, h: 14, depth: 0.28 },
+    { x: 18, y: 64, w: 92, h: 10, depth: 0.28 },
+    { x: 118, y: 64, w: 30, h: 10, depth: 0.5 },
+  ]
+  return (
+    <Drawing viewBox="0 0 176 104">
+      <rect
+        data-part x={8} y={8} width={160} height={78} rx={4}
+        fill="currentColor" fillOpacity={0.06}
+        stroke="currentColor" strokeOpacity={0.6} strokeWidth={1.25}
+      />
+      {pockets.map(({ x, y, w, h, depth }, index) => (
+        <rect
+          key={index} data-part x={x} y={y} width={w} height={h} rx={2}
+          fill="currentColor" fillOpacity={0.08 + depth * 0.2}
+          stroke="currentColor" strokeOpacity={0.55} strokeWidth={1}
+        />
+      ))}
+    </Drawing>
+  )
+}
+
 export function BambuArtwork() {
   return (
     <Drawing viewBox="0 0 176 104">

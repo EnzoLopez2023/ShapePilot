@@ -15,6 +15,7 @@ import ArrowIcon from '@mui/icons-material/ArrowForwardRounded'
 import * as projectsApi from '../keycap-projects/service.ts'
 import * as traysApi from '../keycap-tray/service.ts'
 import * as switchTraysApi from '../switch-tray/service.ts'
+import * as toolTraysApi from '../tool-tray/service.ts'
 import { listDocuments } from '../../services/designDocuments.ts'
 import type { TrayDesign } from '../keycap-tray/model/types.ts'
 import { errorMessage } from '../../services/errors.ts'
@@ -24,6 +25,7 @@ import { describeWhen, summarise } from './model/workshop.ts'
 import type { Workshop } from './model/workshop.ts'
 import {
   BambuArtwork, KeycapArtwork, PlaygroundArtwork, ShaperArtwork, SwitchArtwork,
+  ToolArtwork,
 } from './components/PathArtwork.tsx'
 import './home.css'
 
@@ -49,6 +51,12 @@ const PATHS: Path[] = [
     name: 'Switch tray',
     makes: 'Fill a Systainer insert with switch cells, as many as will fit.',
     artwork: SwitchArtwork,
+  },
+  {
+    to: '/tool-tray',
+    name: 'Tool tray',
+    makes: 'Pocket a Systainer insert for a tool kit, each pocket its own depth.',
+    artwork: ToolArtwork,
   },
   {
     to: '/shaper-designer',
@@ -81,13 +89,14 @@ export default function HomePage() {
     setLoading(true)
     setError(null)
     try {
-      const [projects, trays, documents, switchTrays] = await Promise.all([
+      const [projects, trays, documents, switchTrays, toolTrays] = await Promise.all([
         projectsApi.listProjects(),
         traysApi.listDesigns(),
         listDocuments(),
         switchTraysApi.listDesigns(),
+        toolTraysApi.listDesigns(),
       ])
-      const result = summarise(projects, trays, documents, switchTrays)
+      const result = summarise({ projects, trays, documents, switchTrays, toolTrays })
       setWorkshop(result)
       // The hero draws the real thing when the real thing is drawable. A
       // document has no cheap preview, so its card shows what that designer
@@ -219,6 +228,7 @@ export default function HomePage() {
               ['Trays', totals.trays],
               ['Pockets', totals.pockets],
               ['Switch trays', totals.switchTrays],
+              ['Tool trays', totals.toolTrays],
               ['Caps catalogued', totals.caps],
               ['Objects', totals.objects],
             ] as const).map(([label, value], index) => (

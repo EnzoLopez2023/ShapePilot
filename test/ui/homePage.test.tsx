@@ -15,6 +15,7 @@ interface StubState {
   trays: unknown[]
   documents: unknown[]
   switchTrays: unknown[]
+  toolTrays: unknown[]
   failWith?: number
 }
 
@@ -49,6 +50,8 @@ beforeEach(() => {
     switchTrays: [{ id: '2', name: 'MX spares', profileKind: 'preset',
       switchLabel: 'Cherry MX',
       createdAt: '2026-08-21 09:00:00', updatedAt: '2026-08-21 09:00:00' }],
+    toolTrays: [{ id: '3', name: 'X2D tools', profileKind: 'preset', pocketCount: 12,
+      createdAt: '2026-08-22 09:00:00', updatedAt: '2026-08-22 09:00:00' }],
   }
   vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
     const path = String(input).replace(/^https?:\/\/[^/]+/, '')
@@ -66,6 +69,7 @@ beforeEach(() => {
     if (path.startsWith('/api/keycap-trays')) return json(200, state.trays)
     if (path.startsWith('/api/design-documents')) return json(200, state.documents)
     if (path.startsWith('/api/switch-trays')) return json(200, state.switchTrays)
+    if (path.startsWith('/api/tool-trays')) return json(200, state.toolTrays)
     return json(202, { ok: true })
   })
 })
@@ -112,6 +116,7 @@ test('every way in is present and addressable', async () => {
   for (const [name, href] of [
     ['Keycap tray', '/keycap-tray'],
     ['Switch tray', '/switch-tray'],
+    ['Tool tray', '/tool-tray'],
     ['Shaper designer', '/shaper-designer'],
     ['Bambu designer', '/bambu-designer'],
     ['AI playground', '/playground'],
@@ -132,7 +137,7 @@ test('a document is the hero when it is the most recent thing', async () => {
 })
 
 test('an empty workshop invites rather than showing zeroes as achievement', async () => {
-  state = { projects: [], trays: [], documents: [], switchTrays: [] }
+  state = { projects: [], trays: [], documents: [], switchTrays: [], toolTrays: [] }
   renderHome()
   await waitFor(() => expect(
     screen.getByRole('heading', { name: 'Nothing on the bench yet' })).toBeTruthy())
