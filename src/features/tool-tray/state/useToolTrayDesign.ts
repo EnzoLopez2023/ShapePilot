@@ -10,6 +10,8 @@ import type { TrayProfile } from '../../../model/trayProfile.ts'
 import { emptyDesign } from '../model/defaults.ts'
 import { freeSpotFor } from '../geometry/place.ts'
 import type { TracedFootprint } from '../geometry/trace.ts'
+import { packParts } from '../geometry/pack.ts'
+import type { PackRequest, PackResult } from '../geometry/pack.ts'
 import { DEFAULT_FINGER_ACCESS, fingerAccessFrom } from '../model/fingerAccess.ts'
 import type { PartPreset } from '../model/partPresets.ts'
 import type {
@@ -41,6 +43,12 @@ export interface ToolTrayDesignApi {
    * that most needs a way back out.
    */
   addTraced: (traced: TracedFootprint, name: string, depthMm: number) => string
+  /**
+   * Fill whatever room is left from a parts list, biggest first, turning a part
+   * a quarter turn where that is the only way it fits. Returns what would not
+   * go in, so the caller can say so rather than deliver silently short.
+   */
+  packFrom: (requests: readonly PackRequest[]) => PackResult['unplaced']
   addPocket: (pocket: Omit<ToolPocket, 'id'>) => string
   movePockets: (ids: Iterable<string>, dx: number, dy: number) => void
   updatePocket: (id: string, patch: Partial<ToolPocket>) => void
@@ -116,6 +124,25 @@ export function useToolTrayDesign(initial?: ToolTrayDesign): ToolTrayDesignApi {
     })
     setSelectionState(new Set([id]))
     return id
+  }, [replace])
+
+  const packFrom = useCallback((requests: readonly PackRequest[]) => {
+    // Packed inside the mutator for the same reason a drop is: the room left
+    // has to be measured against the design as it is when the update applies.
+    let missed: PackResult['unplaced'] = []
+    const ids: string[] = []
+    replace(d => {
+      const result = packParts(d, requests)
+      missed = result.unplaced
+      const placed = result.placed.map(p => {
+        const id = newId()
+        ids.push(id)
+        return { ...p, id }
+      })
+      return { ...d, pockets: [...d.pockets, ...placed] }
+    })
+    setSelectionState(new Set(ids))
+    return missed
   }, [replace])
 
   const addPocket = useCallback((pocket: Omit<ToolPocket, 'id'>) => {
@@ -277,12 +304,14 @@ export function useToolTrayDesign(initial?: ToolTrayDesign): ToolTrayDesignApi {
 
   return useMemo(() => ({
     design, selection, canUndo, canRedo,
-    setDesign, replace, addFromPreset, addTraced, addPocket, movePockets, updatePocket,
+    setDesign, replace, addFromPreset, addTraced, packFrom, addPocket, movePockets,
+    updatePocket,
     removePockets,
     updateStep, addStep, removeStep, setFingerAccess,
     setProfile, setHeight, setLayerHeight, setMinFloor, setFeet, setUndersideReliefs,
     setCaseClearHeight, setSelection, toggleSelection, undo, redo,
   }), [design, selection, canUndo, canRedo, setDesign, replace, addFromPreset, addTraced,
+    packFrom,
     addPocket,
     movePockets, updatePocket, removePockets, updateStep, addStep, removeStep, setFingerAccess,
     setProfile, setHeight, setLayerHeight,

@@ -44,9 +44,19 @@ export interface Placeable {
   fingerAccess?: FingerAccess
 }
 
-export function freeSpotFor(
-  design: ToolTrayDesign, preset: Placeable,
-): { x: number; y: number } {
+/**
+ * Where a `Placeable` fits, or null when nothing does.
+ *
+ * `quarterTurn` turns the part a quarter turn before looking, which is what
+ * lets a packer fit a 136 mm channel block across a 165 mm tray. The rotation
+ * is real -- the pocket carries `rotationDeg: 90` -- and because
+ * `applyPocketTransform` turns about the box CENTRE, the rotated body spills
+ * outside its own w x h box. The seat returned is already corrected for that,
+ * so the caller sets x/y from it directly.
+ */
+export function spotFor(
+  design: ToolTrayDesign, preset: Placeable, quarterTurn = false,
+): { x: number; y: number } | null {
   const region = profileToMulti(design.profile)
   const bb = multiBBox(region)
   const wall = THRESHOLDS.wallMm
@@ -76,25 +86,53 @@ export function freeSpotFor(
   // spot chosen without it puts the scoop through a neighbour or the outline.
   const fa = preset.fingerAccess
   const reach = fa ? fingerAccessReach(fa) : 0
+  // A quarter turn carries the scoop round with the body: rotating a point on
+  // the box's left by +90 degrees about the centre puts it below the centre.
+  const TURNED: Record<FingerAccess['side'], FingerAccess['side']> = {
+    left: 'bottom', bottom: 'right', right: 'top', top: 'left',
+  }
+  const side = fa ? (quarterTurn ? TURNED[fa.side] : fa.side) : undefined
   const pad = {
-    left: fa?.side === 'left' ? reach : 0,
-    right: fa?.side === 'right' ? reach : 0,
-    bottom: fa?.side === 'bottom' ? reach : 0,
-    top: fa?.side === 'top' ? reach : 0,
+    left: side === 'left' ? reach : 0,
+    right: side === 'right' ? reach : 0,
+    bottom: side === 'bottom' ? reach : 0,
+    top: side === 'top' ? reach : 0,
   }
 
+  // What the part occupies once turned.
+  const boxW = quarterTurn ? preset.heightMm : preset.widthMm
+  const boxH = quarterTurn ? preset.widthMm : preset.heightMm
+
   const mask = buildSolidMask(region, blockers, RASTER_MM)
-  for (let y = bb.minY + pad.bottom; y + preset.heightMm + pad.top <= bb.maxY; y += STEP_MM) {
-    for (let x = bb.minX + pad.left; x + preset.widthMm + pad.right <= bb.maxX; x += STEP_MM) {
+  for (let y = bb.minY + pad.bottom; y + boxH + pad.top <= bb.maxY; y += STEP_MM) {
+    for (let x = bb.minX + pad.left; x + boxW + pad.right <= bb.maxX; x += STEP_MM) {
       if (allSolid(mask, x - wall - pad.left, y - wall - pad.bottom,
-        x + preset.widthMm + wall + pad.right, y + preset.heightMm + wall + pad.top)) {
-        return { x, y }
+        x + boxW + wall + pad.right, y + boxH + wall + pad.top)) {
+        // (x, y) is where the OCCUPIED box goes. Undo the centre-rotation
+        // spill so the pocket's own x/y put it there.
+        return quarterTurn
+          ? {
+            x: x - preset.widthMm / 2 + preset.heightMm / 2,
+            y: y - preset.heightMm / 2 + preset.widthMm / 2,
+          }
+          : { x, y }
       }
     }
   }
+  return null
+}
 
-  // Nowhere clear. Put it in the middle and let the validator say so, rather
-  // than silently refusing a drop the user asked for.
+/**
+ * Where to drop one part. Unlike `spotFor` this always answers: nowhere clear
+ * puts it in the middle and lets the validator say so, rather than silently
+ * refusing a drop the user asked for.
+ */
+export function freeSpotFor(
+  design: ToolTrayDesign, preset: Placeable,
+): { x: number; y: number } {
+  const found = spotFor(design, preset)
+  if (found) return found
+  const bb = multiBBox(profileToMulti(design.profile))
   return {
     x: (bb.minX + bb.maxX) / 2 - preset.widthMm / 2,
     y: (bb.minY + bb.maxY) / 2 - preset.heightMm / 2,

@@ -26,6 +26,7 @@ import * as api from './service.ts'
 import type { ToolTraySummary } from './service.ts'
 import { ToolTrayCanvas } from './components/ToolTrayCanvas.tsx'
 import PartPalette from './components/PartPalette.tsx'
+import PackPanel from './components/PackPanel.tsx'
 import { MATERIALS } from '../keycap-tray/model/materials.ts'
 import ToolTrayPanel from './components/ToolTrayPanel.tsx'
 import ToolExportPanel from './components/ToolExportPanel.tsx'
@@ -298,6 +299,8 @@ export default function ToolTrayPage() {
             clearanceMm={MATERIALS[settings.material].pocketClearanceMm}
             disabled={busy}
           />
+          <Divider sx={{ my: 2 }} />
+          <PackPanel onPack={d.packFrom} disabled={busy} />
         </Paper>
 
         <Box sx={{ position: 'relative', minHeight: 0 }}>

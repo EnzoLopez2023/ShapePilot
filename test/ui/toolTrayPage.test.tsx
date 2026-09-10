@@ -314,3 +314,42 @@ test('a dropped preset carries its provenance but is stored whole', async () => 
   assert.equal(pockets[0]!.presetId, 'bambu-lube-tube')
   assert.equal(pockets[0]!.steps.length, 1)
 })
+
+// Packing exists to beat arrival order. Dropping these twelve one at a time
+// puts every one of them somewhere -- several on top of each other, because a
+// drop always lands the part and lets the validator complain. Packing places
+// what genuinely fits and says what did not, which is the honest answer.
+test('filling from a list places what fits and names what does not', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(screen.getByText(/pockets ·/)).toBeTruthy())
+
+  await user.clear(screen.getByLabelText('Hotend count'))
+  await user.type(screen.getByLabelText('Hotend count'), '5')
+  await user.clear(screen.getByLabelText('Allen keys and rods count'))
+  await user.type(screen.getByLabelText('Allen keys and rods count'), '1')
+
+  const fill = screen.getByRole('button', { name: /Fill the tray with 6/ })
+  await user.click(fill)
+
+  await waitFor(() => expect(pocketCount()).toBe(6), { timeout: 10000 })
+  assert.ok(screen.getByText(/Everything asked for went in/))
+}, 20000)
+
+test('a list too big for the tray reports the remainder', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(screen.getByText(/pockets ·/)).toBeTruthy())
+
+  await user.clear(screen.getByLabelText('Allen keys and rods count'))
+  await user.type(screen.getByLabelText('Allen keys and rods count'), '9')
+  await user.click(screen.getByRole('button', { name: /Fill the tray with 9/ }))
+
+  await waitFor(() => expect(screen.getByText(/No room left for/)).toBeTruthy(),
+    { timeout: 10000 })
+  // Placed plus reported must account for every part asked for.
+  const reported = /No room left for (\d+) ×/.exec(
+    screen.getByText(/No room left for/).textContent ?? '')?.[1]
+  assert.ok(reported)
+  assert.equal(pocketCount() + Number.parseInt(reported, 10), 9)
+}, 20000)
