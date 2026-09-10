@@ -365,6 +365,71 @@ describe('artifact store', () => {
     assert.equal(readFileSync(join(staging, temporary), 'utf8'), 'attacker bytes')
   })
 
+  // The single-object twin of the bundle regression below. `put_object` had the
+  // same three path-versus-descriptor identity checks -- staged, published, and
+  // published-after-sync -- so it would have refused a sound write on Azure
+  // Files exactly as the bundle path did, had anything exercised it there.
+  test('an object whose timestamps move under it still publishes', async () => {
+    const root = scratchDir('store-single-touched')
+    const data = Buffer.from('approved bytes')
+    const rootFd = openSync(root, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
+    const child = spawn(
+      artifactGuard,
+      ['put', 'object.bin', String(data.byteLength)],
+      { stdio: ['pipe', 'ignore', 'pipe', rootFd, 'pipe'] },
+    )
+    closeSync(rootFd)
+    const control = child.stdio[4]
+    if (!child.stdin || !control || !('end' in control)) {
+      throw new Error('artifact guard did not expose its put pipes')
+    }
+    child.stdin.end(data)
+    const staging = join(root, '.shapepilot-staging')
+    const temporary = await waitForEntry(staging, '.shapepilot-tmp-')
+    // The server rewriting the timestamp on close, which is what Azure Files
+    // does and what the old stat-identity check could not survive.
+    const moved = new Date(Date.now() + 120_000)
+    utimesSync(join(staging, temporary), moved, moved)
+    control.end('C')
+
+    assert.equal(await guardExitBounded(child), 0)
+    assert.equal(readFileSync(join(root, 'object.bin'), 'utf8'), 'approved bytes')
+  })
+
+  // This one guards the fix rather than the bug: the old stat check caught an
+  // in-place rewrite too, via mtime. It is here so that moving identity onto
+  // content cannot quietly become the weaker test -- a rewrite through the same
+  // descriptor keeps dev, ino, mode and size, so the digest is the only thing
+  // left that can still refuse it.
+  test('a same-length rewrite of the staged object is refused', async () => {
+    const root = scratchDir('store-single-rewritten')
+    const data = Buffer.from('approved bytes')
+    const rootFd = openSync(root, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
+    const child = spawn(
+      artifactGuard,
+      ['put', 'object.bin', String(data.byteLength)],
+      { stdio: ['pipe', 'ignore', 'pipe', rootFd, 'pipe'] },
+    )
+    closeSync(rootFd)
+    const control = child.stdio[4]
+    if (!child.stdin || !control || !('end' in control)) {
+      throw new Error('artifact guard did not expose its put pipes')
+    }
+    child.stdin.end(data)
+    const staging = join(root, '.shapepilot-staging')
+    const temporary = await waitForEntry(staging, '.shapepilot-tmp-')
+    await waitForPath(join(staging, temporary))
+    // Written through the same inode, so nothing about the file's identity
+    // changes except what it says.
+    const fd = openSync(join(staging, temporary), constants.O_WRONLY)
+    writeSync(fd, Buffer.from('attacker bytes'), 0, data.byteLength, 0)
+    closeSync(fd)
+    control.end('C')
+
+    assert.notEqual(await guardExitBounded(child), 0)
+    assert.equal(existsSync(join(root, 'object.bin')), false)
+  })
+
   test('a failed put leaves no partial object to poison a retry', async () => {
     const root = scratchDir('store-failed-put')
     const target = join(root, 'bundle', 'data.bin')

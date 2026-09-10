@@ -231,7 +231,10 @@ static int parent_and_leaf(int root_fd, const char *key, int create, char **leaf
   return parent_fd;
 }
 
-static int copy_fd(int source, int destination, unsigned long long *total) {
+/** `written` may be NULL for copies whose bytes nobody has to vouch for. */
+static int copy_fd(
+  int source, int destination, unsigned long long *total, sha256_context *written
+) {
   unsigned char buffer[1024 * 1024];
   for (;;) {
     ssize_t count = read(source, buffer, sizeof(buffer));
@@ -249,6 +252,7 @@ static int copy_fd(int source, int destination, unsigned long long *total) {
       }
       offset += written;
     }
+    if (written) sha256_add(written, buffer, (size_t)count);
     *total += (unsigned long long)count;
   }
 }
@@ -543,60 +547,7 @@ static int bundle_name_contents_match(
   return matched;
 }
 
-/**
- * Which fields of two stat snapshots disagree, as a short field list.
- *
- * An identity check that only says "these differ" is not actionable: on a
- * local filesystem every field is stable, but a network mount may legitimately
- * report a different inode, a fixed mode, or a timestamp the server rewrote on
- * close. Naming the field is the difference between a fix and a guess. Field
- * names only -- no values, no paths -- so this is safe to hand back.
- */
-static const char *snapshot_difference(const struct stat *left, const struct stat *right) {
-  static char detail[160];
-  size_t used = 0;
-  detail[0] = '\0';
-  const char *names[6];
-  int count = 0;
-  if (left->st_dev != right->st_dev) names[count++] = "dev";
-  if (left->st_ino != right->st_ino) names[count++] = "ino";
-  if (left->st_size != right->st_size) names[count++] = "size";
-  if (left->st_mode != right->st_mode) names[count++] = "mode";
-#ifdef __APPLE__
-  if (left->st_mtimespec.tv_sec != right->st_mtimespec.tv_sec
-      || left->st_mtimespec.tv_nsec != right->st_mtimespec.tv_nsec) names[count++] = "mtime";
-  if (left->st_ctimespec.tv_sec != right->st_ctimespec.tv_sec
-      || left->st_ctimespec.tv_nsec != right->st_ctimespec.tv_nsec) names[count++] = "ctime";
-#else
-  if (left->st_mtim.tv_sec != right->st_mtim.tv_sec
-      || left->st_mtim.tv_nsec != right->st_mtim.tv_nsec) names[count++] = "mtime";
-  if (left->st_ctim.tv_sec != right->st_ctim.tv_sec
-      || left->st_ctim.tv_nsec != right->st_ctim.tv_nsec) names[count++] = "ctime";
-#endif
-  for (int index = 0; index < count && used + 1 < sizeof(detail); ++index) {
-    int written = snprintf(
-      detail + used,
-      sizeof(detail) - used,
-      "%s%s",
-      used ? "," : "",
-      names[index]
-    );
-    if (written < 0) break;
-    used += (size_t)written;
-  }
-  return count ? detail : "type";
-}
 
-/** The message for an identity failure, naming the fields that disagreed. */
-static const char *identity_refusal(
-  const char *what,
-  const struct stat *left,
-  const struct stat *right
-) {
-  static char message[256];
-  snprintf(message, sizeof(message), "%s (%s)", what, snapshot_difference(left, right));
-  return message;
-}
 
 static int same_file_snapshot(const struct stat *left, const struct stat *right) {
   if (left->st_dev != right->st_dev || left->st_ino != right->st_ino
@@ -614,28 +565,7 @@ static int same_file_snapshot(const struct stat *left, const struct stat *right)
 #endif
 }
 
-static int file_path_matches(
-  int parent_fd,
-  const char *name,
-  const struct stat *owned
-) {
-  struct stat current;
-  return fstatat(parent_fd, name, &current, AT_SYMLINK_NOFOLLOW) == 0
-    && S_ISREG(current.st_mode)
-    && same_file_snapshot(&current, owned);
-}
 
-static int same_published_file(const struct stat *left, const struct stat *right) {
-  if (left->st_dev != right->st_dev || left->st_ino != right->st_ino
-      || left->st_size != right->st_size || left->st_mode != right->st_mode) return 0;
-#ifdef __APPLE__
-  return left->st_mtimespec.tv_sec == right->st_mtimespec.tv_sec
-    && left->st_mtimespec.tv_nsec == right->st_mtimespec.tv_nsec;
-#else
-  return left->st_mtim.tv_sec == right->st_mtim.tv_sec
-    && left->st_mtim.tv_nsec == right->st_mtim.tv_nsec;
-#endif
-}
 
 static int bundle_contents_match(
   int bundle_fd,
@@ -923,7 +853,12 @@ static void put_object(int root_fd, const char *key, unsigned long long expected
   const char *why = NULL;
   unsigned long long copied = 0;
   int failed = 0;
-  if (copy_fd(STDIN_FILENO, target, &copied) != 0 || copied != expected_bytes) {
+  // The digest of what was written, and from here on the object's identity.
+  // See `hash_file_at` for why the stat fields this replaces cannot carry it.
+  sha256_context writing;
+  sha256_begin(&writing);
+  unsigned char approved[SHA256_DIGEST_BYTES];
+  if (copy_fd(STDIN_FILENO, target, &copied, &writing) != 0 || copied != expected_bytes) {
     failed = 1;
     why = "cannot copy the artifact object";
   }
@@ -946,6 +881,7 @@ static void put_object(int root_fd, const char *key, unsigned long long expected
       errno = 0;
     } else {
       owned = completed;
+      sha256_finish(&writing, approved);
     }
   }
   if (close(target) != 0) {
@@ -959,14 +895,19 @@ static void put_object(int root_fd, const char *key, unsigned long long expected
   }
   int published = 0;
   if (!failed) {
-    struct stat staged;
-    if (fstatat(staging_fd, temporary, &staged, AT_SYMLINK_NOFOLLOW) != 0) {
+    // Identity from the bytes, not from dev/ino/mtime. This comparison used to
+    // be `fstat` on the open descriptor against `fstatat` on the same path,
+    // which is precisely the pair a13bd72 recorded as unable to agree on Azure
+    // Files -- inode numbers synthesized, mode fixed, timestamps rewritten by
+    // the server on close. A digest agrees on any filesystem, and says more:
+    // the same bytes rather than merely the same file.
+    unsigned char staged_digest[SHA256_DIGEST_BYTES];
+    if (hash_file_at(staging_fd, temporary, expected_bytes, staged_digest) != 0) {
       failed = 1;
-      why = "cannot stat the staged artifact object";
-    } else if (!S_ISREG(staged.st_mode) || !same_file_snapshot(&staged, &owned)) {
+      why = "cannot read back the staged artifact object";
+    } else if (memcmp(staged_digest, approved, SHA256_DIGEST_BYTES) != 0) {
       failed = 1;
-      why = identity_refusal(
-        "the staged artifact object changed identity before publication", &staged, &owned);
+      why = "the staged artifact object changed contents before publication";
       errno = 0;
     }
   }
@@ -978,17 +919,17 @@ static void put_object(int root_fd, const char *key, unsigned long long expected
   }
   struct stat published_snapshot;
   if (!failed) {
-    if (fstatat(parent_fd, leaf, &published_snapshot, AT_SYMLINK_NOFOLLOW) != 0) {
+    unsigned char published_digest[SHA256_DIGEST_BYTES];
+    if (hash_file_at(parent_fd, leaf, expected_bytes, published_digest) != 0) {
       failed = 1;
-      why = "cannot stat the published artifact object";
-    } else if (!S_ISREG(published_snapshot.st_mode)
-        || !same_published_file(&published_snapshot, &owned)) {
+      why = "cannot read back the published artifact object";
+    } else if (memcmp(published_digest, approved, SHA256_DIGEST_BYTES) != 0) {
       failed = 1;
-      why = identity_refusal(
-        "the published artifact object does not match what was written",
-        &published_snapshot, &owned);
+      why = "the published artifact object does not match what was written";
       errno = 0;
-    } else {
+    } else if (fstatat(parent_fd, leaf, &published_snapshot, AT_SYMLINK_NOFOLLOW) == 0) {
+      // Kept only so cleanup can recognise what it is removing on a later
+      // failure; it is no longer what identity rests on.
       owned = published_snapshot;
     }
   }
@@ -996,10 +937,14 @@ static void put_object(int root_fd, const char *key, unsigned long long expected
     failed = 1;
     why = "cannot sync the artifact parent directory";
   }
-  if (!failed && !file_path_matches(parent_fd, leaf, &owned)) {
-    failed = 1;
-    why = "the published artifact object changed identity after it was synced";
-    errno = 0;
+  if (!failed) {
+    unsigned char synced_digest[SHA256_DIGEST_BYTES];
+    if (hash_file_at(parent_fd, leaf, expected_bytes, synced_digest) != 0
+        || memcmp(synced_digest, approved, SHA256_DIGEST_BYTES) != 0) {
+      failed = 1;
+      why = "the published artifact object changed contents after it was synced";
+      errno = 0;
+    }
   }
   if (failed) {
     int refusal = errno;
@@ -1029,7 +974,7 @@ static void get_object(int root_fd, const char *key) {
     fail("artifact object is not a regular file");
   }
   unsigned long long copied = 0;
-  if (copy_fd(source, STDOUT_FILENO, &copied) != 0) fail("cannot read artifact object");
+  if (copy_fd(source, STDOUT_FILENO, &copied, NULL) != 0) fail("cannot read artifact object");
   close(source);
   close(parent_fd);
   free(leaf);
@@ -1114,10 +1059,10 @@ static void fetch_object(int root_fd, const char *key, const char *destination_l
   struct stat owned;
   if (fstat(target, &owned) != 0) fail("cannot identify materialized artifact");
   unsigned long long copied = 0;
-  /* The single-object path still establishes identity from stat fields. It is
-   * not on the backup path -- `createBackup` publishes through `bundle` -- so
-   * it is left as it was rather than changed untested; the digest is computed
-   * and discarded to keep one copy routine. */
+  /* Fetching materialises a copy for the caller to verify; the manifest it is
+   * checked against lives outside this process, so nothing here has to vouch
+   * for the bytes. The digest is computed and discarded to keep one copy
+   * routine rather than a second that does not hash. */
   sha256_context unused_digest;
   sha256_begin(&unused_digest);
   int failed = copy_and_echo_bounded(
@@ -1225,11 +1170,21 @@ static void restore_object(
       || completed.st_ino != owned.st_ino
       || completed.st_size < 0
       || (unsigned long long)completed.st_size != expected_bytes)) failed = 1;
+  unsigned char approved[SHA256_DIGEST_BYTES];
+  if (!failed) sha256_finish(&restore_digest, approved);
   if (close(target) != 0) failed = 1;
-  if (!failed && (!file_path_matches(parent_fd, leaf, &completed)
+  // Content, for the same reason `put_object` uses it: these compare a path
+  // against a descriptor, and on Azure Files those two cannot be made to agree.
+  // Restore matters here more than anywhere else -- it is the operation run
+  // when a database is already lost, on the mount the backup lives on, so a
+  // restore that cannot verify itself there is a recovery story with no ending.
+  unsigned char landed[SHA256_DIGEST_BYTES];
+  if (!failed && (hash_file_at(parent_fd, leaf, expected_bytes, landed) != 0
+      || memcmp(landed, approved, SHA256_DIGEST_BYTES) != 0
       || !restore_sidecars_absent(parent_fd, leaf)
       || fsync(parent_fd) != 0
-      || !file_path_matches(parent_fd, leaf, &completed)
+      || hash_file_at(parent_fd, leaf, expected_bytes, landed) != 0
+      || memcmp(landed, approved, SHA256_DIGEST_BYTES) != 0
       || !restore_sidecars_absent(parent_fd, leaf))) failed = 1;
   if (failed) {
     cleanup_owned(parent_fd, leaf, &owned);
