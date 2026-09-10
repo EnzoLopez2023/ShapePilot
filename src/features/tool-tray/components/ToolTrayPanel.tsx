@@ -1,6 +1,9 @@
 import {
-  Alert, Divider, FormControlLabel, MenuItem, Stack, Switch, TextField, Tooltip, Typography,
+  Alert, Button, Divider, FormControlLabel, IconButton, MenuItem, Stack, Switch, TextField,
+  Tooltip, Typography,
 } from '@mui/material'
+import AddIcon from '@mui/icons-material/Add'
+import DeleteIcon from '@mui/icons-material/DeleteOutline'
 import LengthField from '../../../components/LengthField.tsx'
 import {
   PROFILE_PRESETS, profileInternalClearHeight, profileSize, profileTotalClearHeight,
@@ -8,7 +11,9 @@ import {
 import type { PresetProfileId, TrayProfile } from '../../../model/trayProfile.ts'
 import { MATERIALS } from '../../keycap-tray/model/materials.ts'
 import type { MaterialId } from '../../keycap-tray/model/materials.ts'
-import type { ToolPocket, ToolTrayDesign, UndersideReliefMode } from '../model/types.ts'
+import type {
+  FingerAccess, PocketStep, StepShape, ToolPocket, ToolTrayDesign, UndersideReliefMode,
+} from '../model/types.ts'
 import { deepestStepMm } from '../geometry/shapes.ts'
 import type { Issue } from '../geometry/validate.ts'
 
@@ -34,6 +39,10 @@ export interface ToolTrayPanelProps {
   onCaseClearHeight: (mm: number | undefined) => void
   onFeet: (feet: ToolTrayDesign['feet']) => void
   onPocket: (id: string, patch: Partial<ToolPocket>) => void
+  onStep: (pocketId: string, index: number, patch: Partial<PocketStep>) => void
+  onAddStep: (pocketId: string) => void
+  onRemoveStep: (pocketId: string, index: number) => void
+  onFingerAccess: (pocketId: string, access: FingerAccess | undefined) => void
 }
 
 /**
@@ -49,6 +58,7 @@ export function ToolTrayPanel({
   design, selected, issues, imperial, material, levels,
   onMaterial, onProfile, onHeight, onLayerHeight, onMinFloor,
   onUndersideReliefs, onCaseClearHeight, onFeet, onPocket,
+  onStep, onAddStep, onRemoveStep, onFingerAccess,
 }: ToolTrayPanelProps) {
   const size = profileSize(design.profile)
   const baseCavity = design.caseClearHeightMm ?? profileInternalClearHeight(design.profile)
@@ -245,6 +255,169 @@ export function ToolTrayPanel({
               label="Flip"
             />
           </Stack>
+        </>
+      )}
+
+      {selected && (
+        <>
+          <Divider />
+          <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
+            <Typography variant="h3" component="h2">Tiers</Typography>
+            <Button size="small" startIcon={<AddIcon />} onClick={() => onAddStep(selected.id)}>
+              Add
+            </Button>
+          </Stack>
+          <Typography variant="body2" color="text.secondary">
+            Each tier is one floor. A wider, shallower tier over a narrower, deeper
+            one is a lead-in the part drops into; several make a bay that follows
+            the shape of the thing it holds.
+          </Typography>
+          {selected.steps.map((step, i) => (
+            <Stack key={i} spacing={1} sx={{ pl: 1, borderLeft: 2, borderColor: 'divider' }}>
+              <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography variant="body2">
+                  Tier {i + 1} · {step.shape.kind}
+                </Typography>
+                <Tooltip title={selected.steps.length > 1
+                  ? 'Remove this tier'
+                  : 'A pocket needs at least one tier'}>
+                  <span>
+                    <IconButton
+                      size="small"
+                      aria-label={`Remove tier ${i + 1}`}
+                      disabled={selected.steps.length <= 1}
+                      onClick={() => onRemoveStep(selected.id, i)}
+                    >
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              </Stack>
+              <Stack direction="row" spacing={1}>
+                <LengthField
+                  label="Depth"
+                  imperial={imperial}
+                  valueMm={step.depthMm ?? design.heightMm}
+                  onChangeMm={mm => onStep(selected.id, i, { depthMm: mm })}
+                />
+                {step.shape.kind === 'rect' && (
+                  <>
+                    <LengthField
+                      label="Width"
+                      imperial={imperial}
+                      valueMm={step.shape.widthMm}
+                      onChangeMm={mm => onStep(selected.id, i, {
+                        shape: { ...(step.shape as Extract<StepShape, { kind: 'rect' }>), widthMm: mm },
+                      })}
+                    />
+                    <LengthField
+                      label="Length"
+                      imperial={imperial}
+                      valueMm={step.shape.heightMm}
+                      onChangeMm={mm => onStep(selected.id, i, {
+                        shape: {
+                          ...(step.shape as Extract<StepShape, { kind: 'rect' }>), heightMm: mm,
+                        },
+                      })}
+                    />
+                  </>
+                )}
+              </Stack>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={step.depthMm === null}
+                    onChange={e => onStep(selected.id, i, {
+                      depthMm: e.target.checked ? null : (deepestStepMm(selected) ?? design.heightMm),
+                    })}
+                  />
+                }
+                label="Cut through"
+              />
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={Boolean(step.liftOverKeepOut)}
+                    onChange={e => onStep(selected.id, i, {
+                      liftOverKeepOut: e.target.checked || undefined,
+                    })}
+                  />
+                }
+                label="Lift over a lift recess"
+              />
+              {step.liftOverKeepOut && (
+                <Typography variant="caption" color="text.secondary">
+                  This tier&rsquo;s floor is held above the recess, leaving a thin roof to
+                  bridge it. That puts a step in the floor — fine under loose hardware,
+                  a defect under an allen key.
+                </Typography>
+              )}
+            </Stack>
+          ))}
+
+          <Divider />
+          <Typography variant="h3" component="h2">Finger access</Typography>
+          <Typography variant="body2" color="text.secondary">
+            A scoop or slot breaking the pocket wall, so the part can be lifted
+            out. A close-fitting pocket with no way under the part is a pocket
+            that keeps it.
+          </Typography>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={Boolean(selected.fingerAccess)}
+                onChange={e => onFingerAccess(selected.id, e.target.checked
+                  ? { style: 'scallop', side: 'left', widthMm: 12, reachMm: 5 }
+                  : undefined)}
+              />
+            }
+            label="Finger access"
+          />
+          {selected.fingerAccess && (
+            <>
+              <Stack direction="row" spacing={1}>
+                <TextField
+                  select size="small" label="Style" sx={{ flex: 1 }}
+                  value={selected.fingerAccess.style}
+                  onChange={e => onFingerAccess(selected.id, {
+                    ...selected.fingerAccess!,
+                    style: e.target.value as FingerAccess['style'],
+                  })}
+                >
+                  <MenuItem value="scallop">Scallop</MenuItem>
+                  <MenuItem value="slot">Slot</MenuItem>
+                </TextField>
+                <TextField
+                  select size="small" label="Side" sx={{ flex: 1 }}
+                  value={selected.fingerAccess.side}
+                  onChange={e => onFingerAccess(selected.id, {
+                    ...selected.fingerAccess!,
+                    side: e.target.value as FingerAccess['side'],
+                  })}
+                >
+                  {(['left', 'right', 'top', 'bottom'] as const).map(side => (
+                    <MenuItem key={side} value={side}>{side}</MenuItem>
+                  ))}
+                </TextField>
+              </Stack>
+              <Stack direction="row" spacing={1}>
+                <LengthField
+                  label="Width" imperial={imperial}
+                  valueMm={selected.fingerAccess.widthMm}
+                  onChangeMm={mm => onFingerAccess(selected.id, {
+                    ...selected.fingerAccess!, widthMm: mm,
+                  })}
+                />
+                <LengthField
+                  label="Reach" imperial={imperial}
+                  valueMm={selected.fingerAccess.reachMm}
+                  onChangeMm={mm => onFingerAccess(selected.id, {
+                    ...selected.fingerAccess!, reachMm: mm,
+                  })}
+                />
+              </Stack>
+            </>
+          )}
         </>
       )}
 

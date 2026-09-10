@@ -337,6 +337,10 @@ export default function ToolTrayPage() {
             onCaseClearHeight={d.setCaseClearHeight}
             onFeet={d.setFeet}
             onPocket={d.updatePocket}
+            onStep={d.updateStep}
+            onAddStep={d.addStep}
+            onRemoveStep={d.removeStep}
+            onFingerAccess={d.setFingerAccess}
           />
         </Paper>
       </Box>

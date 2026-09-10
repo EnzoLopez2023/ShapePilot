@@ -11,8 +11,9 @@ import { emptyDesign } from '../model/defaults.ts'
 import { freeSpotFor } from '../geometry/place.ts'
 import type { PartPreset } from '../model/partPresets.ts'
 import type {
-  ToolPocket, ToolTrayDesign, TrayFeet, UndersideReliefMode,
+  FingerAccess, PocketStep, ToolPocket, ToolTrayDesign, TrayFeet, UndersideReliefMode,
 } from '../model/types.ts'
+import { deepestStepMm } from '../geometry/shapes.ts'
 
 export interface ToolTrayDesignApi {
   design: ToolTrayDesign
@@ -33,6 +34,16 @@ export interface ToolTrayDesignApi {
   movePockets: (ids: Iterable<string>, dx: number, dy: number) => void
   updatePocket: (id: string, patch: Partial<ToolPocket>) => void
   removePockets: (ids: Iterable<string>) => void
+  /**
+   * Edit one step of a pocket. The tiers are what make a hotend bay one pocket
+   * rather than three, and a lead-in or a cradle is the same thing: a wider,
+   * shallower step over a narrower, deeper one.
+   */
+  updateStep: (pocketId: string, index: number, patch: Partial<PocketStep>) => void
+  /** A new step inset from the pocket box, shallower than the deepest. */
+  addStep: (pocketId: string) => void
+  removeStep: (pocketId: string, index: number) => void
+  setFingerAccess: (pocketId: string, access: FingerAccess | undefined) => void
   setProfile: (p: TrayProfile) => void
   setHeight: (mm: number) => void
   setLayerHeight: (mm: number) => void
@@ -106,6 +117,63 @@ export function useToolTrayDesign(initial?: ToolTrayDesign): ToolTrayDesignApi {
     }))
   }, [replace])
 
+  const updateStep = useCallback((
+    pocketId: string, index: number, patch: Partial<PocketStep>,
+  ) => {
+    replace(d => ({
+      ...d,
+      pockets: d.pockets.map(p => (p.id === pocketId
+        ? { ...p, steps: p.steps.map((s, i) => (i === index ? { ...s, ...patch } : s)) }
+        : p)),
+    }))
+  }, [replace])
+
+  const addStep = useCallback((pocketId: string) => {
+    replace(d => ({
+      ...d,
+      pockets: d.pockets.map(p => {
+        if (p.id !== pocketId) return p
+        // Seeded as a lead-in: the pocket's own box inset a little, at half the
+        // depth of its deepest step. That is the shape people actually want
+        // next -- a mouth a part drops into -- and it is immediately editable.
+        const deepest = deepestStepMm(p) ?? d.heightMm
+        const inset = Math.min(3, p.widthMm / 4, p.heightMm / 4)
+        const step: PocketStep = {
+          shape: {
+            kind: 'rect',
+            widthMm: Math.max(0.1, p.widthMm - inset * 2),
+            heightMm: Math.max(0.1, p.heightMm - inset * 2),
+            cornerRadiusMm: 1,
+          },
+          offset: [inset, inset],
+          depthMm: Math.max(d.layerHeightMm, Math.round((deepest / 2) / d.layerHeightMm)
+            * d.layerHeightMm),
+        }
+        return { ...p, steps: [...p.steps, step] }
+      }),
+    }))
+  }, [replace])
+
+  const removeStep = useCallback((pocketId: string, index: number) => {
+    replace(d => ({
+      ...d,
+      pockets: d.pockets.map(p => {
+        if (p.id !== pocketId) return p
+        // A pocket with no steps removes nothing and cannot be selected back
+        // out of the canvas, so the last one stays.
+        if (p.steps.length <= 1) return p
+        return { ...p, steps: p.steps.filter((_, i) => i !== index) }
+      }),
+    }))
+  }, [replace])
+
+  const setFingerAccess = useCallback((pocketId: string, access: FingerAccess | undefined) => {
+    replace(d => ({
+      ...d,
+      pockets: d.pockets.map(p => (p.id === pocketId ? { ...p, fingerAccess: access } : p)),
+    }))
+  }, [replace])
+
   const removePockets = useCallback((ids: Iterable<string>) => {
     const going = new Set(ids)
     if (!going.size) return
@@ -161,10 +229,12 @@ export function useToolTrayDesign(initial?: ToolTrayDesign): ToolTrayDesignApi {
   return useMemo(() => ({
     design, selection, canUndo, canRedo,
     setDesign, replace, addFromPreset, addPocket, movePockets, updatePocket, removePockets,
+    updateStep, addStep, removeStep, setFingerAccess,
     setProfile, setHeight, setLayerHeight, setMinFloor, setFeet, setUndersideReliefs,
     setCaseClearHeight, setSelection, toggleSelection, undo, redo,
   }), [design, selection, canUndo, canRedo, setDesign, replace, addFromPreset, addPocket,
-    movePockets, updatePocket, removePockets, setProfile, setHeight, setLayerHeight,
+    movePockets, updatePocket, removePockets, updateStep, addStep, removeStep, setFingerAccess,
+    setProfile, setHeight, setLayerHeight,
     setMinFloor, setFeet, setUndersideReliefs, setCaseClearHeight, setSelection,
     toggleSelection, undo, redo])
 }

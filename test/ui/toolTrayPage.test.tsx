@@ -133,7 +133,7 @@ test('several parts dropped at once do not land on top of each other', async () 
   assert.equal(screen.queryByText(/overlap/), null)
   // ...and nothing was pushed off the tray or into a recess either.
   assert.equal(screen.queryByText(/off the edge/), null)
-  assert.equal(screen.queryByText(/lift recess/), null)
+  assert.equal(screen.queryByText(/hex-key lift recess/), null)
 })
 
 test('auto-placement keeps deep parts out of the lift recesses', async () => {
@@ -147,7 +147,7 @@ test('auto-placement keeps deep parts out of the lift recesses', async () => {
     await user.click(within(palette).getByRole('button', { name: new RegExp(label) }))
   }
   await waitFor(() => expect(pocketCount()).toBe(7))
-  assert.equal(screen.queryByText(/lift recess/), null)
+  assert.equal(screen.queryByText(/hex-key lift recess/), null)
   assert.equal(screen.queryByText(/off the edge/), null)
   assert.equal(screen.queryByText(/overlap/), null)
 })
@@ -172,6 +172,79 @@ test('a pocket over a lift recess is reported, because that opens a hole', async
   await user.type(y, '40{Enter}')
 
   await waitFor(() => expect(screen.getByText(/hex-key lift recess/)).toBeTruthy())
+})
+
+test('a tier can be added, edited and removed -- which is how a lead-in is made', async () => {
+  // The step model already expressed lead-ins and stepped cradles; what was
+  // missing was any way to make one. A wider shallow tier over a narrower deep
+  // one is the shape, and it is one more floor level.
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(screen.getByText(/pockets ·/)).toBeTruthy())
+  await drop(user, 'Screws and small parts')
+  await waitFor(() => expect(pocketCount()).toBe(1))
+  assert.equal(levelCount(), 3)
+  assert.ok(screen.getByText(/Tier 1/))
+
+  await user.click(screen.getByRole('button', { name: 'Add' }))
+  await waitFor(() => expect(screen.getByText(/Tier 2/)).toBeTruthy())
+  // A second floor, seeded shallower than the first.
+  await waitFor(() => expect(levelCount()).toBe(4))
+
+  await user.click(screen.getByRole('button', { name: 'Remove tier 2' }))
+  await waitFor(() => expect(levelCount()).toBe(3))
+  assert.equal(screen.queryByText(/Tier 2/), null)
+})
+
+test('the last tier cannot be removed -- a pocket with none removes nothing', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(screen.getByText(/pockets ·/)).toBeTruthy())
+  await drop(user, 'Screws and small parts')
+  await waitFor(() => expect(screen.getByText(/Tier 1/)).toBeTruthy())
+  const remove = screen.getByRole('button', { name: 'Remove tier 1' })
+  assert.equal(remove.hasAttribute('disabled'), true)
+})
+
+test('the lift toggle changes the solid, not just the warning', async () => {
+  // It used to change only the message. Ticking it now moves that tier's floor
+  // over the recess, which shows up as another floor level.
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(screen.getByText(/pockets ·/)).toBeTruthy())
+  await drop(user, 'Long bay')
+  await waitFor(() => expect(pocketCount()).toBe(1))
+
+  const x = screen.getByLabelText('X')
+  await user.clear(x)
+  await user.type(x, '6{Enter}')
+  const y = screen.getByLabelText('Y')
+  await user.clear(y)
+  await user.type(y, '40{Enter}')
+  await waitFor(() => expect(screen.getByText(/hex-key lift recess/)).toBeTruthy())
+
+  const before = levelCount()
+  await user.click(screen.getByLabelText('Lift over a lift recess'))
+  // The error goes AND the geometry gains the roof level.
+  await waitFor(() => expect(screen.queryByText(/hex-key lift recess/)).toBeNull())
+  await waitFor(() => expect(levelCount()).toBe(before + 1))
+})
+
+test('finger access can be turned on, and reaches past the pocket wall', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(screen.getByText(/pockets ·/)).toBeTruthy())
+  await drop(user, 'Screws and small parts')
+  await waitFor(() => expect(pocketCount()).toBe(1))
+
+  const before = Number.parseInt(/([\d,]+) triangles/.exec(readout())?.[1]?.replace(/,/g, '') ?? '0', 10)
+  await user.click(screen.getByLabelText('Finger access'))
+  await waitFor(() => expect(screen.getByLabelText('Reach')).toBeTruthy())
+  // A scoop is more geometry, so the triangle count has to move.
+  await waitFor(() => {
+    const after = Number.parseInt(/([\d,]+) triangles/.exec(readout())?.[1]?.replace(/,/g, '') ?? '0', 10)
+    expect(after).not.toBe(before)
+  })
 })
 
 test('the stack budget is reported against the measured base cavity', async () => {

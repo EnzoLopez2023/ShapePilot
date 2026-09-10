@@ -140,12 +140,21 @@ function contributionsFor(design: ToolTrayDesign, pocket: ToolPocket): Contribut
   return out
 }
 
-/** Every contribution in the tray, so levels and regions come from one place. */
+/** Every contribution in the tray. Builds every ring, so it is not cheap. */
 const allContributions = (design: ToolTrayDesign): Contribution[] =>
   design.pockets.flatMap(pocket => contributionsFor(design, pocket))
 
 /**
  * Every distinct floor height in the tray, ascending, including 0 and the rim.
+ *
+ * Deliberately ARITHMETIC ONLY -- no rings, no booleans. It is called on every
+ * render for the readout as well as by `buildRegions`, and an earlier version
+ * derived it from the contributions, which meant building every channel union
+ * three times per frame. That was slow enough to hang the page.
+ *
+ * The cost of staying cheap: a lifted step adds the roof level whether or not
+ * its ring really overlaps a recess. A level nothing contributes to leaves a
+ * band identical to the one below it -- redundant, not wrong.
  *
  * Depths snap DOWN onto whole layers, so a snapped floor is never shallower
  * than asked for. A through-cut lands at 0 and so shares the bottom level.
@@ -159,7 +168,19 @@ export function resolveLevels(design: ToolTrayDesign): number[] {
       if (r.heightMm > 0 && r.heightMm < top) set.add(r.heightMm)
     }
   }
-  for (const c of allContributions(design)) set.add(c.level)
+
+  const lifting = design.undersideReliefs !== 'ignore' && reliefHeight(design) > 0
+  const roof = liftedFloorMm(design)
+  for (const pocket of design.pockets) {
+    const deepest = deepestStepMm(pocket) ?? top
+    for (const step of pocket.steps) {
+      const level = levelOf(step.depthMm, design)
+      set.add(level)
+      if (lifting && step.liftOverKeepOut && level < roof) set.add(roof)
+    }
+    const fa = pocket.fingerAccess
+    if (fa) set.add(levelOf(fa.depthMm ?? deepest, design))
+  }
 
   return [...set].filter(z => z >= 0 && z <= top).sort((a, b) => a - b)
 }
