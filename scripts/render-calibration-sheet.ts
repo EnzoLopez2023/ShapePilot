@@ -20,8 +20,7 @@ import { accessSync, constants } from 'node:fs'
 import { resolve } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
-const source = resolve(root, 'docs/trace-calibration-sheet.html')
-const output = resolve(root, 'docs/trace-calibration-sheet.pdf')
+const SHEETS = ['trace-calibration-sheet', 'trace-calibration-sheet-dark']
 
 // Chrome is the whole toolchain: the sheet is one @page-sized SVG in absolute
 // millimetres, and Chrome's print path preserves that. No headless-browser
@@ -51,13 +50,16 @@ const findChrome = (): string => {
 
 const chrome = findChrome()
 
-execFileSync(chrome, [
-  '--headless',
-  '--disable-gpu',
-  // Chrome's own header/footer would stamp a URL and date over the layout.
-  '--no-pdf-header-footer',
-  `--print-to-pdf=${output}`,
-  source,
-], { stdio: ['ignore', 'inherit', 'ignore'] })
-
-console.log(`rendered ${output}`)
+for (const sheet of SHEETS) {
+  const source = resolve(root, `docs/${sheet}.html`)
+  const output = resolve(root, `docs/${sheet}.pdf`)
+  execFileSync(chrome, [
+    '--headless',
+    '--disable-gpu',
+    // Chrome's own header/footer would stamp a URL and date over the layout.
+    '--no-pdf-header-footer',
+    `--print-to-pdf=${output}`,
+    source,
+  ], { stdio: ['ignore', 'inherit', 'ignore'] })
+  console.log(`rendered ${output}`)
+}

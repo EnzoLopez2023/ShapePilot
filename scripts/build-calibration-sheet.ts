@@ -59,6 +59,29 @@ const RULER_MM = 150
  */
 const CALIPER_MM = 100
 
+/**
+ * The dark panel, for light-coloured parts.
+ *
+ * A white tube on white paper has almost no edge to find: the only thing
+ * separating part from sheet is a shadow, and a shadow falls on one side, is
+ * soft, and reads as part of the object. On black the edge is unambiguous all
+ * the way round and the shadow stops mattering.
+ *
+ * This costs nothing in accuracy, which is the non-obvious part: the grid is
+ * decorative as far as the maths is concerned, and only the four corner targets
+ * are ever measured. So the middle of the sheet can be anything at all.
+ *
+ * Centred on the target rectangle rather than filling the space available,
+ * because the centre is where parallax is zero -- an off-centre panel would
+ * quietly invite the part to sit where the error is worst. Its size is the
+ * largest symmetric box that still clears every target keep-out and both
+ * rulers, asserted below rather than trusted.
+ */
+const PANEL_CLEAR_LEFT = 30
+const PANEL_CLEAR_RIGHT = 14
+const PANEL_CLEAR_TOP = 16
+const PANEL_CLEAR_BOTTOM = 26
+
 const GRID_FINE = 5
 const GRID_BOLD = 10
 const GRID_HEAVY = 50
@@ -152,7 +175,82 @@ const ruler = (
 const cx = ORIGIN_X + RECT_W / 2
 const cy = ORIGIN_Y + RECT_H / 2
 
-const svg = `<svg xmlns="http://www.w3.org/2000/svg"
+const halfW = Math.min(
+  cx - (ORIGIN_X + PANEL_CLEAR_LEFT), (ORIGIN_X + RECT_W - PANEL_CLEAR_RIGHT) - cx)
+const halfH = Math.min(
+  cy - (ORIGIN_Y + PANEL_CLEAR_TOP), (ORIGIN_Y + RECT_H - PANEL_CLEAR_BOTTOM) - cy)
+const PANEL = { x0: cx - halfW, y0: cy - halfH, x1: cx + halfW, y1: cy + halfH }
+
+/**
+ * Nothing measurable may end up under the panel, and a proof will not show it:
+ * black ink on a black rectangle is invisible. So it is asserted at build time.
+ *
+ * The keep-outs are what each feature actually OCCUPIES, not the line it is
+ * drawn from -- the vertical ruler's numbers sit 7 mm to the right of its rule
+ * and its caption 5 mm to the left, so guarding the rule alone guards nothing.
+ * MARGIN then demands real clearance rather than mere non-overlap: the first
+ * version of this check compared against the bare rule and passed a panel whose
+ * edge landed on it exactly, losing to floating point by 1.4e-14.
+ */
+const MARGIN = 2
+interface Box { x0: number; y0: number; x1: number; y1: number }
+const KEEP_OUT: [string, Box][] = [
+  ...([
+    [ORIGIN_X, ORIGIN_Y], [ORIGIN_X + RECT_W, ORIGIN_Y],
+    [ORIGIN_X + RECT_W, ORIGIN_Y + RECT_H], [ORIGIN_X, ORIGIN_Y + RECT_H],
+  ] as const).map(([tx, ty]): [string, Box] => [
+    `target ${tx},${ty}`,
+    { x0: tx - 8.5, y0: ty - 8.5, x1: tx + 8.5, y1: ty + 8.5 },
+  ]),
+  ['the ruler down the page', {
+    x0: ORIGIN_X + 5, y0: ORIGIN_Y, x1: ORIGIN_X + 23, y1: ORIGIN_Y + RECT_H,
+  }],
+  ['the ruler across the page', {
+    x0: ORIGIN_X, y0: ORIGIN_Y + RECT_H - 19,
+    x1: ORIGIN_X + RECT_W, y1: ORIGIN_Y + RECT_H - 7,
+  }],
+]
+for (const [what, box] of KEEP_OUT) {
+  const clash = PANEL.x0 < box.x1 + MARGIN && box.x0 - MARGIN < PANEL.x1
+    && PANEL.y0 < box.y1 + MARGIN && box.y0 - MARGIN < PANEL.y1
+  if (clash) throw new Error(`the dark panel comes within ${MARGIN} mm of ${what}`)
+}
+
+const lightZone = (): string => `  <g>
+    <circle cx="${f(cx)}" cy="${f(cy)}" r="55" fill="none" stroke="#b0b6bb"
+            stroke-width="0.4" stroke-dasharray="3 2.5"/>
+    <text x="${f(cx)}" y="${f(cy - 58)}" font-size="3.4" text-anchor="middle" fill="#6d747a">
+      PUT THE PART HERE — centred, flattest face down
+    </text>
+  </g>`
+
+/**
+ * Solid, and deliberately unmarked. No grid over it, no centre cross, nothing:
+ * every line printed inside this rectangle is an edge a tracer can mistake for
+ * the part. Centring instead gets four ticks OUTSIDE the panel, on the white,
+ * where they help the eye and never reach the silhouette.
+ */
+const darkPanel = (): string => {
+  const t = 4
+  const ticks = [
+    `<line x1="${f(cx)}" y1="${f(PANEL.y0 - t)}" x2="${f(cx)}" y2="${f(PANEL.y0 - 0.8)}"/>`,
+    `<line x1="${f(cx)}" y1="${f(PANEL.y1 + 0.8)}" x2="${f(cx)}" y2="${f(PANEL.y1 + t)}"/>`,
+    `<line x1="${f(PANEL.x0 - t)}" y1="${f(cy)}" x2="${f(PANEL.x0 - 0.8)}" y2="${f(cy)}"/>`,
+    `<line x1="${f(PANEL.x1 + 0.8)}" y1="${f(cy)}" x2="${f(PANEL.x1 + t)}" y2="${f(cy)}"/>`,
+  ].join('\n      ')
+  return `  <g>
+    <rect x="${f(PANEL.x0)}" y="${f(PANEL.y0)}" width="${f(PANEL.x1 - PANEL.x0)}"
+          height="${f(PANEL.y1 - PANEL.y0)}" fill="#000"/>
+    <g stroke="#16181a" stroke-width="0.4">
+      ${ticks}
+    </g>
+    <text x="${f(cx)}" y="${f(PANEL.y0 - 6.5)}" font-size="3.4" text-anchor="middle" fill="#6d747a">
+      PUT THE PART ON THE BLACK — centred between the ticks, flattest face down
+    </text>
+  </g>`
+}
+
+const buildSvg = (dark: boolean): string => `<svg xmlns="http://www.w3.org/2000/svg"
      width="${f(PAGE_W)}mm" height="${f(PAGE_H)}mm"
      viewBox="0 0 ${f(PAGE_W)} ${f(PAGE_H)}"
      shape-rendering="crispEdges">
@@ -167,13 +265,7 @@ ${grid(GRID_HEAVY, '#6d747a', 0.35)}
 
   <!-- The place-it-here zone. Dead centre, because parallax is zero only
        under the lens and grows with distance from it. -->
-  <g>
-    <circle cx="${f(cx)}" cy="${f(cy)}" r="55" fill="none" stroke="#b0b6bb"
-            stroke-width="0.4" stroke-dasharray="3 2.5"/>
-    <text x="${f(cx)}" y="${f(cy - 58)}" font-size="3.4" text-anchor="middle" fill="#6d747a">
-      PUT THE PART HERE — centred, flattest face down
-    </text>
-  </g>
+${dark ? darkPanel() : lightZone()}
 
   <!-- Targets on the rectangle corners. -->
 ${target(ORIGIN_X, ORIGIN_Y)}
@@ -211,7 +303,7 @@ ${target(ORIGIN_X, ORIGIN_Y + RECT_H)}
        sentence across it is a target you cannot click accurately. -->
   <g fill="#3c4145" font-size="3.1">
     <text x="${f(ORIGIN_X + 12)}" y="${f(ORIGIN_Y - 12.2)}" font-size="4.2" fill="#16181a">
-      ShapePilot trace calibration sheet — targets ${RECT_W} × ${RECT_H} mm
+      ShapePilot trace calibration sheet${dark ? ' · dark centre' : ''} — targets ${RECT_W} × ${RECT_H} mm
     </text>
     <text x="${f(ORIGIN_X + 12)}" y="${f(ORIGIN_Y - 7.6)}">
       PRINT AT 100% — no fit-to-page, no shrink-to-fit, no borderless.
@@ -230,10 +322,15 @@ ${target(ORIGIN_X, ORIGIN_Y + RECT_H)}
     <text x="${f(ORIGIN_X + 12)}" y="${f(ORIGIN_Y + RECT_H + 14.2)}">
       Measure the part's HEIGHT too: 20 mm tall, 100 mm off centre, traces ~5 mm oversize uncorrected.
     </text>
+    <text x="${f(ORIGIN_X + 12)}" y="${f(ORIGIN_Y + RECT_H + 18.5)}">
+      ${dark
+        ? 'Black is for pale parts. Only the four targets are ever measured, so the middle of the sheet can be anything.'
+        : 'Pale or shiny part on white paper has no edge to find — use the dark-centre sheet for those.'}
+    </text>
   </g>
 </svg>`
 
-const html = `<!--
+const buildHtml = (dark: boolean): string => `<!--
   ShapePilot trace calibration sheet.
 
   GENERATED by scripts/build-calibration-sheet.ts -- do not edit this file.
@@ -246,7 +343,7 @@ const html = `<!--
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>ShapePilot trace calibration sheet</title>
+<title>ShapePilot trace calibration sheet${dark ? ' (dark centre)' : ''}</title>
 <style>
   @page { size: ${f(PAGE_W)}mm ${f(PAGE_H)}mm; margin: 0; }
   html, body { margin: 0; padding: 0; background: #fff; }
@@ -255,12 +352,16 @@ const html = `<!--
 </style>
 </head>
 <body>
-${svg}
+${buildSvg(dark)}
 </body>
 </html>
 `
 
-const output = resolve(import.meta.dirname, '..', 'docs', 'trace-calibration-sheet.html')
-writeFileSync(output, html)
-console.log(`wrote ${output}`)
-console.log(`targets ${RECT_W} x ${RECT_H} mm, rulers ${RULER_MM} mm, page ${PAGE_W} x ${PAGE_H} mm`)
+for (const dark of [false, true]) {
+  const name = dark ? 'trace-calibration-sheet-dark.html' : 'trace-calibration-sheet.html'
+  const output = resolve(import.meta.dirname, '..', 'docs', name)
+  writeFileSync(output, buildHtml(dark))
+  console.log(`wrote ${output}`)
+}
+console.log(`targets ${RECT_W} x ${RECT_H} mm, caliper ${CALIPER_MM}, rule ${RULER_MM}`)
+console.log(`dark panel ${f(PANEL.x1 - PANEL.x0)} x ${f(PANEL.y1 - PANEL.y0)} mm, centred`)

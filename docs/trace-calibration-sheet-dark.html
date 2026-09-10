@@ -11,7 +11,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>ShapePilot trace calibration sheet</title>
+<title>ShapePilot trace calibration sheet (dark centre)</title>
 <style>
   @page { size: 215.9mm 279.4mm; margin: 0; }
   html, body { margin: 0; padding: 0; background: #fff; }
@@ -178,10 +178,16 @@
   <!-- The place-it-here zone. Dead centre, because parallax is zero only
        under the lens and grows with distance from it. -->
   <g>
-    <circle cx="107.95" cy="139.7" r="55" fill="none" stroke="#b0b6bb"
-            stroke-width="0.4" stroke-dasharray="3 2.5"/>
-    <text x="107.95" y="81.7" font-size="3.4" text-anchor="middle" fill="#6d747a">
-      PUT THE PART HERE — centred, flattest face down
+    <rect x="47.95" y="45.7" width="120"
+          height="188" fill="#000"/>
+    <g stroke="#16181a" stroke-width="0.4">
+      <line x1="107.95" y1="41.7" x2="107.95" y2="44.9"/>
+      <line x1="107.95" y1="234.5" x2="107.95" y2="237.7"/>
+      <line x1="43.95" y1="139.7" x2="47.15" y2="139.7"/>
+      <line x1="168.75" y1="139.7" x2="171.95" y2="139.7"/>
+    </g>
+    <text x="107.95" y="39.2" font-size="3.4" text-anchor="middle" fill="#6d747a">
+      PUT THE PART ON THE BLACK — centred between the ticks, flattest face down
     </text>
   </g>
 
@@ -593,7 +599,7 @@
        sentence across it is a target you cannot click accurately. -->
   <g fill="#3c4145" font-size="3.1">
     <text x="29.95" y="7.5" font-size="4.2" fill="#16181a">
-      ShapePilot trace calibration sheet — targets 180 × 240 mm
+      ShapePilot trace calibration sheet · dark centre — targets 180 × 240 mm
     </text>
     <text x="29.95" y="12.1">
       PRINT AT 100% — no fit-to-page, no shrink-to-fit, no borderless.
@@ -613,7 +619,7 @@
       Measure the part's HEIGHT too: 20 mm tall, 100 mm off centre, traces ~5 mm oversize uncorrected.
     </text>
     <text x="29.95" y="278.2">
-      Pale or shiny part on white paper has no edge to find — use the dark-centre sheet for those.
+      Black is for pale parts. Only the four targets are ever measured, so the middle of the sheet can be anything.
     </text>
   </g>
 </svg>
