@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -23,6 +24,119 @@
 static void fail(const char *message) {
   fprintf(stderr, "%s: %s\n", message, strerror(errno));
   exit(1);
+}
+
+/*
+ * SHA-256, FIPS 180-4, self-contained.
+ *
+ * The guard links no libraries -- scripts/build-native.ts compiles it with a
+ * bare `cc -std=c11 -O2` -- and it needs a content digest for the reason given
+ * on `bundle_contents_match`: on a network filesystem a file's identity cannot
+ * be re-established from its stat fields, so it has to be re-established from
+ * its bytes. Small enough to audit in one sitting, and pinned by the published
+ * test vectors in test/parity/recovery.test.ts.
+ */
+#define SHA256_DIGEST_BYTES 32
+
+typedef struct {
+  uint32_t state[8];
+  uint64_t bits;
+  unsigned char buffer[64];
+  size_t pending;
+} sha256_context;
+
+static const uint32_t SHA256_K[64] = {
+  0x428a2f98u, 0x71374491u, 0xb5c0fbcfu, 0xe9b5dba5u, 0x3956c25bu, 0x59f111f1u,
+  0x923f82a4u, 0xab1c5ed5u, 0xd807aa98u, 0x12835b01u, 0x243185beu, 0x550c7dc3u,
+  0x72be5d74u, 0x80deb1feu, 0x9bdc06a7u, 0xc19bf174u, 0xe49b69c1u, 0xefbe4786u,
+  0x0fc19dc6u, 0x240ca1ccu, 0x2de92c6fu, 0x4a7484aau, 0x5cb0a9dcu, 0x76f988dau,
+  0x983e5152u, 0xa831c66du, 0xb00327c8u, 0xbf597fc7u, 0xc6e00bf3u, 0xd5a79147u,
+  0x06ca6351u, 0x14292967u, 0x27b70a85u, 0x2e1b2138u, 0x4d2c6dfcu, 0x53380d13u,
+  0x650a7354u, 0x766a0abbu, 0x81c2c92eu, 0x92722c85u, 0xa2bfe8a1u, 0xa81a664bu,
+  0xc24b8b70u, 0xc76c51a3u, 0xd192e819u, 0xd6990624u, 0xf40e3585u, 0x106aa070u,
+  0x19a4c116u, 0x1e376c08u, 0x2748774cu, 0x34b0bcb5u, 0x391c0cb3u, 0x4ed8aa4au,
+  0x5b9cca4fu, 0x682e6ff3u, 0x748f82eeu, 0x78a5636fu, 0x84c87814u, 0x8cc70208u,
+  0x90befffau, 0xa4506cebu, 0xbef9a3f7u, 0xc67178f2u,
+};
+
+static uint32_t sha256_rotate(uint32_t value, unsigned int bits) {
+  return (value >> bits) | (value << (32 - bits));
+}
+
+static void sha256_compress(uint32_t *state, const unsigned char *block) {
+  uint32_t w[64];
+  for (int index = 0; index < 16; ++index) {
+    w[index] = ((uint32_t)block[index * 4] << 24)
+      | ((uint32_t)block[index * 4 + 1] << 16)
+      | ((uint32_t)block[index * 4 + 2] << 8)
+      | (uint32_t)block[index * 4 + 3];
+  }
+  for (int index = 16; index < 64; ++index) {
+    uint32_t s0 = sha256_rotate(w[index - 15], 7) ^ sha256_rotate(w[index - 15], 18)
+      ^ (w[index - 15] >> 3);
+    uint32_t s1 = sha256_rotate(w[index - 2], 17) ^ sha256_rotate(w[index - 2], 19)
+      ^ (w[index - 2] >> 10);
+    w[index] = w[index - 16] + s0 + w[index - 7] + s1;
+  }
+  uint32_t a = state[0], b = state[1], c = state[2], d = state[3];
+  uint32_t e = state[4], f = state[5], g = state[6], h = state[7];
+  for (int index = 0; index < 64; ++index) {
+    uint32_t s1 = sha256_rotate(e, 6) ^ sha256_rotate(e, 11) ^ sha256_rotate(e, 25);
+    uint32_t choose = (e & f) ^ ((~e) & g);
+    uint32_t temp1 = h + s1 + choose + SHA256_K[index] + w[index];
+    uint32_t s0 = sha256_rotate(a, 2) ^ sha256_rotate(a, 13) ^ sha256_rotate(a, 22);
+    uint32_t majority = (a & b) ^ (a & c) ^ (b & c);
+    uint32_t temp2 = s0 + majority;
+    h = g; g = f; f = e; e = d + temp1;
+    d = c; c = b; b = a; a = temp1 + temp2;
+  }
+  state[0] += a; state[1] += b; state[2] += c; state[3] += d;
+  state[4] += e; state[5] += f; state[6] += g; state[7] += h;
+}
+
+static void sha256_begin(sha256_context *context) {
+  context->state[0] = 0x6a09e667u; context->state[1] = 0xbb67ae85u;
+  context->state[2] = 0x3c6ef372u; context->state[3] = 0xa54ff53au;
+  context->state[4] = 0x510e527fu; context->state[5] = 0x9b05688cu;
+  context->state[6] = 0x1f83d9abu; context->state[7] = 0x5be0cd19u;
+  context->bits = 0;
+  context->pending = 0;
+}
+
+static void sha256_add(sha256_context *context, const unsigned char *data, size_t length) {
+  context->bits += (uint64_t)length * 8;
+  while (length > 0) {
+    size_t room = 64 - context->pending;
+    size_t take = length < room ? length : room;
+    memcpy(context->buffer + context->pending, data, take);
+    context->pending += take;
+    data += take;
+    length -= take;
+    if (context->pending == 64) {
+      sha256_compress(context->state, context->buffer);
+      context->pending = 0;
+    }
+  }
+}
+
+static void sha256_finish(sha256_context *context, unsigned char *digest) {
+  uint64_t bits = context->bits;
+  unsigned char padding = 0x80;
+  sha256_add(context, &padding, 1);
+  unsigned char zero = 0;
+  while (context->pending != 56) sha256_add(context, &zero, 1);
+  unsigned char tail[8];
+  for (int index = 0; index < 8; ++index) tail[index] = (unsigned char)(bits >> (56 - index * 8));
+  // Length is appended directly: sha256_add would fold it back into `bits`.
+  memcpy(context->buffer + context->pending, tail, 8);
+  sha256_compress(context->state, context->buffer);
+  context->pending = 0;
+  for (int index = 0; index < 8; ++index) {
+    digest[index * 4] = (unsigned char)(context->state[index] >> 24);
+    digest[index * 4 + 1] = (unsigned char)(context->state[index] >> 16);
+    digest[index * 4 + 2] = (unsigned char)(context->state[index] >> 8);
+    digest[index * 4 + 3] = (unsigned char)context->state[index];
+  }
 }
 
 static int open_root(void) {
@@ -285,7 +399,8 @@ static int copy_and_echo_bounded(
   int source,
   int destination,
   unsigned long long expected,
-  unsigned long long *total
+  unsigned long long *total,
+  sha256_context *written
 );
 
 static void cleanup_bundle(
@@ -312,16 +427,120 @@ static void cleanup_bundle(
   (void)fsync(root_fd);
 }
 
-static int bundle_path_matches(
+/**
+ * Re-establish a staged file's identity from its bytes rather than its stat
+ * fields, and report the digest it actually has.
+ *
+ * The stat-identity checks this replaces on the bundle path could not hold on
+ * a network filesystem: Azure Files synthesizes inode numbers, reports a fixed
+ * mode, and lets the server rewrite timestamps on close, so `fstat` on the
+ * open descriptor and `fstatat` on the same path legitimately disagree and a
+ * sound write was refused after the bytes were already down. Content is the
+ * one identity that survives the mount, and it is a stronger claim: an inode
+ * match only says "the same file", while a digest match says "the same bytes".
+ *
+ * O_NOFOLLOW still refuses a symlink swapped in for the name, and the size is
+ * checked before the read so a grown file cannot be streamed unbounded.
+ */
+static int hash_file_at(
   int parent_fd,
   const char *name,
-  const struct stat *owned_bundle
+  unsigned long long expected,
+  unsigned char *digest
 ) {
+  int fd = openat(parent_fd, name, O_RDONLY | O_NOFOLLOW | O_CLOEXEC);
+  if (fd < 0) return -1;
+  struct stat details;
+  if (fstat(fd, &details) != 0) {
+    int saved = errno;
+    close(fd);
+    errno = saved;
+    return -1;
+  }
+  if (!S_ISREG(details.st_mode) || details.st_size < 0
+      || (unsigned long long)details.st_size != expected) {
+    close(fd);
+    errno = ESTALE;
+    return -1;
+  }
+  sha256_context context;
+  sha256_begin(&context);
+  unsigned char buffer[1024 * 1024];
+  unsigned long long seen = 0;
+  for (;;) {
+    ssize_t count = read(fd, buffer, sizeof(buffer));
+    if (count == 0) break;
+    if (count < 0) {
+      if (errno == EINTR) continue;
+      int saved = errno;
+      close(fd);
+      errno = saved;
+      return -1;
+    }
+    seen += (unsigned long long)count;
+    if (seen > expected) {
+      close(fd);
+      errno = ESTALE;
+      return -1;
+    }
+    sha256_add(&context, buffer, (size_t)count);
+  }
+  close(fd);
+  if (seen != expected) {
+    errno = ESTALE;
+    return -1;
+  }
+  sha256_finish(&context, digest);
+  return 0;
+}
+
+/**
+ * The name still resolves to a directory, and not through a symlink.
+ *
+ * The bundle's inode is no more stable than its files' (see `hash_file_at`),
+ * so directory identity is no longer asserted here. It is not lost: what the
+ * caller needs to know is that this name holds exactly the approved entries
+ * with the approved bytes, and `bundle_contents_match` establishes that from
+ * the contents themselves. A directory swapped for one holding the same names
+ * and the same bytes is, for publication, the same bundle.
+ */
+static int bundle_contents_match(
+  int bundle_fd,
+  int file_count,
+  char **file_names,
+  unsigned long long *expected_sizes,
+  unsigned char (*approved)[SHA256_DIGEST_BYTES]
+);
+
+static int bundle_path_matches(int parent_fd, const char *name) {
   struct stat current;
   return fstatat(parent_fd, name, &current, AT_SYMLINK_NOFOLLOW) == 0
-    && S_ISDIR(current.st_mode)
-    && current.st_dev == owned_bundle->st_dev
-    && current.st_ino == owned_bundle->st_ino;
+    && S_ISDIR(current.st_mode);
+}
+
+/**
+ * The bundle *at this name* holds exactly the approved entries and bytes.
+ *
+ * Resolving the name afresh is the point. A retained descriptor keeps pointing
+ * at the directory that was staged even after that directory has been renamed
+ * away and an impostor put at its name -- and it is the name that publication
+ * moves. Checking the descriptor would therefore vouch for one directory while
+ * publishing another, which is the race `bundle_path_matches` used to catch
+ * with the staging inode before an inode could no longer be relied on.
+ */
+static int bundle_name_contents_match(
+  int parent_fd,
+  const char *name,
+  int file_count,
+  char **file_names,
+  unsigned long long *expected_sizes,
+  unsigned char (*approved)[SHA256_DIGEST_BYTES]
+) {
+  int fd = openat(parent_fd, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+  if (fd < 0) return 0;
+  int matched = bundle_contents_match(fd, file_count, file_names, expected_sizes, approved);
+  close(fd);
+  return matched;
 }
 
 /**
@@ -422,7 +641,8 @@ static int bundle_contents_match(
   int bundle_fd,
   int file_count,
   char **file_names,
-  struct stat *owned_files
+  unsigned long long *expected_sizes,
+  unsigned char (*approved)[SHA256_DIGEST_BYTES]
 ) {
   int scan_fd = openat(
     bundle_fd,
@@ -447,10 +667,9 @@ static int bundle_contents_match(
   if (scan_error != 0 || entries != file_count) return 0;
 
   for (int index = 0; index < file_count; ++index) {
-    struct stat current;
-    if (fstatat(bundle_fd, file_names[index], &current, AT_SYMLINK_NOFOLLOW) != 0
-        || !S_ISREG(current.st_mode)
-        || !same_file_snapshot(&current, &owned_files[index])) return 0;
+    unsigned char current[SHA256_DIGEST_BYTES];
+    if (hash_file_at(bundle_fd, file_names[index], expected_sizes[index], current) != 0
+        || memcmp(current, approved[index], SHA256_DIGEST_BYTES) != 0) return 0;
   }
   return 1;
 }
@@ -465,9 +684,9 @@ static void rollback_published_bundle(
   char **file_names,
   struct stat *owned_files
 ) {
-  if (!bundle_path_matches(root_fd, bundle_name, owned_bundle)) return;
+  if (!bundle_path_matches(root_fd, bundle_name)) return;
   if (publish_no_replace(root_fd, bundle_name, root_fd, staging_name) != 0) return;
-  if (!bundle_path_matches(root_fd, staging_name, owned_bundle)) return;
+  if (!bundle_path_matches(root_fd, staging_name)) return;
   cleanup_bundle(
     root_fd,
     staging_name,
@@ -496,6 +715,15 @@ static void bundle_object(
   memset(&owned_bundle, 0, sizeof(owned_bundle));
   struct stat *owned_files = calloc((size_t)file_count, sizeof(struct stat));
   if (!owned_files) fail("cannot allocate artifact bundle identities");
+  /* The digest each staged file is required to have from here on. Read back
+   * off the disk after fsync, so it attests the bytes that landed rather than
+   * the bytes that were sent. */
+  unsigned char (*approved)[SHA256_DIGEST_BYTES]
+    = calloc((size_t)file_count, SHA256_DIGEST_BYTES);
+  if (!approved) {
+    free(owned_files);
+    fail("cannot allocate artifact bundle digests");
+  }
   for (unsigned int attempt = 0; attempt < 1000; ++attempt) {
     snprintf(
       staging_name,
@@ -514,6 +742,7 @@ static void bundle_object(
         int saved = errno;
         (void)unlinkat(root_fd, staging_name, AT_REMOVEDIR);
         free(owned_files);
+        free(approved);
         errno = saved;
         fail("cannot open staged artifact bundle");
       }
@@ -522,6 +751,7 @@ static void bundle_object(
         close(staging_fd);
         (void)unlinkat(root_fd, staging_name, AT_REMOVEDIR);
         free(owned_files);
+        free(approved);
         errno = saved;
         fail("cannot identify staged artifact bundle");
       }
@@ -531,6 +761,7 @@ static void bundle_object(
   }
   if (staging_fd < 0) {
     free(owned_files);
+    free(approved);
     errno = EEXIST;
     fail("cannot reserve staged artifact bundle");
   }
@@ -568,7 +799,9 @@ static void bundle_object(
     unsigned long long copied = 0;
     struct stat after;
     struct stat completed;
-    if (copy_and_echo_bounded(source, target, expected_sizes[index], &copied) != 0
+    sha256_context written;
+    sha256_begin(&written);
+    if (copy_and_echo_bounded(source, target, expected_sizes[index], &copied, &written) != 0
         || copied != expected_sizes[index]
         || fstat(source, &after) != 0
         || before.st_dev != after.st_dev || before.st_ino != after.st_ino
@@ -584,10 +817,14 @@ static void bundle_object(
       saved_error = errno;
       goto failed;
     }
-    struct stat named;
-    if (fstatat(staging_fd, name, &named, AT_SYMLINK_NOFOLLOW) != 0
-        || !same_file_snapshot(&named, &owned_files[index])) {
+    unsigned char sent[SHA256_DIGEST_BYTES];
+    sha256_finish(&written, sent);
+    if (hash_file_at(staging_fd, name, expected_sizes[index], approved[index]) != 0) {
       saved_error = errno ? errno : ESTALE;
+      goto failed;
+    }
+    if (memcmp(approved[index], sent, SHA256_DIGEST_BYTES) != 0) {
+      saved_error = ESTALE;
       goto failed;
     }
   }
@@ -600,8 +837,9 @@ static void bundle_object(
     saved_error = ECANCELED;
     goto failed;
   }
-  if (!bundle_path_matches(root_fd, staging_name, &owned_bundle)
-      || !bundle_contents_match(staging_fd, file_count, file_names, owned_files)) {
+  if (!bundle_path_matches(root_fd, staging_name)
+      || !bundle_name_contents_match(
+        root_fd, staging_name, file_count, file_names, expected_sizes, approved)) {
     saved_error = ESTALE;
     goto failed;
   }
@@ -609,8 +847,9 @@ static void bundle_object(
     saved_error = errno;
     goto failed;
   }
-  if (!bundle_path_matches(root_fd, bundle_name, &owned_bundle)
-      || !bundle_contents_match(staging_fd, file_count, file_names, owned_files)) {
+  if (!bundle_path_matches(root_fd, bundle_name)
+      || !bundle_name_contents_match(
+        root_fd, bundle_name, file_count, file_names, expected_sizes, approved)) {
     saved_error = ESTALE;
     goto published_failed;
   }
@@ -618,13 +857,15 @@ static void bundle_object(
     saved_error = errno;
     goto published_failed;
   }
-  if (!bundle_path_matches(root_fd, bundle_name, &owned_bundle)
-      || !bundle_contents_match(staging_fd, file_count, file_names, owned_files)) {
+  if (!bundle_path_matches(root_fd, bundle_name)
+      || !bundle_name_contents_match(
+        root_fd, bundle_name, file_count, file_names, expected_sizes, approved)) {
     saved_error = ESTALE;
     goto published_failed;
   }
   close(staging_fd);
   free(owned_files);
+  free(approved);
   return;
 
 published_failed:
@@ -640,6 +881,7 @@ published_failed:
   );
   close(staging_fd);
   free(owned_files);
+  free(approved);
   errno = saved_error ? saved_error : EIO;
   fail("cannot commit artifact bundle");
 
@@ -655,6 +897,7 @@ failed:
   );
   close(staging_fd);
   free(owned_files);
+  free(approved);
   errno = saved_error ? saved_error : EIO;
   fail("cannot stage artifact bundle");
 }
@@ -796,7 +1039,8 @@ static int copy_and_echo_bounded(
   int source,
   int destination,
   unsigned long long expected,
-  unsigned long long *total
+  unsigned long long *total,
+  sha256_context *written
 ) {
   unsigned char buffer[1024 * 1024];
   while (*total < expected) {
@@ -823,6 +1067,7 @@ static int copy_and_echo_bounded(
         offset += written;
       }
     }
+    sha256_add(written, buffer, (size_t)count);
     *total += (unsigned long long)count;
   }
   unsigned char extra;
@@ -869,11 +1114,18 @@ static void fetch_object(int root_fd, const char *key, const char *destination_l
   struct stat owned;
   if (fstat(target, &owned) != 0) fail("cannot identify materialized artifact");
   unsigned long long copied = 0;
+  /* The single-object path still establishes identity from stat fields. It is
+   * not on the backup path -- `createBackup` publishes through `bundle` -- so
+   * it is left as it was rather than changed untested; the digest is computed
+   * and discarded to keep one copy routine. */
+  sha256_context unused_digest;
+  sha256_begin(&unused_digest);
   int failed = copy_and_echo_bounded(
       source,
       target,
       (unsigned long long)source_details.st_size,
-      &copied
+      &copied,
+      &unused_digest
     ) != 0
     || copied != (unsigned long long)source_details.st_size
     || fsync(target) != 0 || close(target) != 0;
@@ -959,7 +1211,9 @@ static void restore_object(
   unsigned char decision = 0;
   int failed = read(5, &decision, 1) != 1 || decision != 'C';
   unsigned long long copied = 0;
-  if (!failed && (copy_and_echo_bounded(4, target, expected_bytes, &copied) != 0
+  sha256_context restore_digest;
+  sha256_begin(&restore_digest);
+  if (!failed && (copy_and_echo_bounded(4, target, expected_bytes, &copied, &restore_digest) != 0
       || copied != expected_bytes || fsync(target) != 0)) failed = 1;
   struct stat source_after;
   if (!failed && (fstat(4, &source_after) != 0

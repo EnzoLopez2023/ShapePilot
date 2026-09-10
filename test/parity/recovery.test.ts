@@ -8,7 +8,8 @@
 import assert from 'node:assert/strict'
 import {
   chmodSync, closeSync, constants, existsSync, linkSync, lstatSync, mkdirSync, openSync,
-  readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync, writeSync,
+  readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync,
+  writeSync,
 } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { spawn } from 'node:child_process'
@@ -576,6 +577,55 @@ describe('artifact store', () => {
     assert.notEqual(await guardExitBounded(child), 0)
     assert.equal(existsSync(join(root, 'artifact-id')), false)
     assert.equal(readFileSync(join(root, staging, 'injected.bin'), 'utf8'), 'unapproved')
+  })
+
+  // The production failure this file now pins. Azure Files -- which is where
+  // /home/data lives, and so where every backup is written -- synthesizes inode
+  // numbers, reports a fixed mode, and lets the server rewrite timestamps when a
+  // file is closed. The guard used to re-establish a staged file's identity from
+  // those fields, so a sound write was refused after the bytes were already down
+  // and no migration could ever take its pre-migration snapshot. Identity now
+  // comes from the bytes, which is both mount-independent and a stronger claim.
+  //
+  // utimes stands in for the server: same bytes, different timestamps.
+  test('a staged file whose timestamps move under it still publishes', async () => {
+    const root = scratchDir('store-bundle-touched')
+    const source = join(root, '..', `bundle-touched-source-${randomUUID()}.bin`)
+    scratch.push(source)
+    const data = Buffer.from('approved database bytes')
+    writeFileSync(source, data)
+    const rootFd = openSync(root, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW)
+    const sourceFd = openSync(source, constants.O_RDONLY | constants.O_NOFOLLOW)
+    const child = spawn(
+      artifactGuard,
+      ['bundle', 'artifact-id', 'shapepilot.sqlite3', String(data.byteLength)],
+      { stdio: ['ignore', 'pipe', 'pipe', rootFd, 'pipe', sourceFd] },
+    )
+    closeSync(rootFd)
+    closeSync(sourceFd)
+    const control = child.stdio[4]
+    if (!child.stdout || !control || !('end' in control)) {
+      throw new Error('artifact guard did not expose its bundle verification pipes')
+    }
+    const copied = new Promise<void>((resolveCopied) => {
+      let received = 0
+      child.stdout?.on('data', (chunk: Buffer) => {
+        received += chunk.byteLength
+        if (received === data.byteLength) resolveCopied()
+      })
+    })
+    await copied
+    const staging = await waitForEntry(root, '.shapepilot-bundle-')
+    const stagedFile = join(root, staging, 'shapepilot.sqlite3')
+    await waitForPath(stagedFile)
+    const moved = new Date(Date.now() + 120_000)
+    utimesSync(stagedFile, moved, moved)
+    utimesSync(join(root, staging), moved, moved)
+    control.end('C')
+
+    assert.equal(await guardExitBounded(child), 0)
+    assert.equal(readFileSync(join(root, 'artifact-id', 'shapepilot.sqlite3'), 'utf8'),
+      'approved database bytes')
   })
 
   test('a bundle with unapproved staged bytes is never published', async () => {
