@@ -10,8 +10,7 @@ import type { Polygon } from '../../../geometry/vec.ts'
 import { multiBBox } from '../../../geometry/vec.ts'
 import { allSolid, buildSolidMask } from '../../../geometry/solidMask.ts'
 import { profileToMulti, profileUndersideReliefs } from '../../../model/trayProfile.ts'
-import type { ToolTrayDesign } from '../model/types.ts'
-import type { PartPreset } from '../model/partPresets.ts'
+import type { FingerAccess, PocketStep, ToolTrayDesign } from '../model/types.ts'
 import { THRESHOLDS } from '../model/thresholds.ts'
 import { fingerAccessReach, pocketFootprint } from './shapes.ts'
 import { reliefKeepOuts } from './bands.ts'
@@ -33,8 +32,20 @@ const STEP_MM = 1
  * recesses join the blockers when this part is deep enough to reach one. So a
  * spot this returns satisfies the same checks the validator applies.
  */
+/**
+ * Everything the search reads. Narrowed from `PartPreset` so a traced outline,
+ * which has no catalogue entry, can be placed by the same code -- the search
+ * only ever wanted a box, its depths and its finger access.
+ */
+export interface Placeable {
+  widthMm: number
+  heightMm: number
+  steps: readonly PocketStep[]
+  fingerAccess?: FingerAccess
+}
+
 export function freeSpotFor(
-  design: ToolTrayDesign, preset: PartPreset,
+  design: ToolTrayDesign, preset: Placeable,
 ): { x: number; y: number } {
   const region = profileToMulti(design.profile)
   const bb = multiBBox(region)

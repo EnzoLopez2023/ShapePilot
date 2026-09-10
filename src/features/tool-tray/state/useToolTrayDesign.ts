@@ -9,6 +9,8 @@ import { useDesignHistory } from '../../../state/useDesignHistory.ts'
 import type { TrayProfile } from '../../../model/trayProfile.ts'
 import { emptyDesign } from '../model/defaults.ts'
 import { freeSpotFor } from '../geometry/place.ts'
+import type { TracedFootprint } from '../geometry/trace.ts'
+import { DEFAULT_FINGER_ACCESS, fingerAccessFrom } from '../model/fingerAccess.ts'
 import type { PartPreset } from '../model/partPresets.ts'
 import type {
   FingerAccess, PocketStep, ToolPocket, ToolTrayDesign, TrayFeet, UndersideReliefMode,
@@ -30,6 +32,15 @@ export interface ToolTrayDesignApi {
    * the same place.
    */
   addFromPreset: (preset: PartPreset) => string
+  /**
+   * Drop a traced outline in as a pocket of its own, at one depth.
+   *
+   * Placed by the same search as a preset: a trace is a box with steps as far
+   * as the packer is concerned, and it gets the same finger access a bay of
+   * that size would, because a pocket cut to a part's own outline is the one
+   * that most needs a way back out.
+   */
+  addTraced: (traced: TracedFootprint, name: string, depthMm: number) => string
   addPocket: (pocket: Omit<ToolPocket, 'id'>) => string
   movePockets: (ids: Iterable<string>, dx: number, dy: number) => void
   updatePocket: (id: string, patch: Partial<ToolPocket>) => void
@@ -69,6 +80,43 @@ export function useToolTrayDesign(initial?: ToolTrayDesign): ToolTrayDesignApi {
     setSelectionState(new Set())
     history.setDesign(d)
   }, [history])
+
+  const addTraced = useCallback((
+    traced: TracedFootprint, name: string, depthMm: number,
+  ) => {
+    const id = newId()
+    replace(d => {
+      const steps: PocketStep[] = [{
+        shape: { kind: 'outline', rings: traced.rings, sourceName: name },
+        depthMm,
+      }]
+      const side = traced.widthMm >= traced.heightMm ? 'bottom' : 'left'
+      const along = side === 'bottom' ? traced.widthMm : traced.heightMm
+      // The library scoop, unless the part is too small to take one -- in which
+      // case the widest that fits the side it sits on.
+      const scoop = fingerAccessFrom(DEFAULT_FINGER_ACCESS, side)
+      const fingerAccess = along >= scoop.widthMm
+        ? scoop
+        : { ...scoop, widthMm: Math.max(4, along * 0.6) }
+      const shape = { widthMm: traced.widthMm, heightMm: traced.heightMm, steps, fingerAccess }
+      const { x, y } = freeSpotFor(d, shape)
+      return {
+        ...d,
+        pockets: [...d.pockets, {
+          id,
+          kind: 'outline' as const,
+          label: name,
+          x, y,
+          widthMm: traced.widthMm,
+          heightMm: traced.heightMm,
+          steps,
+          fingerAccess,
+        }],
+      }
+    })
+    setSelectionState(new Set([id]))
+    return id
+  }, [replace])
 
   const addPocket = useCallback((pocket: Omit<ToolPocket, 'id'>) => {
     const id = newId()
@@ -229,11 +277,13 @@ export function useToolTrayDesign(initial?: ToolTrayDesign): ToolTrayDesignApi {
 
   return useMemo(() => ({
     design, selection, canUndo, canRedo,
-    setDesign, replace, addFromPreset, addPocket, movePockets, updatePocket, removePockets,
+    setDesign, replace, addFromPreset, addTraced, addPocket, movePockets, updatePocket,
+    removePockets,
     updateStep, addStep, removeStep, setFingerAccess,
     setProfile, setHeight, setLayerHeight, setMinFloor, setFeet, setUndersideReliefs,
     setCaseClearHeight, setSelection, toggleSelection, undo, redo,
-  }), [design, selection, canUndo, canRedo, setDesign, replace, addFromPreset, addPocket,
+  }), [design, selection, canUndo, canRedo, setDesign, replace, addFromPreset, addTraced,
+    addPocket,
     movePockets, updatePocket, removePockets, updateStep, addStep, removeStep, setFingerAccess,
     setProfile, setHeight, setLayerHeight,
     setMinFloor, setFeet, setUndersideReliefs, setCaseClearHeight, setSelection,

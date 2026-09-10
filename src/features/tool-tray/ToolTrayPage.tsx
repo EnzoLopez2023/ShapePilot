@@ -26,6 +26,7 @@ import * as api from './service.ts'
 import type { ToolTraySummary } from './service.ts'
 import { ToolTrayCanvas } from './components/ToolTrayCanvas.tsx'
 import PartPalette from './components/PartPalette.tsx'
+import { MATERIALS } from '../keycap-tray/model/materials.ts'
 import ToolTrayPanel from './components/ToolTrayPanel.tsx'
 import ToolExportPanel from './components/ToolExportPanel.tsx'
 
@@ -285,7 +286,18 @@ export default function ToolTrayPage() {
           variant="outlined"
           sx={{ borderRadius: 0, borderTop: 0, borderLeft: 0, minHeight: 0, overflowY: 'auto', p: 1.5 }}
         >
-          <PartPalette onAdd={d.addFromPreset} disabled={busy} />
+          <PartPalette
+            onAdd={d.addFromPreset}
+            onTrace={(traced, name) => {
+              // One depth, and a shallow one: a traced outline says what shape
+              // the part is, never how deep it sits. The tier editor is where
+              // that gets set, and a too-shallow pocket is obvious on sight
+              // where a too-deep one quietly eats the floor.
+              d.addTraced(traced, name, Math.min(8, design.heightMm - design.minFloorMm))
+            }}
+            clearanceMm={MATERIALS[settings.material].pocketClearanceMm}
+            disabled={busy}
+          />
         </Paper>
 
         <Box sx={{ position: 'relative', minHeight: 0 }}>
