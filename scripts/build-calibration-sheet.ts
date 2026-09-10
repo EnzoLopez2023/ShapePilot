@@ -40,8 +40,24 @@ const RECT_H = 240
 const ORIGIN_X = (PAGE_W - RECT_W) / 2
 const ORIGIN_Y = (PAGE_H - RECT_H) / 2
 
-/** The calipered baselines. Longer is better: the error is proportional. */
+/** The full scale, and the baseline a steel rule or tape reads end to end. */
 const RULER_MM = 150
+
+/**
+ * The pair of marks a CALIPER measures, inset from the ruler's ends.
+ *
+ * 100.00 mm, not the ruler's own 150, and the reason is embarrassing: the
+ * commonest caliper is a 150 mm one, so a 150 mm baseline sits at the exact
+ * limit of its range with nothing left to register against. The first person to
+ * print this sheet reached for a bench rule instead, which is the tell. 100 mm
+ * is comfortably inside any caliper and still a long enough baseline that 0.1 mm
+ * of reading error is 0.1% of scale.
+ *
+ * Two lengths per axis is not redundant either: 150 and 100 measured together
+ * say whether the error is proportional, which is what a scale factor can fix,
+ * or a fixed offset, which it cannot.
+ */
+const CALIPER_MM = 100
 
 const GRID_FINE = 5
 const GRID_BOLD = 10
@@ -110,13 +126,25 @@ const ruler = (
         + `fill="#000">${d}</text>`)
     }
   }
-  // The two lines that are the actual baseline, drawn heavier than anything
-  // near them so a caliper jaw has something unambiguous to sit against.
+  // The rule baseline: the full span, end to end, heavier than anything near it.
   for (const d of [0, length]) {
     const [ax, ay] = along(d)
     const [bx, by] = across(ax, ay, -2.5)
     parts.push(`<line x1="${f(ax)}" y1="${f(ay)}" x2="${f(bx)}" y2="${f(by)}" `
       + `stroke="#000" stroke-width="0.7"/>`)
+  }
+  // The caliper baseline: a solid triangle either side, points facing in, so a
+  // jaw has a physical edge to seat against rather than the middle of a line.
+  const inset = (length - CALIPER_MM) / 2
+  for (const d of [inset, length - inset]) {
+    const [ax, ay] = along(d)
+    const tip = across(ax, ay, -0.4)
+    const w = 1.5
+    const back = across(ax, ay, -3.2)
+    const [b1x, b1y] = vertical ? [back[0], back[1] - w] : [back[0] - w, back[1]]
+    const [b2x, b2y] = vertical ? [back[0], back[1] + w] : [back[0] + w, back[1]]
+    parts.push(`<polygon points="${f(tip[0])},${f(tip[1])} ${f(b1x)},${f(b1y)} `
+      + `${f(b2x)},${f(b2y)}" fill="#000"/>`)
   }
   return parts.join('\n      ')
 }
@@ -166,14 +194,14 @@ ${target(ORIGIN_X, ORIGIN_Y + RECT_H)}
       ${ruler(cx - RULER_MM / 2, ORIGIN_Y + RECT_H - 14, RULER_MM, false)}
     <text x="${f(cx)}" y="${f(ORIGIN_Y + RECT_H - 17)}" font-size="3.2"
           text-anchor="middle" fill="#16181a">
-      CALIPER: heavy mark to heavy mark = ${RULER_MM}.00 mm across
+      CALIPER, triangle to triangle = ${CALIPER_MM}.00 mm   ·   RULE, bar to bar = ${RULER_MM}.00 mm
     </text>
   </g>
   <g>
       ${ruler(ORIGIN_X + 14, cy - RULER_MM / 2, RULER_MM, true)}
     <text x="${f(ORIGIN_X + 8.5)}" y="${f(cy)}" font-size="3.2" fill="#16181a"
           transform="rotate(-90 ${f(ORIGIN_X + 8.5)} ${f(cy)})" text-anchor="middle">
-      CALIPER: ${RULER_MM}.00 mm down the page
+      CALIPER, triangle to triangle = ${CALIPER_MM}.00   ·   RULE, bar to bar = ${RULER_MM}.00
     </text>
   </g>
 
@@ -189,7 +217,7 @@ ${target(ORIGIN_X, ORIGIN_Y + RECT_H)}
       PRINT AT 100% — no fit-to-page, no shrink-to-fit, no borderless.
     </text>
     <text x="${f(ORIGIN_X + 12)}" y="${f(ORIGIN_Y - 3.4)}">
-      Plain matte paper. Caliper both rulers first — target to target is ${RECT_W}×${RECT_H}, diagonal exactly 300.00 mm.
+      Measure first: triangles ${CALIPER_MM}.00 mm apart, end bars ${RULER_MM}.00, target diagonal exactly 300.00 mm.
     </text>
   </g>
   <g fill="#3c4145" font-size="3.1">
