@@ -93,8 +93,11 @@ test('opening the pitch up costs switches, and the count says so', async () => {
 
   const slider = screen.getByRole('slider', { name: /Pitch across/ })
   slider.focus()
-  // Each press is one 0.05 mm step; enough of them to lose a column.
-  for (let i = 0; i < 40; i++) await user.keyboard('{ArrowRight}')
+  // Shift moves ten 0.05 mm steps at once, so this walks the same 2 mm the
+  // test used to walk one step at a time -- and re-plans the fill four times
+  // instead of forty. Every press re-runs the whole packer, which is what put
+  // this test 30 seconds deep on a loaded CI runner while passing locally.
+  for (let i = 0; i < 4; i++) await user.keyboard('{Shift>}{ArrowRight}{/Shift}')
 
   await waitFor(() => expect(capacity()).toBeLessThan(before))
 })
