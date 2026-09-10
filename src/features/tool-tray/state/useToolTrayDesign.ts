@@ -94,6 +94,7 @@ export function useToolTrayDesign(initial?: ToolTrayDesign): ToolTrayDesignApi {
           // COPIED, not referenced: a tray keeps printing the same after a
           // catalogue edit, and `presetId` rides along as provenance only.
           steps: preset.steps.map(s => ({ ...s })),
+          ...(preset.fingerAccess ? { fingerAccess: { ...preset.fingerAccess } } : {}),
         }],
       }
     })

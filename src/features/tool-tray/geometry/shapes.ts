@@ -109,14 +109,31 @@ export function fingerAccessRings(pocket: ToolPocket, fa: FingerAccess): Polygon
   }
   const [cx, cy] = at[fa.side]
 
+  // Both styles are centred ON the wall and reach `reachMm` beyond it, which is
+  // what the type has always promised. The scallop used to be a circle of
+  // diameter `widthMm`, so it reached widthMm/2 outward and ignored `reachMm`
+  // entirely -- a field that did nothing on one of the two styles, and a scoop
+  // that got deeper into the web every time it was made wider.
+  const across = fa.side === 'left' || fa.side === 'right'
   const local: Ring = fa.style === 'scallop'
-    ? translateRing(circleRing(w / 2, 24), cx, cy)
-    : (fa.side === 'left' || fa.side === 'right'
+    ? translateRing(
+      across ? ellipseRing(fa.reachMm, w / 2, 32) : ellipseRing(w / 2, fa.reachMm, 32),
+      cx, cy)
+    : (across
         ? translateRing(rectRing(fa.reachMm * 2, w), cx - fa.reachMm, cy - w / 2)
         : translateRing(rectRing(w, fa.reachMm * 2), cx - w / 2, cy - fa.reachMm))
 
   return [[translateRing(applyPocketTransform(local, w0, h0, pocket), x, y)]]
 }
+
+/**
+ * How far a finger access reaches beyond the pocket box, on its own side.
+ *
+ * Placement has to reserve this: the pocket box is not the footprint, and a
+ * scoop that overhangs a neighbour or the outline is exactly the defect the
+ * wall and web checks exist to catch.
+ */
+export const fingerAccessReach = (fa: FingerAccess): number => fa.reachMm
 
 /**
  * Everything a pocket removes at one depth: its steps at that depth, plus the

@@ -15,6 +15,9 @@ import type {
   FingerAccess, PocketStep, StepShape, ToolPocket, ToolTrayDesign, UndersideReliefMode,
 } from '../model/types.ts'
 import { deepestStepMm } from '../geometry/shapes.ts'
+import {
+  DEFAULT_FINGER_ACCESS, FINGER_ACCESS_PRESETS, fingerAccessFrom, fingerAccessPresetOf,
+} from '../model/fingerAccess.ts'
 import type { Issue } from '../geometry/validate.ts'
 
 const RELIEF_LABELS: Record<UndersideReliefMode, string> = {
@@ -367,7 +370,7 @@ export function ToolTrayPanel({
               <Switch
                 checked={Boolean(selected.fingerAccess)}
                 onChange={e => onFingerAccess(selected.id, e.target.checked
-                  ? { style: 'scallop', side: 'left', widthMm: 12, reachMm: 5 }
+                  ? fingerAccessFrom(DEFAULT_FINGER_ACCESS, 'left')
                   : undefined)}
               />
             }
@@ -375,6 +378,28 @@ export function ToolTrayPanel({
           />
           {selected.fingerAccess && (
             <>
+              <TextField
+                select size="small" label="Fit"
+                value={fingerAccessPresetOf(selected.fingerAccess)?.id ?? 'custom'}
+                onChange={e => {
+                  const preset = FINGER_ACCESS_PRESETS.find(p => p.id === e.target.value)
+                  if (preset) {
+                    onFingerAccess(selected.id,
+                      fingerAccessFrom(preset, selected.fingerAccess!.side))
+                  }
+                }}
+                helperText={
+                  fingerAccessPresetOf(selected.fingerAccess)?.note
+                  ?? 'Sized by hand. Pick a fit to go back to a standard one.'
+                }
+              >
+                {FINGER_ACCESS_PRESETS.map(preset => (
+                  <MenuItem key={preset.id} value={preset.id}>{preset.label}</MenuItem>
+                ))}
+                {!fingerAccessPresetOf(selected.fingerAccess) && (
+                  <MenuItem value="custom" disabled>Custom</MenuItem>
+                )}
+              </TextField>
               <Stack direction="row" spacing={1}>
                 <TextField
                   select size="small" label="Style" sx={{ flex: 1 }}

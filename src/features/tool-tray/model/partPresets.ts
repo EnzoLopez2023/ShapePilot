@@ -13,7 +13,16 @@
 // reference kit deliberately ABSENT is the open-end wrench: its 92 x 30 x 8 was
 // estimated off a photograph, and a preset that is a guess is worse than no
 // preset. Measure it and add it.
-import type { PocketStep, ToolPocketKind } from './types.ts'
+import type { FingerAccess, PocketStep, ToolPocketKind } from './types.ts'
+import { FINGER_ACCESS_PRESETS, fingerAccessFrom } from './fingerAccess.ts'
+
+const preset = (id: string): typeof FINGER_ACCESS_PRESETS[number] => {
+  const found = FINGER_ACCESS_PRESETS.find(p => p.id === id)
+  if (!found) throw new Error(`no finger-access preset "${id}"`)
+  return found
+}
+const access = (id: string, side: FingerAccess['side']): FingerAccess =>
+  fingerAccessFrom(preset(id), side)
 
 export interface PartPreset {
   id: string
@@ -24,6 +33,18 @@ export interface PartPreset {
   widthMm: number
   heightMm: number
   steps: PocketStep[]
+  /**
+   * How the part comes back out. Chosen per part from `FINGER_ACCESS_PRESETS`
+   * and placed on a side the hand can actually reach: a long side for anything
+   * you lift level, so a fingertip gets under the part rather than beside it.
+   *
+   * Unlike the footprints above this is not measured -- see the header of
+   * `fingerAccess.ts` for why it cannot be. It is here rather than left to the
+   * person dropping the preset because a bay measured to fit a part closely is
+   * exactly the bay that will not give it back, and knowing that is not their
+   * job.
+   */
+  fingerAccess?: FingerAccess
 }
 
 /**
@@ -50,6 +71,8 @@ export const PART_PRESETS: readonly PartPreset[] = [
     widthMm: 19.4,
     heightMm: 60.9,
     steps: HOTEND_STEPS,
+    // 19.4 x 60.9, so left is a long side: reach under the heatsink end.
+    fingerAccess: access('thumb', 'left'),
   },
   {
     id: 'bambu-lube-tube',
@@ -59,6 +82,8 @@ export const PART_PRESETS: readonly PartPreset[] = [
     widthMm: 79,
     heightMm: 26,
     steps: [{ shape: { kind: 'rect', widthMm: 79, heightMm: 26, cornerRadiusMm: 3 }, depthMm: 17 }],
+    // A cylinder lying along x in a 17 mm bay -- the deepest close fit here.
+    fingerAccess: access('thumb', 'bottom'),
   },
   {
     id: 'allen-and-rods',
@@ -75,6 +100,9 @@ export const PART_PRESETS: readonly PartPreset[] = [
       { shape: { kind: 'channel', path: [[3, 14], [100, 14]], widthMm: 2.6 }, depthMm: 9 },
       { shape: { kind: 'channel', path: [[3, 6], [100, 6]], widthMm: 2.6 }, depthMm: 9 },
     ],
+    // The channels are barely wider than the keys, so pinching one out needs
+    // somewhere for a nail to go.
+    fingerAccess: access('fingertip', 'bottom'),
   },
   {
     id: 'small-parts-bin',
@@ -84,6 +112,9 @@ export const PART_PRESETS: readonly PartPreset[] = [
     widthMm: 46,
     heightMm: 36,
     steps: [{ shape: { kind: 'rect', widthMm: 46, heightMm: 36, cornerRadiusMm: 3 }, depthMm: 19 }],
+    // 19 mm deep and it holds loose screws, so it is the one bin you reach
+    // into rather than tip.
+    fingerAccess: access('lift-slot', 'bottom'),
   },
   {
     id: 'sock-slots',
@@ -97,6 +128,8 @@ export const PART_PRESETS: readonly PartPreset[] = [
       { shape: { kind: 'rect', widthMm: 46, heightMm: 8, cornerRadiusMm: 2 }, offset: [0, 10], depthMm: 12 },
       { shape: { kind: 'rect', widthMm: 46, heightMm: 8, cornerRadiusMm: 2 }, offset: [0, 20], depthMm: 12 },
     ],
+    // Soft and small: one fingertip across all three slots.
+    fingerAccess: access('fingertip', 'left'),
   },
   {
     id: 'nozzle-wiper',
@@ -106,6 +139,8 @@ export const PART_PRESETS: readonly PartPreset[] = [
     widthMm: 18.5,
     heightMm: 23.5,
     steps: [{ shape: { kind: 'rect', widthMm: 18.5, heightMm: 23.5, cornerRadiusMm: 2 }, depthMm: 13 }],
+    // Small and 13 deep -- without this it is a hole you tip the tray to empty.
+    fingerAccess: access('fingertip', 'bottom'),
   },
   {
     id: 'long-bay',
@@ -115,6 +150,8 @@ export const PART_PRESETS: readonly PartPreset[] = [
     widthMm: 23,
     heightMm: 72.3,
     steps: [{ shape: { kind: 'rect', widthMm: 23, heightMm: 72.3, cornerRadiusMm: 3 }, depthMm: 19 }],
+    // Deepest and narrowest of the lot; left is the long side.
+    fingerAccess: access('lift-slot', 'left'),
   },
 ]
 

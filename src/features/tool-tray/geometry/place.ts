@@ -13,7 +13,7 @@ import { profileToMulti, profileUndersideReliefs } from '../../../model/trayProf
 import type { ToolTrayDesign } from '../model/types.ts'
 import type { PartPreset } from '../model/partPresets.ts'
 import { THRESHOLDS } from '../model/thresholds.ts'
-import { pocketFootprint } from './shapes.ts'
+import { fingerAccessReach, pocketFootprint } from './shapes.ts'
 import { reliefKeepOuts } from './bands.ts'
 
 /** Rasterisation step for the search. Finer than this buys nothing visible. */
@@ -60,11 +60,23 @@ export function freeSpotFor(
     }),
   ]
 
+  // A preset that brings its own finger access needs room for it too. The box
+  // is not the footprint: the scoop reaches into the web on one side, and a
+  // spot chosen without it puts the scoop through a neighbour or the outline.
+  const fa = preset.fingerAccess
+  const reach = fa ? fingerAccessReach(fa) : 0
+  const pad = {
+    left: fa?.side === 'left' ? reach : 0,
+    right: fa?.side === 'right' ? reach : 0,
+    bottom: fa?.side === 'bottom' ? reach : 0,
+    top: fa?.side === 'top' ? reach : 0,
+  }
+
   const mask = buildSolidMask(region, blockers, RASTER_MM)
-  for (let y = bb.minY; y + preset.heightMm <= bb.maxY; y += STEP_MM) {
-    for (let x = bb.minX; x + preset.widthMm <= bb.maxX; x += STEP_MM) {
-      if (allSolid(mask, x - wall, y - wall,
-        x + preset.widthMm + wall, y + preset.heightMm + wall)) {
+  for (let y = bb.minY + pad.bottom; y + preset.heightMm + pad.top <= bb.maxY; y += STEP_MM) {
+    for (let x = bb.minX + pad.left; x + preset.widthMm + pad.right <= bb.maxX; x += STEP_MM) {
+      if (allSolid(mask, x - wall - pad.left, y - wall - pad.bottom,
+        x + preset.widthMm + wall + pad.right, y + preset.heightMm + wall + pad.top)) {
         return { x, y }
       }
     }

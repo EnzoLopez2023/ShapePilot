@@ -230,17 +230,24 @@ test('the lift toggle changes the solid, not just the warning', async () => {
   await waitFor(() => expect(levelCount()).toBe(before + 1))
 })
 
-test('finger access can be turned on, and reaches past the pocket wall', async () => {
+// A part measured to sit closely is exactly the part a bay will not give back,
+// so the preset brings its own way out rather than leaving that to whoever drops
+// it. Turning it OFF is the deliberate act now, and it costs the geometry.
+test('a dropped part arrives with a way to lift it out again', async () => {
   const user = userEvent.setup()
   renderPage()
   await waitFor(() => expect(screen.getByText(/pockets ·/)).toBeTruthy())
   await drop(user, 'Screws and small parts')
   await waitFor(() => expect(pocketCount()).toBe(1))
 
+  const toggle = screen.getByLabelText('Finger access') as HTMLInputElement
+  assert.equal(toggle.checked, true)
+  assert.ok(screen.getByLabelText('Reach'))
+
   const before = Number.parseInt(/([\d,]+) triangles/.exec(readout())?.[1]?.replace(/,/g, '') ?? '0', 10)
-  await user.click(screen.getByLabelText('Finger access'))
-  await waitFor(() => expect(screen.getByLabelText('Reach')).toBeTruthy())
-  // A scoop is more geometry, so the triangle count has to move.
+  await user.click(toggle)
+  await waitFor(() => expect(screen.queryByLabelText('Reach')).toBeNull())
+  // Taking the scoop away is less geometry, so the count has to move.
   await waitFor(() => {
     const after = Number.parseInt(/([\d,]+) triangles/.exec(readout())?.[1]?.replace(/,/g, '') ?? '0', 10)
     expect(after).not.toBe(before)

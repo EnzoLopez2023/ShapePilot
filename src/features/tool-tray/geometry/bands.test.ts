@@ -446,3 +446,41 @@ describe('randomised layouts', () => {
     }
   })
 })
+
+describe('finger access reaches where it says it does', () => {
+  const pocketWith = (fa: ToolPocket['fingerAccess']): ToolPocket => ({
+    id: 'p', kind: 'bin', x: 100, y: 60, widthMm: 40, heightMm: 30,
+    steps: [{ shape: { kind: 'rect', widthMm: 40, heightMm: 30 }, depthMm: 8 }],
+    fingerAccess: fa,
+  })
+
+  const outward = (pocket: ToolPocket, side: 'left' | 'bottom'): number => {
+    const rings = fingerAccessRings(pocket, pocket.fingerAccess!)
+    const xs = rings.flatMap(poly => poly[0]!.map(([x]) => x))
+    const ys = rings.flatMap(poly => poly[0]!.map(([, y]) => y))
+    return side === 'left' ? pocket.x - Math.min(...xs) : pocket.y - Math.min(...ys)
+  }
+
+  // `reachMm` is documented as how far the access bites into the web, and used
+  // to be ignored entirely by the scallop -- which reached widthMm/2 instead,
+  // so making a scoop wider silently made it deeper into the neighbouring web.
+  test('a scallop reaches its reach, not half its width', () => {
+    const wide = pocketWith({ style: 'scallop', side: 'left', widthMm: 25, reachMm: 8 })
+    assert.ok(Math.abs(outward(wide, 'left') - 8) < 0.05)
+
+    // Twice as wide, same reach: the web behind it must not move.
+    const wider = pocketWith({ style: 'scallop', side: 'left', widthMm: 50, reachMm: 8 })
+    assert.ok(Math.abs(outward(wider, 'left') - 8) < 0.05)
+  })
+
+  test('a slot reaches its reach too, so the two styles agree', () => {
+    const slot = pocketWith({ style: 'slot', side: 'bottom', widthMm: 30, reachMm: 10 })
+    assert.ok(Math.abs(outward(slot, 'bottom') - 10) < 1e-6)
+  })
+
+  test('the footprint a web check measures includes the scoop', () => {
+    const withAccess = pocketWith({ style: 'scallop', side: 'left', widthMm: 25, reachMm: 8 })
+    const without = pocketWith(undefined)
+    assert.ok(multiArea(pocketFootprint(withAccess)) > multiArea(pocketFootprint(without)))
+  })
+})
