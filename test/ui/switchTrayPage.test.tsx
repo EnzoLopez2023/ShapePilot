@@ -4,6 +4,15 @@
 // stubbed at the fetch boundary. What is pinned here is the thing the designer
 // exists to do: change a setting, and the number of switches that fit changes
 // with it -- plus that a click really takes a cell out of the generated grid.
+//
+// TIMEOUT. Longer than the 30 s default, for the reason set out at the top of
+// keycapTrayPage.test.tsx: the cost is real work, not waste. The nameplate
+// tests here trace glyphs from the actual font file on purpose -- the run's box
+// is what the fill reserves, so a stubbed font would silently test nothing --
+// and that puts three of them between 2 and 3.2 s locally. This suite has
+// already failed a production release on timing once, when a test walked the
+// pitch slider forty single steps and re-ran the fill planner on each; that one
+// was genuinely wasteful and is now four shift steps. These are not.
 import assert from 'node:assert/strict'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
@@ -18,6 +27,8 @@ interface StubState {
   designs: { id: string; name: string; profileKind: string; switchLabel: string; updatedAt: string }[]
   calls: { method: string; path: string; body?: unknown }[]
 }
+
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 })
 
 let state: StubState
 

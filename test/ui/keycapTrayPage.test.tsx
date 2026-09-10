@@ -3,6 +3,25 @@
 // State and interaction parity for the designer, exercised through the real
 // components. The API is stubbed at the fetch boundary so the whole client
 // stack — service, HTTP client, state hook, components — is under test.
+//
+// TIMEOUT. These get longer than the 30 s default, because the cost here is
+// real work rather than anything wasteful, and a release should not fail on a
+// busy runner. Measured on this machine: mounting the designer is ~570 ms and
+// every interaction that reaches the canvas is ~300 ms, since a toggle like
+// "hide labels" is a prop the canvas reads and 780 lines of SVG genuinely have
+// to render again. The heaviest test here mounts the whole page three times --
+// that is what proves view settings are remembered per tray rather than
+// globally -- and runs 3.3 s locally, which was 13.2 s on a CI runner with the
+// rest of the suite in flight. That is a 2.3x margin against 30 s, and a sister
+// test in the switch tray suite failed a production release at exactly that
+// ratio.
+//
+// Before reaching for this, check the cost is not self-inflicted: the switch
+// tray's slow test was pressing an arrow key forty times and re-running the
+// fill planner on each, and walking the slider in shift steps took it from
+// 6.4 s to 0.7 s. Nothing equivalent was found here -- the geometry is 0.2 ms,
+// the canvas renders twice per toggle rather than some runaway number, and
+// userEvent's inter-event delay is not the cost.
 import assert from 'node:assert/strict'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { act, cleanup, render, renderHook, screen, waitFor, within } from '@testing-library/react'
@@ -38,6 +57,8 @@ interface StubState {
   loadGate?: Promise<void>
   updateGate?: Promise<void>
 }
+
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 120_000 })
 
 let state: StubState
 
