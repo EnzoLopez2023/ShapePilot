@@ -38,18 +38,10 @@ COPY . .
 RUN npm run stamp:build \
   && npm run build:client
 
-FROM node:24.17.0-bookworm-slim@sha256:862263c612aa437e3037674b85419622a9d93bff80aa1eee5398dfe686375532 AS production-dependencies
+FROM development-dependencies AS production-dependencies
 
-WORKDIR /app
-
-RUN apt-get update \
-  && apt-get install -y --no-install-recommends build-essential python3 \
-  && rm -rf /var/lib/apt/lists/*
-
-COPY package.json package-lock.json ./
-COPY scripts/build-native.ts ./scripts/build-native.ts
-COPY native/artifact-store-guard.c native/sqlite-file-identity.c ./native/
-RUN npm ci --omit=dev --no-audit --no-fund
+# The lifecycle scripts already compiled the native runtime dependencies.
+RUN npm prune --omit=dev --ignore-scripts --no-audit --no-fund
 
 FROM node:24.17.0-bookworm-slim@sha256:862263c612aa437e3037674b85419622a9d93bff80aa1eee5398dfe686375532 AS runner
 

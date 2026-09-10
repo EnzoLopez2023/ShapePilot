@@ -20,9 +20,11 @@ pay-per-token with no idle cost, so an unused deployment bills nothing.
 ## Runtime image
 
 `Dockerfile` is a reproducible multi-stage Linux build pinned to Node 24.17.0 by
-manifest digest. Both dependency stages run `npm ci` with lifecycle scripts and
-a C/Python toolchain, so `better-sqlite3` and the pinned native filesystem
-guards are built for the runtime ABI. The final image contains production
+manifest digest. The development-dependencies stage runs `npm ci` with lifecycle
+scripts and a C/Python toolchain, so `better-sqlite3` and the pinned native
+filesystem guards are built for the runtime ABI. The production-dependencies
+stage inherits that exact installation and prunes development packages without
+rerunning lifecycle compilation. The final image contains production
 dependencies only, runs as the non-root `node` user, declares no `/home` volume,
 and exposes port 3000.
 
@@ -45,8 +47,10 @@ only exception is the temporary, exact
 `SHAPEPILOT_INITIALIZE_EMPTY_DB=1` first-allocation flag described below; it
 creates a schema-only authority and never imports Hearth data.
 Backups go to `/home/data/backups/shapepilot`; bounded recovery scratch goes to
-`/home/data/recovery/shapepilot`. Backup, integrity, and restore work remains
-operator-invoked and never runs during startup or a request.
+`/home/data/recovery/shapepilot`. Recovery remains operator-invoked. The required
+local snapshot before a pending schema migration is the startup exception
+described below; ordinary startup and requests do not run backup or integrity
+work. No deployment change deletes the authority or any backup.
 
 The mounted database parent, backup root, and recovery work root must be
 readable, writable, and searchable by the image's non-root `node` user
@@ -60,21 +64,58 @@ storage environment are both present; all other metadata still fails closed.
 ## CI
 
 The single `.github/workflows/ci.yml` workflow runs on pinned Ubuntu 24.04 and
-Node 24.17.0. It installs with lifecycle scripts, then gates architecture
-invariants, strict TypeScript, ESLint, all Vitest suites, the native guard and
-client build, a HIGH/CRITICAL full and production dependency audit, and a
-CycloneDX source SBOM.
+Node 24.17.0. Its independent `quality` and `container` jobs must both succeed
+before publication. `quality` installs with lifecycle scripts and runs
+`npm run ci:source`: generated assets, architecture invariants, strict
+TypeScript, ESLint and all Vitest suites, including migration and recovery
+tests. Local `npm run ci` still includes the client build; CI compiles the
+client only in the image instead of repeating it on the source-test runner.
 
-The container job builds the pinned image, verifies its non-root user, labels,
-and `/home` volume prohibition, initializes a disposable production-shaped
-SQLite volume, then uses `docker exec` to prove three consecutive agreeing
-static-version/version/liveness/readiness rounds and the native
-`better-sqlite3` DELETE-journal authority.
+The container job uses pinned Buildx actions with a GitHub Actions layer cache
+to build one Linux AMD64 image with the real public Entra SPA settings. It
+verifies the image's non-root user, labels and `/home` volume prohibition,
+initializes a disposable production-shaped SQLite volume, then uses
+`docker exec` to prove three consecutive agreeing
+static-version/version/liveness/readiness rounds, the native
+`better-sqlite3` DELETE-journal authority, and restart without reinitialization.
+Only that smoke-tested image is saved for publication. Its artifact name
+contains the full SHA, run ID and attempt; publication checks the loaded and
+registry-pulled image IDs against the smoke-tested image ID. No publication or
+deployment job recompiles source or rebuilds an image.
+Rerunning failed jobs preserves the producing image's build ID and artifact
+name through job outputs, rather than relabeling an old image with the retry's
+attempt. A publisher retry may reuse an existing unique tag only after pulling
+its digest and proving the same image ID; it never overwrites that tag.
+
+`diagnostics_source` runs alongside those jobs. It retains the full and
+production dependency audits at HIGH/CRITICAL strength and a CycloneDX SBOM
+from the complete committed lockfile, without another dependency installation.
+`diagnostics_candidate` runs alongside deployment after publication and retains
+the exact-image SPDX SBOM, migration compatibility/local snapshot proof in that
+image, shared-ACR contract, deployment RBAC enumeration and owned-monitor check.
+The existing checker implementations and predicates are unchanged; repeated
+identical registry/monitor enumerations no longer sit between deployment steps.
+
+Both diagnostic jobs use the unchanged `deployment-diagnostics-v1` helper
+version `1.0.1`, vendored from `EnzoLopez2023/azure-infra`. Their records preserve
+exit status, findings, execution failures, timing, full source SHA, run/attempt
+identity and raw nonsecret reports. Image-derived records explicitly receive
+`DIAGNOSTIC_CANDIDATE_DIGEST`; source diagnostics have no digest yet. An absent
+or unreadable candidate is recorded as an execution failure, never substituted
+with a source SBOM. Always-run summaries and 30-day artifacts retain the
+results. No build, publication or deployment job depends on diagnostics.
+If a Marketplace action fails without exposing a process exit code, its record
+has an explicit execution error and a null exit code, not an invented `1`.
+Checker CLI exit codes remain intact. Diagnostic artifact names and observation
+metadata use the current attempt while the image's producing build ID stays
+unchanged.
+The previous workflow had no image scanner, signature verification or
+provenance checker; this change does not add them or claim they ran.
 
 ## Production job
 
-On pushes to `main`, the deployment job in `.github/workflows/ci.yml` waits for
-both CI jobs and then uses Azure federated OIDC only. Pull requests run CI
+On pushes to `main`, publication waits for both blocking CI jobs and deployment
+waits for publication. Both use Azure federated OIDC only. Pull requests run CI
 without receiving OIDC permission. Deployment requires the nonsecret
 `AZURE_CLIENT_ID` and `VITE_AZURE_CLIENT_ID` Actions variables and fails before
 Azure mutation unless the latter is exactly
@@ -88,7 +129,7 @@ targets only:
 
 The ACR is an existing shared Basic registry. ShapePilot never provisions it,
 changes its properties or permission mode, or writes outside the collision-free
-`shapepilot` repository. Deployment preflight requires the exact subscription
+`shapepilot` repository. The shared-ACR diagnostic checks the exact subscription
 and resource group, admin disabled, public access enabled, and
 `LegacyRegistryPermissions`.
 
@@ -104,9 +145,9 @@ no Contributor, Monitoring Reader, Tasks Contributor, Data Importer, or
 subscription role. AcrDelete is retained only to remove a failed first
 release's `:latest` alias.
 
-Every workflow run enumerates the OIDC service principal's direct and inherited
+The candidate diagnostic job enumerates the OIDC service principal's direct and inherited
 assignments from the exact resource-group and ACR scopes, plus the exact Web App
-scope for deployment, and rejects any observed assignment outside this set.
+scope for deployment, and reports any observed assignment outside this set.
 Image-only publication requires the resource-group Reader and exact-ACR
 AcrPush/AcrDelete assignments without requiring the Web App to exist;
 deployment requires all four.
@@ -157,12 +198,12 @@ The App Service configuration must provide these exact nonsecret values:
 | `SHAPEPILOT_API_AUDIENCE` | `api://60b0b8cf-f1e2-4ba4-b89b-7d6dc3358251` |
 | `SHAPEPILOT_API_SCOPE` | `access_as_user` |
 | `VITE_AZURE_CLIENT_ID` | `60b0b8cf-f1e2-4ba4-b89b-7d6dc3358251` |
-| `OFFHOST_BACKUP_ENABLED` | `false` |
 
 `SHAPEPILOT_INITIALIZE_EMPTY_DB` is not a steady-state setting and must be
 absent before every normal or initial deployment workflow run.
 
-The disabled off-host declaration remains explicit:
+Legacy disabled off-host settings may remain in Azure:
+`OFFHOST_BACKUP_ENABLED=false`,
 `OFFHOST_BACKUP_ACCOUNT=strecoverywkhiw2g4hwik4`,
 `OFFHOST_BACKUP_CONTAINER=shapepilot`,
 `OFFHOST_BACKUP_SCAN_INTERVAL_MINUTES=60`,
@@ -171,7 +212,9 @@ The disabled off-host declaration remains explicit:
 `OFFHOST_BACKUP_DAILY_HEALTH_MAX_SOURCE_AGE_HOURS=23`,
 `OFFHOST_BACKUP_MONTHLY_STALE_DAYS=35`, and
 `OFFHOST_BACKUP_CLOCK_SKEW_MINUTES=5`. These settings do not enable background
-backup work in ShapePilot; recovery remains explicit and operator-invoked.
+backup work in ShapePilot and are not deployment or runtime prerequisites.
+There is no recurring off-host backup or paid-monitor requirement. Existing
+data and backup stores are left untouched.
 
 `KEY_VAULT_URI` must be
 `https://kv-shapepilot-prod.vault.azure.net/`. The only declared secret setting
@@ -221,22 +264,26 @@ The endpoint pins the *deployment* name, not the model, so the model behind
 redeploy.
 
 No App Insights component, availability test, alert, or action group is part of
-the deployment contract. Before building, the workflow proves the owner
-invariant that metric, scheduled-query, and smart-detector alert counts remain
-exactly `0/0/0`. Registry preflight validates the approved shared ACR without
-enumerating or coupling deployment to sibling repositories. Before activation,
+the deployment contract. The sibling monitor diagnostic preserves the existing
+owner invariant: zero metric, scheduled-query or smart-detector alerts targeting
+ShapePilot. It does not provision monitors or block activation. The registry
+diagnostic validates the approved shared ACR without enumerating or coupling
+deployment to sibling repositories. Before activation,
 the workflow resolves ShapePilot's run-unique tag again and requires it to match
 the locally inspected immutable digest. Promotion, health checks, and rollback
-also verify only ShapePilot's digest, build identity, and runtime configuration.
+still verify ShapePilot's digest, build identity and protected runtime
+configuration as blocking operations.
 
-The workflow builds the run-unique `<sha>-<run-id>-<run-attempt>` candidate
-locally on pinned Ubuntu, pushes only
+The workflow tags the one smoke-tested image as the run-unique
+`<sha>-<run-id>-<run-attempt>` candidate, pushes only
 `acrenzolopez01.azurecr.io/shapepilot`, resolves and pulls the exact digest, and
-generates an SPDX image SBOM. It never invokes ACR Tasks or image import.
+generates an SPDX image SBOM in the sibling diagnostic job. It never invokes
+ACR Tasks or image import.
 
 For the first allocation, manual `publish_image_only=true` performs the source,
-build, SBOM, exact-digest, and shared-ACR contract gates without reading or
-changing a Web App. It does not
+single-image build/smoke and exact-digest publication gates, with the same
+non-blocking SBOM and shared-ACR diagnostics, without reading or changing a
+Web App. It does not
 create or move `:latest`. Allocation then creates the disabled Web App pinned to
 that exact digest, attaches its AcrPull system identity, and prepares persistent
 storage.
@@ -257,6 +304,19 @@ stopped exact-digest baseline and absent `:latest`, and performs the first
 traffic activation. Hearth import and legacy cutover are forbidden in this
 sequence.
 
+Only the production-mutation job holds `deploy-shapepilot` concurrency, with
+`cancel-in-progress: false` and `queue: max`; source work, image work and
+diagnostics are not serialized behind a previous deploy. The
+[documented queue](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
+keeps up to 100 pending jobs instead of letting a slower stale build cancel a
+newer pending deployment. After acquiring that lock, and again
+before arming rollback, the job compares the candidate's full SHA to the
+current default-branch SHA and fails a superseded candidate before mutation.
+The exact prior configured digest must agree with `:latest`; its OCI labels
+provide the rollback SHA and build ID. An already-unhealthy app therefore does
+not prevent building or preparing its replacement, and no runtime instance ID
+is invented from an unavailable HTTP response.
+
 For activation, the workflow stops the Web App and requires both ARM `Stopped`
 and three failed liveness probes before changing the digest. It pins the exact
 candidate digest, starts the app, and requires three consecutive uncached
@@ -270,17 +330,20 @@ allowed.
 Failures and cancellations after the rollback guard is armed stop the failed
 SQLite process, restore the previous App Service digest, restore the previous
 `:latest` digest, and require three confirmations of the prior release. The
-prior image is pulled before mutation. Failure rollback has a 20-minute bound
-and rechecks protected app-setting/site fingerprints and the safety contract;
-cancellation uses only the essential preloaded restore path with a four-minute
-internal budget so it completes before GitHub's five-minute cancellation kill.
+prior image is pulled before mutation. Candidate stop, activation, all health
+confirmations, protected app-setting/site checks and promotion share one
+absolute ten-minute process-group budget. Failure and cancellation rollback
+both use the preloaded prior image, repeat the stop/absence proof, require the
+prior release's three health confirmations, and recheck protected
+app-setting/site fingerprints within one absolute four-minute budget.
+GNU `timeout` includes a five-second forced-kill allowance inside each limit,
+so a hung Azure/Docker command cannot extend the budget through retries.
 A failed first release instead stops the app, removes only the failed `:latest`
 alias, and restores the prepublished immutable allocation digest.
 
 The job records a mutation-start deadline at its first step and refuses to arm
-rollback after 90 minutes. Its 180-minute outer bound therefore always leaves
-at least 90 minutes for explicitly bounded activation, verification, promotion,
-confirmation, and failure rollback steps.
+rollback after 15 minutes. Its 30-minute outer bound reserves the complete
+ten-minute candidate and four-minute rollback budgets plus evidence time.
 
 Nonsecret SBOM, deployment, and rollback evidence is retained for 30 days. App
 settings, tokens, Key Vault values, database content, and credentials are never
@@ -338,9 +401,11 @@ itself.
 
 This runs only when the ledger is actually short, so it happens once per
 migration rather than once per start, and it is skipped entirely outside
-production unless `BACKUP_ROOT` is configured. `npm run deploy:migration-check`
-asserts the guard is armed in the image about to ship, so removing it fails CI
-rather than quietly shipping (`snapshotGuardArmed` in its output).
+production unless `BACKUP_ROOT` is configured. The candidate diagnostic runs
+`npm run deploy:migration-check`'s checker inside the exact published image and
+reports whether the guard is armed (`snapshotGuardArmed` in its output).
+That report is non-blocking; the startup snapshot guard itself, source recovery
+tests and actual production readiness remain enforced.
 
 Two consequences worth knowing:
 

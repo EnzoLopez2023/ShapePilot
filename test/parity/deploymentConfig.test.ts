@@ -237,13 +237,12 @@ describe('build identity', () => {
     const workflow = readFileSync(resolve(REPO_ROOT, '.github/workflows/ci.yml'), 'utf8')
     const dockerfile = readFileSync(resolve(REPO_ROOT, 'Dockerfile'), 'utf8')
 
-    assert.match(workflow, /BUILD_NUMBER: \$\{\{ github\.run_number \}\}/)
     assert.match(workflow, /BUILD_NUMBER=\$\(\( GITHUB_RUN_NUMBER - BUILD_NUMBER_BASELINE \)\)/)
     assert.match(dockerfile, /^ARG BUILD_NUMBER$/m)
 
-    // Both image builds get it, or a deploy would fail at the stamp step.
-    const passes = workflow.match(/--build-arg "BUILD_NUMBER=\$BUILD_NUMBER"/g) ?? []
-    assert.equal(passes.length, 2, 'every docker build must pass the release counter')
+    const passes = workflow.match(/BUILD_NUMBER=\$\{\{ steps\.identity\.outputs\.build_number \}\}/g) ?? []
+    assert.equal(passes.length, 1, 'the single image build must receive the release counter')
+    assert.equal((workflow.match(/uses: docker\/build-push-action@/g) ?? []).length, 1)
 
     // The counter is derived, never committed back: a job that can push to main
     // is a far larger grant than a build number is worth, and this one holds

@@ -39,8 +39,9 @@ const fromLines = dockerfile.match(/^FROM .+$/gm) ?? []
 requireCondition(fromLines.length >= 3, 'Dockerfile must remain multi-stage')
 requireCondition(
   fromLines.every((line) =>
-    line.includes('node:24.17.0-bookworm-slim@sha256:862263c612aa437e3037674b85419622a9d93bff80aa1eee5398dfe686375532')),
-  'every Docker stage must use the pinned Node 24 image digest',
+    line.includes('node:24.17.0-bookworm-slim@sha256:862263c612aa437e3037674b85419622a9d93bff80aa1eee5398dfe686375532')
+    || line === 'FROM development-dependencies AS production-dependencies'),
+  'every Docker stage must use or inherit the pinned Node 24 image digest',
 )
 requireCondition(!/^VOLUME\s+.*\/home/im.test(dockerfile), 'Dockerfile must not shadow /home')
 requireCondition(dockerfile.includes('USER node'), 'runtime image must be non-root')
@@ -48,6 +49,10 @@ requireCondition(!dockerfile.includes('npm ci --ignore-scripts'), 'npm lifecycle
 
 const ciWorkflow = read('.github/workflows/ci.yml')
 const deployWorkflow = ciWorkflow
+const jobSections = ciWorkflow.slice(ciWorkflow.indexOf('\njobs:\n'))
+  .split(/(?=^ {2}[a-z_]+:\n)/m)
+const job = (name: string): string =>
+  jobSections.find((section) => section.startsWith(`  ${name}:\n`)) ?? ''
 requireCondition(
   deployWorkflow.includes('RG: rg-personal-apps-prod')
     && deployWorkflow.includes('ACR: acrenzolopez01')
@@ -60,13 +65,16 @@ requireCondition(
   'deployment must not require shared-ACR Tasks, Data Importer, or Contributor rights',
 )
 requireCondition(
-  deployWorkflow.includes('docker build --pull')
+  (deployWorkflow.match(/uses: docker\/build-push-action@/g) ?? []).length === 1
+    && deployWorkflow.includes('docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8')
+    && deployWorkflow.includes('docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f')
+    && !/\bdocker (?:build|buildx build)\b/.test(deployWorkflow)
     && deployWorkflow.includes('docker push "$candidate"')
     && deployWorkflow.includes('deploy:acr-check')
     && deployWorkflow.includes('deploy:rbac-check')
     && deployWorkflow.includes('published_digest')
     && !deployWorkflow.includes('expected-sibling-fingerprint'),
-  'deployment must build locally and verify only the immutable ShapePilot image',
+  'deployment must build one cached runner image and verify only the immutable ShapePilot image',
 )
 requireCondition(
   deployWorkflow.includes('publish_image_only')
@@ -103,16 +111,42 @@ requireCondition(
 )
 requireCondition(
   ciWorkflow.includes('pull_request:')
-    && ciWorkflow.includes('needs: container')
+    && job('publish').includes('needs: [quality, container]')
+    && job('deploy').includes('needs: publish')
     && ciWorkflow.includes("github.ref == 'refs/heads/main'")
-    && ciWorkflow.includes('id-token: write'),
+    && !job('quality').includes('id-token: write')
+    && !job('container').includes('id-token: write')
+    && job('deploy').includes('id-token: write'),
   'the single workflow must gate main deployment on pull-request CI without weakening OIDC',
 )
 requireCondition(
+  ['quality', 'container', 'publish', 'deploy'].every((name) =>
+    !/^ {4}needs:.*diagnostics/m.test(job(name))
+    && !job(name).includes('uses: ./.github/actions/deployment-diagnostic'))
+    && job('quality').includes('run: npm run ci:source')
+    && !job('container').includes('needs:')
+    && !job('deploy').includes('npm ci')
+    && !job('deploy').includes('npm run ci')
+    && job('diagnostics_candidate').includes('DIAGNOSTIC_CANDIDATE_DIGEST:')
+    && job('diagnostics_candidate').includes('deploy:monitor-check'),
+  'diagnostic findings must stay observable outside the single-build deployment critical path',
+)
+requireCondition(
+  !/^concurrency:/m.test(ciWorkflow)
+    && job('deploy').includes('group: deploy-shapepilot')
+    && job('deploy').includes('cancel-in-progress: false')
+    && job('deploy').includes('queue: max')
+    && job('deploy').includes('git ls-remote --exit-code origin refs/heads/main')
+    && !job('deploy').includes('OFFHOST_BACKUP_'),
+  'only production mutation may serialize, stale candidates must fail, and off-host backups must not gate deploys',
+)
+requireCondition(
   deployWorkflow.includes("ROLLBACK_MAX_ATTEMPTS: '120'")
-    && deployWorkflow.includes('timeout-minutes: 20')
+    && job('deploy').includes("timeout --signal=TERM --kill-after=5s 595s bash <<'CANDIDATE'")
+    && job('deploy').includes("timeout --signal=TERM --kill-after=5s 235s bash <<'ROLLBACK'")
+    && job('deploy').includes("timeout --signal=TERM --kill-after=5s 235s bash <<'INITIAL_ROLLBACK'")
     && deployWorkflow.includes('failed-initial-stop-proof='),
-  'rollback must retain forward-equivalent budgets and process-absence proof',
+  'candidate and rollback must have absolute ten/four-minute bounds and process-absence proof',
 )
 
 for (const directory of ['server', 'src']) {
