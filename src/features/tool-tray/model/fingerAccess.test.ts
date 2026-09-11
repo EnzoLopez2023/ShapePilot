@@ -67,3 +67,32 @@ describe('every part brings a way out', () => {
     }
   })
 })
+
+describe('the wrench, the one part that was measured rather than derived', () => {
+  const wrench = PART_PRESETS.find(p => p.id === 'open-end-wrench')
+
+  // Pinned because these numbers replaced a photograph-derived guess of
+  // 92 x 30 that was 31% too long and 36% too wide. If they ever drift, it
+  // should be because somebody re-measured, not because somebody estimated.
+  test('carries the calipered dimensions', () => {
+    assert.ok(wrench)
+    assert.equal(wrench.widthMm, 22.07)
+    assert.equal(wrench.heightMm, 70.37)
+    assert.equal(wrench.steps.length, 1)
+    assert.equal(wrench.steps[0]!.depthMm, 2.4)
+  })
+
+  // A 1.65 mm part in a 2.4 mm pocket has nothing to grip from the side, so
+  // the scoop has to cut below it. This is the only access in the library with
+  // a depth of its own, and the reason is the part's thinness.
+  test('its scoop cuts deeper than the pocket, or the wrench cannot be lifted', () => {
+    const fa = wrench!.fingerAccess!
+    assert.ok(fa.depthMm, 'a flat part needs an access deeper than its pocket')
+    assert.ok(fa.depthMm! > wrench!.steps[0]!.depthMm!,
+      `scoop at ${fa.depthMm} is no deeper than the ${wrench!.steps[0]!.depthMm} pocket`)
+  })
+
+  test('the scoop shape still comes from the library', () => {
+    assert.ok(fingerAccessPresetOf(wrench!.fingerAccess!))
+  })
+})

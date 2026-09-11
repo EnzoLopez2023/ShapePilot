@@ -6,13 +6,24 @@
 // rides along as provenance only, never validated, so a tray built on a preset
 // a later build has never heard of still opens.
 //
-// PROVENANCE. Every footprint here was extracted from the H2D/H2S/H2C toolbox
-// inserts by subtracting the insert mesh from its own outline and measuring the
+// PROVENANCE, and it is not the same for every entry.
+//
+// All but one footprint here was extracted from the H2D/H2S/H2C toolbox inserts
+// by subtracting the insert mesh from its own outline and measuring the
 // resulting cavities, so these are the shapes the parts demonstrably sit in
-// rather than caliper readings off the parts themselves. The one part of the
-// reference kit deliberately ABSENT is the open-end wrench: its 92 x 30 x 8 was
-// estimated off a photograph, and a preset that is a guess is worse than no
-// preset. Measure it and add it.
+// rather than caliper readings off the parts themselves.
+//
+// The open-end wrench is the exception, and worth reading before adding
+// anything to this file. It had no insert to subtract, so it was once estimated
+// off a photograph at 92 x 30 x 8 and deliberately kept OUT of this list on the
+// grounds that a preset that is a guess is worse than no preset. Calipers have
+// since settled it: 70.37 x 22.07 x 1.65. The guess was 31% too long and 36%
+// too wide -- a pocket cut to it would have held a 70 mm wrench in a 92 mm slot.
+//
+// The lesson is not that the estimate was careless. It is that an uncalibrated
+// photograph carries NO scale information at all, so any number taken from one
+// is an assumption about the object wearing a measurement's clothes. Measure it,
+// or leave it out.
 import type { FingerAccess, PocketStep, ToolPocketKind } from './types.ts'
 import { FINGER_ACCESS_PRESETS, fingerAccessFrom } from './fingerAccess.ts'
 
@@ -103,6 +114,39 @@ export const PART_PRESETS: readonly PartPreset[] = [
     // The channels are barely wider than the keys, so pinching one out needs
     // somewhere for a nail to go.
     fingerAccess: access('fingertip', 'bottom'),
+  },
+  {
+    id: 'open-end-wrench',
+    label: 'Open-end wrench',
+    note: 'The 8 mm service wrench. Lies flat; the scoop is what gets it back out.',
+    kind: 'bin',
+    // CALIPERED, not derived from an insert like the rest of this file, and the
+    // only entry here with that provenance. 70.37 long, 22.07 across the head,
+    // 8.09 jaw opening (hence "8 mm"), 1.65 of stamped steel.
+    //
+    // This is a BOUNDING BOX, and deliberately so. Calipers give extents; they
+    // cannot give the U of the jaw, the taper at the neck or the radiused
+    // handle end, so the wrench sits in a rectangle that holds it in a known
+    // place rather than a profile that holds it snugly. Trace the outline to
+    // replace this with the real shape -- that is precisely what tracing is
+    // for, and the measurements above are the ground truth to check it against.
+    widthMm: 22.07,
+    heightMm: 70.37,
+    // 1.65 of steel in a 2.4 pocket: seated, with 0.75 of air over it so the
+    // tray above cannot pinch it.
+    steps: [{
+      shape: { kind: 'rect', widthMm: 22.07, heightMm: 70.37, cornerRadiusMm: 2 },
+      depthMm: 2.4,
+    }],
+    // The one access in this file with a depth of its own, because a 1.65 mm
+    // part in a 2.4 mm pocket cannot be picked up from beside it -- there is
+    // nothing to grip. Cutting the scoop to 8 mm puts a void under the wrench's
+    // edge instead, so a fingertip goes UNDER it and lifts.
+    //
+    // The shape still comes from the library; only the depth is per-part, which
+    // is the right split: how wide a scoop is, is a fact about hands, and how
+    // deep it cuts is a fact about the thing being freed.
+    fingerAccess: { ...access('thumb', 'left'), depthMm: 8 },
   },
   {
     id: 'small-parts-bin',

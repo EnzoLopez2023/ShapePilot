@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, test } from 'vitest'
-import { freeSpotFor } from './place.ts'
+import { freeSpotFor, spotFor } from './place.ts'
 import { pocketFootprint } from './shapes.ts'
 import { emptyDesign } from '../model/defaults.ts'
 import { PART_PRESETS } from '../model/partPresets.ts'
@@ -22,10 +22,20 @@ const placed = (preset: PartPreset, at: { x: number; y: number }): ToolPocket =>
   ...(preset.fingerAccess ? { fingerAccess: { ...preset.fingerAccess } } : {}),
 })
 
-const drop = (design: ToolTrayDesign, preset: PartPreset): ToolTrayDesign => ({
-  ...design,
-  pockets: [...design.pockets, placed(preset, freeSpotFor(design, preset))],
-})
+/**
+ * Drop a preset where it fits, or leave the tray alone when nothing does.
+ *
+ * `spotFor` rather than `freeSpotFor` on purpose: the fallback in `freeSpotFor`
+ * is to put the part in the middle and let the validator object, which is right
+ * for a drop the user asked for and useless here -- a tray that has run out of
+ * room would otherwise fail these as overlaps and hide whatever they were
+ * actually checking. What is asserted below is that everything which IS placed
+ * is placed legally.
+ */
+const drop = (design: ToolTrayDesign, preset: PartPreset): ToolTrayDesign => {
+  const at = spotFor(design, preset)
+  return at ? { ...design, pockets: [...design.pockets, placed(preset, at)] } : design
+}
 
 describe('auto-placement reserves what the pocket actually takes', () => {
   // The bug this pins: the search reserved widthMm x heightMm plus a wall, but
@@ -36,12 +46,15 @@ describe('auto-placement reserves what the pocket actually takes', () => {
     let design = emptyDesign()
     const region = profileToMulti(design.profile)
     for (const preset of PART_PRESETS) {
+      const before = design.pockets.length
       design = drop(design, preset)
+      if (design.pockets.length === before) continue
       const pocket = design.pockets[design.pockets.length - 1]!
       const outside = difference(pocketFootprint(pocket), region)
       assert.ok(multiArea(outside) < 1e-6,
         `${preset.label} hangs ${multiArea(outside).toFixed(2)} mm² off the tray`)
     }
+    assert.ok(design.pockets.length >= 6, 'expected most of the library to fit')
   })
 
   test('no two dropped parts overlap, counting their scoops', () => {

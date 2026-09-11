@@ -121,9 +121,10 @@ export function PartPalette({ onAdd, onTrace, clearanceMm, disabled }: PartPalet
       )}
       <Paper variant="outlined" sx={{ p: 1 }}>
         <Typography variant="caption" color="text.secondary">
-          The open-end wrench is deliberately absent: its size was estimated
-          from a photograph rather than measured, and a preset that is a guess is
-          worse than no preset.
+          The open-end wrench is the one entry measured with calipers rather
+          than taken from an insert. It was estimated off a photograph once, at
+          92 × 30 — it is 70.4 × 22.1. A photograph has no scale in it, so a
+          number read from one is a guess wearing a measurement's clothes.
         </Typography>
       </Paper>
     </Stack>
