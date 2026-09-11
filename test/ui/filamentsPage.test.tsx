@@ -11,7 +11,19 @@ import { cleanup, render, screen, waitFor, within } from '@testing-library/react
 import userEvent from '@testing-library/user-event'
 import FilamentsPage from '../../src/features/filaments/FilamentsPage.tsx'
 import { ThemeModeProvider } from '../../src/theme/ThemeModeProvider.tsx'
-import { FILAMENT_PAIR_COUNT } from '../../lib/contracts/bambuFilaments.ts'
+import {
+  FILAMENT_CATALOG, FILAMENT_LINES, FILAMENT_PAIR_COUNT,
+} from '../../lib/contracts/bambuFilaments.ts'
+
+const VARIANT_COUNT = new Map(FILAMENT_LINES.map(
+  line => [`${line.brand}/${line.material}/${line.type}`, line.variants.length]))
+
+/** Pairs left once the discontinued colours are filtered out -- the page's default. */
+const LISTED_PAIR_COUNT = FILAMENT_CATALOG.reduce(
+  (total, color) => total + (color.discontinued ? 0 : VARIANT_COUNT.get(color.line) ?? 0), 0)
+
+const showEverything = async (user: ReturnType<typeof userEvent.setup>) =>
+  user.click(await screen.findByRole('switch', { name: 'Hide discontinued' }))
 
 interface PutBody { owned: { key: string; variant: string }[] }
 
@@ -65,8 +77,10 @@ test('renders one h1 and a section per product line', async () => {
 // to name itself. A duplicate name means two of them are indistinguishable by
 // ear, which is the failure this page is most prone to.
 test('gives every checkbox a unique accessible name', async () => {
+  const user = userEvent.setup()
   draw()
   await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
+  await showEverything(user)
 
   const boxes = screen.getAllByRole('checkbox')
   assert.equal(boxes.length, FILAMENT_PAIR_COUNT)
@@ -153,14 +167,62 @@ test('coalesces a fast run without losing the last tick', async () => {
   )
 })
 
-test('counts what is owned against what the catalogue holds', async () => {
+// The denominator is what is on screen, not what the catalogue holds: counting
+// against rows the filter is hiding would read as a page that lost something.
+test('counts what is owned against what is listed', async () => {
   const user = userEvent.setup()
   draw()
   await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
-  await screen.findByText(`0 of ${FILAMENT_PAIR_COUNT} owned`)
+  await screen.findByText(new RegExp(`^0 of ${LISTED_PAIR_COUNT} owned`))
 
   await user.click(screen.getByLabelText('PLA Basic Jade White 10100, with spool'))
+  await screen.findByText(new RegExp(`^1 of ${LISTED_PAIR_COUNT} owned`))
+
+  await showEverything(user)
   await screen.findByText(new RegExp(`^1 of ${FILAMENT_PAIR_COUNT} owned`))
+})
+
+// Half of PETG Basic is gone from the shop. The default is the shop.
+test('hides discontinued colours until the switch is turned off', async () => {
+  const user = userEvent.setup()
+  draw()
+  await screen.findByRole('heading', { name: 'PETG Basic', level: 2 })
+
+  const listed = screen.getAllByRole('checkbox')
+  assert.equal(listed.length, LISTED_PAIR_COUNT)
+  assert.equal(screen.queryByLabelText('PETG Basic Blue 30600, with spool'), null)
+  assert.ok(screen.getByLabelText('PETG Basic Pine Green 30503, with spool'))
+
+  await showEverything(user)
+  assert.equal(screen.getAllByRole('checkbox').length, FILAMENT_PAIR_COUNT)
+  assert.ok(screen.getByLabelText('PETG Basic Blue 30600, with spool'))
+})
+
+// The catalogue keeps dead SKUs because a spool outlives its listing. A tick
+// the filter hid would be a tick nobody could find, let alone correct.
+test('never hides a discontinued filament you own', async () => {
+  owned = [{ key: 'bambu-lab/petg/basic/blue-30600', variant: 'spool' }]
+  draw()
+  await screen.findByRole('heading', { name: 'PETG Basic', level: 2 })
+
+  const box = screen.getByLabelText('PETG Basic Blue 30600, with spool') as HTMLInputElement
+  assert.equal(box.checked, true)
+  assert.equal(screen.queryByLabelText('PETG Basic Gold 30401, with spool'), null)
+})
+
+// Clearing a tick must not pull the row out from under the pointer -- you may
+// have meant to tick the other variant, or to put the tick straight back.
+test('an owned discontinued row stays put when its last tick is cleared', async () => {
+  const user = userEvent.setup()
+  owned = [{ key: 'bambu-lab/petg/basic/blue-30600', variant: 'spool' }]
+  draw()
+  await screen.findByRole('heading', { name: 'PETG Basic', level: 2 })
+
+  await user.click(screen.getByLabelText('PETG Basic Blue 30600, with spool'))
+  await waitFor(() => { assert.deepEqual(puts.at(-1)?.owned, []) })
+
+  const box = screen.getByLabelText('PETG Basic Blue 30600, with spool') as HTMLInputElement
+  assert.equal(box.checked, false)
 })
 
 test('a failed load offers a retry that works', async () => {

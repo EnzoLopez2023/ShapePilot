@@ -8,12 +8,20 @@
 // Ticks are applied optimistically and the whole inventory is queued for
 // writing. If the write fails the page says so and offers a reload rather than
 // silently diverging from what was stored.
+//
+// Discontinued colours are hidden by default: more than half of PETG Basic is
+// gone from the shop, and a page you shop from should show what you can buy.
+// The ones you own are never hidden -- the catalogue keeps dead SKUs precisely
+// because a spool outlives its listing, and a tick you cannot see is a tick you
+// cannot correct.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Box, Stack, Typography } from '@mui/material'
+import { Alert, Box, FormControlLabel, Stack, Switch, Typography } from '@mui/material'
 import {
-  FILAMENT_CATALOG, FILAMENT_LINES, FILAMENT_PAIR_COUNT, filamentsOfLine,
+  FILAMENT_CATALOG, FILAMENT_LINES, filamentsOfLine,
 } from '../../../lib/contracts/bambuFilaments.ts'
-import type { FilamentVariant } from '../../../lib/contracts/bambuFilaments.ts'
+import type {
+  FilamentColor, FilamentLine, FilamentVariant,
+} from '../../../lib/contracts/bambuFilaments.ts'
 import { ErrorState, LoadingState } from '../../components/LoadingState.tsx'
 import FilamentSection from './components/FilamentSection.tsx'
 import { createInventoryWriter, getFilaments } from './service.ts'
@@ -22,8 +30,14 @@ import { setToTicks, tickId, ticksToSet } from './model/types.ts'
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : 'The inventory could not be reached.'
 
+interface Section {
+  id: string
+  line: FilamentLine
+  colors: readonly FilamentColor[]
+}
+
 /** Each line with its colours, resolved once for the module rather than per render. */
-const SECTIONS = FILAMENT_LINES.map(line => {
+const SECTIONS: readonly Section[] = FILAMENT_LINES.map(line => {
   const id = `${line.brand}/${line.material}/${line.type}`
   return { id, line, colors: filamentsOfLine(id) }
 })
@@ -34,16 +48,32 @@ const VARIANTS_BY_KEY = new Map<string, readonly FilamentVariant[]>(
 
 const variantsOf = (key: string): readonly FilamentVariant[] => VARIANTS_BY_KEY.get(key) ?? []
 
-const countOwned = (
-  section: (typeof SECTIONS)[number], owned: ReadonlySet<string>,
-): number =>
+const countOwned = (section: Section, owned: ReadonlySet<string>): number =>
   section.colors.reduce((total, color) => total + section.line.variants.reduce(
     (n, variant) => n + (owned.has(tickId(color.key, variant)) ? 1 : 0), 0), 0)
+
+const countPairs = (sections: readonly Section[]): number => sections.reduce(
+  (total, section) => total + section.colors.length * section.line.variants.length, 0)
+
+const ALL_PAIRS = countPairs(SECTIONS)
+
+/** The discontinued colours this inventory has a tick on, by colour key. */
+const ownedDiscontinued = (owned: ReadonlySet<string>): Set<string> => new Set(
+  FILAMENT_CATALOG
+    .filter(color => color.discontinued
+      && variantsOf(color.key).some(variant => owned.has(tickId(color.key, variant))))
+    .map(color => color.key))
 
 export default function FilamentsPage() {
   const [owned, setOwned] = useState<ReadonlySet<string> | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [hideDiscontinued, setHideDiscontinued] = useState(true)
+  // Which discontinued rows survive the filter. Sampled when the filter goes on
+  // and when the inventory loads, never tracked live: a row that vanished the
+  // instant you cleared its last tick would take with it the checkbox you were
+  // in the middle of correcting.
+  const [kept, setKept] = useState<ReadonlySet<string>>(() => new Set<string>())
 
   const writerRef = useRef<ReturnType<typeof createInventoryWriter> | null>(null)
   if (!writerRef.current) {
@@ -55,7 +85,12 @@ export default function FilamentsPage() {
     setSaveError(null)
     let cancelled = false
     void getFilaments()
-      .then(ticks => { if (!cancelled) setOwned(ticksToSet(ticks)) })
+      .then(ticks => {
+        if (cancelled) return
+        const set = ticksToSet(ticks)
+        setKept(ownedDiscontinued(set))
+        setOwned(set)
+      })
       .catch(error => { if (!cancelled) setLoadError(messageOf(error)) })
     return () => { cancelled = true }
   }, [])
@@ -76,15 +111,33 @@ export default function FilamentsPage() {
     setSaveError(null)
   }, [])
 
+  const hide = useCallback((next: boolean) => {
+    if (next && owned) setKept(ownedDiscontinued(owned))
+    setHideDiscontinued(next)
+  }, [owned])
+
+  const sections = useMemo(() => {
+    if (!hideDiscontinued) return SECTIONS
+    return SECTIONS
+      .map(section => ({
+        ...section,
+        colors: section.colors.filter(color => !color.discontinued || kept.has(color.key)),
+      }))
+      .filter(section => section.colors.length > 0)
+  }, [hideDiscontinued, kept])
+
   const summary = useMemo(() => {
     if (!owned) return null
+    const shown = countPairs(sections)
     return {
       total: owned.size,
-      perLine: SECTIONS.map(section =>
+      shown,
+      hidden: ALL_PAIRS - shown,
+      perLine: sections.map(section =>
         `${section.line.label} ${countOwned(section, owned)}/`
         + `${section.colors.length * section.line.variants.length}`),
     }
-  }, [owned])
+  }, [owned, sections])
 
   return (
     <Stack spacing={2} sx={{ p: { xs: 1.5, md: 2.5 }, maxWidth: 900, width: '100%' }}>
@@ -95,12 +148,37 @@ export default function FilamentsPage() {
         </Typography>
       </Box>
 
-      {/* The counts are a title block, not the point of the page. */}
+      {/* The counts are a title block, not the point of the page. The filter
+          sits with them because it is what the counts are counting. */}
       {summary && (
-        <Typography variant="body2" color="text.secondary">
-          {summary.total} of {FILAMENT_PAIR_COUNT} owned
-          {summary.total > 0 && <> · {summary.perLine.join(' · ')}</>}
-        </Typography>
+        <Stack
+          direction="row"
+          sx={{
+            alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap',
+          }}
+        >
+          <Typography variant="body2" color="text.secondary">
+            {summary.total} of {summary.shown} owned
+            {summary.hidden > 0 && <> · {summary.hidden} discontinued hidden</>}
+            {summary.total > 0 && <> · {summary.perLine.join(' · ')}</>}
+          </Typography>
+          <FormControlLabel
+            sx={{ mr: 0 }}
+            control={(
+              <Switch
+                size="small"
+                checked={hideDiscontinued}
+                onChange={event => hide(event.target.checked)}
+                // A toggle, not one more of the 165 checkboxes below it: said
+                // as "switch, on" rather than "checkbox, checked".
+                slotProps={{ input: { role: 'switch' } }}
+              />
+            )}
+            label={(
+              <Typography variant="body2">Hide discontinued</Typography>
+            )}
+          />
+        </Stack>
       )}
 
       {saveError && (
@@ -116,7 +194,7 @@ export default function FilamentsPage() {
       {loadError && <ErrorState message={loadError} onRetry={load} />}
       {!loadError && !owned && <LoadingState label="Loading your filaments…" />}
 
-      {owned && SECTIONS.map(section => (
+      {owned && sections.map(section => (
         <FilamentSection
           key={section.id}
           line={section.line}
