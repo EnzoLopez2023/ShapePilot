@@ -17,6 +17,7 @@ import Canvas2D from '../../components/canvas2d/Canvas2D.tsx'
 import type { CanvasShape } from '../../components/canvas2d/Canvas2D.tsx'
 import DesignerLayout from '../../components/designer/DesignerLayout.tsx'
 import { OpenDocumentDialog, SaveAsDialog } from '../../components/designer/DocumentDialogs.tsx'
+import DocumentNameField from '../../components/designer/DocumentNameField.tsx'
 import Inspector from '../../components/designer/Inspector.tsx'
 import ObjectTree from '../../components/designer/ObjectTree.tsx'
 import { useDocumentLifecycle } from '../../components/designer/useDocumentLifecycle.ts'
@@ -178,6 +179,7 @@ export default function ShaperDesignerPage() {
       <Typography variant="h1" component="h1" sx={{ fontSize: '1.0625rem', pr: 1.5, borderRight: 1, borderColor: 'divider' }}>
         Shaper Designer
       </Typography>
+      <DocumentNameField name={doc.doc.name} onRename={doc.rename} />
 
       <Tooltip title="Undo" describeChild>
         <span>
@@ -291,7 +293,10 @@ export default function ShaperDesignerPage() {
       <Button size="small" onClick={() => setSaveAsOpen(true)}>Save as</Button>
       <Button
         size="small" variant="contained" disabled={lifecycle.busy}
-        onClick={() => void lifecycle.save()}
+        // A never-saved design has no name but a default one, and writing
+        // that default is how a shelf of "Untitled model" gets made. The
+        // first save asks; every save after it just saves.
+        onClick={() => (lifecycle.savedId ? void lifecycle.save() : setSaveAsOpen(true))}
       >
         {lifecycle.hasUnsavedChanges ? 'Save *' : 'Save'}
       </Button>
@@ -390,6 +395,7 @@ export default function ShaperDesignerPage() {
       <SaveAsDialog
         open={saveAsOpen}
         defaultName={doc.doc.name}
+        firstSave={!lifecycle.savedId}
         onSave={name => { setSaveAsOpen(false); void lifecycle.saveAs(name) }}
         onClose={() => setSaveAsOpen(false)}
       />

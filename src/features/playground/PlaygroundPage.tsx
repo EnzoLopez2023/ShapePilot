@@ -17,6 +17,7 @@ import { useNavigate } from 'react-router-dom'
 import AiPanel from '../../components/designer/AiPanel.tsx'
 import { summarise, useAiDesigner } from '../../components/designer/useAiDesigner.ts'
 import { OpenDocumentDialog, SaveAsDialog } from '../../components/designer/DocumentDialogs.tsx'
+import DocumentNameField from '../../components/designer/DocumentNameField.tsx'
 import { useDocumentLifecycle } from '../../components/designer/useDocumentLifecycle.ts'
 import ObjectTree from '../../components/designer/ObjectTree.tsx'
 import Viewport3D from '../../components/viewport3d/Viewport3D.tsx'
@@ -235,6 +236,7 @@ export default function PlaygroundPage() {
             >
               AI Imagination Playground
             </Typography>
+            <DocumentNameField name={doc.doc.name} onRename={doc.rename} />
             <Tooltip title="Undo" describeChild><span>
               <IconButton size="small" aria-label="Undo" disabled={!doc.canUndo} onClick={doc.undo}>
                 <UndoRoundedIcon fontSize="small" />
@@ -280,7 +282,10 @@ export default function PlaygroundPage() {
             <Button size="small" onClick={() => setSaveAsOpen(true)}>Save as</Button>
             <Button
               size="small" variant="contained" disabled={lifecycle.busy || !objects.length}
-              onClick={() => void lifecycle.save()}
+              // A never-saved design has no name but a default one, and writing
+        // that default is how a shelf of "Untitled model" gets made. The
+        // first save asks; every save after it just saves.
+        onClick={() => (lifecycle.savedId ? void lifecycle.save() : setSaveAsOpen(true))}
             >
               {lifecycle.hasUnsavedChanges ? 'Save *' : 'Save'}
             </Button>
@@ -486,6 +491,7 @@ export default function PlaygroundPage() {
       <SaveAsDialog
         open={saveAsOpen}
         defaultName={doc.doc.name}
+        firstSave={!lifecycle.savedId}
         onSave={name => { setSaveAsOpen(false); void lifecycle.saveAs(name) }}
         onClose={() => setSaveAsOpen(false)}
       />
