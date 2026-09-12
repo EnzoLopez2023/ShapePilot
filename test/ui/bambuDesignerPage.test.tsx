@@ -124,3 +124,107 @@ test('undo removes the object that was just added', async () => {
   await user.click(screen.getByRole('button', { name: 'Undo' }))
   await waitFor(() => expect(screen.getAllByText(/0 objects/).length).toBeGreaterThan(0))
 })
+
+test('the first save asks for a name instead of writing the default one', async () => {
+  const user = userEvent.setup()
+  const posted: unknown[] = []
+  vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : String(input)
+    if (url.includes('/api/ai/status')) {
+      return new Response(JSON.stringify({ available: false }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      })
+    }
+    if (url.includes('/api/design-documents') && init?.method === 'POST') {
+      posted.push(JSON.parse(String(init.body)))
+      return new Response(JSON.stringify({ id: 'doc-1' }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      })
+    }
+    if (url.includes('/api/design-documents')) {
+      return new Response(JSON.stringify([]), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      })
+    }
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    })
+  })
+
+  renderPage()
+  await waitFor(() => expect(screen.getByRole('button', { name: /^Box/ })).toBeTruthy())
+  await user.click(screen.getByRole('button', { name: /^Box/ }))
+
+  await user.click(screen.getByRole('button', { name: /^Save$/ }))
+
+  // Nothing is written until the name is given.
+  assert.equal(posted.length, 0)
+  assert.ok(screen.getByRole('heading', { name: 'Name this design' }))
+
+  // Scoped to the dialog: the inspector has a Name field and the toolbar a
+  // Save button, and both are still on screen behind it.
+  const dialog = within(screen.getByRole('dialog'))
+  await user.clear(dialog.getByLabelText('Name'))
+  await user.type(dialog.getByLabelText('Name'), 'rounded 10mm post')
+  await user.click(dialog.getByRole('button', { name: 'Save' }))
+
+  await waitFor(() => expect(posted.length).toBe(1))
+  assert.equal((posted[0] as { name: string }).name, 'rounded 10mm post')
+})
+
+test('renaming in the toolbar reaches the document, not just the field', async () => {
+  const user = userEvent.setup()
+  const posted: unknown[] = []
+  vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : String(input)
+    if (url.includes('/api/ai/status')) {
+      return new Response(JSON.stringify({ available: false }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      })
+    }
+    if (url.includes('/api/design-documents') && init?.method === 'POST') {
+      posted.push(JSON.parse(String(init.body)))
+      return new Response(JSON.stringify({ id: 'doc-1' }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      })
+    }
+    if (url.includes('/api/design-documents')) {
+      return new Response(JSON.stringify([]), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      })
+    }
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200, headers: { 'content-type': 'application/json' },
+    })
+  })
+
+  renderPage()
+  const field = await screen.findByLabelText('Design name')
+  assert.equal((field as HTMLInputElement).value, 'Untitled model')
+
+  await user.clear(field)
+  await user.type(field, 'bench dog')
+  await user.tab()
+
+  // The field keeping its own text proves nothing -- it is its own state. What
+  // matters is that the save dialog and the request agree with it.
+  await user.click(screen.getByRole('button', { name: /^Save$/ }))
+  const dialog = within(screen.getByRole('dialog'))
+  assert.equal((dialog.getByLabelText('Name') as HTMLInputElement).value, 'bench dog')
+
+  await user.click(dialog.getByRole('button', { name: 'Save' }))
+  await waitFor(() => expect(posted.length).toBe(1))
+  assert.equal((posted[0] as { name: string }).name, 'bench dog')
+})
+
+test('a blank name reverts rather than saving an unnameable design', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  const field = await screen.findByLabelText('Design name')
+
+  await user.clear(field)
+  await user.tab()
+
+  await waitFor(() =>
+    expect((screen.getByLabelText('Design name') as HTMLInputElement).value).toBe('Untitled model'))
+})

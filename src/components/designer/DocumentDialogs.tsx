@@ -1,7 +1,7 @@
 // Open and Save-as dialogs, shared by the three designers. The Open list spans
 // every kind so a Bambu model can be picked up in the Shaper Designer, which is
 // the whole reason one table backs all three.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, IconButton,
   Stack, TextField, Tooltip, Typography,
@@ -103,25 +103,35 @@ export function OpenDocumentDialog(props: OpenDialogProps) {
 export interface SaveAsDialogProps {
   open: boolean
   defaultName: string
+  /**
+   * True when the design has never been saved, so this is not a copy at all --
+   * it is the first save, and the one moment the name is worth asking for.
+   */
+  firstSave?: boolean
   onSave: (name: string) => void
   onClose: () => void
 }
 
-export function SaveAsDialog({ open, defaultName, onSave, onClose }: SaveAsDialogProps) {
+export function SaveAsDialog(props: SaveAsDialogProps) {
+  const { open, defaultName, firstSave, onSave, onClose } = props
   const [name, setName] = useState(defaultName)
+  // Reset on every open, so the field always starts from the document's current
+  // name. This used to be a `key` on the Dialog below, which remounted MUI's
+  // dialog but not the component holding this state -- so the field kept the
+  // name it was first constructed with, however the document had been renamed
+  // since. The reset has to live where the state does.
+  useEffect(() => { if (open) setName(defaultName) }, [open, defaultName])
+
   return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      fullWidth
-      maxWidth="xs"
-      // Remount on open so the field always starts from the current name.
-      key={open ? defaultName : 'closed'}
-    >
-      <DialogTitle>Save a copy</DialogTitle>
+    <Dialog open={open} onClose={onClose} fullWidth maxWidth="xs">
+      <DialogTitle>{firstSave ? 'Name this design' : 'Save a copy'}</DialogTitle>
       <DialogContent>
         <TextField
           autoFocus fullWidth size="small" label="Name" sx={{ mt: 1 }}
+          // On a first save the field holds a placeholder nobody wants to keep,
+          // so select it and let the first keystroke replace it. On a copy the
+          // name is a real one worth editing rather than retyping.
+          onFocus={firstSave ? e => e.target.select() : undefined}
           value={name}
           onChange={e => setName(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && name.trim()) onSave(name.trim()) }}

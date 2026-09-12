@@ -16,6 +16,7 @@ import { useNavigate } from 'react-router-dom'
 
 import DesignerLayout from '../../components/designer/DesignerLayout.tsx'
 import { OpenDocumentDialog, SaveAsDialog } from '../../components/designer/DocumentDialogs.tsx'
+import DocumentNameField from '../../components/designer/DocumentNameField.tsx'
 import Inspector from '../../components/designer/Inspector.tsx'
 import ObjectTree from '../../components/designer/ObjectTree.tsx'
 import AiPanel from '../../components/designer/AiPanel.tsx'
@@ -247,6 +248,7 @@ export default function BambuDesignerPage() {
       <Typography variant="h1" component="h1" sx={{ fontSize: '1.0625rem', pr: 1.5, borderRight: 1, borderColor: 'divider' }}>
         Bambu Designer
       </Typography>
+      <DocumentNameField name={doc.doc.name} onRename={doc.rename} />
 
       <Tooltip title="Undo" describeChild><span>
         <IconButton size="small" aria-label="Undo" disabled={!doc.canUndo} onClick={doc.undo}>
@@ -356,7 +358,10 @@ export default function BambuDesignerPage() {
       <Button size="small" onClick={() => setSaveAsOpen(true)}>Save as</Button>
       <Button
         size="small" variant="contained" disabled={lifecycle.busy}
-        onClick={() => void lifecycle.save()}
+        // A never-saved design has no name but a default one, and writing
+        // that default is how a shelf of "Untitled model" gets made. The
+        // first save asks; every save after it just saves.
+        onClick={() => (lifecycle.savedId ? void lifecycle.save() : setSaveAsOpen(true))}
       >
         {lifecycle.hasUnsavedChanges ? 'Save *' : 'Save'}
       </Button>
@@ -515,6 +520,7 @@ export default function BambuDesignerPage() {
       <SaveAsDialog
         open={saveAsOpen}
         defaultName={doc.doc.name}
+        firstSave={!lifecycle.savedId}
         onSave={name => { setSaveAsOpen(false); void lifecycle.saveAs(name) }}
         onClose={() => setSaveAsOpen(false)}
       />
