@@ -52,7 +52,7 @@ const solidParams = (o: SolidObject): ProgramParams => {
   return {
     widthMm: p.widthMm, depthMm: p.depthMm, heightMm: p.heightMm,
     radiusMm: p.radiusMm, topRadiusMm: p.topRadiusMm, tubeMm: p.tubeMm,
-    segments: p.segments,
+    cornerRadiusMm: p.cornerRadiusMm, segments: p.segments,
   }
 }
 

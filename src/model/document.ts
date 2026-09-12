@@ -78,6 +78,8 @@ export interface SolidParams {
   topRadiusMm?: number
   /** Torus tube radius. */
   tubeMm?: number
+  /** Box only: rounds the four vertical edges, leaving top and bottom flat. */
+  cornerRadiusMm?: number
   /** Radial resolution. 8..256. */
   segments?: number
 }

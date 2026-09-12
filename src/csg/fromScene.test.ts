@@ -5,6 +5,7 @@ import { validateShapeProgram } from '../../lib/contracts/shapeProgram.ts'
 import { checkManifold } from '../geometry/mesh.ts'
 import { evaluateProgram } from './evaluate.ts'
 import { objectNode, programFromScene } from './fromScene.ts'
+import { programToObjects } from './toScene.ts'
 
 test('a solid maps straight onto its primitive op', () => {
   const box = createSolid('box', [1, 2, 3], { widthMm: 5, depthMm: 6, heightMm: 7 })
@@ -82,4 +83,20 @@ test('a compiled group evaluates to a watertight solid with the hole removed', a
   // 40 * 40 * 6 minus a 48-gon prism of r = 5 through the full 6 mm.
   const bore = (48 / 2) * 25 * Math.sin((2 * Math.PI) / 48) * 6
   assert.ok(Math.abs(report.volume - (9600 - bore)) < 1, `unexpected volume ${report.volume}`)
+})
+
+test('a rounded box survives the round trip as one editable solid', () => {
+  // What an assistant proposal has to land as: a single box the inspector can
+  // still drive, not a group of a core and four corner cylinders.
+  const box = createSolid('box', [0, 0, 0], {
+    widthMm: 10, depthMm: 10, heightMm: 16.8, cornerRadiusMm: 2,
+  })
+  const program = validateShapeProgram(programFromScene([box]))
+  const node = program.parts[0]
+  assert.ok('params' in node && node.params.cornerRadiusMm === 2)
+
+  const [back] = programToObjects(program)
+  assert.equal(back.type, 'solid')
+  assert.ok(back.type === 'solid' && back.primitive === 'box')
+  assert.ok(back.type === 'solid' && back.params.cornerRadiusMm === 2)
 })

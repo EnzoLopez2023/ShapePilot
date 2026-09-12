@@ -49,6 +49,7 @@ function primitiveObject(node: PrimitiveNode): SceneObject | null {
         radiusMm: node.params.radiusMm,
         topRadiusMm: node.params.topRadiusMm,
         tubeMm: node.params.tubeMm,
+        cornerRadiusMm: node.params.cornerRadiusMm,
         segments: node.params.segments,
       },
     }

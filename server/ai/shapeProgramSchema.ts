@@ -40,6 +40,10 @@ const params = {
     radiusMm: { type: 'number' },
     topRadiusMm: { type: 'number', description: 'cone only; 0 is a true point' },
     tubeMm: { type: 'number', description: 'torus only; must be less than radiusMm' },
+    cornerRadiusMm: {
+      type: 'number',
+      description: 'box only; rounds the four vertical edges, top and bottom stay flat',
+    },
     segments: {
       type: 'integer',
       minimum: PROGRAM_LIMITS.minSegments,
@@ -115,7 +119,9 @@ Coordinate system and conventions:
 - Millimetres throughout. Z is up. The build plate is the z = 0 plane.
 - Every primitive is generated centred on the origin in x and y and SITTING ON
   z = 0. A transform's position moves it from there.
-- box/wedge use widthMm (x), depthMm (y), heightMm (z).
+- box/wedge use widthMm (x), depthMm (y), heightMm (z). A box also takes an
+  optional cornerRadiusMm, which rounds its four VERTICAL edges and leaves the
+  top and bottom faces flat -- the printable way to soften a box.
 - cylinder/cone use radiusMm and heightMm; cone also takes topRadiusMm.
 - sphere uses radiusMm. torus uses radiusMm and tubeMm, tubeMm < radiusMm.
 - extrude takes profile (outer ring, counter-clockwise, unclosed) and heightMm.
@@ -124,6 +130,10 @@ Coordinate system and conventions:
 Rules you must follow:
 - Give every part a stable, descriptive id in kebab-case. Ids are how the user
   refers to parts in later turns, so keep them meaningful and keep them STABLE.
+- NEVER fake a rounded box out of crossed boxes and corner cylinders. A box's
+  cornerRadiusMm makes the same shape as ONE part, and one part is what the
+  person can still edit afterwards -- a group of six is not. A rounded slot or
+  a pill is the same box with cornerRadiusMm set to half its shorter side.
 - To cut a hole, make the cutting solid LONGER than the material it passes
   through and position it so it protrudes from both faces. A cutter that ends
   exactly flush with a surface leaves a zero-thickness face that is not

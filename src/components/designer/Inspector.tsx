@@ -193,7 +193,7 @@ function objectDimensions(
 
     case 'solid': {
       const fields = {
-        box: ['widthMm', 'depthMm', 'heightMm'],
+        box: ['widthMm', 'depthMm', 'heightMm', 'cornerRadiusMm'],
         wedge: ['widthMm', 'depthMm', 'heightMm'],
         cylinder: ['radiusMm', 'heightMm'],
         sphere: ['radiusMm'],
@@ -203,12 +203,14 @@ function objectDimensions(
       const labels: Record<string, string> = {
         widthMm: 'Width', depthMm: 'Depth', heightMm: 'Height',
         radiusMm: 'Radius', topRadiusMm: 'Top radius', tubeMm: 'Tube radius',
+        cornerRadiusMm: 'Corner radius',
       }
       return (
         <>
           <Divider />
           <Typography variant="h3">Size</Typography>
-          {fields.map(key => length(labels[key], key, 10))}
+          {/* A box opens square-cornered; every other size defaults to 10. */}
+          {fields.map(key => length(labels[key], key, key === 'cornerRadiusMm' ? 0 : 10))}
         </>
       )
     }

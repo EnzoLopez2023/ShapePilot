@@ -12,6 +12,7 @@ const prim = (op: string, params: Record<string, number>, id = op): PartNode =>
 
 const PRIMITIVES: PartNode[] = [
   prim('box', { widthMm: 20, depthMm: 14, heightMm: 8 }),
+  prim('box', { widthMm: 20, depthMm: 14, heightMm: 8, cornerRadiusMm: 3 }, 'rounded-box'),
   prim('cylinder', { radiusMm: 6, heightMm: 15, segments: 48 }),
   prim('sphere', { radiusMm: 7, segments: 32 }),
   prim('cone', { radiusMm: 8, topRadiusMm: 2, heightMm: 12, segments: 48 }),
@@ -118,4 +119,29 @@ test('a text node is refused rather than silently dropped', async () => {
     params: { text: 'hi', heightMm: 3 }, transform: IDENTITY,
   } as unknown as PartNode
   await assert.rejects(() => evaluateNode(node), /expanded to extrusions/)
+})
+
+test('a box corner radius rounds the vertical edges only', async () => {
+  const size = { widthMm: 20, depthMm: 14, heightMm: 8 }
+  const square = await evaluateNode(prim('box', size, 'square'))
+  const rounded = await evaluateNode(prim('box', { ...size, cornerRadiusMm: 3 }, 'rounded'))
+
+  // Same footprint and same height: the rounding eats into the corners, it does
+  // not shrink the part or chamfer the faces the plate and the nozzle see.
+  assert.deepEqual(rounded.bbox.map(v => Math.round(v * 1e4) / 1e4), square.bbox)
+  assert.ok(
+    checkManifold(rounded).volume < checkManifold(square).volume,
+    'rounding the corners should remove material',
+  )
+})
+
+test('a box corner radius clamps to half the shorter side', async () => {
+  const size = { widthMm: 20, depthMm: 14, heightMm: 8 }
+  const asked = await evaluateNode(prim('box', { ...size, cornerRadiusMm: 500 }, 'asked'))
+  const half = await evaluateNode(prim('box', { ...size, cornerRadiusMm: 7 }, 'half'))
+  assert.ok(checkManifold(asked).ok, 'an over-large radius must still be watertight')
+  assert.ok(
+    Math.abs(checkManifold(asked).volume - checkManifold(half).volume) < 1e-6,
+    'an over-large radius should settle at the obround',
+  )
 })
