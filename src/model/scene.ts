@@ -60,7 +60,7 @@ export function createShape2D(
 }
 
 const SOLID_DEFAULTS: Record<SolidKind, SolidParams> = {
-  box: { widthMm: 20, depthMm: 20, heightMm: 20 },
+  box: { widthMm: 20, depthMm: 20, heightMm: 20, cornerRadiusMm: 0 },
   cylinder: { radiusMm: 10, heightMm: 20, segments: 64 },
   sphere: { radiusMm: 10, segments: 48 },
   cone: { radiusMm: 10, topRadiusMm: 0, heightMm: 20, segments: 64 },

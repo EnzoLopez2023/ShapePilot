@@ -11,6 +11,7 @@ import type {
   BooleanNode, PartNode, Point2, PrimitiveNode, ProgramTransform, ShapeProgram,
 } from '../../lib/contracts/shapeProgram.ts'
 import { ShapeProgramError, isBooleanNode } from '../../lib/contracts/shapeProgram.ts'
+import { roundedRectRing } from '../geometry/primitives.ts'
 import { loadManifold } from './manifold.ts'
 
 const DEFAULT_SEGMENTS = 64
@@ -35,10 +36,19 @@ function buildPrimitive(
   const segs = p.segments ?? DEFAULT_SEGMENTS
 
   switch (node.op) {
-    case 'box':
+    case 'box': {
       // Centred on the origin in x and y, sitting on z = 0: the workplane
       // convention every 3D sub-app draws against.
-      return M.cube([p.widthMm!, p.depthMm!, p.heightMm!], true).translate(0, 0, p.heightMm! / 2)
+      const w = p.widthMm!, d = p.depthMm!, h = p.heightMm!
+      const corner = Math.min(p.cornerRadiusMm ?? 0, w / 2, d / 2)
+      if (corner < 1e-9) return M.cube([w, d, h], true).translate(0, 0, h / 2)
+      // Rounded on the four vertical edges only: extruding a rounded-rectangle
+      // profile leaves the top and bottom faces flat, so the box still meets
+      // the plate on a full face and needs no support. `segs` counts the whole
+      // circle, so a quarter-turn corner gets a quarter of it.
+      const profile = roundedRectRing(-w / 2, -d / 2, w, d, corner, Math.max(2, Math.round(segs / 4)))
+      return M.extrude([toContour(profile)], h)
+    }
 
     case 'cylinder':
       return M.cylinder(p.heightMm!, p.radiusMm!, p.radiusMm!, segs, false)

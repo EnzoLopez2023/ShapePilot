@@ -169,8 +169,10 @@ function validateCut(value: unknown, field: string): Record<string, unknown> | u
 const BASE_KEYS = ['id', 'name', 'transform', 'mode', 'visible', 'locked', 'color', 'cut', 'type']
 const SHAPE_PARAM_KEYS =
   ['widthMm', 'heightMm', 'radiusMm', 'radiusYMm', 'sides', 'cornerRadiusMm'] as const
-const SOLID_PARAM_KEYS =
-  ['widthMm', 'depthMm', 'heightMm', 'radiusMm', 'topRadiusMm', 'tubeMm', 'segments'] as const
+const SOLID_PARAM_KEYS = [
+  'widthMm', 'depthMm', 'heightMm', 'radiusMm', 'topRadiusMm', 'tubeMm',
+  'cornerRadiusMm', 'segments',
+] as const
 const ASSET_KEYS = ['hash', 'filename', 'byteLength'] as const
 
 const dim = { min: 0, max: LIMITS.maxDimensionMm }

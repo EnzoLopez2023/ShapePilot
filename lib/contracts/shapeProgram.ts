@@ -47,6 +47,12 @@ export interface ProgramParams {
   topRadiusMm?: number
   /** Torus tube radius. */
   tubeMm?: number
+  /**
+   * `box` only: rounds the four VERTICAL edges. The top and bottom faces stay
+   * flat, so the part still sits on the plate and prints without an overhang.
+   * Clamped to half the smaller of widthMm and depthMm.
+   */
+  cornerRadiusMm?: number
   segments?: number
   /** `extrude` only: outer ring, CCW, millimetres, unclosed. */
   profile?: Point2[]
@@ -238,7 +244,8 @@ function validateTransform(value: unknown, field: string): ProgramTransform {
 
 const PARAM_KEYS = [
   'widthMm', 'depthMm', 'heightMm', 'radiusMm', 'topRadiusMm', 'tubeMm',
-  'segments', 'profile', 'holes', 'text', 'fontId', 'sizeMm', 'meshId',
+  'cornerRadiusMm', 'segments', 'profile', 'holes', 'text', 'fontId', 'sizeMm',
+  'meshId',
 ] as const
 
 /** Which params each op actually requires. Anything else present is allowed
@@ -269,6 +276,10 @@ function validateParams(value: unknown, op: PrimitiveOp, field: string): Program
     radiusMm: optionalNumber(raw.radiusMm, `${field}.radiusMm`, positive),
     topRadiusMm: optionalNumber(raw.topRadiusMm, `${field}.topRadiusMm`, dim),
     tubeMm: optionalNumber(raw.tubeMm, `${field}.tubeMm`, positive),
+    // Zero is the ordinary sharp-cornered box, and an over-large radius is
+    // clamped by the evaluator rather than refused -- "as round as it goes" is
+    // a reasonable thing to ask for.
+    cornerRadiusMm: optionalNumber(raw.cornerRadiusMm, `${field}.cornerRadiusMm`, dim),
     segments: optionalNumber(raw.segments, `${field}.segments`, {
       min: PROGRAM_LIMITS.minSegments, max: PROGRAM_LIMITS.maxSegments, integer: true,
     }),
