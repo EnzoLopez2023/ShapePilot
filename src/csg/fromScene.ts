@@ -134,16 +134,18 @@ export function objectNode(o: SceneObject, opts: FromSceneOptions = {}): PartNod
     case 'text': {
       const rings = opts.textOutlines?.get(o.id)
       if (!rings?.length) return null
-      // `textOutlines` flattens its polygons for the 2D canvas, which fills
-      // evenodd and needs no nesting; recover it here by containment. A counter
-      // has to ride along as a hole of its own glyph: extruded on its own it is
-      // a clockwise ring, which is not a solid at all and fails the build.
-      const polygons = nestRings(rings)
-      const children: PartNode[] = polygons.map(([outer, ...holes], i) => ({
+      // Contours arrive flat, so containment is what tells a counter from a
+      // glyph standing on its own -- the same nesting the 2D compile does.
+      // One extrusion per glyph, carrying its own counters as holes; the union
+      // is only ever across separate glyphs, which cannot overlap into each
+      // other's counters. Extruding every contour as its own solid instead
+      // hands manifold a clockwise counter ring, which is not a solid at all:
+      // any word containing an o, an a or an 8 failed to build.
+      const children: PartNode[] = nestRings(rings).map(([outer, ...holes], i) => ({
         id: `${o.id}:${i}`, name: `${o.name} ${i + 1}`, op: 'extrude' as const,
         params: {
           profile: toProfile(outer),
-          holes: holes.map(toProfile),
+          ...(holes.length ? { holes: holes.map(toProfile) } : {}),
           heightMm: o.thicknessMm ?? 5,
         },
         transform: IDENTITY,
