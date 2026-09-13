@@ -6,7 +6,7 @@ import { checkManifold } from '../../../geometry/mesh.ts'
 import { PYTHON_SIZING } from '../geometry/shapes.ts'
 import type { Pocket, TrayDesign } from '../model/types.ts'
 import { readBinaryStl, writeBinaryStl } from '../../../export/stl.ts'
-import { writeThreeMf } from '../../../export/threemf.ts'
+import { writeThreeMf, writeThreeMfParts } from '../../../export/threemf.ts'
 
 const design = (pockets: Pocket[], over: Partial<TrayDesign> = {}): TrayDesign => ({
   id: 't', name: 'Test tray',
@@ -74,6 +74,61 @@ test('3MF declares millimetres and matches the mesh', () => {
   assert.match(model, /unit="millimeter"/)
   assert.equal((model.match(/<vertex /g) ?? []).length, mesh.positions.length / 3)
   assert.equal((model.match(/<triangle /g) ?? []).length, mesh.triangleCount)
+})
+
+test('a single-part 3MF stays a flat one-object file', () => {
+  const zip = unzipSync(new Uint8Array(writeThreeMf(buildTrayMesh(sample))))
+  const model = strFromU8(zip['3D/3dmodel.model'])
+  assert.equal((model.match(/<object /g) ?? []).length, 1)
+  assert.equal((model.match(/<component /g) ?? []).length, 0)
+  // Nothing to colour, so no sidecar.
+  assert.ok(!zip['Metadata/model_settings.config'])
+})
+
+test('a multi-part 3MF keeps the bodies separate and colourable', () => {
+  const tray = buildTrayMesh(sample)
+  const plate = buildTrayMesh(design([{ id: 'z', units: 1, x: 10, y: 10 }]))
+  const zip = unzipSync(new Uint8Array(writeThreeMfParts([
+    { mesh: tray, name: 'Tray', extruder: 1 },
+    { mesh: plate, name: 'Nameplate', extruder: 2 },
+  ], 'Two colour tray')))
+
+  const model = strFromU8(zip['3D/3dmodel.model'])
+  // Two meshes plus the object that groups them, and a single build item so
+  // they land as one movable unit rather than two loose objects.
+  assert.equal((model.match(/<mesh>/g) ?? []).length, 2)
+  assert.equal((model.match(/<object /g) ?? []).length, 3)
+  assert.equal((model.match(/<component /g) ?? []).length, 2)
+  assert.equal((model.match(/<item /g) ?? []).length, 1)
+  assert.match(model, /<item objectid="3"\/>/)
+  // Both bodies survive whole: a union would not leave exactly the sum.
+  assert.equal((model.match(/<triangle /g) ?? []).length,
+    tray.triangleCount + plate.triangleCount)
+
+  const cfg = strFromU8(zip['Metadata/model_settings.config'])
+  assert.match(cfg, /<object id="3">/)
+  // Split first, so each assertion is pinned inside its own <part> block and
+  // cannot be satisfied by a match that runs on into the next one.
+  const blocks = cfg.split('<part ').slice(1)
+  assert.equal(blocks.length, 2)
+  assert.match(blocks[0], /^id="1"/)
+  assert.match(blocks[0], /key="name" value="Tray"/)
+  assert.match(blocks[0], /key="extruder" value="1"/)
+  assert.match(blocks[1], /^id="2"/)
+  assert.match(blocks[1], /key="name" value="Nameplate"/)
+  assert.match(blocks[1], /key="extruder" value="2"/)
+})
+
+test('3MF escapes XML metacharacters in names', () => {
+  const zip = unzipSync(new Uint8Array(writeThreeMfParts([
+    { mesh: buildTrayMesh(sample), name: 'A & B' },
+    { mesh: buildTrayMesh(sample), name: '<script>' },
+  ], 'Tom "T" & Co')))
+  const model = strFromU8(zip['3D/3dmodel.model'])
+  const cfg = strFromU8(zip['Metadata/model_settings.config'])
+  assert.match(model, /name="A &amp; B"/)
+  assert.ok(!model.includes('<script>'))
+  assert.match(cfg, /value="Tom &quot;T&quot; &amp; Co"/)
 })
 
 // The reference tray: 248 x 156 mm, 75 pockets of 18.80 mm on a 5-row grid.

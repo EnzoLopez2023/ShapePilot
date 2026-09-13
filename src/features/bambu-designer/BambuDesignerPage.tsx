@@ -35,8 +35,8 @@ import { DEFAULT_FONT_ID, resolveTextOutlines } from '../../text/fonts.ts'
 import type { Ring } from '../../geometry/vec.ts'
 import { safeFilename, triggerDownload } from '../../export/download.ts'
 import { writeBinaryStl } from '../../export/stl.ts'
-import { writeThreeMf } from '../../export/threemf.ts'
-import { evaluateProgram } from '../../csg/evaluate.ts'
+import { writeThreeMfParts } from '../../export/threemf.ts'
+import { evaluateNode, evaluateProgram } from '../../csg/evaluate.ts'
 import { programFromScene } from '../../csg/fromScene.ts'
 import { resolveAssets } from '../../import/assets.ts'
 import { programToObjects } from '../../csg/toScene.ts'
@@ -55,6 +55,9 @@ const AXES: { axis: Axis; label: string }[] = [
 const EDGES: { edge: AlignEdge; label: string }[] = [
   { edge: 'min', label: 'Min' }, { edge: 'centre', label: 'Centre' }, { edge: 'max', label: 'Max' },
 ]
+/** One AMS holds four spools. Exports past the fourth object pile onto the last
+ *  slot rather than naming a filament the printer has not got. */
+const MAX_FILAMENTS = 4
 
 export default function BambuDesignerPage() {
   const navigate = useNavigate()
@@ -223,12 +226,22 @@ export default function BambuDesignerPage() {
     }
     try {
       const { meshes } = await resolveAssets(objects)
-      const mesh = await evaluateProgram(program, { meshes })
       const name = safeFilename(doc.doc.name)
       if (format === 'stl') {
+        // STL has no concept of a part, so the scene has to collapse to one solid.
+        const mesh = await evaluateProgram(program, { meshes })
         triggerDownload(writeBinaryStl(mesh, doc.doc.name), `${name}.stl`, 'model/stl')
       } else {
-        triggerDownload(writeThreeMf(mesh, doc.doc.name), `${name}.3mf`, 'model/3mf')
+        // Evaluated per object, not through evaluateProgram: that unions the
+        // parts, and a body fused into its neighbour can never be given its own
+        // filament again. Slots run 1, 2, 3... so a logo dropped onto a model
+        // arrives ready to print in an accent colour.
+        const parts = await Promise.all(program.parts.map(async (node, i) => ({
+          mesh: await evaluateNode(node, { meshes }),
+          name: node.name || `Part ${i + 1}`,
+          extruder: Math.min(i + 1, MAX_FILAMENTS),
+        })))
+        triggerDownload(writeThreeMfParts(parts, doc.doc.name), `${name}.3mf`, 'model/3mf')
       }
     } catch (cause) {
       lifecycle.setError(cause instanceof Error ? cause.message : 'export failed')

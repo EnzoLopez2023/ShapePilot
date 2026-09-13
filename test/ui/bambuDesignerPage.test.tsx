@@ -8,6 +8,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
+import { unzipSync, strFromU8 } from 'fflate'
 import { ThemeModeProvider } from '../../src/theme/ThemeModeProvider.tsx'
 import { ConfirmDialogProvider } from '../../src/components/ConfirmDialogProvider.tsx'
 
@@ -227,4 +228,50 @@ test('a blank name reverts rather than saving an unnameable design', async () =>
 
   await waitFor(() =>
     expect((screen.getByLabelText('Design name') as HTMLInputElement).value).toBe('Untitled model'))
+})
+
+test('a 3MF export gives every object its own colourable part', async () => {
+  const user = userEvent.setup()
+  const blobs: Blob[] = []
+  const realCreateElement = document.createElement.bind(document)
+  const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+    const element = realCreateElement(tag)
+    // jsdom would try to navigate to the blob: URL.
+    if (tag === 'a') vi.spyOn(element as HTMLAnchorElement, 'click').mockImplementation(() => {})
+    return element
+  })
+  // Patch the two statics rather than stubbing URL wholesale: the router still
+  // needs the constructor.
+  const realCreateUrl = URL.createObjectURL
+  const realRevokeUrl = URL.revokeObjectURL
+  URL.createObjectURL =
+    ((blob: Blob) => { blobs.push(blob); return 'blob:stub' }) as typeof URL.createObjectURL
+  URL.revokeObjectURL = (() => {}) as typeof URL.revokeObjectURL
+
+  try {
+    renderPage()
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Box/ })).toBeTruthy())
+    await user.click(screen.getByRole('button', { name: /^Box/ }))
+    await user.click(screen.getByRole('button', { name: /^Cylinder/ }))
+
+    await user.click(screen.getByRole('button', { name: '3MF' }))
+    await waitFor(() => expect(blobs.length).toBe(1), { timeout: 20_000 })
+
+    const zip = unzipSync(new Uint8Array(await blobs[0].arrayBuffer()))
+    const model = strFromU8(zip['3D/3dmodel.model'])
+    // The box and the cylinder each keep their own mesh. Before this, the whole
+    // scene went through evaluateProgram and arrived as one welded lump that no
+    // slicer could take apart again.
+    assert.equal((model.match(/<mesh>/g) ?? []).length, 2)
+    assert.equal((model.match(/<component /g) ?? []).length, 2)
+
+    const cfg = strFromU8(zip['Metadata/model_settings.config'])
+    assert.equal((cfg.match(/<part /g) ?? []).length, 2)
+    assert.match(cfg, /key="extruder" value="1"/)
+    assert.match(cfg, /key="extruder" value="2"/)
+  } finally {
+    URL.createObjectURL = realCreateUrl
+    URL.revokeObjectURL = realRevokeUrl
+    createSpy.mockRestore()
+  }
 })
