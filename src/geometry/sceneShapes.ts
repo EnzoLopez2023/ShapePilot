@@ -4,6 +4,7 @@
 import type { MultiPolygon, Polygon, Ring } from './vec.ts'
 import { normalizeMulti, quantizeRing, rotateRing, translateRing } from './vec.ts'
 import { difference, union } from './boolean.ts'
+import { nestRings } from './nest.ts'
 import {
   circleRing, ellipseRing, rectRing, regularPolygonRing, triangleRing,
 } from './primitives.ts'
@@ -111,7 +112,18 @@ export function compileObject(o: SceneObject, opts: CompileOptions = {}): MultiP
   }
 
   const rings = objectRings(o, opts)
-  return normalizeMulti(rings.map(r => [r] as Polygon))
+  // Every primitive has exactly one ring, and that is most of a scene; skip
+  // the containment pass rather than sort and bbox-test a single ring.
+  if (rings.length < 2) return normalizeMulti(rings.map(r => [r] as Polygon))
+  // Past one ring, containment is what says which rings are holes -- nothing
+  // in the model marks them. A multi-ring object arrives as a flat bag from
+  // every source that can carry a hole: an imported SVG or DXF region, a glyph
+  // and its counters. Wrapping each ring in its own polygon makes every hole a
+  // solid island, and the canvas hides it -- it fills evenodd, so the preview
+  // still shows a hole -- while the Shaper export writes each island CCW into
+  // one nonzero-filled path and `sceneCutDrawing`'s per-layer union welds it to
+  // its parent for good.
+  return nestRings(rings)
 }
 
 /** A group's own transform applies on top of its resolved children. */
