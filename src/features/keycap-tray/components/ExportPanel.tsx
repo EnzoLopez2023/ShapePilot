@@ -106,8 +106,9 @@ export default function ExportPanel(
       triggerDownload(
         extraParts.length
           ? writeThreeMfParts([
-            { mesh, name: `${design.name} tray` },
-            ...extraParts.map(p => ({ mesh: p.mesh, name: `${design.name} ${p.label}` })),
+            { mesh, name: `${design.name} tray`, extruder: 1 },
+            ...extraParts.map((p, i) => (
+              { mesh: p.mesh, name: `${design.name} ${p.label}`, extruder: Math.min(i + 2, 4) })),
           ], design.name)
           : writeThreeMf(mesh, design.name),
         name, fmt.mime)
