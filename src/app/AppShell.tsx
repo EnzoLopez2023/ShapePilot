@@ -157,7 +157,10 @@ export function AppShell() {
           component="aside"
           sx={{
             ...glassSurface,
-            m: 1.5,
+            mt: `calc(${theme.spacing(1.5)} + var(--sp-safe-top))`,
+            mb: `calc(${theme.spacing(1.5)} + var(--sp-safe-bottom))`,
+            ml: `calc(${theme.spacing(1.5)} + var(--sp-safe-left))`,
+            mr: 1.5,
             width: collapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH,
             flexShrink: 0,
             borderRadius: '14px',
@@ -188,6 +191,9 @@ export function AppShell() {
               borderRadius: '0 14px 14px 0',
               backgroundImage: 'none',
               boxShadow: shadow,
+              pt: 'var(--sp-safe-top)',
+              pb: 'var(--sp-safe-bottom)',
+              pl: 'var(--sp-safe-left)',
             },
           }}
         >
@@ -209,8 +215,12 @@ export function AppShell() {
               display: 'flex',
               alignItems: 'center',
               gap: 1.5,
-              px: 1.5,
-              py: 1,
+              // The status bar sits on top of this bar, so the hamburger has to
+              // start below it; without this it is unreachable on a notched phone.
+              pt: `calc(${theme.spacing(1)} + var(--sp-safe-top))`,
+              pb: 1,
+              pl: `calc(${theme.spacing(1.5)} + var(--sp-safe-left))`,
+              pr: `calc(${theme.spacing(1.5)} + var(--sp-safe-right))`,
               borderBottom: `1px solid ${glass.border}`,
             }}
           >
@@ -238,8 +248,18 @@ export function AppShell() {
             flex: 1,
             minHeight: 0,
             overflowY: 'auto',
-            px: { xs: 1.5, md: 2 },
-            py: { xs: 1.5, md: 2 },
+            // Below md the header covers the top and nothing covers the left;
+            // at md and up there is no header, and the sidebar holds the left.
+            pt: { xs: 1.5, md: `calc(${theme.spacing(2)} + var(--sp-safe-top))` },
+            pb: {
+              xs: `calc(${theme.spacing(1.5)} + var(--sp-safe-bottom))`,
+              md: `calc(${theme.spacing(2)} + var(--sp-safe-bottom))`,
+            },
+            pl: { xs: `calc(${theme.spacing(1.5)} + var(--sp-safe-left))`, md: 2 },
+            pr: {
+              xs: `calc(${theme.spacing(1.5)} + var(--sp-safe-right))`,
+              md: `calc(${theme.spacing(2)} + var(--sp-safe-right))`,
+            },
             display: 'flex',
             flexDirection: 'column',
           }}
