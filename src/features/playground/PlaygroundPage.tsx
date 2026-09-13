@@ -420,6 +420,7 @@ export default function PlaygroundPage() {
                     transform: { ...object.transform, rotationDeg: [rx, ry, deg] },
                   })
                 }}
+                onResize={(id, patch) => doc.updateObject(id, patch)}
               />
             ) : objects.length || previewMesh ? (
               <Viewport3D

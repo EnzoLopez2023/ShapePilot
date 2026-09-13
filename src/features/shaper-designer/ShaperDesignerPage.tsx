@@ -332,6 +332,7 @@ export default function ShaperDesignerPage() {
             snapMm={snapMm}
             stockMm={stock}
             fitToken={fitToken}
+            imperial={imperial}
             onSelect={doc.toggleSelection}
             onClearSelection={doc.clearSelection}
             onMove={(ids, dx, dy) => doc.moveObjects(ids, dx, dy, 0)}
@@ -343,6 +344,9 @@ export default function ShaperDesignerPage() {
                 transform: { ...object.transform, rotationDeg: [r[0], r[1], deg] },
               })
             }}
+            // The canvas has already worked out the new dimensions and the
+            // position that keeps the held edge still; one patch, one undo step.
+            onResize={(id, patch) => doc.updateObject(id, patch)}
             onDropPaletteItem={(payload, x, y) => {
               const kind = (payload as { kind?: PaletteKind }).kind
               if (kind) addShape(kind, x, y)

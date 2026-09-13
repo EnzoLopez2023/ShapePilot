@@ -235,6 +235,19 @@ Behaviours the three designers share, so moving between them teaches nothing new
 - **Direct manipulation, numeric confirmation.** Drag on the canvas, then read
   and adjust the exact value in the inspector. `LengthField` speaks millimetres
   or fractional inches; the document is always millimetres.
+- **A 2D selection is framed the way Shaper Studio frames one.** `Canvas2D`
+  draws one selection's own bounding box — taken *before* its rotation, so the
+  frame hugs a turned shape instead of growing into an upright box around it —
+  with eight square grips that resize, a ring just outside each corner that
+  rotates, and the frame's width and height written along the edges they
+  measure. Shift holds the ratio, Option grows from the centre, and the snap
+  increment rounds the resulting dimension rather than the pointer. Chrome is
+  sized in screen pixels (`mmPerPixel` from `useViewBox`), so a grip is the
+  same target at any zoom. Every object answers a grip in its own terms
+  (`resize.ts`): a rectangle changes `widthMm`, a circle its one radius, a
+  pegboard snaps to its slot grid, and anything with no dimensions of its own —
+  an imported outline, a group — scales its transform instead. The held edge
+  stays put, which is what moves the object's position.
 - **Solids render flat, with their edges drawn.** Each facet is one tone and
   feature edges are outlined, which is how CAD reads and how a fabricable part
   should look — not a product render. Concretely: `flatShading`, no
