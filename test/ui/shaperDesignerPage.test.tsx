@@ -170,3 +170,51 @@ test('the open parameter is consumed once, so a refresh does not undo later work
       'the document must not be re-fetched after the parameter is consumed',
     )
   })
+
+test('a selected shape is framed with grips and its dimensions', async () => {
+  const user = userEvent.setup()
+  const { container } = renderPage()
+  await waitFor(() => expect(screen.getByRole('button', { name: /Rectangle/ })).toBeTruthy())
+
+  assert.equal(container.querySelectorAll('[aria-label="Resize"]').length, 0)
+
+  // Adding a shape selects it, which is what puts the frame on the canvas.
+  await user.click(screen.getByRole('button', { name: /Rectangle/ }))
+
+  await waitFor(() =>
+    assert.equal(container.querySelectorAll('[aria-label="Resize"]').length, 8))
+  // Rotation moved from the corner handles to a ring just outside them, so
+  // both gestures live on the same four corners.
+  assert.equal(container.querySelectorAll('[aria-label="Rotate"]').length, 4)
+
+  // The palette's rectangle is 40 by 25, written along the edges it measures.
+  const canvas = screen.getByRole('application')
+  assert.match(canvas.textContent ?? '', /40 mm/)
+  assert.match(canvas.textContent ?? '', /25 mm/)
+})
+
+test('the canvas dimensions follow the unit toggle', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(screen.getByRole('button', { name: /Square/ })).toBeTruthy())
+  await user.click(screen.getByRole('button', { name: /Square/ }))
+
+  const canvas = screen.getByRole('application')
+  await waitFor(() => assert.match(canvas.textContent ?? '', /30 mm/))
+
+  await user.click(screen.getByRole('button', { name: 'Inches' }))
+  await waitFor(() => assert.match(canvas.textContent ?? '', /1-3\/16"/))
+})
+
+test('a locked shape offers no frame to drag', async () => {
+  const user = userEvent.setup()
+  const { container } = renderPage()
+  await waitFor(() => expect(screen.getByRole('button', { name: /Circle/ })).toBeTruthy())
+  await user.click(screen.getByRole('button', { name: /Circle/ }))
+  await waitFor(() =>
+    assert.equal(container.querySelectorAll('[aria-label="Resize"]').length, 8))
+
+  await user.click(screen.getByRole('button', { name: /^Lock/ }))
+  await waitFor(() =>
+    assert.equal(container.querySelectorAll('[aria-label="Resize"]').length, 0))
+})

@@ -2,17 +2,25 @@
 //
 // Interaction model is the one the keycap canvas established and this app's
 // users already know: drag to move, drag the background to pan, shift-drag to
-// zoom to a region, wheel to zoom at the cursor, corner handles to rotate,
-// drop a palette item to add it. See src/components/canvas2d/useViewBox.ts for
-// the viewport half, which both canvases share.
+// zoom to a region, wheel to zoom at the cursor, drop a palette item to add it.
+// A single selection is framed the way Shaper Studio frames one -- eight grips
+// that resize, a ring just outside each corner that rotates, and the frame's
+// width and height written along its edges. See useViewBox.ts for the viewport
+// half and resize.ts for what a grip drag means to each kind of object.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Box, IconButton, Stack, Tooltip, useTheme } from '@mui/material'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded'
 import CenterFocusStrongRoundedIcon from '@mui/icons-material/CenterFocusStrongRounded'
-import type { MultiPolygon, Ring } from '../../geometry/vec.ts'
-import { multiBBox, ringBBox } from '../../geometry/vec.ts'
+import type { MultiPolygon, Ring, Vec2 } from '../../geometry/vec.ts'
+import { multiBBox } from '../../geometry/vec.ts'
 import type { CutType, SceneObject } from '../../model/document.ts'
+import { formatImperial } from '../../units.ts'
+import type { Handle, LocalFrame, ResizeEdit } from './resize.ts'
+import {
+  HANDLES, HANDLE_SEATS, frameHeight, frameWidth, framePoint, handleCursor,
+  idleEdit, localFrame, previewTransform, resizeEdit, resizerFor, worldToLocal,
+} from './resize.ts'
 import type { Inset, MarqueeBox } from './useViewBox.ts'
 import { NO_INSET, useViewBox } from './useViewBox.ts'
 
@@ -40,10 +48,16 @@ export interface Canvas2DProps {
   inset?: Inset
   /** Bumping this re-runs fit-to-content. */
   fitToken: number
+  /** Dimension readouts follow the designer's unit toggle. */
+  imperial?: boolean
   onSelect: (id: string, additive: boolean) => void
   onClearSelection: () => void
   onMove: (ids: string[], dx: number, dy: number) => void
   onRotate: (id: string, deg: number) => void
+  /** Applies a finished handle drag. The canvas hands over the whole patch --
+   *  new dimensions and the position that keeps the held edge still -- so the
+   *  page stays out of the geometry. Without it the grips are inert. */
+  onResize?: (id: string, patch: Partial<SceneObject>) => void
   onDropPaletteItem?: (payload: unknown, x: number, y: number) => void
   emptyHint?: string
 }
@@ -69,6 +83,16 @@ interface RotateState {
   angle: number
 }
 
+interface ResizeState {
+  pointerId: number
+  /** Captured at pointer-down: the tree does not change during a gesture, and
+   *  every frame of the drag has to be measured from the same starting size. */
+  object: SceneObject
+  handle: Handle
+  frame: LocalFrame
+  edit: ResizeEdit
+}
+
 const ringToPath = (ring: Ring): string =>
   ring.length
     ? `${ring.map(([x, y], i) => `${i === 0 ? 'M' : 'L'} ${x} ${y}`).join(' ')} Z`
@@ -86,18 +110,21 @@ const zRotation = (o: SceneObject): number => o.transform.rotationDeg[2]
 export default function Canvas2D(props: Canvas2DProps) {
   const {
     shapes, objects, selection, gridMm, snapMm, stockMm, inset = NO_INSET, fitToken,
-    onSelect, onClearSelection, onMove, onRotate, onDropPaletteItem, emptyHint,
+    imperial = false,
+    onSelect, onClearSelection, onMove, onRotate, onResize, onDropPaletteItem, emptyHint,
   } = props
 
   const theme = useTheme()
   const dark = theme.palette.mode === 'dark'
   const svgRef = useRef<SVGSVGElement | null>(null)
 
-  const { view, toModel, zoomBy, zoomAt, fit, panBy, commitMarquee, guideToleranceMm } =
-    useViewBox(svgRef, { x: -20, y: -20, w: 300, h: 220 }, inset)
+  const {
+    view, toModel, zoomBy, zoomAt, fit, panBy, commitMarquee, guideToleranceMm, mmPerPixel,
+  } = useViewBox(svgRef, { x: -20, y: -20, w: 300, h: 220 }, inset)
 
   const [drag, setDrag] = useState<DragState | null>(null)
   const [rotateDrag, setRotateDrag] = useState<RotateState | null>(null)
+  const [resizeDrag, setResizeDrag] = useState<ResizeState | null>(null)
   const [marquee, setMarquee] = useState<MarqueeBox | null>(null)
   const [grabbing, setGrabbing] = useState(false)
   const bgPointer = useRef<{
@@ -132,6 +159,24 @@ export default function Canvas2D(props: Canvas2DProps) {
 
   const snap = useCallback(
     (v: number) => (snapMm > 0 ? Math.round(v / snapMm) * snapMm : v), [snapMm])
+
+  // Framing, grips and dimensions are for exactly one selection: with several
+  // there is no single box whose width a number could describe.
+  const selectedShape = selection.size === 1
+    ? shapes.find(s => selection.has(s.id))
+    : undefined
+  const selectedObject = selectedShape
+    ? objects.find(o => o.id === selectedShape.id)
+    : undefined
+
+  /** The selection's own box, hugging it however it is turned. */
+  const frame = useMemo(() => (
+    selectedObject && selectedShape && !selectedShape.locked
+      ? localFrame(selectedObject, selectedShape.polygons)
+      : null
+  ), [selectedObject, selectedShape])
+
+  const canResize = Boolean(onResize && selectedObject && resizerFor(selectedObject))
 
   // preventDefault must come from a non-passive native listener; calling it in
   // the React handler logs a passive-listener violation on every scroll.
@@ -182,6 +227,7 @@ export default function Canvas2D(props: Canvas2DProps) {
   }, [selection, onSelect])
 
   const beginRotate = useCallback((e: React.PointerEvent, shape: CanvasShape) => {
+    if (shape.locked) return
     e.stopPropagation()
     const object = objects.find(o => o.id === shape.id)
     const b = multiBBox(shape.polygons)
@@ -195,6 +241,15 @@ export default function Canvas2D(props: Canvas2DProps) {
     })
     try { (e.target as Element).setPointerCapture(e.pointerId) } catch { /* gone */ }
   }, [objects, toModel])
+
+  const beginResize = useCallback((e: React.PointerEvent, handle: Handle) => {
+    if (!frame || !selectedObject || !canResize) return
+    e.stopPropagation()
+    setResizeDrag({
+      pointerId: e.pointerId, object: selectedObject, handle, frame, edit: idleEdit(frame),
+    })
+    try { (e.target as Element).setPointerCapture(e.pointerId) } catch { /* gone */ }
+  }, [frame, selectedObject, canResize])
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     const bg = bgPointer.current
@@ -215,6 +270,17 @@ export default function Canvas2D(props: Canvas2DProps) {
         bg.startClientY = e.clientY
         panBy(dx, dy)
       }
+      return
+    }
+
+    if (resizeDrag && e.pointerId === resizeDrag.pointerId) {
+      const m = toModel(e.clientX, e.clientY)
+      const local = worldToLocal(resizeDrag.frame, m.x, m.y)
+      const edit = resizeEdit(resizeDrag.object, resizeDrag.frame, resizeDrag.handle, local, {
+        // Option grows both ways from the centre; Shift holds the ratio.
+        fromCentre: e.altKey, keepAspect: e.shiftKey, snap,
+      })
+      if (edit) setResizeDrag({ ...resizeDrag, edit })
       return
     }
 
@@ -256,7 +322,8 @@ export default function Canvas2D(props: Canvas2DProps) {
       }
     }
     setDrag({ ...drag, dx, dy, guideX, guideY })
-  }, [drag, rotateDrag, toModel, view.w, view.h, snap, centres, guideToleranceMm, panBy])
+  }, [drag, rotateDrag, resizeDrag, toModel, view.w, view.h, snap, centres,
+      guideToleranceMm, panBy])
 
   // The document is mutated once, on release, so one gesture is one undo step.
   const endDrag = useCallback(() => {
@@ -270,6 +337,15 @@ export default function Canvas2D(props: Canvas2DProps) {
     if (rotateDrag.angle !== rotateDrag.baseRotation) onRotate(rotateDrag.id, rotateDrag.angle)
     setRotateDrag(null)
   }, [rotateDrag, onRotate])
+
+  const endResize = useCallback(() => {
+    if (!resizeDrag) return
+    const [fx, fy] = resizeDrag.edit.factors
+    if (onResize && (fx !== 1 || fy !== 1)) {
+      onResize(resizeDrag.object.id, resizeDrag.edit.patch)
+    }
+    setResizeDrag(null)
+  }, [resizeDrag, onResize])
 
   const onCanvasPointerUp = useCallback((e: React.PointerEvent) => {
     const bg = bgPointer.current
@@ -285,9 +361,11 @@ export default function Canvas2D(props: Canvas2DProps) {
       }
       return
     }
+    if (resizeDrag && e.pointerId === resizeDrag.pointerId) { endResize(); return }
     if (rotateDrag && e.pointerId === rotateDrag.pointerId) { endRotate(); return }
     endDrag()
-  }, [marquee, commitMarquee, onClearSelection, rotateDrag, endRotate, endDrag])
+  }, [marquee, commitMarquee, onClearSelection, rotateDrag, endRotate,
+      resizeDrag, endResize, endDrag])
 
   const onCanvasPointerCancel = useCallback(() => {
     bgPointer.current = null
@@ -295,6 +373,7 @@ export default function Canvas2D(props: Canvas2DProps) {
     setMarquee(null)
     setDrag(null)
     setRotateDrag(null)
+    setResizeDrag(null)
   }, [])
 
   const onDrop = useCallback((e: React.DragEvent) => {
@@ -308,9 +387,16 @@ export default function Canvas2D(props: Canvas2DProps) {
     } catch { /* a drag from somewhere else in the browser */ }
   }, [onDropPaletteItem, toModel, snap])
 
-  const stroke = view.w / 400
-  const handleR = view.w / 130
-  const hitR = view.w / 45
+  // Chrome is sized in screen pixels and converted, so a handle is the same
+  // target whether the view spans 20 mm or two metres.
+  const px = useCallback((pixels: number) => pixels * mmPerPixel, [mmPerPixel])
+  const stroke = px(1.5)
+  const gripHalf = px(4.5)
+  /** The rotate ring is the annulus outside a corner grip: the grip sits on top
+   *  of it, so the inner part resizes and anything past its edge turns. */
+  const rotateR = px(17)
+  const labelPx = px(11)
+  const labelGap = px(15)
 
   const colours = {
     grid: dark ? theme.palette.divider : theme.palette.divider,
@@ -319,6 +405,7 @@ export default function Canvas2D(props: Canvas2DProps) {
     hole: dark ? '#2a2d33' : '#8d8578',
     selected: theme.palette.primary.main,
     guide: theme.palette.warning.main,
+    label: theme.palette.background.paper,
   }
 
   const gridLines = useMemo(() => {
@@ -338,9 +425,42 @@ export default function Canvas2D(props: Canvas2DProps) {
     return lines
   }, [gridMm, view])
 
-  const selectedShape = selection.size === 1
-    ? shapes.find(s => selection.has(s.id))
-    : undefined
+  /**
+   * The frame as it stands right now, gesture included. Every gesture previews
+   * itself with a transform rather than writing the document, so the frame has
+   * to follow the same arithmetic to stay wrapped around the shape.
+   */
+  const liveFrame = useMemo<LocalFrame | null>(() => {
+    if (!frame || !selectedShape) return null
+    if (resizeDrag?.object.id === selectedShape.id) return resizeDrag.edit.frame
+    if (rotateDrag?.id === selectedShape.id) {
+      const delta = rotateDrag.angle - rotateDrag.baseRotation
+      const rad = (delta * Math.PI) / 180
+      const cos = Math.cos(rad), sin = Math.sin(rad)
+      const dx = frame.position[0] - rotateDrag.cx
+      const dy = frame.position[1] - rotateDrag.cy
+      return {
+        box: frame.box,
+        rotationDeg: frame.rotationDeg + delta,
+        position: [
+          rotateDrag.cx + dx * cos - dy * sin,
+          rotateDrag.cy + dx * sin + dy * cos,
+        ],
+      }
+    }
+    if (drag?.ids.includes(selectedShape.id)) {
+      return {
+        ...frame,
+        position: [frame.position[0] + drag.dx, frame.position[1] + drag.dy],
+      }
+    }
+    return frame
+  }, [frame, selectedShape, resizeDrag, rotateDrag, drag])
+
+  // A readout, not a field: two decimals is as fine as anyone reads off a
+  // canvas, and the inspector is where the exact number lives.
+  const lengthLabel = useCallback(
+    (mm: number) => (imperial ? formatImperial(mm) : `${+mm.toFixed(2)} mm`), [imperial])
 
   return (
     <Box sx={{ position: 'absolute', inset: 0, minHeight: 0 }}>
@@ -349,9 +469,10 @@ export default function Canvas2D(props: Canvas2DProps) {
         ref={svgRef}
         role="application"
         aria-label={
-          'Design canvas. Drag a shape to move it; drag a corner handle to rotate it; '
-          + 'drag the background to pan; hold Shift and drag to zoom to a region; '
-          + 'scroll to zoom.'
+          'Design canvas. Drag a shape to move it; drag a handle on its frame to resize it, '
+          + 'holding Shift to keep its proportions or Option to grow from the centre; '
+          + 'drag just outside a corner to rotate it; drag the background to pan; '
+          + 'hold Shift and drag to zoom to a region; scroll to zoom.'
         }
         viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
         onWheel={onWheel}
@@ -398,12 +519,15 @@ export default function Canvas2D(props: Canvas2DProps) {
             const selected = selection.has(shape.id)
             const moving = selected && drag ? { x: drag.dx, y: drag.dy } : null
             const turning = rotateDrag?.id === shape.id ? rotateDrag : null
+            const stretching = resizeDrag?.object.id === shape.id ? resizeDrag : null
             const b = multiBBox(shape.polygons)
             const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2
-            const transform = [
-              moving ? `translate(${moving.x},${moving.y})` : '',
-              turning ? `rotate(${turning.angle - turning.baseRotation} ${cx} ${cy})` : '',
-            ].filter(Boolean).join(' ')
+            const transform = stretching
+              ? previewTransform(stretching.frame, stretching.edit)
+              : [
+                moving ? `translate(${moving.x},${moving.y})` : '',
+                turning ? `rotate(${turning.angle - turning.baseRotation} ${cx} ${cy})` : '',
+              ].filter(Boolean).join(' ')
 
             return (
               <g key={shape.id} transform={transform || undefined}>
@@ -412,8 +536,10 @@ export default function Canvas2D(props: Canvas2DProps) {
                   fill={shape.mode === 'hole' ? colours.hole : colours.solid}
                   fillOpacity={shape.mode === 'hole' ? 0.85 : 1}
                   fillRule="evenodd"
-                  stroke={selected ? colours.selected : 'none'}
-                  strokeWidth={selected ? stroke * 2 : 0}
+                  // A stretched outline would carry a stretched outline stroke
+                  // with it; mid-resize the frame is what shows the selection.
+                  stroke={selected && !stretching ? colours.selected : 'none'}
+                  strokeWidth={selected && !stretching ? stroke * 1.5 : 0}
                   style={{ cursor: shape.locked ? 'not-allowed' : 'move' }}
                   onPointerDown={e => beginDrag(e, shape)}
                 />
@@ -421,27 +547,63 @@ export default function Canvas2D(props: Canvas2DProps) {
             )
           })}
 
-          {/* Rotate handles, only with exactly one selection -- with several,
-              there is no single centre a turn would obviously be about. */}
-          {selectedShape && !drag && (() => {
-            const b = ringBBox(selectedShape.polygons.flat()[0] ?? [])
-            if (!Number.isFinite(b.minX)) return null
-            const corners: [number, number][] = [
-              [b.minX, b.minY], [b.maxX, b.minY], [b.maxX, b.maxY], [b.minX, b.maxY],
+          {/* The selection frame, its grips and its dimensions -- only with
+              exactly one selection, since with several there is no single box
+              whose width a number could describe. */}
+          {liveFrame && selectedShape && (() => {
+            const rz = liveFrame.rotationDeg
+            const corner: Vec2[] = [
+              framePoint(liveFrame, 0, 0), framePoint(liveFrame, 1, 0),
+              framePoint(liveFrame, 1, 1), framePoint(liveFrame, 0, 1),
             ]
-            return corners.map(([hx, hy], i) => (
-              <g key={i}>
-                <circle
-                  cx={hx} cy={hy} r={handleR}
-                  fill="none" stroke={colours.selected} strokeWidth={stroke * 1.5}
+            return (
+              <g>
+                <polygon
+                  points={corner.map(([x, y]) => `${x},${y}`).join(' ')}
+                  fill="none" stroke={colours.selected} strokeWidth={stroke}
+                  opacity={0.9} pointerEvents="none"
                 />
-                <circle
-                  cx={hx} cy={hy} r={hitR} fill="transparent"
-                  style={{ cursor: 'grab' }}
-                  onPointerDown={e => beginRotate(e, selectedShape)}
-                />
+
+                {/* Under the grips, so the grip resizes and the ring outside it
+                    turns -- the way Studio splits a corner. */}
+                {!resizeDrag && corner.map(([hx, hy], i) => (
+                  <circle
+                    key={`turn${i}`} cx={hx} cy={hy} r={rotateR} fill="transparent"
+                    aria-label="Rotate" style={{ cursor: 'grab' }}
+                    onPointerDown={e => beginRotate(e, selectedShape)}
+                  />
+                ))}
+
+                {canResize && HANDLES.map(handle => {
+                  const [sx, sy] = HANDLE_SEATS[handle]
+                  const [hx, hy] = framePoint(liveFrame, sx, sy)
+                  return (
+                    <rect
+                      key={handle}
+                      x={hx - gripHalf} y={hy - gripHalf}
+                      width={gripHalf * 2} height={gripHalf * 2} rx={gripHalf * 0.4}
+                      transform={rz ? `rotate(${rz} ${hx} ${hy})` : undefined}
+                      fill={colours.label} stroke={colours.selected} strokeWidth={stroke}
+                      aria-label="Resize" style={{ cursor: handleCursor(handle, rz) }}
+                      onPointerDown={e => beginResize(e, handle)}
+                    />
+                  )
+                })}
+
+                {dimensionMarks({
+                  frame: liveFrame, gap: labelGap, stroke, fontSize: labelPx,
+                  colour: colours.selected, halo: colours.label, label: lengthLabel,
+                })}
+
+                {rotateDrag?.id === selectedShape.id && (
+                  <SvgLabel
+                    at={framePoint(liveFrame, 0.5, 0.5)} angleDeg={0} fontSize={labelPx}
+                    colour={colours.selected} halo={colours.label}
+                    text={`${Math.round(rotateDrag.angle)}°`}
+                  />
+                )}
               </g>
-            ))
+            )
           })()}
         </g>
       </Box>
@@ -494,4 +656,94 @@ export default function Canvas2D(props: Canvas2DProps) {
       </Stack>
     </Box>
   )
+}
+
+/**
+ * Text on the canvas, in model space but the right way up and one size on
+ * screen. The render group is y-flipped so the model can be y-up, which would
+ * otherwise draw every glyph mirrored; the inner flip undoes that, and reverses
+ * the sense of the rotation with it. The halo is a stroke *behind* the fill, so
+ * a number stays readable over geometry and breaks its own dimension line the
+ * way a drawing's does.
+ */
+function SvgLabel(props: {
+  at: Vec2
+  angleDeg: number
+  fontSize: number
+  colour: string
+  halo: string
+  text: string
+}) {
+  const { at: [x, y], angleDeg, fontSize, colour, halo, text } = props
+  return (
+    <g transform={`translate(${x} ${y}) scale(1 -1) rotate(${-angleDeg})`} pointerEvents="none">
+      <text
+        textAnchor="middle" dominantBaseline="middle"
+        fontSize={fontSize} fontWeight={600} fill={colour}
+        stroke={halo} strokeWidth={fontSize * 0.35} strokeLinejoin="round"
+        paintOrder="stroke"
+      >
+        {text}
+      </text>
+    </g>
+  )
+}
+
+/**
+ * Width below the frame and height beside it, each on its own dimension line
+ * offset outside the edge it measures. Both run along their edge and flip when
+ * the shape is turned far enough that they would otherwise read upside down.
+ */
+function dimensionMarks(props: {
+  frame: LocalFrame
+  gap: number
+  stroke: number
+  fontSize: number
+  colour: string
+  halo: string
+  label: (mm: number) => string
+}) {
+  const { frame, gap, stroke, fontSize, colour, halo, label } = props
+  const rad = (frame.rotationDeg * Math.PI) / 180
+  const cos = Math.cos(rad), sin = Math.sin(rad)
+  // The frame's own axes, in document space.
+  const along: Vec2 = [cos, sin]
+  const up: Vec2 = [-sin, cos]
+
+  const readable = (deg: number): number => {
+    const turn = ((deg % 360) + 360) % 360
+    return turn > 90 && turn < 270 ? deg + 180 : deg
+  }
+  const offset = (p: Vec2, by: Vec2, d: number): Vec2 => [p[0] + by[0] * d, p[1] + by[1] * d]
+  const mid = (a: Vec2, b: Vec2): Vec2 => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
+
+  const edges = [
+    {
+      key: 'width',
+      from: offset(framePoint(frame, 0, 0), up, -gap),
+      to: offset(framePoint(frame, 1, 0), up, -gap),
+      angle: frame.rotationDeg,
+      mm: frameWidth(frame),
+    },
+    {
+      key: 'height',
+      from: offset(framePoint(frame, 1, 0), along, gap),
+      to: offset(framePoint(frame, 1, 1), along, gap),
+      angle: frame.rotationDeg + 90,
+      mm: frameHeight(frame),
+    },
+  ]
+
+  return edges.map(edge => (
+    <g key={edge.key}>
+      <line
+        x1={edge.from[0]} y1={edge.from[1]} x2={edge.to[0]} y2={edge.to[1]}
+        stroke={colour} strokeWidth={stroke * 0.75} opacity={0.55} pointerEvents="none"
+      />
+      <SvgLabel
+        at={mid(edge.from, edge.to)} angleDeg={readable(edge.angle)}
+        fontSize={fontSize} colour={colour} halo={halo} text={label(edge.mm)}
+      />
+    </g>
+  ))
 }

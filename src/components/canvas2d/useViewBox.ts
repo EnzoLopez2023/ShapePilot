@@ -4,7 +4,7 @@
 // where these behaviours were worked out and proven. The keycap canvas and the
 // Shaper canvas both drive this hook, so pan, cursor-anchored zoom, shift-drag
 // zoom-to-region and fit-to-content stay identical between them.
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import type { BBox } from '../../geometry/vec.ts'
 
@@ -40,7 +40,15 @@ export interface ViewBoxApi {
   commitMarquee: (box: MarqueeBox) => void
   /** Model millimetres corresponding to GUIDE_PIXELS on screen right now. */
   guideToleranceMm: () => number
+  /** Millimetres per screen pixel at the current zoom. Anything that should
+   *  stay one size on screen -- a handle, a hairline, a dimension label --
+   *  multiplies its pixel size by this. */
+  mmPerPixel: number
 }
+
+/** Until the element has been measured. Wrong only for one frame, and only in
+ *  the size of a handle. */
+const ASSUMED_PIXEL_WIDTH = 800
 
 const clampWidth = (w: number): number => Math.min(MAX_VIEW_MM, Math.max(MIN_VIEW_MM, w))
 
@@ -55,6 +63,21 @@ export function useViewBox(
   viewRef.current = view
 
   const rect = useCallback(() => elementRef.current?.getBoundingClientRect() ?? null, [elementRef])
+
+  // The viewBox says how many millimetres are on screen; only the element says
+  // how many pixels they are spread over, and it changes when a panel opens or
+  // the window resizes, not when the view does.
+  const [pixelWidth, setPixelWidth] = useState(0)
+  useEffect(() => {
+    const el = elementRef.current
+    if (!el) return
+    const measure = () => setPixelWidth(el.getBoundingClientRect().width)
+    measure()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [elementRef])
 
   const toModel = useCallback((clientX: number, clientY: number) => {
     const r = rect()
@@ -104,7 +127,9 @@ export function useViewBox(
 
     const usableW = Math.max(80, r.width - inset.left - inset.right)
     const usableH = Math.max(80, r.height - inset.top - inset.bottom)
-    const margin = 1.06
+    // Enough slack for the chrome that hangs outside the content: a selection's
+    // dimension marks sit a little way beyond the edge they measure.
+    const margin = 1.14
     const scale = Math.min(
       usableW / ((bbox.maxX - bbox.minX) * margin),
       usableH / ((bbox.maxY - bbox.minY) * margin),
@@ -148,7 +173,10 @@ export function useViewBox(
     return (GUIDE_PIXELS / r.width) * viewRef.current.w
   }, [rect])
 
-  return { view, toModel, zoomBy, zoomAt, fit, panBy, setView, commitMarquee, guideToleranceMm }
+  return {
+    view, toModel, zoomBy, zoomAt, fit, panBy, setView, commitMarquee, guideToleranceMm,
+    mmPerPixel: view.w / (pixelWidth || ASSUMED_PIXEL_WIDTH),
+  }
 }
 
 /** Stroke widths and handle radii are expressed against the view width so they
