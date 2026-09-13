@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
-import { formatImperial, formatLength, parseLength } from './units.ts'
+import { formatImperial, formatLength, formatMeasure, formatSize, parseLength } from './units.ts'
 
 test('formatImperial reduces to the simplest fraction at 1/32 resolution', () => {
   assert.equal(formatImperial(9.525), '3/8"')
@@ -42,4 +42,13 @@ test('formatLength and parseLength round-trip through both unit modes', () => {
         `${mm}mm imperial=${imperial}: round-trip got ${roundTripped}`)
     }
   }
+})
+
+test('a measured length is a readout, not a field: two decimals, unit once', () => {
+  assert.equal(formatMeasure(31.17691, false), '31.18 mm')
+  assert.equal(formatMeasure(40, false), '40 mm')
+  assert.equal(formatSize([40, 25], false), '40 × 25 mm')
+  assert.equal(formatSize([47.4499, 20, 20], false), '47.45 × 20 × 20 mm')
+  // Inches carry their own mark, so each figure keeps it.
+  assert.equal(formatSize([25.4, 12.7], true), '1" × 1/2"')
 })

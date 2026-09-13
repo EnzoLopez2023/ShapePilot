@@ -6,6 +6,7 @@ import type {
   CutType, ObjectMode, PathObject, SceneObject, Shape2DObject, SolidObject, TextObject, Triple,
 } from '../../model/document.ts'
 import LengthField from '../LengthField.tsx'
+import { formatSize } from '../../units.ts'
 import {
   SKADIS, SKADIS_DEFAULT_HEIGHT_MM, SKADIS_DEFAULT_WIDTH_MM,
   skadisSlotCentres, snapSkadisHeightMm, snapSkadisWidthMm,
@@ -22,6 +23,12 @@ export interface InspectorProps {
   showCut?: boolean
   /** 2D designers have no z axis to edit. */
   showZ?: boolean
+  /**
+   * The selection's measured extent, when the caller has evaluated it. An
+   * imported mesh and a group have no dimensions of their own to edit, so
+   * without this the panel can say nothing at all about how big they are.
+   */
+  measuredMm?: Triple | null
   onPatch: (patch: Partial<SceneObject>) => void
 }
 
@@ -34,7 +41,10 @@ const CUT_TYPES: { value: CutType; label: string; hint: string }[] = [
 ]
 
 export default function Inspector(props: InspectorProps) {
-  const { object, selectionCount, imperial, showCut = false, showZ = true, onPatch } = props
+  const {
+    object, selectionCount, imperial, showCut = false, showZ = true,
+    measuredMm = null, onPatch,
+  } = props
 
   if (selectionCount === 0) {
     return (
@@ -114,6 +124,12 @@ export default function Inspector(props: InspectorProps) {
       />
 
       {objectDimensions(object, imperial, showZ, setParam, onPatch)}
+      {measuredMm && (!ownDimensions(object, showZ) || t.scale.some(v => v !== 1)) && (
+        <MeasuredSize
+          object={object} measuredMm={measuredMm} imperial={imperial}
+          heading={!ownDimensions(object, showZ)}
+        />
+      )}
 
       {showCut && (
         <>
@@ -262,9 +278,51 @@ function objectDimensions(
     case 'imported':
     case 'group':
       // A mesh arrives at its own size and a group is sized by its members;
-      // both are moved, rotated and scaled as a whole by the block above.
+      // both are moved, rotated and scaled as a whole by the block above, and
+      // `MeasuredSize` is what says how big that came out.
       return null
   }
+}
+
+/** Object types that state their own dimensions, so a Size block already
+ *  exists for the measured line to join. */
+const ownDimensions = (object: SceneObject, showThickness: boolean): boolean =>
+  object.type === 'shape2d' || object.type === 'solid' || object.type === 'text'
+  || (object.type === 'path' && showThickness)
+
+/**
+ * How big the object actually came out. Worth saying in two cases, both of
+ * them ones where the panel above cannot answer: a mesh or a group has no
+ * dimensions to state at all, and a scaled object's dimensions are the ones it
+ * had before the gizmo touched it.
+ */
+function MeasuredSize(
+  { object, measuredMm, imperial, heading }:
+  { object: SceneObject; measuredMm: Triple; imperial: boolean; heading: boolean },
+) {
+  const scale = object.transform.scale
+  const note = object.type === 'imported'
+    ? 'A mesh arrives at the size its file says. Scale it on the canvas.'
+    : object.type === 'group'
+      ? 'A group is sized by its members. Scale it on the canvas.'
+      : `Scaled ${scale.map(v => +v.toFixed(3)).join(' × ')}, so the dimensions `
+        + 'above are the ones before scaling.'
+  return (
+    <>
+      {heading && (
+        <>
+          <Divider />
+          <Typography variant="h3">Size</Typography>
+        </>
+      )}
+      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+        {formatSize(measuredMm, imperial)} measured
+      </Typography>
+      <Typography variant="caption" sx={{ color: 'text.secondary', mt: -1 }}>
+        {note}
+      </Typography>
+    </>
+  )
 }
 
 function sidesField(

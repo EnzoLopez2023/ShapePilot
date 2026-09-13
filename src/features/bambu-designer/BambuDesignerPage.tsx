@@ -141,6 +141,13 @@ export default function BambuDesignerPage() {
     ? findObject(objects, [...doc.selection][0]) ?? null
     : null
 
+  /** How big the selection actually came out. The panel can only ask a
+   *  parametric shape its dimensions; a mesh or a group has to be measured. */
+  const selectedSizeMm = useMemo<Triple | null>(() => {
+    const b = selectedObject ? bounds.get(selectedObject.id) : undefined
+    return b ? [b.max[0] - b.min[0], b.max[1] - b.min[1], b.max[2] - b.min[2]] : null
+  }, [bounds, selectedObject])
+
   const addSolid = useCallback((kind: SolidPaletteKind) => {
     const object: SceneObject = kind === 'text'
       ? { ...createText('Text'), fontId: DEFAULT_FONT_ID }
@@ -430,6 +437,7 @@ export default function BambuDesignerPage() {
             innerBuildMm={machine.dualNozzleBuildMm}
             gizmo={gizmo}
             snapMm={snapMm}
+            imperial={imperial}
             fitToken={fitToken}
             onSelect={(id, additive) => {
               if (id) doc.toggleSelection(id, additive)
@@ -468,6 +476,7 @@ export default function BambuDesignerPage() {
               object={selectedObject}
               selectionCount={doc.selection.size}
               imperial={imperial}
+              measuredMm={selectedSizeMm}
               onPatch={patch => selectedObject && doc.updateObject(selectedObject.id, patch)}
             />
 

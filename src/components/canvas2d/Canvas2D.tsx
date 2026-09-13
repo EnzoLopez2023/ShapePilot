@@ -15,7 +15,7 @@ import CenterFocusStrongRoundedIcon from '@mui/icons-material/CenterFocusStrongR
 import type { MultiPolygon, Ring, Vec2 } from '../../geometry/vec.ts'
 import { multiBBox } from '../../geometry/vec.ts'
 import type { CutType, SceneObject } from '../../model/document.ts'
-import { formatImperial } from '../../units.ts'
+import { formatMeasure } from '../../units.ts'
 import type { Handle, LocalFrame, ResizeEdit } from './resize.ts'
 import {
   HANDLES, HANDLE_SEATS, frameHeight, frameWidth, framePoint, handleCursor,
@@ -457,10 +457,7 @@ export default function Canvas2D(props: Canvas2DProps) {
     return frame
   }, [frame, selectedShape, resizeDrag, rotateDrag, drag])
 
-  // A readout, not a field: two decimals is as fine as anyone reads off a
-  // canvas, and the inspector is where the exact number lives.
-  const lengthLabel = useCallback(
-    (mm: number) => (imperial ? formatImperial(mm) : `${+mm.toFixed(2)} mm`), [imperial])
+  const lengthLabel = useCallback((mm: number) => formatMeasure(mm, imperial), [imperial])
 
   return (
     <Box sx={{ position: 'absolute', inset: 0, minHeight: 0 }}>
