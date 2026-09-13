@@ -80,8 +80,9 @@ function buildPrimitive(
     }
 
     case 'text':
-      // Glyph outlines need a font, which is async and browser-side. Text nodes
-      // are lowered to `extrude` by src/text/expandText.ts before evaluation.
+      // Glyph outlines need a font, which is async and browser-side. A text
+      // node becomes a text object in src/csg/toScene.ts, and src/csg/fromScene.ts
+      // lowers that to `extrude` once the outlines have resolved.
       throw new ShapeProgramError(
         `part.${node.id}`,
         'text nodes must be expanded to extrusions before evaluation',

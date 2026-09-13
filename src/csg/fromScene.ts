@@ -10,6 +10,7 @@ import type {
 import { SHAPE_PROGRAM_VERSION } from '../../lib/contracts/shapeProgram.ts'
 import type { Ring } from '../geometry/vec.ts'
 import { circleRing, ellipseRing, rectRing, regularPolygonRing, triangleRing } from '../geometry/primitives.ts'
+import { nestRings } from '../geometry/nest.ts'
 import type { TextOutlines } from '../geometry/sceneShapes.ts'
 
 export interface FromSceneOptions {
@@ -120,14 +121,23 @@ export function objectNode(o: SceneObject, opts: FromSceneOptions = {}): PartNod
     case 'text': {
       const rings = opts.textOutlines?.get(o.id)
       if (!rings?.length) return null
-      // Each glyph contour extrudes separately and the set unions: one
-      // extrusion with all contours would treat counters as solid, so the hole
-      // in an "o" would fill in.
-      const children: PartNode[] = rings.map((ring, i) => ({
+      // Contours arrive flat, so containment is what tells a counter from a
+      // glyph standing on its own -- the same nesting the 2D compile does.
+      // One extrusion per glyph, carrying its own counters as holes; the union
+      // is only ever across separate glyphs, which cannot overlap into each
+      // other's counters. Extruding every contour as its own solid instead
+      // hands manifold a clockwise counter ring, which is not a solid at all:
+      // any word containing an o, an a or an 8 failed to build.
+      const children: PartNode[] = nestRings(rings).map(([outer, ...holes], i) => ({
         id: `${o.id}:${i}`, name: `${o.name} ${i + 1}`, op: 'extrude' as const,
-        params: { profile: toProfile(ring), heightMm: o.thicknessMm ?? 5 },
+        params: {
+          profile: toProfile(outer),
+          ...(holes.length ? { holes: holes.map(toProfile) } : {}),
+          heightMm: o.thicknessMm ?? 5,
+        },
         transform: IDENTITY,
       }))
+      if (!children.length) return null
       return children.length === 1
         ? { ...children[0], id: o.id, name: o.name, transform }
         : { id: o.id, name: o.name, op: 'union', children, transform }

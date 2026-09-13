@@ -1,9 +1,15 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { test } from 'vitest'
-import { createShape2D, createSolid, groupObjects } from '../model/scene.ts'
+import { parse } from 'opentype.js'
+import { createShape2D, createSolid, createText, groupObjects } from '../model/scene.ts'
 import { validateShapeProgram } from '../../lib/contracts/shapeProgram.ts'
 import { checkManifold } from '../geometry/mesh.ts'
-import { evaluateProgram } from './evaluate.ts'
+import { compileObject } from '../geometry/sceneShapes.ts'
+import { textOutlines } from '../text/fonts.ts'
+import type { Vec2 } from '../geometry/vec.ts'
+import { multiArea, signedArea } from '../geometry/vec.ts'
+import { evaluateNode, evaluateProgram } from './evaluate.ts'
 import { objectNode, programFromScene } from './fromScene.ts'
 import { programToObjects } from './toScene.ts'
 
@@ -99,4 +105,69 @@ test('a rounded box survives the round trip as one editable solid', () => {
   assert.equal(back.type, 'solid')
   assert.ok(back.type === 'solid' && back.primitive === 'box')
   assert.ok(back.type === 'solid' && back.params.cornerRadiusMm === 2)
+})
+
+// -- Text counters -----------------------------------------------------------
+//
+// Glyph outlines arrive as a flat bag of contours. Extruding each as its own
+// solid hands manifold a clockwise counter ring, which is not a solid at all,
+// so a word with an "o" in it did not build -- it threw InvalidConstruction.
+
+const font = parse(readFileSync('public/fonts/archivo-medium.ttf').buffer as ArrayBuffer)
+
+/** One text object lowered and evaluated, with the areas to measure it by. */
+async function buildText(text: string, thicknessMm = 2) {
+  const object = { ...createText(text), sizeMm: 20, thicknessMm }
+  const rings = textOutlines(font, object).map(c => c.map(([x, y]) => [x, y] as const))
+  const node = objectNode(object, { textOutlines: new Map([[object.id, rings]]) })
+  assert.ok(node, `${text} produced no node`)
+  return {
+    node,
+    report: checkManifold(await evaluateNode(node)),
+    /** Counters subtracted -- the outlines are already wound for it. */
+    netMm3: rings.reduce((sum, r) => sum + signedArea(r as Vec2[]), 0) * thicknessMm,
+    /** Every contour as material, which is what a filled counter would give. */
+    filledMm3: rings.reduce((sum, r) => sum + Math.abs(signedArea(r as Vec2[])), 0) * thicknessMm,
+  }
+}
+
+test('a glyph with a counter builds, and builds hollow', async () => {
+  const { report, netMm3, filledMm3 } = await buildText('o')
+  assert.ok(report.ok, `"o" is not watertight: ${report.danglingEdges} dangling edges`)
+  assert.ok(Math.abs(report.volume - netMm3) < 0.01, `expected ${netMm3}, got ${report.volume}`)
+  // Worth stating outright: the filled figure is what the old shape would have
+  // been if extruding contours separately had merely filled instead of failing.
+  assert.ok(report.volume < filledMm3 * 0.9, 'the counter must be missing material')
+})
+
+test('every counter in a word is a hole, not just the first', async () => {
+  const { report, netMm3 } = await buildText('Hello 8')
+  assert.ok(report.ok, `"Hello 8" is not watertight: ${report.danglingEdges} dangling edges`)
+  assert.ok(Math.abs(report.volume - netMm3) < 0.05, `expected ${netMm3}, got ${report.volume}`)
+})
+
+test('a glyph without a counter is unchanged', async () => {
+  const { node, report, netMm3 } = await buildText('l')
+  // One contour, so no union wrapper: the object stays a single extrusion the
+  // inspector can still drive.
+  assert.equal(node.op, 'extrude')
+  assert.ok(Math.abs(report.volume - netMm3) < 0.01)
+})
+
+test('separate glyphs stay separate solids under one union', async () => {
+  const { node, report, netMm3 } = await buildText('ll')
+  assert.equal(node.op, 'union')
+  assert.ok('children' in node && node.children.length === 2, 'two stems, two extrusions')
+  assert.ok(Math.abs(report.volume - netMm3) < 0.01)
+})
+
+test('the 3D lowering agrees with the 2D compile on what is solid', async () => {
+  // The canvas and the mesher must not disagree about a counter; they read the
+  // same contours, and after this they nest them the same way.
+  const object = { ...createText('o'), sizeMm: 20, thicknessMm: 2 }
+  const rings = textOutlines(font, object).map(c => c.map(([x, y]) => [x, y] as const))
+  const opts = { textOutlines: new Map([[object.id, rings]]) }
+  const flat = multiArea(compileObject(object, opts))
+  const { report } = await buildText('o')
+  assert.ok(Math.abs(report.volume - flat * 2) < 0.01, `2D says ${flat * 2}, 3D says ${report.volume}`)
 })
