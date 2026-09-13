@@ -10,7 +10,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { ThemeModeProvider } from '../../src/theme/ThemeModeProvider.tsx'
 import Inspector from '../../src/components/designer/Inspector.tsx'
-import type { SceneObject } from '../../src/model/document.ts'
+import type { SceneObject, Triple } from '../../src/model/document.ts'
 import { IDENTITY_TRANSFORM } from '../../src/model/scene.ts'
 
 afterEach(() => cleanup())
@@ -34,7 +34,7 @@ const importedOutline: SceneObject = {
 const renderInspector = (
   object: SceneObject,
   onPatch: (patch: Partial<SceneObject>) => void,
-  props: { showZ?: boolean; showCut?: boolean } = {},
+  props: { showZ?: boolean; showCut?: boolean; measuredMm?: Triple } = {},
 ) => render(
   <ThemeModeProvider initialPreference="light">
     <Inspector
@@ -95,4 +95,36 @@ test('a mesh import still has nothing to size; it arrives at its own scale', () 
     asset: { hash: 'a'.repeat(64), filename: 'part.stl', byteLength: 10 },
   }, vi.fn())
   assert.equal(screen.queryByLabelText('Thickness'), null)
+})
+
+test('a mesh says how big it came out, since it has no dimensions to type', () => {
+  renderInspector({
+    ...base, id: 'm', name: 'part.stl', type: 'imported', format: 'stl',
+    asset: { hash: 'a'.repeat(64), filename: 'part.stl', byteLength: 10 },
+  }, vi.fn(), { measuredMm: [45.5, 30, 6] })
+
+  assert.ok(screen.getByText(/45\.5 × 30 × 6 mm measured/))
+  assert.ok(screen.getByText(/arrives at the size its file says/))
+})
+
+test('a scaled shape says its dimensions are the ones before scaling', () => {
+  renderInspector({
+    ...base, id: 'b', name: 'Box', type: 'solid', primitive: 'box',
+    params: { widthMm: 20, depthMm: 20, heightMm: 20 },
+    transform: { ...IDENTITY_TRANSFORM, scale: [2, 1, 1] },
+  }, vi.fn(), { measuredMm: [40, 20, 20] })
+
+  // The width field still reads 20, which on its own would be a lie.
+  assert.equal((screen.getByLabelText('Width') as HTMLInputElement).value, '20')
+  assert.ok(screen.getByText(/40 × 20 × 20 mm measured/))
+  assert.ok(screen.getByText(/before scaling/))
+})
+
+test('an unscaled shape states its size once, not twice', () => {
+  renderInspector({
+    ...base, id: 'b', name: 'Box', type: 'solid', primitive: 'box',
+    params: { widthMm: 20, depthMm: 20, heightMm: 20 },
+  }, vi.fn(), { measuredMm: [20, 20, 20] })
+
+  assert.equal(screen.queryByText(/measured/), null)
 })

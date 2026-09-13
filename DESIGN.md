@@ -248,6 +248,19 @@ Behaviours the three designers share, so moving between them teaches nothing new
   pegboard snaps to its slot grid, and anything with no dimensions of its own —
   an imported outline, a group — scales its transform instead. The held edge
   stays put, which is what moves the object's position.
+- **The 3D viewport measures the selection the same way.** `Viewport3D` draws a
+  box round the single selection and writes its extent under it, remeasured
+  every frame off the body's world matrix so it follows a gizmo drag rather
+  than the last committed edit. The readout is written straight to the DOM —
+  re-rendering the page at 60 Hz to move a label is not a trade worth making —
+  and is `aria-hidden`, because the inspector carries the same numbers without
+  churning. While a drag is in flight a second line names the axis actually
+  moving: the position under Move, the angle under Turn.
+- **A scaled object says so.** `Inspector` states a measured extent whenever
+  its fields cannot: a mesh and a group have no dimensions to type, and a
+  scaled object's fields are the dimensions it had *before* the gizmo touched
+  it. `formatMeasure` / `formatSize` in `src/units.ts` are the shared readout
+  formatters — two decimals, and the unit carried once.
 - **Solids render flat, with their edges drawn.** Each facet is one tone and
   feature edges are outlined, which is how CAD reads and how a fabricable part
   should look — not a product render. Concretely: `flatShading`, no

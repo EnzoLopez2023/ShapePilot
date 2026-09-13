@@ -58,3 +58,16 @@ export function parseLength(raw: string, imperial: boolean): number | null {
   const n = parseFloat(s)
   return Number.isFinite(n) ? inchesToMm(n) : null
 }
+
+/**
+ * A length as an on-canvas readout rather than a field. Two decimals is as fine
+ * as anyone reads off a drawing; the inspector is where the exact number lives.
+ */
+export const formatMeasure = (mm: number, imperial: boolean): string =>
+  imperial ? formatImperial(mm) : `${+mm.toFixed(2)} mm`
+
+/** An extent as `40 × 25 mm`, carrying the unit once where that reads better. */
+export const formatSize = (mm: readonly number[], imperial: boolean): string =>
+  imperial
+    ? mm.map(v => formatImperial(v)).join(' × ')
+    : `${mm.map(v => +v.toFixed(2)).join(' × ')} mm`

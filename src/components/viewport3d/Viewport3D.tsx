@@ -15,6 +15,7 @@ import {
   EDGE_OPACITY, addSolidLighting, buildEdges, disposeBody, edgeColourFor, solidMaterial,
 } from './solidRender.ts'
 import type { Triple } from '../../model/document.ts'
+import { formatMeasure, formatSize } from '../../units.ts'
 
 export type GizmoMode = 'translate' | 'rotate' | 'scale'
 
@@ -44,6 +45,8 @@ export interface Viewport3DProps {
   gizmo: GizmoMode
   /** Snap increment in mm; 0 disables gizmo snapping. */
   snapMm: number
+  /** The measured-size readout follows the designer's unit toggle. */
+  imperial?: boolean
   onSelect: (id: string | null, additive: boolean) => void
   /**
    * Fired once on gizmo release, so one drag is one undo step. The change is
@@ -69,6 +72,10 @@ interface SceneState {
    *  from here, since the gizmo reports an absolute position. */
   pivotOrigin: THREE.Vector3
   workplane: THREE.Group
+  /** The selected body's world bounds, remeasured every frame so the box and
+   *  the readout follow a gizmo drag rather than the last committed edit. */
+  liveBox: THREE.Box3
+  selectionBox: THREE.Box3Helper
   raf: number
 }
 
@@ -77,7 +84,7 @@ const ZERO = new THREE.Vector3()
 
 export default function Viewport3D(props: Viewport3DProps) {
   const {
-    parts, selection, buildMm, innerBuildMm, gizmo, snapMm,
+    parts, selection, buildMm, innerBuildMm, gizmo, snapMm, imperial = false,
     onSelect, onTransform, fitToken,
   } = props
 
@@ -85,6 +92,13 @@ export default function Viewport3D(props: Viewport3DProps) {
   const dark = theme.palette.mode === 'dark'
   const hostRef = useRef<HTMLDivElement | null>(null)
   const stateRef = useRef<SceneState | null>(null)
+  const readoutRef = useRef<HTMLDivElement | null>(null)
+  const sizeRef = useRef<HTMLSpanElement | null>(null)
+  const liveRef = useRef<HTMLSpanElement | null>(null)
+  // The render loop reads these every frame; it is set up once and must not be
+  // torn down to learn that the unit toggle or the gizmo mode changed.
+  const optionsRef = useRef({ imperial, gizmo })
+  optionsRef.current = { imperial, gizmo }
   // Handlers live on refs so the mount effect never has to re-run.
   const onSelectRef = useRef(onSelect)
   const onTransformRef = useRef(onTransform)
@@ -127,6 +141,17 @@ export default function Viewport3D(props: Viewport3DProps) {
     const workplane = new THREE.Group()
     scene.add(workplane)
 
+    // The box the readout is measuring. Drawn rather than implied: with a
+    // number on screen and nothing around the part, it is not obvious that the
+    // three figures are the part's own extent.
+    const liveBox = new THREE.Box3()
+    const selectionBox = new THREE.Box3Helper(liveBox, new THREE.Color(0x000000))
+    selectionBox.visible = false
+    const boxLines = selectionBox.material as THREE.LineBasicMaterial
+    boxLines.transparent = true
+    boxLines.opacity = 0.5
+    scene.add(selectionBox)
+
     const resize = () => {
       const { clientWidth: w, clientHeight: h } = host
       if (!w || !h) return
@@ -140,7 +165,8 @@ export default function Viewport3D(props: Viewport3DProps) {
 
     const state: SceneState = {
       renderer, scene, camera, controls, gizmo: gizmoControls,
-      bodies: new Map(), pivot, pivotOrigin: new THREE.Vector3(), workplane, raf: 0,
+      bodies: new Map(), pivot, pivotOrigin: new THREE.Vector3(), workplane,
+      liveBox, selectionBox, raf: 0,
     }
     stateRef.current = state
 
@@ -192,10 +218,80 @@ export default function Viewport3D(props: Viewport3DProps) {
     }
     gizmoControls.addEventListener('mouseUp', onGizmoUp)
 
+    // Measuring after the render, not before: the renderer is what brings world
+    // matrices up to date, so reading them first would report the part as it
+    // was one frame ago -- visible as a readout lagging the drag.
+    const boxSize = new THREE.Vector3()
+    const anchor = new THREE.Vector3()
+    let lastSize = '', lastLive = ''
+    const updateReadout = () => {
+      const chip = readoutRef.current
+      const sizeEl = sizeRef.current
+      const liveEl = liveRef.current
+      if (!chip || !sizeEl || !liveEl) return
+
+      const id = pivot.userData.id as string | undefined
+      const body = id ? state.bodies.get(id) : undefined
+      const bounds = body?.geometry.boundingBox
+      if (!body || !bounds) {
+        selectionBox.visible = false
+        chip.style.display = 'none'
+        return
+      }
+
+      liveBox.copy(bounds).applyMatrix4(body.matrixWorld)
+      selectionBox.visible = true
+
+      const { imperial: inches, gizmo: mode } = optionsRef.current
+      liveBox.getSize(boxSize)
+      const size = formatSize([boxSize.x, boxSize.y, boxSize.z], inches)
+      if (size !== lastSize) { sizeEl.textContent = size; lastSize = size }
+
+      // While a drag is in flight the panel is still showing the last committed
+      // numbers, so the axis being dragged is worth spelling out here.
+      let live = ''
+      if (gizmoControls.dragging && mode === 'translate') {
+        live = axisTriple(pivot.position, inches)
+      } else if (gizmoControls.dragging && mode === 'rotate') {
+        live = dominantAngle(pivot.rotation)
+      }
+      if (live !== lastLive) {
+        liveEl.textContent = live
+        liveEl.style.display = live ? 'block' : 'none'
+        lastLive = live
+      }
+
+      // Under the part on screen, which is not the same as under it in the
+      // model: the lowest corner of the box in world space still projects
+      // somewhere inside the silhouette from most angles. Project all eight and
+      // sit below the lowest of them.
+      const w = host.clientWidth, h = host.clientHeight
+      let left = Infinity, right = -Infinity, bottom = -Infinity, behind = false
+      for (let corner = 0; corner < 8; corner++) {
+        anchor.set(
+          corner & 1 ? liveBox.max.x : liveBox.min.x,
+          corner & 2 ? liveBox.max.y : liveBox.min.y,
+          corner & 4 ? liveBox.max.z : liveBox.min.z,
+        ).project(camera)
+        if (anchor.z > 1) { behind = true; break }
+        const sx = (anchor.x * 0.5 + 0.5) * w
+        const sy = (-anchor.y * 0.5 + 0.5) * h
+        if (sx < left) left = sx
+        if (sx > right) right = sx
+        if (sy > bottom) bottom = sy
+      }
+      if (behind) { chip.style.display = 'none'; return }
+      const x = Math.min(Math.max((left + right) / 2, 60), w - 60)
+      const y = Math.min(Math.max(bottom, 8), h - 52)
+      chip.style.display = 'block'
+      chip.style.transform = `translate(${x}px, ${y}px) translate(-50%, 10px)`
+    }
+
     const loop = () => {
       state.raf = requestAnimationFrame(loop)
       controls.update()
       renderer.render(scene, camera)
+      updateReadout()
     }
     loop()
 
@@ -210,6 +306,7 @@ export default function Viewport3D(props: Viewport3DProps) {
       controls.dispose()
       for (const body of state.bodies.values()) disposeBody(body)
       disposeGroup(workplane)
+      disposeGroup(selectionBox)
       renderer.dispose()
       host.removeChild(renderer.domElement)
       stateRef.current = null
@@ -243,6 +340,9 @@ export default function Viewport3D(props: Viewport3DProps) {
       const geom = new THREE.BufferGeometry()
       geom.setAttribute('position', new THREE.BufferAttribute(part.mesh.positions, 3))
       geom.setIndex(new THREE.BufferAttribute(part.mesh.indices, 1))
+      // Measured once here rather than per frame: the readout only has to
+      // re-apply the body's matrix, which is eight points instead of all of them.
+      geom.computeBoundingBox()
       // Deliberately no computeVertexNormals: the kernel returns welded,
       // indexed geometry, so averaging normals at shared vertices smooths
       // across every sharp edge and shades a flat face like a curved one.
@@ -271,6 +371,7 @@ export default function Viewport3D(props: Viewport3DProps) {
     const state = stateRef.current
     if (!state) return
     const accent = new THREE.Color(theme.palette.primary.main)
+    ;(state.selectionBox.material as THREE.LineBasicMaterial).color.set(accent)
 
     const edgeColour = edgeColourFor(dark)
 
@@ -421,6 +522,28 @@ export default function Viewport3D(props: Viewport3DProps) {
         }
         sx={{ position: 'absolute', inset: 0, minHeight: 0 }}
       />
+      {/* Measured off the bodies every frame, so it is written straight to the
+          DOM: re-rendering the page at 60 Hz to move a label is not a trade
+          worth making. Hidden from assistive tech -- the inspector carries the
+          same numbers without churning. */}
+      <Box
+        ref={readoutRef}
+        aria-hidden
+        sx={{
+          position: 'absolute', left: 0, top: 0, display: 'none', pointerEvents: 'none',
+          px: 0.75, py: 0.25, borderRadius: 1, border: 1, borderColor: 'divider',
+          bgcolor: 'background.paper', color: 'primary.main',
+          fontSize: '0.6875rem', fontWeight: 600, lineHeight: 1.5,
+          whiteSpace: 'nowrap', textAlign: 'center',
+        }}
+      >
+        <Box component="span" ref={sizeRef} sx={{ display: 'block' }} />
+        <Box
+          component="span" ref={liveRef}
+          sx={{ display: 'none', color: 'text.secondary', fontWeight: 500 }}
+        />
+      </Box>
+
       <Stack direction="row" spacing={0.5} sx={{ position: 'absolute', right: 8, bottom: 8 }}>
         <Tooltip title="Reset the view" describeChild>
           <IconButton size="small" aria-label="Reset the view" onClick={frame}>
@@ -456,4 +579,18 @@ function disposeGroup(group: THREE.Object3D): void {
     if (Array.isArray(material)) material.forEach(m => m.dispose())
     else material?.dispose()
   })
+}
+
+/** A position as one line of axis-labelled lengths. */
+function axisTriple(v: THREE.Vector3, imperial: boolean): string {
+  return `X ${formatMeasure(v.x, imperial)} · Y ${formatMeasure(v.y, imperial)} `
+    + `· Z ${formatMeasure(v.z, imperial)}`
+}
+
+/** The gizmo turns about one axis at a time, so naming the axis that actually
+ *  moved reads better than three numbers, two of which are zero. */
+function dominantAngle(euler: THREE.Euler): string {
+  const axes: [string, number][] = [['X', euler.x], ['Y', euler.y], ['Z', euler.z]]
+  const [name, radians] = axes.reduce((a, b) => (Math.abs(b[1]) > Math.abs(a[1]) ? b : a))
+  return `${name} ${Math.round(radians * DEG)}°`
 }
