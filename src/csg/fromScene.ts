@@ -11,6 +11,9 @@ import { SHAPE_PROGRAM_VERSION } from '../../lib/contracts/shapeProgram.ts'
 import type { Ring } from '../geometry/vec.ts'
 import { circleRing, ellipseRing, rectRing, regularPolygonRing, triangleRing } from '../geometry/primitives.ts'
 import { nestRings } from '../geometry/nest.ts'
+import {
+  SKADIS_DEFAULT_HEIGHT_MM, SKADIS_DEFAULT_WIDTH_MM, skadisRings,
+} from '../geometry/skadis.ts'
 import type { TextOutlines } from '../geometry/sceneShapes.ts'
 
 export interface FromSceneOptions {
@@ -27,24 +30,28 @@ const toProgramTransform = (t: Transform): ProgramTransform => ({
 const toProfile = (ring: Ring): Point2[] => ring.map(([x, y]) => [x, y] as Point2)
 
 /** 2D shapes become extrusions. Rings are generated centred so a rotation in
- *  the inspector turns the shape about itself, matching the 2D canvas. */
-function shape2dProfile(o: Shape2DObject): Ring {
+ *  the inspector turns the shape about itself, matching the 2D canvas.
+ *  `[profile, ...holes]`; only a pegboard brings holes. */
+function shape2dRings(o: Shape2DObject): Ring[] {
   const p = o.params
   switch (o.shape) {
-    case 'circle': return circleRing(p.radiusMm ?? 10)
-    case 'ellipse': return ellipseRing(p.radiusMm ?? 10, p.radiusYMm ?? p.radiusMm ?? 10)
+    case 'circle': return [circleRing(p.radiusMm ?? 10)]
+    case 'ellipse': return [ellipseRing(p.radiusMm ?? 10, p.radiusYMm ?? p.radiusMm ?? 10)]
     case 'rect':
     case 'square': {
       const w = p.widthMm ?? 10
       const h = o.shape === 'square' ? w : (p.heightMm ?? w)
-      return rectRing(w, h, p.cornerRadiusMm ?? 0).map(([x, y]) => [x - w / 2, y - h / 2] as const)
+      return [rectRing(w, h, p.cornerRadiusMm ?? 0).map(([x, y]) => [x - w / 2, y - h / 2] as const)]
     }
     case 'triangle': {
       const w = p.widthMm ?? 10
       const h = p.heightMm ?? w
-      return triangleRing(w, h).map(([x, y]) => [x - w / 2, y - h / 2] as const)
+      return [triangleRing(w, h).map(([x, y]) => [x - w / 2, y - h / 2] as const)]
     }
-    case 'polygon': return regularPolygonRing(p.sides ?? 6, p.radiusMm ?? 10)
+    case 'polygon': return [regularPolygonRing(p.sides ?? 6, p.radiusMm ?? 10)]
+    case 'skadis':
+      return skadisRings(p.widthMm ?? SKADIS_DEFAULT_WIDTH_MM,
+        p.heightMm ?? SKADIS_DEFAULT_HEIGHT_MM)
   }
 }
 
@@ -99,11 +106,17 @@ export function objectNode(o: SceneObject, opts: FromSceneOptions = {}): PartNod
     case 'solid':
       return { id: o.id, name: o.name, op: o.primitive, params: solidParams(o), transform }
 
-    case 'shape2d':
+    case 'shape2d': {
+      const [profile, ...holes] = shape2dRings(o)
       return {
         id: o.id, name: o.name, op: 'extrude', transform,
-        params: { profile: toProfile(shape2dProfile(o)), heightMm: o.thicknessMm ?? 5 },
+        params: {
+          profile: toProfile(profile),
+          ...(holes.length ? { holes: holes.map(toProfile) } : {}),
+          heightMm: o.thicknessMm ?? 5,
+        },
       }
+    }
 
     case 'path': {
       const [outer, ...holes] = o.rings

@@ -7,6 +7,9 @@ import type {
   TextObject, Transform, Triple,
 } from './document.ts'
 import { defaultMachineFor } from './machines.ts'
+import {
+  SKADIS_DEFAULT_HEIGHT_MM, SKADIS_DEFAULT_WIDTH_MM,
+} from '../geometry/skadis.ts'
 
 export const IDENTITY_TRANSFORM: Transform = {
   position: [0, 0, 0],
@@ -34,6 +37,7 @@ const SHAPE_DEFAULTS: Record<Shape2DKind, Shape2DParams> = {
   square: { widthMm: 30, heightMm: 30, cornerRadiusMm: 0 },
   triangle: { widthMm: 30, heightMm: 26 },
   polygon: { radiusMm: 18, sides: 6 },
+  skadis: { widthMm: SKADIS_DEFAULT_WIDTH_MM, heightMm: SKADIS_DEFAULT_HEIGHT_MM },
 }
 
 export const SHAPE_LABELS: Record<Shape2DKind, string> = {
@@ -43,6 +47,7 @@ export const SHAPE_LABELS: Record<Shape2DKind, string> = {
   square: 'Square',
   triangle: 'Triangle',
   polygon: 'Polygon',
+  skadis: 'Skadis pegboard',
 }
 
 export function createShape2D(

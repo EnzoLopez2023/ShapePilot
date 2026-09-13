@@ -8,6 +8,9 @@ import { nestRings } from './nest.ts'
 import {
   circleRing, ellipseRing, rectRing, regularPolygonRing, triangleRing,
 } from './primitives.ts'
+import {
+  SKADIS_DEFAULT_HEIGHT_MM, SKADIS_DEFAULT_WIDTH_MM, skadisRings,
+} from './skadis.ts'
 import type { PathObject, SceneObject, Shape2DObject, TextObject } from '../model/document.ts'
 
 /**
@@ -63,6 +66,9 @@ function shape2dRings(o: Shape2DObject): Ring[] {
     }
     case 'polygon':
       return [regularPolygonRing(p.sides ?? 6, p.radiusMm ?? 10)]
+    case 'skadis':
+      return skadisRings(p.widthMm ?? SKADIS_DEFAULT_WIDTH_MM,
+        p.heightMm ?? SKADIS_DEFAULT_HEIGHT_MM)
   }
 }
 

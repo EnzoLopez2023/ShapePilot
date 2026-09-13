@@ -50,7 +50,8 @@ export interface SceneObjectBase {
  *  Shape2DParams that no inspector field could edit. */
 export type Contour = readonly (readonly [number, number])[]
 
-export type Shape2DKind = 'circle' | 'ellipse' | 'rect' | 'square' | 'triangle' | 'polygon'
+export type Shape2DKind =
+  'circle' | 'ellipse' | 'rect' | 'square' | 'triangle' | 'polygon' | 'skadis'
 
 /**
  * One flat bag rather than a union per shape: the hand-written validator stays

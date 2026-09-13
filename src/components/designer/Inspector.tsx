@@ -6,6 +6,10 @@ import type {
   CutType, ObjectMode, PathObject, SceneObject, Shape2DObject, SolidObject, TextObject, Triple,
 } from '../../model/document.ts'
 import LengthField from '../LengthField.tsx'
+import {
+  SKADIS, SKADIS_DEFAULT_HEIGHT_MM, SKADIS_DEFAULT_WIDTH_MM,
+  skadisSlotCentres, snapSkadisHeightMm, snapSkadisWidthMm,
+} from '../../geometry/skadis.ts'
 import AngleField from '../AngleField.tsx'
 import { EmptyState } from '../LoadingState.tsx'
 
@@ -159,13 +163,17 @@ function objectDimensions(
       onChangeMm={v => onPatch({ thicknessMm: v } as Partial<SceneObject>)}
     />
   )
-  const length = (label: string, key: string, fallback: number) => {
+  /** `snap` pins a dimension to a grid the shape cannot be built off -- the
+   *  pegboard's, so far. Applied on commit, so the field shows what was built. */
+  const length = (
+    label: string, key: string, fallback: number, snap?: (mm: number) => number,
+  ) => {
     const params = (object as Shape2DObject | SolidObject).params as Record<string, number | undefined>
     return (
       <LengthField
         key={key} label={label} imperial={imperial}
         valueMm={params?.[key] ?? fallback}
-        onChangeMm={v => setParam(key, v)}
+        onChangeMm={v => setParam(key, snap ? snap(v) : v)}
       />
     )
   }
@@ -180,12 +188,17 @@ function objectDimensions(
         square: [length('Side', 'widthMm', 10), length('Corner radius', 'cornerRadiusMm', 0)],
         triangle: [length('Width', 'widthMm', 10), length('Height', 'heightMm', 10)],
         polygon: [length('Radius', 'radiusMm', 10), sidesField(object, setParam)],
+        skadis: [
+          length('Width', 'widthMm', SKADIS_DEFAULT_WIDTH_MM, snapSkadisWidthMm),
+          length('Height', 'heightMm', SKADIS_DEFAULT_HEIGHT_MM, snapSkadisHeightMm),
+        ],
       }[object.shape]
       return (
         <>
           <Divider />
           <Typography variant="h3">Size</Typography>
           {fields}
+          {object.shape === 'skadis' && <SkadisNote object={object} imperial={imperial} />}
           {thickness()}
         </>
       )
@@ -272,5 +285,26 @@ function sidesField(
         if (Number.isInteger(n) && n >= 3 && n <= 64) setParam('sides', n)
       }}
     />
+  )
+}
+
+/**
+ * What the snapping did, and what it bought. The width and height fields round
+ * silently on commit, so without this a typed 350 becoming 360 looks like a bug
+ * rather than the one rule that makes the board take real SKADIS hooks.
+ */
+function SkadisNote({ object, imperial }: { object: Shape2DObject; imperial: boolean }) {
+  const w = snapSkadisWidthMm(object.params.widthMm ?? SKADIS_DEFAULT_WIDTH_MM)
+  const h = snapSkadisHeightMm(object.params.heightMm ?? SKADIS_DEFAULT_HEIGHT_MM)
+  const slots = skadisSlotCentres(w, h).length
+  const size = imperial
+    ? `${(w / 25.4).toFixed(2)} × ${(h / 25.4).toFixed(2)} in`
+    : `${w} × ${h} mm`
+  return (
+    <Typography variant="caption" color="text.secondary">
+      {size} · {slots} slots. Width snaps to {SKADIS.columnPitchMm} mm and height
+      to {SKADIS.rowPitchMm} mm, which is what keeps every edge slot centred
+      exactly {SKADIS.edgeMarginMm} mm from the edge.
+    </Typography>
   )
 }
