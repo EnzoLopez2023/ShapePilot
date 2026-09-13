@@ -118,7 +118,18 @@ export function buildTheme(mode: ThemeMode): Theme {
     components: {
       MuiCssBaseline: {
         styleOverrides: {
-          ':root': { colorScheme: mode },
+          ':root': {
+            colorScheme: mode,
+            // index.html asks for viewport-fit=cover with a translucent status
+            // bar, so on a notched phone iOS draws its status bar and home
+            // indicator *over* the page. Anything meeting a screen edge has to
+            // pad itself clear. Named here rather than inlined so a test (or a
+            // desktop browser, where every inset is 0) can stand a notch up.
+            '--sp-safe-top': 'env(safe-area-inset-top, 0px)',
+            '--sp-safe-bottom': 'env(safe-area-inset-bottom, 0px)',
+            '--sp-safe-left': 'env(safe-area-inset-left, 0px)',
+            '--sp-safe-right': 'env(safe-area-inset-right, 0px)',
+          },
           // A faint wash so the frosted sidebar has depth to refract. The base
           // colour is unchanged; the gradients are near-invisible on content.
           body: {

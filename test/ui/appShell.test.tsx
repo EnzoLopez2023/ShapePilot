@@ -240,3 +240,33 @@ test('Home is only active on Home, not on every route beneath it', async () => {
   assert.notEqual(screen.getByRole('link', { name: 'Home' }).getAttribute('aria-current'), 'page')
   assert.equal(screen.getByRole('link', { name: 'Settings' }).getAttribute('aria-current'), 'page')
 })
+
+// iOS draws its status bar over the page (viewport-fit=cover plus a
+// black-translucent status bar in index.html), which once left the mobile
+// header's only control sitting underneath it and untappable. jsdom will not
+// resolve env(), so what is pinned is that each edge asks for its inset.
+test('the mobile header keeps its controls clear of the status bar', async () => {
+  // Below md, so the shell renders the header rather than the permanent sidebar.
+  vi.stubGlobal('matchMedia', (query: string) => ({
+    matches: false, media: query, onchange: null,
+    addListener: () => {}, removeListener: () => {},
+    addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: () => false,
+  }))
+  renderAt('/keycap-tray')
+
+  const header = await waitFor(() => {
+    const el = document.querySelector('header')
+    assert.ok(el, 'the mobile header should render below md')
+    return el
+  })
+  const css = [...document.querySelectorAll('style')].map(s => s.textContent ?? '').join('\n')
+  const cls = [...header.classList].find(c => css.includes(`.${c}{`) || css.includes(`.${c} `))
+  assert.ok(cls, 'the header should carry an emotion class')
+  const rule = css.slice(css.indexOf(`.${cls}{`))
+  const block = rule.slice(0, rule.indexOf('}') + 1)
+
+  assert.match(block, /padding-top:\s*calc\([^)]*var\(--sp-safe-top\)\)/,
+    'the header must clear the status bar, or the hamburger is untappable')
+  assert.match(block, /padding-left:\s*calc\([^)]*var\(--sp-safe-left\)\)/)
+  assert.match(block, /padding-right:\s*calc\([^)]*var\(--sp-safe-right\)\)/)
+})
