@@ -10,6 +10,7 @@ import type {
 import { SHAPE_PROGRAM_VERSION } from '../../lib/contracts/shapeProgram.ts'
 import type { Ring } from '../geometry/vec.ts'
 import { circleRing, ellipseRing, rectRing, regularPolygonRing, triangleRing } from '../geometry/primitives.ts'
+import { nestRings } from '../geometry/nest.ts'
 import type { TextOutlines } from '../geometry/sceneShapes.ts'
 
 export interface FromSceneOptions {
@@ -120,14 +121,21 @@ export function objectNode(o: SceneObject, opts: FromSceneOptions = {}): PartNod
     case 'text': {
       const rings = opts.textOutlines?.get(o.id)
       if (!rings?.length) return null
-      // Each glyph contour extrudes separately and the set unions: one
-      // extrusion with all contours would treat counters as solid, so the hole
-      // in an "o" would fill in.
-      const children: PartNode[] = rings.map((ring, i) => ({
+      // `textOutlines` flattens its polygons for the 2D canvas, which fills
+      // evenodd and needs no nesting; recover it here by containment. A counter
+      // has to ride along as a hole of its own glyph: extruded on its own it is
+      // a clockwise ring, which is not a solid at all and fails the build.
+      const polygons = nestRings(rings)
+      const children: PartNode[] = polygons.map(([outer, ...holes], i) => ({
         id: `${o.id}:${i}`, name: `${o.name} ${i + 1}`, op: 'extrude' as const,
-        params: { profile: toProfile(ring), heightMm: o.thicknessMm ?? 5 },
+        params: {
+          profile: toProfile(outer),
+          holes: holes.map(toProfile),
+          heightMm: o.thicknessMm ?? 5,
+        },
         transform: IDENTITY,
       }))
+      if (!children.length) return null
       return children.length === 1
         ? { ...children[0], id: o.id, name: o.name, transform }
         : { id: o.id, name: o.name, op: 'union', children, transform }
