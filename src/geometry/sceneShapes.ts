@@ -7,6 +7,9 @@ import { difference, union } from './boolean.ts'
 import {
   circleRing, ellipseRing, rectRing, regularPolygonRing, triangleRing,
 } from './primitives.ts'
+import {
+  SKADIS_DEFAULT_HEIGHT_MM, SKADIS_DEFAULT_WIDTH_MM, skadisRings,
+} from './skadis.ts'
 import type { PathObject, SceneObject, Shape2DObject, TextObject } from '../model/document.ts'
 
 /**
@@ -62,8 +65,21 @@ function shape2dRings(o: Shape2DObject): Ring[] {
     }
     case 'polygon':
       return [regularPolygonRing(p.sides ?? 6, p.radiusMm ?? 10)]
+    case 'skadis':
+      return skadisRings(p.widthMm ?? SKADIS_DEFAULT_WIDTH_MM,
+        p.heightMm ?? SKADIS_DEFAULT_HEIGHT_MM)
   }
 }
+
+/**
+ * Shapes whose rings are one polygon with holes, not a set of islands.
+ *
+ * The default below wraps each ring in its own polygon, which is right for
+ * every shape that has exactly one. A pegboard does not: emitted as islands
+ * its slots are solid, and `union` in the cut export then fills them in.
+ */
+const ringsAreOnePolygon = (o: SceneObject): boolean =>
+  o.type === 'shape2d' && o.shape === 'skadis'
 
 /** Imported outlines arrive already normalised by the importer. */
 const pathRings = (o: PathObject): Ring[] => o.rings.map(r => r.map(([x, y]) => [x, y] as const))
@@ -111,7 +127,10 @@ export function compileObject(o: SceneObject, opts: CompileOptions = {}): MultiP
   }
 
   const rings = objectRings(o, opts)
-  return normalizeMulti(rings.map(r => [r] as Polygon))
+  if (!rings.length) return []
+  return ringsAreOnePolygon(o)
+    ? normalizeMulti([rings as Polygon])
+    : normalizeMulti(rings.map(r => [r] as Polygon))
 }
 
 /** A group's own transform applies on top of its resolved children. */

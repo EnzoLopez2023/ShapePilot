@@ -6,6 +6,7 @@ import RectangleOutlinedIcon from '@mui/icons-material/RectangleOutlined'
 import ChangeHistoryOutlinedIcon from '@mui/icons-material/ChangeHistoryOutlined'
 import HexagonOutlinedIcon from '@mui/icons-material/HexagonOutlined'
 import TextFieldsRoundedIcon from '@mui/icons-material/TextFieldsRounded'
+import GridOnOutlinedIcon from '@mui/icons-material/GridOnOutlined'
 import type { SvgIconComponent } from '@mui/icons-material'
 import type { Shape2DKind } from '../../../model/document.ts'
 
@@ -25,4 +26,5 @@ export const PALETTE: readonly PaletteEntry[] = [
   { kind: 'triangle', label: 'Triangle', hint: '30 × 26 mm', icon: ChangeHistoryOutlinedIcon },
   { kind: 'polygon', label: 'Polygon', hint: '6 sides', icon: HexagonOutlinedIcon },
   { kind: 'text', label: 'Text', hint: 'cut as outlines', icon: TextFieldsRoundedIcon },
+  { kind: 'skadis', label: 'Skadis pegboard', hint: '360 × 560 mm', icon: GridOnOutlinedIcon },
 ]

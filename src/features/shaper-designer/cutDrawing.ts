@@ -25,6 +25,24 @@ const LAYER_LABEL: Record<CutType, string> = {
 
 export const cutTypeOf = (o: SceneObject): CutType => o.cut?.type ?? 'exterior'
 
+const isPegboard = (o: SceneObject): boolean => o.type === 'shape2d' && o.shape === 'skadis'
+
+/**
+ * Which layers one object feeds, and with what.
+ *
+ * Almost everything feeds one layer. A pegboard feeds two: Origin reads the
+ * bit's behaviour from the colour of a path, so the outline that frees the
+ * board and the slots that go through it cannot share a layer. Sent as a single
+ * holed path the slots would inherit the outline's cut type and never be cut.
+ */
+function cutContributions(o: SceneObject, polygons: MultiPolygon): [CutType, MultiPolygon][] {
+  const type = cutTypeOf(o)
+  if (!isPegboard(o)) return [[type, polygons]]
+  const outline: MultiPolygon = polygons.map(poly => [poly[0]])
+  const slots: MultiPolygon = polygons.flatMap(poly => poly.slice(1).map(hole => [hole]))
+  return [[type, outline], ['interior', slots]]
+}
+
 export function sceneCutDrawing(doc: DesignDocument, opts: CompileOptions = {}): CutDrawing {
   const byType = new Map<CutType, MultiPolygon[]>()
   const depths = new Map<CutType, number>()
@@ -33,10 +51,13 @@ export function sceneCutDrawing(doc: DesignDocument, opts: CompileOptions = {}):
     if (!object.visible) continue
     const polygons = compileObject(object, opts)
     if (!polygons.length) continue
+    for (const [type, contribution] of cutContributions(object, polygons)) {
+      if (!contribution.length) continue
+      const bucket = byType.get(type) ?? []
+      bucket.push(contribution)
+      byType.set(type, bucket)
+    }
     const type = cutTypeOf(object)
-    const bucket = byType.get(type) ?? []
-    bucket.push(polygons)
-    byType.set(type, bucket)
     if (type === 'pocket' && object.cut?.depthMm !== undefined) {
       // One depth per layer is what the format carries, so the deepest wins and
       // the page warns when objects disagree.
