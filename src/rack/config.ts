@@ -1,0 +1,204 @@
+// Every number the Systainer3 S76 rack is built from, in one place.
+//
+// The rack is a stack of bays, each holding one case, split down the middle
+// because a 265 mm case is wider than the X2D's 256 mm plate. Pieces are named
+// by course (bottom cap / middle / top cap) and side (left / right), which is
+// exactly the breakdown in the user's sketch.
+//
+// THE ONE THING TO READ TWICE: `caseHeightMm` is 76 -- caliper-verified by the
+// user, FEET INCLUDED. A rack needs the feet-included figure because the case
+// rests on its feet on a shelf. (`src/model/trayProfile.ts` records 71, which
+// is the body without feet; both numbers are real and they measure different
+// things.) The pitch is then 76 + headroom + shelf, NOT 76 total -- which is
+// where the sketch's 76 mm middle piece grows to 82.2.
+
+export interface RackConfig {
+  /** Case external size, feet included. */
+  caseWidthMm: number
+  caseDepthMm: number
+  caseHeightMm: number
+  /** How many cases the rack holds. */
+  bays: number
+
+  /** Slack around the case. `clearTopMm` MUST exceed `frontLipHeightMm`. */
+  clearSideMm: number
+  clearTopMm: number
+  clearDepthMm: number
+
+  shelfMm: number
+  wallMm: number
+
+  /** Upstands on a shelf: a stop at the back, a retainer at the front. */
+  backLipHeightMm: number
+  backLipDepthMm: number
+  frontLipHeightMm: number
+  frontLipDepthMm: number
+
+  /**
+   * Outward swell of the wall at the course joint, to host the dovetail.
+   *
+   * It swells OUTWARD on purpose. Inward would eat bay width, and the case
+   * already has only 1.5 mm a side. The boss has to be wider than the socket
+   * by `minSocketWallMm` on each side -- see `checkConfig`, and see
+   * `minSocketWallMm` for what happens when it is not.
+   */
+  bossOutMm: number
+  bossHeightMm: number
+  /**
+   * Least material that may remain beside the socket, and the shoulder the
+   * tongue bears on.
+   *
+   * This is the number that makes the joint real. The socket is cut
+   * `railHeadMm + 2 x fitMm` wide into a boss `wallMm + bossOutMm` wide; what
+   * is left carries the whole stack in tension. At 4 extrusion lines it is a
+   * wall. Below one line the slicer drops it, the socket opens out the side of
+   * the rack, and the dovetail becomes a butt joint that looks fine in a render.
+   */
+  minSocketWallMm: number
+
+  /** Course-to-course sliding dovetail: rises from the top face of a piece. */
+  railHeightMm: number
+  railNeckMm: number
+  railHeadMm: number
+
+  /** Left-to-right seam: flared tabs through the shelf plate. */
+  seamTabs: number
+  seamTabReachMm: number
+  seamTabRootMm: number
+  /** Staircase step for the 45 degree tab flanks. */
+  seamStepMm: number
+
+  /** Clearance on every mating feature. Dial this from a coupon print. */
+  fitMm: number
+}
+
+export const RACK: RackConfig = {
+  caseWidthMm: 265,
+  caseDepthMm: 171,
+  caseHeightMm: 76,
+  bays: 6,
+
+  clearSideMm: 1.5,
+  clearTopMm: 3.0,
+  clearDepthMm: 2.0,
+
+  shelfMm: 3.2,
+  wallMm: 3.2,
+
+  backLipHeightMm: 10,
+  backLipDepthMm: 4,
+  frontLipHeightMm: 2.5,
+  frontLipDepthMm: 5,
+
+  bossOutMm: 6.4,
+  bossHeightMm: 10,
+  minSocketWallMm: 1.6,
+
+  railHeightMm: 5,
+  railNeckMm: 4.4,
+  railHeadMm: 6.0,
+
+  seamTabs: 3,
+  seamTabReachMm: 12,
+  seamTabRootMm: 16,
+  seamStepMm: 1.0,
+
+  fitMm: 0.15,
+}
+
+export interface RackDerived {
+  /** Outer width at the shelf. Bosses stand `bossOutMm` proud of this. */
+  rackWidthMm: number
+  halfWidthMm: number
+  /** Back lip + case + slack + front lip. This is also the PRINT HEIGHT. */
+  rackDepthMm: number
+  /** Clear opening a case drops into. */
+  bayClearMm: number
+  /** Floor-to-floor. */
+  pitchMm: number
+  capHeightMm: number
+  middleHeightMm: number
+  totalHeightMm: number
+  /** Material beside the socket at its widest, per side. */
+  socketWallMm: number
+  /** Flat bearing face the tongue leaves on top of the boss, per side. */
+  tongueShoulderMm: number
+  /** Widest and tallest any single piece gets, for the plate check. */
+  pieceWidthMm: number
+  pieceDepthMm: number
+}
+
+export function derive(cfg: RackConfig): RackDerived {
+  const rackWidthMm = cfg.caseWidthMm + 2 * cfg.clearSideMm + 2 * cfg.wallMm
+  const bayClearMm = cfg.caseHeightMm + cfg.clearTopMm
+  const pitchMm = bayClearMm + cfg.shelfMm
+  const capHeightMm = bayClearMm / 2 + cfg.shelfMm
+  return {
+    rackWidthMm,
+    halfWidthMm: rackWidthMm / 2,
+    rackDepthMm:
+      cfg.backLipDepthMm + cfg.caseDepthMm + cfg.clearDepthMm + cfg.frontLipDepthMm,
+    bayClearMm,
+    pitchMm,
+    capHeightMm,
+    middleHeightMm: pitchMm,
+    totalHeightMm: 2 * capHeightMm + (cfg.bays - 1) * pitchMm,
+    socketWallMm: (cfg.wallMm + cfg.bossOutMm - cfg.railHeadMm - 2 * cfg.fitMm) / 2,
+    tongueShoulderMm: (cfg.wallMm + cfg.bossOutMm - cfg.railHeadMm) / 2,
+    // A left piece runs from its boss face out to the tip of a seam tab.
+    pieceWidthMm: rackWidthMm / 2 + cfg.bossOutMm + cfg.seamTabReachMm,
+    pieceDepthMm:
+      cfg.backLipDepthMm + cfg.caseDepthMm + cfg.clearDepthMm + cfg.frontLipDepthMm,
+  }
+}
+
+/** Reasons a config cannot be built, in plain words. Empty means it is sound. */
+export function checkConfig(cfg: RackConfig): string[] {
+  const out: string[] = []
+  const d = derive(cfg)
+  if (cfg.frontLipHeightMm >= cfg.clearTopMm) {
+    out.push(
+      `front lip ${cfg.frontLipHeightMm} needs headroom to lift over, but clearTop is ` +
+      `${cfg.clearTopMm} -- the case could not be removed`,
+    )
+  }
+  if (cfg.railHeightMm > cfg.bossHeightMm) {
+    out.push(`rail ${cfg.railHeightMm} is deeper than the boss ${cfg.bossHeightMm} can socket`)
+  }
+  // NOT `railHead <= boss`. That bound ignores the fit clearance and asks for
+  // no material to be left over, and it passed a boss that left 0.05 mm a side
+  // -- an eighth of one extrusion line.
+  if (d.socketWallMm < cfg.minSocketWallMm) {
+    out.push(
+      `only ${d.socketWallMm.toFixed(2)} mm of wall beside the socket (want ` +
+      `${cfg.minSocketWallMm}) -- a ${cfg.railHeadMm} mm head plus ${2 * cfg.fitMm} mm of fit in a ` +
+      `${(cfg.wallMm + cfg.bossOutMm).toFixed(1)} mm boss. Widen bossOutMm or shrink the rail`,
+    )
+  }
+  if (cfg.railNeckMm < 2.4) {
+    out.push(`a ${cfg.railNeckMm} mm neck is too slender to survive handling`)
+  }
+  if (cfg.railNeckMm >= cfg.railHeadMm) {
+    out.push('rail neck must be narrower than the head or the dovetail does not lock')
+  }
+  if (cfg.bays < 1) out.push('a rack needs at least one bay')
+  // Tabs must clear the lip bands, or the seam cavity would cut through a lip.
+  const span = cfg.seamTabRootMm / 2 + cfg.seamTabReachMm + cfg.fitMm
+  for (const zc of seamTabCentres(cfg, d)) {
+    if (zc - span < cfg.backLipDepthMm || zc + span > d.rackDepthMm - cfg.frontLipDepthMm) {
+      out.push(`seam tab at z=${zc.toFixed(1)} overlaps a lip band`)
+    }
+  }
+  return out
+}
+
+/** Tab centres, spread evenly through the depth between the two lip bands. */
+export function seamTabCentres(cfg: RackConfig, d: RackDerived): number[] {
+  const lo = cfg.backLipDepthMm
+  const hi = d.rackDepthMm - cfg.frontLipDepthMm
+  const out: number[] = []
+  for (let i = 0; i < cfg.seamTabs; i++) {
+    out.push(lo + ((i + 1) * (hi - lo)) / (cfg.seamTabs + 1))
+  }
+  return out
+}
