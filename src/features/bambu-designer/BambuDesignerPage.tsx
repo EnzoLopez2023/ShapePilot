@@ -26,10 +26,10 @@ import Viewport3D from '../../components/viewport3d/Viewport3D.tsx'
 import type { GizmoMode, ViewportPart } from '../../components/viewport3d/Viewport3D.tsx'
 import { useConfirm } from '../../components/ConfirmDialogProvider.tsx'
 import ImportButton from '../shaper-designer/components/ImportButton.tsx'
-import { BAMBU_IMPORT_FORMATS } from '../../import/index.ts'
+import { BAMBU_IMPORT_FORMATS, importFile } from '../../import/index.ts'
 import type { ObjectMode, PrinterProfile, SceneObject, Triple } from '../../model/document.ts'
 import { BAMBU_X2D, PRINTER_PROFILES } from '../../model/machines.ts'
-import { createSolid, createText, findObject } from '../../model/scene.ts'
+import { IDENTITY_TRANSFORM, createSolid, createText, findObject, newId } from '../../model/scene.ts'
 import { useDesignDocument } from '../../state/useDesignDocument.ts'
 import { DEFAULT_FONT_ID, resolveTextOutlines } from '../../text/fonts.ts'
 import type { Ring } from '../../geometry/vec.ts'
@@ -38,9 +38,11 @@ import { writeBinaryStl } from '../../export/stl.ts'
 import { writeThreeMfParts } from '../../export/threemf.ts'
 import { evaluateNode, evaluateProgram } from '../../csg/evaluate.ts'
 import { programFromScene } from '../../csg/fromScene.ts'
-import { resolveAssets } from '../../import/assets.ts'
+import { resolveAssets, storeImportedFile } from '../../import/assets.ts'
 import { programToObjects } from '../../csg/toScene.ts'
 import SolidPalette from './components/SolidPalette.tsx'
+import LibraryPalette from './components/LibraryPalette.tsx'
+import type { LibraryEntry } from './components/libraryEntries.ts'
 import type { SolidPaletteKind } from './components/solidEntries.ts'
 import { alignDeltas, combinedBounds, meshBounds, mirrorTransform } from './align.ts'
 import type { AlignEdge, Axis, Bounds } from './align.ts'
@@ -87,6 +89,7 @@ export default function BambuDesignerPage() {
   const [openDialog, setOpenDialog] = useState(false)
   const [saveAsOpen, setSaveAsOpen] = useState(false)
   const [textOutlines, setTextOutlines] = useState<Map<string, Ring[]>>(new Map())
+  const [libraryBusy, setLibraryBusy] = useState<string | null>(null)
 
   const objects = doc.doc.objects
   const machine = (doc.doc.machine?.kind === 'printer' ? doc.doc.machine : BAMBU_X2D) as PrinterProfile
@@ -154,6 +157,41 @@ export default function BambuDesignerPage() {
       : createSolid(kind)
     doc.addObject({ ...object, mode: addMode })
   }, [doc, addMode])
+
+  /** A ready-made part joins the scene as an ordinary imported object: the
+   *  bytes go to the asset store and the document keeps only the hash, exactly
+   *  as if the file had been picked from disk. */
+  const addLibraryPart = useCallback(async (entry: LibraryEntry) => {
+    setLibraryBusy(entry.id)
+    try {
+      const response = await fetch(entry.url)
+      if (!response.ok) throw new Error(`${entry.label} could not be loaded`)
+      const bytes = await response.arrayBuffer()
+      // A part is modelled wherever it sat in the file it came from -- the
+      // badge is the raised layer of a two-part print, so its triangles start
+      // 1.5 mm up. Seat it on the plate rather than leaving it hovering, which
+      // reads as a mistake and prints as one.
+      const parsed = await importFile(new File([bytes], entry.filename))
+      const seatZ = parsed.kind === '3d' ? -parsed.mesh.bbox[2] : 0
+      const asset = await storeImportedFile(bytes, entry.filename, entry.format)
+      doc.addObject({
+        id: newId(),
+        name: entry.label,
+        type: 'imported',
+        format: entry.format,
+        asset,
+        transform: { ...IDENTITY_TRANSFORM, position: [0, 0, seatZ] },
+        mode: addMode,
+        visible: true,
+        locked: false,
+      })
+    } catch (cause) {
+      lifecycle.setError(
+        cause instanceof Error ? cause.message : `could not add ${entry.label}`)
+    } finally {
+      setLibraryBusy(null)
+    }
+  }, [addMode, doc, lifecycle])
 
   const removeSelected = useCallback(async () => {
     if (!doc.selection.size) return
@@ -397,6 +435,9 @@ export default function BambuDesignerPage() {
           <Stack spacing={1.5}>
             <Typography variant="h3">Solids</Typography>
             <SolidPalette mode={addMode} onModeChange={setAddMode} onAdd={addSolid} />
+            <Divider />
+            <Typography variant="h3">Parts</Typography>
+            <LibraryPalette busyId={libraryBusy} onAdd={entry => void addLibraryPart(entry)} />
             <Divider />
             <Typography variant="h3">Align</Typography>
             <Stack spacing={0.5}>

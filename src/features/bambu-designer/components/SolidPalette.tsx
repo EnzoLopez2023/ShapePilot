@@ -1,7 +1,8 @@
 // Drag a solid onto the workplane, or click to drop it at the origin -- the
 // Tinkercad gesture, and the same palette pattern the keycap tray uses.
-import { Stack, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
+import { Stack, ToggleButton, ToggleButtonGroup } from '@mui/material'
 import type { ObjectMode } from '../../../model/document.ts'
+import PaletteRow from './PaletteRow.tsx'
 import type { SolidPaletteKind } from './solidEntries.ts'
 import { SOLIDS } from './solidEntries.ts'
 
@@ -24,32 +25,15 @@ export default function SolidPalette({ mode, onModeChange, onAdd }: SolidPalette
       </ToggleButtonGroup>
 
       <Stack spacing={0.25} role="list" aria-label="Solids">
-        {SOLIDS.map(entry => {
-          const Icon = entry.icon
-          return (
-            <Stack
-              key={entry.kind}
-              direction="row" alignItems="center" spacing={1}
-              role="button" tabIndex={0}
-              onClick={() => onAdd(entry.kind)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onAdd(entry.kind) }
-              }}
-              sx={{
-                px: 1, py: 0.75, borderRadius: 1, cursor: 'pointer',
-                '&:hover': { bgcolor: 'action.hover' },
-              }}
-            >
-              <Icon sx={{ fontSize: 18, color: 'text.secondary' }} />
-              <Stack sx={{ minWidth: 0 }}>
-                <Typography variant="body2">{entry.label}</Typography>
-                <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.7rem' }}>
-                  {entry.hint}
-                </Typography>
-              </Stack>
-            </Stack>
-          )
-        })}
+        {SOLIDS.map(entry => (
+          <PaletteRow
+            key={entry.kind}
+            icon={entry.icon}
+            label={entry.label}
+            hint={entry.hint}
+            onAdd={() => onAdd(entry.kind)}
+          />
+        ))}
       </Stack>
     </Stack>
   )

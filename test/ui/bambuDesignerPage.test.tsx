@@ -11,14 +11,43 @@ import { MemoryRouter } from 'react-router-dom'
 import { unzipSync, strFromU8 } from 'fflate'
 import { ThemeModeProvider } from '../../src/theme/ThemeModeProvider.tsx'
 import { ConfirmDialogProvider } from '../../src/components/ConfirmDialogProvider.tsx'
+import type * as AssetsModule from '../../src/import/assets.ts'
 
 vi.mock('../../src/components/viewport3d/Viewport3D.tsx', () => ({
   default: ({ parts }: { parts: { id: string }[] }) =>
     <div data-testid="viewport" data-parts={parts.length} />,
 }))
 
+// The asset store is IndexedDB, which jsdom has not got. Only the storing half
+// is replaced; resolving still runs for real, and reports the part detached --
+// exactly what a browser without a store would do.
+const assets = vi.hoisted(() => ({
+  storeImportedFile: vi.fn(async (bytes: ArrayBuffer, filename: string) =>
+    ({ hash: 'a'.repeat(64), filename, byteLength: bytes.byteLength })),
+}))
+vi.mock('../../src/import/assets.ts', async original => ({
+  ...(await original<typeof AssetsModule>()),
+  storeImportedFile: assets.storeImportedFile,
+}))
+
 const { default: BambuDesignerPage } =
   await import('../../src/features/bambu-designer/BambuDesignerPage.tsx')
+
+/** A binary STL holding a single triangle, floating 1.5 mm above the plate --
+ *  the same way the real badge is modelled. */
+function oneTriangleStl(): ArrayBuffer {
+  const bytes = new Uint8Array(84 + 50)
+  const view = new DataView(bytes.buffer)
+  view.setUint32(80, 1, true)
+  const corners = [[0, 0, 1.5], [10, 0, 1.5], [0, 10, 3]]
+  corners.forEach(([x, y, z], i) => {
+    const at = 84 + 12 + i * 12
+    view.setFloat32(at, x, true)
+    view.setFloat32(at + 4, y, true)
+    view.setFloat32(at + 8, z, true)
+  })
+  return bytes.buffer
+}
 
 const renderPage = () => render(
   <ThemeModeProvider initialPreference="light">
@@ -39,6 +68,13 @@ beforeEach(() => {
         status: 200, headers: { 'content-type': 'application/json' },
       })
     }
+    if (url.endsWith('/models/el-logo-badge.stl')) {
+      return new Response(oneTriangleStl(), {
+        status: 200, headers: { 'content-type': 'model/stl' },
+      })
+    }
+    // Nothing was ever uploaded from this run, so the asset resolve misses.
+    if (url.includes('/api/design-assets/')) return new Response(null, { status: 404 })
     if (url.includes('/api/design-documents')) {
       return new Response(JSON.stringify([]), {
         status: 200, headers: { 'content-type': 'application/json' },
@@ -111,6 +147,23 @@ test('an added solid lands in the document and the object tree', async () => {
   // Whether it then reaches the viewport is a question about the CSG kernel,
   // which is WASM and does not run under jsdom. That path is covered for real
   // in src/csg/evaluate.test.ts, which asserts watertightness and volume.
+})
+
+test('a library part is fetched, stored and added like any import', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(screen.getByRole('button', { name: /EL logo badge/ })).toBeTruthy())
+
+  await user.click(screen.getByRole('button', { name: /EL logo badge/ }))
+
+  const tree = await screen.findByRole('list', { name: 'Objects' })
+  await waitFor(() => expect(within(tree).getByText('EL logo badge')).toBeTruthy())
+  // The document carries a hash, not the triangles: the bytes went to the
+  // asset store under the name the file has on disk.
+  assert.equal(assets.storeImportedFile.mock.calls[0]?.[1], 'el-logo-badge.stl')
+  assert.ok(within(tree).getByText('stl'))
+  // Modelled 1.5 mm up, so it is dropped by that much and sits on the plate.
+  assert.equal((screen.getByLabelText('Z') as HTMLInputElement).value, '-1.5')
 })
 
 test('undo removes the object that was just added', async () => {
