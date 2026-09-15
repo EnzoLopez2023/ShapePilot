@@ -27,7 +27,7 @@ const flag = (name: string): string | null => {
 }
 const coupon = argv.includes('--coupon')
 const bays = Number(flag('--bays') ?? RACK.bays)
-const outDir = resolve(flag('--out') ?? (coupon ? 'out/rack-coupon' : 'out/rack'))
+const outDir = resolve(flag('--out') ?? (coupon ? 'models/rack-coupon' : 'models/rack'))
 
 // Coupons: the same joints at the same fit, on pieces that print in minutes.
 // Shelves stay solid -- a shelf shrunk this far has no room between its own

@@ -1,0 +1,392 @@
+<title>S76 Rack Drawing Set</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <style>
+  :root{
+    --paper:#F1F2EF; --sheet:#FBFBF9; --ink:#101519; --soft:#59635E; --rule:#8B948F;
+    --faint:#DBDED7; --joint:#0E7C6B; --flag:#B4530A; --case:#C9CEC7; --line:#CDD2CA;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){--paper:#0D1113; --sheet:#141A1B; --ink:#E7EBE6; --soft:#95A09A;
+    --rule:#5A645E; --faint:#232B29; --joint:#3ACCB4; --flag:#E5A24A; --case:#2A3331; --line:#2C3634;}
+  }
+  :root[data-theme="dark"]{--paper:#0D1113; --sheet:#141A1B; --ink:#E7EBE6; --soft:#95A09A; --rule:#5A645E;
+    --faint:#232B29; --joint:#3ACCB4; --flag:#E5A24A; --case:#2A3331; --line:#2C3634;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);
+    font-family:Archivo,"Helvetica Neue",Arial,sans-serif;font-size:15px;line-height:1.6;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px;margin:0 auto;padding-block:32px;padding-left:20px;padding-right:20px;
+    display:flex;flex-direction:column;gap:30px}
+  h1,h2,h3{margin:0;text-wrap:balance;font-weight:650;letter-spacing:-.015em}
+  h1{font-size:clamp(28px,5vw,42px);line-height:1.08}
+  h2{font-size:20px}
+  .mono{font-family:"JetBrains Mono",ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+  .eyebrow{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:11px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--soft)}
+
+  /* title block — a real drawing sheet has one */
+  .titleblock{border:1.5px solid var(--ink);background:var(--sheet)}
+  .titleblock .top{padding:22px 24px 18px;border-bottom:1.5px solid var(--ink)}
+  .titleblock .lede{margin:10px 0 0;max-width:62ch;color:var(--soft)}
+  .tbgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+  .tbcell{padding:12px 16px;border-right:1px solid var(--line);border-top:0}
+  .tbcell:last-child{border-right:0}
+  .tbcell dt{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:10px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--soft);margin:0}
+  .tbcell dd{margin:3px 0 0;font-size:17px;font-weight:600;font-variant-numeric:tabular-nums}
+
+  .sheet{border:1px solid var(--line);background:var(--sheet)}
+  .sheethead{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;
+    padding:14px 20px;border-bottom:1px solid var(--line)}
+  .sheetno{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:11px;letter-spacing:.1em;
+    color:var(--paper);background:var(--ink);padding:3px 7px;border-radius:2px}
+  .sheetbody{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:26px;padding:20px}
+  @media (max-width:820px){.sheetbody{grid-template-columns:minmax(0,1fr)}}
+  .drawing{overflow-x:auto}
+  .drawing svg{max-width:100%;height:auto;display:block;color:var(--ink)}
+  .notes{font-size:14px;color:var(--soft);display:flex;flex-direction:column;gap:12px}
+  .notes p{margin:0}
+  .notes strong{color:var(--ink);font-weight:620}
+  figure{margin:0}
+  figcaption{margin-top:10px;font-size:13px;color:var(--soft);max-width:66ch}
+
+  /* svg classes */
+  .part{fill:var(--faint);stroke:var(--ink);stroke-width:1.1;stroke-linejoin:round}
+  .part.alt{fill:var(--faint);stroke:var(--joint);stroke-width:1.1}
+  polygon.part.alt,path.part.alt{stroke:var(--joint)}
+  .case{fill:var(--case);stroke:var(--rule);stroke-width:.8;stroke-dasharray:4 3}
+.void{fill:var(--paper);stroke:var(--rule);stroke-width:.7}
+  .caselbl{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:9px;fill:var(--soft)}
+  .seam{stroke:var(--joint);stroke-width:1;stroke-dasharray:7 4}
+  .centre{stroke:var(--joint);stroke-width:.9;stroke-dasharray:9 3 2 3}
+  .hidden{stroke:var(--rule);stroke-width:.7;stroke-dasharray:5 3}
+  .dim line{stroke:var(--rule);stroke-width:.8}
+  .ext{stroke:var(--rule);stroke-width:.6;stroke-dasharray:2 2}
+  .dimtext{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:10.5px;fill:var(--ink)}
+  .course{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:9.5px;
+    letter-spacing:.09em;fill:var(--soft)}
+  .secttl{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:11px;letter-spacing:.1em;fill:var(--ink)}
+  .secttl.alt{fill:var(--joint)}
+  .subttl{font-size:11px;fill:var(--soft)}
+  .note{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:9.5px;fill:var(--soft)}
+  .jointlbl{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:10px;fill:var(--joint)}
+  .bed{fill:none;stroke:var(--rule);stroke-width:.9;stroke-dasharray:6 4}
+  .ghost{fill:none;stroke:var(--rule);stroke-width:.7}
+  .riser{stroke:var(--line);stroke-width:.8}
+  .arrow{stroke:var(--joint);stroke-width:1.3;color:var(--joint)}
+
+  table{border-collapse:collapse;width:100%;font-size:14px}
+  th{text-align:left;font-family:"JetBrains Mono",ui-monospace,monospace;font-size:10px;
+    letter-spacing:.11em;text-transform:uppercase;color:var(--soft);font-weight:500;
+    padding:0 12px 8px 0;border-bottom:1px solid var(--line)}
+  td{padding:8px 12px 8px 0;border-bottom:1px solid var(--line);vertical-align:top}
+  td.num{font-family:"JetBrains Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;white-space:nowrap}
+  td.why{color:var(--soft);font-size:13px}
+  tr:last-child td{border-bottom:0}
+
+  .flag{border-left:3px solid var(--flag);padding:14px 18px;background:var(--sheet)}
+  .flag h3{font-size:15px;color:var(--flag);margin-bottom:4px}
+  .decisions{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px}
+  .dec{border:1px solid var(--line);background:var(--sheet);padding:16px 18px}
+  .dec h3{font-size:15px;margin-bottom:6px}
+  .dec p{margin:0;font-size:14px;color:var(--soft)}
+  .dec .opt{margin-top:10px;font-family:"JetBrains Mono",ui-monospace,monospace;font-size:12px;color:var(--ink)}
+  footer{color:var(--soft);font-size:13px;border-top:1px solid var(--line);padding-top:16px}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+  </style>
+  <div class="wrap">
+
+  <div class="titleblock">
+    <div class="top">
+      <p class="eyebrow">Shop drawings · generated from src/rack/geometry.ts</p>
+      <h1>Systainer3 S76 modular rack</h1>
+      <p class="lede">A 6-bay wall rack in 14 printed pieces, split down the middle because a 265&nbsp;mm case
+        is wider than the X2D's 256&nbsp;mm plate. No bolts and no inserts: the courses interlock, and the centre seam is a glued V joint.</p>
+    </div>
+    <dl class="tbgrid">
+      <div class="tbcell"><dt>Bay pitch</dt><dd>82.2 mm</dd></div>
+      <div class="tbcell"><dt>Overall</dt><dd>274.4 × 182 × 496.4</dd></div>
+      <div class="tbcell"><dt>Pieces</dt><dd>14 · 6 distinct</dd></div>
+      <div class="tbcell"><dt>Material</dt><dd>~2.05 kg PLA</dd></div>
+      <div class="tbcell"><dt>Units</dt><dd>mm</dd></div>
+    </dl>
+  </div>
+
+  <section class="sheet">
+    <div class="sheethead"><span class="sheetno">SHEET 1</span><h2>Front elevation</h2>
+      <span class="eyebrow">6 bays · scale ≈ 1:1.1</span></div>
+    <div class="sheetbody">
+      <figure class="drawing"><svg viewBox="0 0 514.22 534.69" role="img" aria-label="Front elevation of the six-bay rack: bottom cap, five middle courses and a top cap, every bay 79 mm clear at an 82.2 mm pitch."><rect class="case" x="142.21" y="415.82" width="243.8" height="69.92"/><text class="caselbl" x="264.11" y="454.28" text-anchor="middle">S76 · bay 1</text><rect class="case" x="142.21" y="340.2" width="243.8" height="69.92"/><text class="caselbl" x="264.11" y="378.66" text-anchor="middle">S76 · bay 2</text><rect class="case" x="142.21" y="264.58" width="243.8" height="69.92"/><text class="caselbl" x="264.11" y="303.04" text-anchor="middle">S76 · bay 3</text><rect class="case" x="142.21" y="188.95" width="243.8" height="69.92"/><text class="caselbl" x="264.11" y="227.41" text-anchor="middle">S76 · bay 4</text><rect class="case" x="142.21" y="113.33" width="243.8" height="69.92"/><text class="caselbl" x="264.11" y="151.79" text-anchor="middle">S76 · bay 5</text><rect class="case" x="142.21" y="37.7" width="243.8" height="69.92"/><text class="caselbl" x="264.11" y="76.16" text-anchor="middle">S76 · bay 6</text><path class="part" d="M132,488.69L151.87,488.69L151.87,485.74L140.83,485.74L140.83,449.4L138.44,449.4L139.18,444.8L133.66,444.8L134.39,449.4L132,449.4L132,458.6L137.89,458.6L137.89,479.49L132,479.49ZM163.81,488.69L169.33,488.69L169.33,485.74L163.81,485.74ZM181.27,488.69L186.79,488.69L186.79,485.74L181.27,485.74ZM198.72,488.69L204.24,488.69L204.24,485.74L198.72,485.74ZM216.18,488.69L221.7,488.69L221.7,485.74L216.18,485.74ZM233.64,488.69L239.16,488.69L239.16,485.74L233.64,485.74ZM251.09,488.69L264.11,488.69L265.95,487.22L264.11,485.74L251.09,485.74Z"/><path class="part" d="M264.25,488.69L277.13,488.69L277.13,485.74L264.25,485.74L266.09,487.22ZM289.07,488.69L294.59,488.69L294.59,485.74L289.07,485.74ZM306.52,488.69L312.04,488.69L312.04,485.74L306.52,485.74ZM323.98,488.69L329.5,488.69L329.5,485.74L323.98,485.74ZM341.44,488.69L346.96,488.69L346.96,485.74L341.44,485.74ZM358.9,488.69L364.42,488.69L364.42,485.74L358.9,485.74ZM376.35,488.69L396.22,488.69L396.22,479.49L390.34,479.49L390.34,458.6L396.22,458.6L396.22,449.4L393.83,449.4L394.57,444.8L389.05,444.8L389.78,449.4L387.39,449.4L387.39,485.74L376.35,485.74Z"/><text class="course" x="124" y="472.05" text-anchor="end">BOTTOM CAP</text><path class="part" d="M132,449.4L134.25,449.4L133.52,444.8L139.31,444.8L138.58,449.4L140.83,449.4L140.83,413.06L151.87,413.06L151.87,410.12L140.83,410.12L140.83,373.78L138.44,373.78L139.18,369.18L133.66,369.18L134.39,373.78L132,373.78L132,382.98L137.89,382.98L137.89,440.2L132,440.2ZM163.81,413.06L169.33,413.06L169.33,410.12L163.81,410.12ZM181.27,413.06L186.79,413.06L186.79,410.12L181.27,410.12ZM198.72,413.06L204.24,413.06L204.24,410.12L198.72,410.12ZM216.18,413.06L221.7,413.06L221.7,410.12L216.18,410.12ZM233.64,413.06L239.16,413.06L239.16,410.12L233.64,410.12ZM251.09,413.06L264.11,413.06L265.95,411.59L264.11,410.12L251.09,410.12Z"/><path class="part" d="M264.25,413.06L277.13,413.06L277.13,410.12L264.25,410.12L266.09,411.59ZM289.07,413.06L294.59,413.06L294.59,410.12L289.07,410.12ZM306.52,413.06L312.04,413.06L312.04,410.12L306.52,410.12ZM323.98,413.06L329.5,413.06L329.5,410.12L323.98,410.12ZM341.44,413.06L346.96,413.06L346.96,410.12L341.44,410.12ZM358.9,413.06L364.42,413.06L364.42,410.12L358.9,410.12ZM376.35,413.06L387.39,413.06L387.39,449.4L389.65,449.4L388.91,444.8L394.71,444.8L393.97,449.4L396.22,449.4L396.22,440.2L390.34,440.2L390.34,382.98L396.22,382.98L396.22,373.78L393.83,373.78L394.57,369.18L389.05,369.18L389.78,373.78L387.39,373.78L387.39,410.12L376.35,410.12Z"/><line class="seam" x1="132" y1="449.4" x2="396.22" y2="449.4"/><text class="course" x="124" y="414.59" text-anchor="end">MIDDLE</text><path class="part" d="M132,373.78L134.25,373.78L133.52,369.18L139.31,369.18L138.58,373.78L140.83,373.78L140.83,337.44L151.87,337.44L151.87,334.5L140.83,334.5L140.83,298.16L138.44,298.16L139.18,293.56L133.66,293.56L134.39,298.16L132,298.16L132,307.36L137.89,307.36L137.89,364.58L132,364.58ZM163.81,337.44L169.33,337.44L169.33,334.5L163.81,334.5ZM181.27,337.44L186.79,337.44L186.79,334.5L181.27,334.5ZM198.72,337.44L204.24,337.44L204.24,334.5L198.72,334.5ZM216.18,337.44L221.7,337.44L221.7,334.5L216.18,334.5ZM233.64,337.44L239.16,337.44L239.16,334.5L233.64,334.5ZM251.09,337.44L264.11,337.44L265.95,335.97L264.11,334.5L251.09,334.5Z"/><path class="part" d="M264.25,337.44L277.13,337.44L277.13,334.5L264.25,334.5L266.09,335.97ZM289.07,337.44L294.59,337.44L294.59,334.5L289.07,334.5ZM306.52,337.44L312.04,337.44L312.04,334.5L306.52,334.5ZM323.98,337.44L329.5,337.44L329.5,334.5L323.98,334.5ZM341.44,337.44L346.96,337.44L346.96,334.5L341.44,334.5ZM358.9,337.44L364.42,337.44L364.42,334.5L358.9,334.5ZM376.35,337.44L387.39,337.44L387.39,373.78L389.65,373.78L388.91,369.18L394.71,369.18L393.97,373.78L396.22,373.78L396.22,364.58L390.34,364.58L390.34,307.36L396.22,307.36L396.22,298.16L393.83,298.16L394.57,293.56L389.05,293.56L389.78,298.16L387.39,298.16L387.39,334.5L376.35,334.5Z"/><line class="seam" x1="132" y1="373.78" x2="396.22" y2="373.78"/><text class="course" x="124" y="338.97" text-anchor="end">MIDDLE</text><path class="part" d="M132,298.16L134.25,298.16L133.52,293.56L139.31,293.56L138.58,298.16L140.83,298.16L140.83,261.82L151.87,261.82L151.87,258.87L140.83,258.87L140.83,222.53L138.44,222.53L139.18,217.93L133.66,217.93L134.39,222.53L132,222.53L132,231.73L137.89,231.73L137.89,288.96L132,288.96ZM163.81,261.82L169.33,261.82L169.33,258.87L163.81,258.87ZM181.27,261.82L186.79,261.82L186.79,258.87L181.27,258.87ZM198.72,261.82L204.24,261.82L204.24,258.87L198.72,258.87ZM216.18,261.82L221.7,261.82L221.7,258.87L216.18,258.87ZM233.64,261.82L239.16,261.82L239.16,258.87L233.64,258.87ZM251.09,261.82L264.11,261.82L265.95,260.34L264.11,258.87L251.09,258.87Z"/><path class="part" d="M264.25,261.82L277.13,261.82L277.13,258.87L264.25,258.87L266.09,260.34ZM289.07,261.82L294.59,261.82L294.59,258.87L289.07,258.87ZM306.52,261.82L312.04,261.82L312.04,258.87L306.52,258.87ZM323.98,261.82L329.5,261.82L329.5,258.87L323.98,258.87ZM341.44,261.82L346.96,261.82L346.96,258.87L341.44,258.87ZM358.9,261.82L364.42,261.82L364.42,258.87L358.9,258.87ZM376.35,261.82L387.39,261.82L387.39,298.16L389.65,298.16L388.91,293.56L394.71,293.56L393.97,298.16L396.22,298.16L396.22,288.96L390.34,288.96L390.34,231.73L396.22,231.73L396.22,222.53L393.83,222.53L394.57,217.93L389.05,217.93L389.78,222.53L387.39,222.53L387.39,258.87L376.35,258.87Z"/><line class="seam" x1="132" y1="298.16" x2="396.22" y2="298.16"/><text class="course" x="124" y="263.34" text-anchor="end">MIDDLE</text><path class="part" d="M132,222.53L134.25,222.53L133.52,217.93L139.31,217.93L138.58,222.53L140.83,222.53L140.83,186.19L151.87,186.19L151.87,183.25L140.83,183.25L140.83,146.91L138.44,146.91L139.18,142.31L133.66,142.31L134.39,146.91L132,146.91L132,156.11L137.89,156.11L137.89,213.33L132,213.33ZM163.81,186.19L169.33,186.19L169.33,183.25L163.81,183.25ZM181.27,186.19L186.79,186.19L186.79,183.25L181.27,183.25ZM198.72,186.19L204.24,186.19L204.24,183.25L198.72,183.25ZM216.18,186.19L221.7,186.19L221.7,183.25L216.18,183.25ZM233.64,186.19L239.16,186.19L239.16,183.25L233.64,183.25ZM251.09,186.19L264.11,186.19L265.95,184.72L264.11,183.25L251.09,183.25Z"/><path class="part" d="M264.25,186.19L277.13,186.19L277.13,183.25L264.25,183.25L266.09,184.72ZM289.07,186.19L294.59,186.19L294.59,183.25L289.07,183.25ZM306.52,186.19L312.04,186.19L312.04,183.25L306.52,183.25ZM323.98,186.19L329.5,186.19L329.5,183.25L323.98,183.25ZM341.44,186.19L346.96,186.19L346.96,183.25L341.44,183.25ZM358.9,186.19L364.42,186.19L364.42,183.25L358.9,183.25ZM376.35,186.19L387.39,186.19L387.39,222.53L389.65,222.53L388.91,217.93L394.71,217.93L393.97,222.53L396.22,222.53L396.22,213.33L390.34,213.33L390.34,156.11L396.22,156.11L396.22,146.91L393.83,146.91L394.57,142.31L389.05,142.31L389.78,146.91L387.39,146.91L387.39,183.25L376.35,183.25Z"/><line class="seam" x1="132" y1="222.53" x2="396.22" y2="222.53"/><text class="course" x="124" y="187.72" text-anchor="end">MIDDLE</text><path class="part" d="M132,146.91L134.25,146.91L133.52,142.31L139.31,142.31L138.58,146.91L140.83,146.91L140.83,110.57L151.87,110.57L151.87,107.62L140.83,107.62L140.83,71.28L138.44,71.28L139.18,66.68L133.66,66.68L134.39,71.28L132,71.28L132,80.48L137.89,80.48L137.89,137.71L132,137.71ZM163.81,110.57L169.33,110.57L169.33,107.62L163.81,107.62ZM181.27,110.57L186.79,110.57L186.79,107.62L181.27,107.62ZM198.72,110.57L204.24,110.57L204.24,107.62L198.72,107.62ZM216.18,110.57L221.7,110.57L221.7,107.62L216.18,107.62ZM233.64,110.57L239.16,110.57L239.16,107.62L233.64,107.62ZM251.09,110.57L264.11,110.57L265.95,109.1L264.11,107.62L251.09,107.62Z"/><path class="part" d="M264.25,110.57L277.13,110.57L277.13,107.62L264.25,107.62L266.09,109.1ZM289.07,110.57L294.59,110.57L294.59,107.62L289.07,107.62ZM306.52,110.57L312.04,110.57L312.04,107.62L306.52,107.62ZM323.98,110.57L329.5,110.57L329.5,107.62L323.98,107.62ZM341.44,110.57L346.96,110.57L346.96,107.62L341.44,107.62ZM358.9,110.57L364.42,110.57L364.42,107.62L358.9,107.62ZM376.35,110.57L387.39,110.57L387.39,146.91L389.65,146.91L388.91,142.31L394.71,142.31L393.97,146.91L396.22,146.91L396.22,137.71L390.34,137.71L390.34,80.48L396.22,80.48L396.22,71.28L393.83,71.28L394.57,66.68L389.05,66.68L389.78,71.28L387.39,71.28L387.39,107.62L376.35,107.62Z"/><line class="seam" x1="132" y1="146.91" x2="396.22" y2="146.91"/><text class="course" x="124" y="112.1" text-anchor="end">MIDDLE</text><path class="part" d="M132,71.28L134.25,71.28L133.52,66.68L139.31,66.68L138.58,71.28L140.83,71.28L140.83,34.94L151.87,34.94L151.87,32L132,32L132,41.2L137.89,41.2L137.89,62.08L132,62.08ZM163.81,34.94L169.33,34.94L169.33,32L163.81,32ZM181.27,34.94L186.79,34.94L186.79,32L181.27,32ZM198.72,34.94L204.24,34.94L204.24,32L198.72,32ZM216.18,34.94L221.7,34.94L221.7,32L216.18,32ZM233.64,34.94L239.16,34.94L239.16,32L233.64,32ZM251.09,34.94L264.11,34.94L265.95,33.47L264.11,32L251.09,32Z"/><path class="part" d="M264.25,34.94L277.13,34.94L277.13,32L264.25,32L266.09,33.47ZM289.07,34.94L294.59,34.94L294.59,32L289.07,32ZM306.52,34.94L312.04,34.94L312.04,32L306.52,32ZM323.98,34.94L329.5,34.94L329.5,32L323.98,32ZM341.44,34.94L346.96,34.94L346.96,32L341.44,32ZM358.9,34.94L364.42,34.94L364.42,32L358.9,32ZM376.35,34.94L387.39,34.94L387.39,71.28L389.65,71.28L388.91,66.68L394.71,66.68L393.97,71.28L396.22,71.28L396.22,62.08L390.34,62.08L390.34,41.2L396.22,41.2L396.22,32L376.35,32Z"/><line class="seam" x1="132" y1="71.28" x2="396.22" y2="71.28"/><text class="course" x="124" y="54.64" text-anchor="end">TOP CAP</text><line class="centre" x1="264.11" y1="18" x2="264.11" y2="502.69"/><text class="note" x="264.11" y="14" text-anchor="middle">CENTRE SEAM</text><g class="dim">
+      <line x1="36" y1="32" x2="36" y2="488.69"/>
+      <line x1="32.8" y1="35.2" x2="39.2" y2="28.8"/>
+      <line x1="32.8" y1="491.89" x2="39.2" y2="485.49"/>
+      <text class="dimtext" x="32" y="260.34" text-anchor="middle"
+        transform="rotate(-90 32 260.34)">496.4 overall</text>
+    </g><g class="dim">
+      <line x1="72" y1="410.12" x2="72" y2="485.74"/>
+      <line x1="68.8" y1="413.32" x2="75.2" y2="406.92"/>
+      <line x1="68.8" y1="488.94" x2="75.2" y2="482.54"/>
+      <text class="dimtext" x="68" y="447.93" text-anchor="middle"
+        transform="rotate(-90 68 447.93)">82.2 pitch</text>
+    </g><g class="dim">
+      <line x1="106" y1="413.06" x2="106" y2="485.74"/>
+      <line x1="102.8" y1="416.26" x2="109.2" y2="409.86"/>
+      <line x1="102.8" y1="488.94" x2="109.2" y2="482.54"/>
+      <text class="dimtext" x="102" y="449.4" text-anchor="middle"
+        transform="rotate(-90 102 449.4)">79 clear</text>
+    </g><g class="dim">
+      <line x1="426.22" y1="34.94" x2="426.22" y2="107.62"/>
+      <line x1="423.02" y1="38.14" x2="429.42" y2="31.74"/>
+      <line x1="423.02" y1="110.82" x2="429.42" y2="104.42"/>
+      <text class="dimtext" x="422.22" y="71.28" text-anchor="middle"
+        transform="rotate(-90 422.22 71.28)">76 case + 3</text>
+    </g><g class="dim">
+      <line x1="470.22" y1="449.4" x2="470.22" y2="488.69"/>
+      <line x1="467.02" y1="452.6" x2="473.42" y2="446.2"/>
+      <line x1="467.02" y1="491.89" x2="473.42" y2="485.49"/>
+      <text class="dimtext" x="466.22" y="469.05" text-anchor="middle"
+        transform="rotate(-90 466.22 469.05)">42.7 cap</text>
+    </g><line class="ext" x1="137.89" y1="488.69" x2="137.89" y2="518.69"/><line class="ext" x1="390.34" y1="488.69" x2="390.34" y2="518.69"/><g class="dim">
+      <line x1="137.89" y1="514.69" x2="390.34" y2="514.69"/>
+      <line x1="134.69" y1="517.89" x2="141.09" y2="511.49"/>
+      <line x1="387.14" y1="517.89" x2="393.54" y2="511.49"/>
+      <text class="dimtext" x="264.11" y="509.69" text-anchor="middle">274.4 outside</text>
+    </g><line class="ext" x1="264.11" y1="488.69" x2="264.11" y2="534.69"/><g class="dim">
+      <line x1="137.89" y1="530.69" x2="264.11" y2="530.69"/>
+      <line x1="134.69" y1="533.89" x2="141.09" y2="527.49"/>
+      <line x1="260.91" y1="533.89" x2="267.31" y2="527.49"/>
+      <text class="dimtext" x="201" y="525.69" text-anchor="middle">137.2</text>
+    </g><g class="dim">
+      <line x1="264.11" y1="530.69" x2="390.34" y2="530.69"/>
+      <line x1="260.91" y1="533.89" x2="267.31" y2="527.49"/>
+      <line x1="387.14" y1="533.89" x2="393.54" y2="527.49"/>
+      <text class="dimtext" x="327.22" y="525.69" text-anchor="middle">137.2</text>
+    </g></svg>
+        <figcaption>Every horizontal seam falls at mid-bay, in the side wall — never at a shelf. That is the one
+          thing the original sketch already had right, and it is kept verbatim.</figcaption></figure>
+      <div class="notes">
+        <p><strong>Courses.</strong> Bottom cap + 5 middles + top cap = 6 bays.
+           Add a bay by adding one middle course; the caps never change.</p>
+        <p><strong>The one change from the sketch.</strong> It marked the middle piece 76 and the caps 38.
+           76 is the <em>case</em>; the shelf and its headroom need their own 6.2 mm.
+           Middles are 82.2, caps 42.7.</p>
+        <p><strong>Teal marks every mating feature</strong> on all five sheets.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sheet">
+    <div class="sheethead"><span class="sheetno">SHEET 2</span><h2>Piece sections</h2>
+      <span class="eyebrow">at the centre seam · scale ≈ 1.3:1</span></div>
+    <div class="sheetbody">
+      <figure class="drawing"><svg viewBox="0 0 477.1 380.43" role="img" aria-label="Cross-sections of the three piece kinds, each a side wall plus half a shelf, drawn at the centre seam."><text class="secttl" x="58" y="16">BOTTOM CAP</text><text class="subttl" x="186" y="16">floor of bay 1 · no socket underneath</text><path class="part" d="M58,86.96L86.51,86.96L86.51,82.74L70.67,82.74L70.67,30.6L67.24,30.6L68.3,24L60.38,24L61.43,30.6L58,30.6L58,43.8L66.45,43.8L66.45,73.76L58,73.76ZM103.64,86.96L111.56,86.96L111.56,82.74L103.64,82.74ZM128.69,86.96L136.61,86.96L136.61,82.74L128.69,82.74ZM153.73,86.96L161.65,86.96L161.65,82.74L153.73,82.74ZM178.78,86.96L186.7,86.96L186.7,82.74L178.78,82.74ZM203.83,86.96L211.75,86.96L211.75,82.74L203.83,82.74ZM228.87,86.96L247.55,86.96L250.19,84.85L247.55,82.74L228.87,82.74Z"/><path class="part" d="M247.75,86.96L266.23,86.96L266.23,82.74L247.75,82.74L250.39,84.85ZM283.36,86.96L291.28,86.96L291.28,82.74L283.36,82.74ZM308.4,86.96L316.32,86.96L316.32,82.74L308.4,82.74ZM333.45,86.96L341.37,86.96L341.37,82.74L333.45,82.74ZM358.5,86.96L366.42,86.96L366.42,82.74L358.5,82.74ZM383.55,86.96L391.47,86.96L391.47,82.74L383.55,82.74ZM408.59,86.96L437.1,86.96L437.1,73.76L428.66,73.76L428.66,43.8L437.1,43.8L437.1,30.6L433.67,30.6L434.73,24L426.81,24L427.86,30.6L424.43,30.6L424.43,82.74L408.59,82.74Z"/><line class="centre" x1="247.55" y1="18" x2="247.55" y2="92.96"/><g class="dim">
+      <line x1="32" y1="24" x2="32" y2="86.96"/>
+      <line x1="28.8" y1="27.2" x2="35.2" y2="20.8"/>
+      <line x1="28.8" y1="90.16" x2="35.2" y2="83.76"/>
+      <text class="dimtext" x="28" y="55.48" text-anchor="middle"
+        transform="rotate(-90 28 55.48)">47.7</text>
+    </g><text class="secttl" x="58" y="124.96">MIDDLE (x5)</text><text class="subttl" x="186" y="124.96">ceiling of one bay, floor of the next</text><path class="part" d="M58,248.07L61.23,248.07L60.18,241.47L68.49,241.47L67.44,248.07L70.67,248.07L70.67,195.93L86.51,195.93L86.51,191.7L70.67,191.7L70.67,139.56L67.24,139.56L68.3,132.96L60.38,132.96L61.43,139.56L58,139.56L58,152.76L66.45,152.76L66.45,234.87L58,234.87ZM103.64,195.93L111.56,195.93L111.56,191.7L103.64,191.7ZM128.69,195.93L136.61,195.93L136.61,191.7L128.69,191.7ZM153.73,195.93L161.65,195.93L161.65,191.7L153.73,191.7ZM178.78,195.93L186.7,195.93L186.7,191.7L178.78,191.7ZM203.83,195.93L211.75,195.93L211.75,191.7L203.83,191.7ZM228.87,195.93L247.55,195.93L250.19,193.82L247.55,191.7L228.87,191.7Z"/><path class="part" d="M247.75,195.93L266.23,195.93L266.23,191.7L247.75,191.7L250.39,193.82ZM283.36,195.93L291.28,195.93L291.28,191.7L283.36,191.7ZM308.4,195.93L316.32,195.93L316.32,191.7L308.4,191.7ZM333.45,195.93L341.37,195.93L341.37,191.7L333.45,191.7ZM358.5,195.93L366.42,195.93L366.42,191.7L358.5,191.7ZM383.55,195.93L391.47,195.93L391.47,191.7L383.55,191.7ZM408.59,195.93L424.43,195.93L424.43,248.07L427.67,248.07L426.61,241.47L434.93,241.47L433.87,248.07L437.1,248.07L437.1,234.87L428.66,234.87L428.66,152.76L437.1,152.76L437.1,139.56L433.67,139.56L434.73,132.96L426.81,132.96L427.86,139.56L424.43,139.56L424.43,191.7L408.59,191.7Z"/><line class="centre" x1="247.55" y1="126.96" x2="247.55" y2="254.07"/><g class="dim">
+      <line x1="32" y1="132.96" x2="32" y2="248.07"/>
+      <line x1="28.8" y1="136.16" x2="35.2" y2="129.76"/>
+      <line x1="28.8" y1="251.27" x2="35.2" y2="244.87"/>
+      <text class="dimtext" x="28" y="190.52" text-anchor="middle"
+        transform="rotate(-90 28 190.52)">87.2</text>
+    </g><text class="secttl" x="58" y="286.07">TOP CAP</text><text class="subttl" x="186" y="286.07">ceiling only · no rail on top</text><path class="part" d="M58,350.43L61.23,350.43L60.18,343.83L68.49,343.83L67.44,350.43L70.67,350.43L70.67,298.29L86.51,298.29L86.51,294.07L58,294.07L58,307.27L66.45,307.27L66.45,337.23L58,337.23ZM103.64,298.29L111.56,298.29L111.56,294.07L103.64,294.07ZM128.69,298.29L136.61,298.29L136.61,294.07L128.69,294.07ZM153.73,298.29L161.65,298.29L161.65,294.07L153.73,294.07ZM178.78,298.29L186.7,298.29L186.7,294.07L178.78,294.07ZM203.83,298.29L211.75,298.29L211.75,294.07L203.83,294.07ZM228.87,298.29L247.55,298.29L250.19,296.18L247.55,294.07L228.87,294.07Z"/><path class="part" d="M247.75,298.29L266.23,298.29L266.23,294.07L247.75,294.07L250.39,296.18ZM283.36,298.29L291.28,298.29L291.28,294.07L283.36,294.07ZM308.4,298.29L316.32,298.29L316.32,294.07L308.4,294.07ZM333.45,298.29L341.37,298.29L341.37,294.07L333.45,294.07ZM358.5,298.29L366.42,298.29L366.42,294.07L358.5,294.07ZM383.55,298.29L391.47,298.29L391.47,294.07L383.55,294.07ZM408.59,298.29L424.43,298.29L424.43,350.43L427.67,350.43L426.61,343.83L434.93,343.83L433.87,350.43L437.1,350.43L437.1,337.23L428.66,337.23L428.66,307.27L437.1,307.27L437.1,294.07L408.59,294.07Z"/><line class="centre" x1="247.55" y1="288.07" x2="247.55" y2="356.43"/><g class="dim">
+      <line x1="32" y1="294.07" x2="32" y2="350.43"/>
+      <line x1="28.8" y1="297.27" x2="35.2" y2="290.87"/>
+      <line x1="28.8" y1="353.63" x2="35.2" y2="347.23"/>
+      <text class="dimtext" x="28" y="322.25" text-anchor="middle"
+        transform="rotate(-90 28 322.25)">42.7</text>
+    </g></svg>
+        <figcaption>Each piece is a side wall plus half a shelf. The three kinds differ in one number —
+          where the plate sits in the piece's height — which is why one generator makes all of them.</figcaption></figure>
+      <div class="notes">
+        <p><strong>The boss.</strong> The wall swells from 3.2 to 9.6 mm over the
+           top and bottom 10 mm — sized so 1.65 mm of wall survives beside the socket.
+           A 3.2 mm wall is too thin to hold a dovetail that carries tension, and the swell goes
+           <em>outward</em> so it costs no bay width.</p>
+        <p><strong>Lips.</strong> Only a plate that is a floor carries them. The top cap is a ceiling, so it has none.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sheet">
+    <div class="sheethead"><span class="sheetno">SHEET 3</span><h2>Shelf plan — the centre seam</h2>
+      <span class="eyebrow">one course · scale ≈ 1.2:1</span></div>
+    <div class="sheetbody">
+      <figure class="drawing"><svg viewBox="0 0 547.79 298.76" role="img" aria-label="Plan of one shelf: three flared tabs on the left half cross the centre seam into matching slots in the right half."><rect class="part" x="46" y="30" width="164.26" height="214.76"/><rect class="part alt" x="208.07" y="30" width="161.72" height="214.76"/><polygon class="void" points="63.94,44.16 79.25,44.16 79.25,93.93 71.59,101.59 63.94,93.93"/><polygon class="void" points="63.94,108.67 79.25,108.67 79.25,158.44 71.59,166.09 63.94,158.44"/><polygon class="void" points="63.94,173.17 79.25,173.17 79.25,222.94 71.59,230.6 63.94,222.94"/><polygon class="void" points="86.33,44.16 101.64,44.16 101.64,93.93 93.98,101.59 86.33,93.93"/><polygon class="void" points="86.33,108.67 101.64,108.67 101.64,158.44 93.98,166.09 86.33,158.44"/><polygon class="void" points="86.33,173.17 101.64,173.17 101.64,222.94 93.98,230.6 86.33,222.94"/><polygon class="void" points="108.72,44.16 124.03,44.16 124.03,93.93 116.37,101.59 108.72,93.93"/><polygon class="void" points="108.72,108.67 124.03,108.67 124.03,158.44 116.37,166.09 108.72,158.44"/><polygon class="void" points="108.72,173.17 124.03,173.17 124.03,222.94 116.37,230.6 108.72,222.94"/><polygon class="void" points="131.11,44.16 146.42,44.16 146.42,93.93 138.76,101.59 131.11,93.93"/><polygon class="void" points="131.11,108.67 146.42,108.67 146.42,158.44 138.76,166.09 131.11,158.44"/><polygon class="void" points="131.11,173.17 146.42,173.17 146.42,222.94 138.76,230.6 131.11,222.94"/><polygon class="void" points="153.5,44.16 168.81,44.16 168.81,93.93 161.15,101.59 153.5,93.93"/><polygon class="void" points="153.5,108.67 168.81,108.67 168.81,158.44 161.15,166.09 153.5,158.44"/><polygon class="void" points="153.5,173.17 168.81,173.17 168.81,222.94 161.15,230.6 153.5,222.94"/><polygon class="void" points="175.89,44.16 191.2,44.16 191.2,93.93 183.54,101.59 175.89,93.93"/><polygon class="void" points="175.89,108.67 191.2,108.67 191.2,158.44 183.54,166.09 175.89,158.44"/><polygon class="void" points="175.89,173.17 191.2,173.17 191.2,222.94 183.54,230.6 175.89,222.94"/><polygon class="void" points="224.59,44.16 239.9,44.16 239.9,93.93 232.25,101.59 224.59,93.93"/><polygon class="void" points="224.59,108.67 239.9,108.67 239.9,158.44 232.25,166.09 224.59,158.44"/><polygon class="void" points="224.59,173.17 239.9,173.17 239.9,222.94 232.25,230.6 224.59,222.94"/><polygon class="void" points="246.98,44.16 262.29,44.16 262.29,93.93 254.64,101.59 246.98,93.93"/><polygon class="void" points="246.98,108.67 262.29,108.67 262.29,158.44 254.64,166.09 246.98,158.44"/><polygon class="void" points="246.98,173.17 262.29,173.17 262.29,222.94 254.64,230.6 246.98,222.94"/><polygon class="void" points="269.37,44.16 284.68,44.16 284.68,93.93 277.03,101.59 269.37,93.93"/><polygon class="void" points="269.37,108.67 284.68,108.67 284.68,158.44 277.03,166.09 269.37,158.44"/><polygon class="void" points="269.37,173.17 284.68,173.17 284.68,222.94 277.03,230.6 269.37,222.94"/><polygon class="void" points="291.76,44.16 307.07,44.16 307.07,93.93 299.42,101.59 291.76,93.93"/><polygon class="void" points="291.76,108.67 307.07,108.67 307.07,158.44 299.42,166.09 291.76,158.44"/><polygon class="void" points="291.76,173.17 307.07,173.17 307.07,222.94 299.42,230.6 291.76,222.94"/><polygon class="void" points="314.15,44.16 329.47,44.16 329.47,93.93 321.81,101.59 314.15,93.93"/><polygon class="void" points="314.15,108.67 329.47,108.67 329.47,158.44 321.81,166.09 314.15,158.44"/><polygon class="void" points="314.15,173.17 329.47,173.17 329.47,222.94 321.81,230.6 314.15,222.94"/><polygon class="void" points="336.55,44.16 351.86,44.16 351.86,93.93 344.2,101.59 336.55,93.93"/><polygon class="void" points="336.55,108.67 351.86,108.67 351.86,158.44 344.2,166.09 336.55,158.44"/><polygon class="void" points="336.55,173.17 351.86,173.17 351.86,222.94 344.2,230.6 336.55,222.94"/><line class="hidden" x1="46" y1="34.72" x2="369.79" y2="34.72"/><text class="note" x="375.79" y="37.72">back stop 10 high</text><line class="hidden" x1="46" y1="238.86" x2="369.79" y2="238.86"/><text class="note" x="375.79" y="241.86">front retainer 2.5</text><text class="note" x="50.72" y="20">BACK</text><text class="note" x="50.72" y="260.76">FRONT — cases slide out this way</text><g class="dim">
+      <line x1="24" y1="30" x2="24" y2="244.76"/>
+      <line x1="20.8" y1="33.2" x2="27.2" y2="26.8"/>
+      <line x1="20.8" y1="247.96" x2="27.2" y2="241.56"/>
+      <text class="dimtext" x="20" y="137.38" text-anchor="middle"
+        transform="rotate(-90 20 137.38)">182 deep</text>
+    </g><text class="secttl" x="69.6" y="77.2">LEFT HALF</text><text class="secttl alt" x="258.4" y="77.2">RIGHT HALF</text></svg>
+        <figcaption>The seam runs dead straight in plan — the joint is a V tongue and groove down the
+          full depth, so it lives in the section rather than here. Sheet 4 shows it.</figcaption></figure>
+      <div class="notes">
+        <p><strong>How it goes together.</strong> Butter the V, press the halves together sideways, clamp
+           until the glue grabs. No undercut, so no assembly direction to get wrong.</p>
+        <p><strong>Glue carries the tension</strong> that the seam sees at mid-span, where a plain butt joint
+           would act as a hinge and let the shelf sag into a V. The joint adds 60.08% more
+           bonded area than a flat butt, and it locates the halves so they cannot slide vertically past
+           each other while the glue sets.</p>
+        <p><strong>It is why nothing needs support.</strong> A V is constant along the depth, which is the
+           print axis — no staircase, no overhang, and no bands at all. The flared tabs it replaced cost
+           ~250 breakpoints a piece and still left one flank overhanging.</p>
+        <p><strong>Every opening is peaked.</strong> The shelf stands as a vertical wall in the print, so a
+           flat-topped hole is a horizontal roof — the first version filled all of them with tree supports.
+           The peak insets one layer per layer, which slices as a true 45°. The flat bottom needs nothing:
+           material <em>ending</em> as the print rises is free.</p>
+        <p><strong>Why not a diamond.</strong> Same idea, but a rotated square is always half its bounding
+           box however you size it. Peaking only the top keeps 80% of the hole instead of 50%.</p>
+        <p><strong>The seam frame is 14.15 mm</strong> — wider than the 12 mm frame
+           elsewhere, because the groove is cut 2.15 mm into it.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sheet">
+    <div class="sheethead"><span class="sheetno">SHEET 4</span><h2>Joint details</h2>
+      <span class="eyebrow">enlarged</span></div>
+    <div class="sheetbody" style="grid-template-columns:minmax(0,1fr)">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:28px">
+        <figure class="drawing"><svg viewBox="0 0 448 232" role="img" aria-label="Course dovetail at ten to one: a tongue 4.4 mm at the neck flaring to 6 mm at the head, centred on a 9.6 mm boss that leaves 1.65 mm of wall each side of the socket."><polygon class="part" points="59.6,190 184.4,190 184.4,164 150.6,164 161,99 83,99 93.4,164 59.6,164"/><g class="dim">
+      <line x1="83" y1="89" x2="161" y2="89"/>
+      <line x1="79.8" y1="92.2" x2="86.2" y2="85.8"/>
+      <line x1="157.8" y1="92.2" x2="164.2" y2="85.8"/>
+      <text class="dimtext" x="122" y="84" text-anchor="middle">6 head</text>
+    </g><g class="dim">
+      <line x1="93.4" y1="180" x2="150.6" y2="180"/>
+      <line x1="90.2" y1="183.2" x2="96.6" y2="176.8"/>
+      <line x1="147.4" y1="183.2" x2="153.8" y2="176.8"/>
+      <text class="dimtext" x="122" y="175" text-anchor="middle">4.4 neck</text>
+    </g><g class="dim">
+      <line x1="63" y1="99" x2="63" y2="164"/>
+      <line x1="59.8" y1="102.2" x2="66.2" y2="95.8"/>
+      <line x1="59.8" y1="167.2" x2="66.2" y2="160.8"/>
+      <text class="dimtext" x="59" y="131.5" text-anchor="middle"
+        transform="rotate(-90 59 131.5)">5</text>
+    </g><polygon class="part alt" points="273.6,164 305.45,164 295.05,99 376.95,99 366.55,164 398.4,164 398.4,73 273.6,73"/><g class="dim">
+      <line x1="273.6" y1="61" x2="295.05" y2="61"/>
+      <line x1="270.4" y1="64.2" x2="276.8" y2="57.8"/>
+      <line x1="291.85" y1="64.2" x2="298.25" y2="57.8"/>
+      <text class="dimtext" x="284.33" y="56" text-anchor="middle">1.65</text>
+    </g><g class="dim">
+      <line x1="376.95" y1="61" x2="398.4" y2="61"/>
+      <line x1="373.75" y1="64.2" x2="380.15" y2="57.8"/>
+      <line x1="395.2" y1="64.2" x2="401.6" y2="57.8"/>
+      <text class="dimtext" x="387.67" y="56" text-anchor="middle">1.65</text>
+    </g><text class="jointlbl" x="336" y="43" text-anchor="middle">+0.15 all round</text><text class="secttl" x="59.6" y="209.8">LOWER COURSE — tongue</text><text class="secttl alt" x="273.6" y="209.8">UPPER COURSE — socket</text><text class="note" x="336" y="225.8" text-anchor="middle">4.1 extrusion lines each side</text></svg>
+          <figcaption><strong>Course joint, 10:1.</strong> A sliding dovetail running the full 182 mm depth.
+            The head is wider than the neck, so it carries tension — which matters, because the cleat hangs the whole
+            stack from the top course. Slide the course on from the front.</figcaption></figure>
+        <figure class="drawing"><svg viewBox="0 0 336.4 185.6" role="img" aria-label="Section through the centre seam: a V tongue on the left half meets a matching groove on the right, with a 0.15 mm gap for glue."><polygon class="part" points="61.6,149.2 150,149.2 202,107.6 150,66 61.6,66"/><polygon class="part alt" points="153.9,149.2 205.9,107.6 153.9,66 290.4,66 290.4,149.2"/><g class="dim">
+      <line x1="150" y1="158.3" x2="202" y2="158.3"/>
+      <line x1="146.8" y1="161.5" x2="153.2" y2="155.1"/>
+      <line x1="198.8" y1="161.5" x2="205.2" y2="155.1"/>
+      <text class="dimtext" x="176" y="153.3" text-anchor="middle">2</text>
+    </g><g class="dim">
+      <line x1="45.6" y1="66" x2="45.6" y2="149.2"/>
+      <line x1="42.4" y1="69.2" x2="48.8" y2="62.8"/>
+      <line x1="42.4" y1="152.4" x2="48.8" y2="146"/>
+      <text class="dimtext" x="41.6" y="107.6" text-anchor="middle"
+        transform="rotate(-90 41.6 107.6)">3.2</text>
+    </g><text class="secttl" x="61.6" y="173.9">LEFT — tongue</text><text class="secttl alt" x="217.6" y="173.9">RIGHT — groove</text><text class="jointlbl" x="176" y="50.4" text-anchor="middle">0.15 glue gap all round</text></svg>
+          <figcaption><strong>Seam tab, 4.6:1.</strong> 45° flanks are the compromise: steep enough that the tip is wider
+            than the root and locks, shallow enough that the overhang still prints. Anything flatter needs support.</figcaption></figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="sheet">
+    <div class="sheethead"><span class="sheetno">SHEET 5</span><h2>Print orientation</h2>
+      <span class="eyebrow">not optional</span></div>
+    <div class="sheetbody">
+      <figure class="drawing"><svg viewBox="0 0 484 452" role="img" aria-label="A middle piece stood on its back face on the build plate, extruded 182 mm as one unchanging L-shaped cross-section."><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs><polygon class="bed" points="170,266.6 325.36,356.3 224.04,414.8 68.68,325.1"/><text class="note" x="217.28" y="403.1">build plate</text><polygon class="ghost" points="170,290 172.16,291.25 145.48,306.65 236,358.91 233.83,360.16 143.32,307.9 116.64,323.31 114.47,322.06"/><line class="riser" x1="170" y1="290" x2="170" y2="148.04"/><line class="riser" x1="172.16" y1="291.25" x2="172.16" y2="149.29"/><line class="riser" x1="145.48" y1="306.65" x2="145.48" y2="164.69"/><line class="riser" x1="236" y1="358.91" x2="236" y2="216.95"/><line class="riser" x1="233.83" y1="360.16" x2="233.83" y2="218.2"/><line class="riser" x1="143.32" y1="307.9" x2="143.32" y2="165.94"/><line class="riser" x1="116.64" y1="323.31" x2="116.64" y2="181.35"/><line class="riser" x1="114.47" y1="322.06" x2="114.47" y2="180.1"/><polygon class="part" points="170,148.04 172.16,149.29 145.48,164.69 236,216.95 233.83,218.2 143.32,165.94 116.64,181.35 114.47,180.1"/><line class="arrow" x1="280.24" y1="353.65" x2="280.24" y2="211.69" marker-end="url(#ah)"/><text class="jointlbl" x="290.24" y="282.67">182 mm of identical layers</text></svg>
+        <figcaption>A middle piece stood on its back face. Looked at down the depth axis the piece is one unchanging
+          L, so all 182 mm of it is the same layer repeated.</figcaption></figure>
+      <div class="notes">
+        <p><strong>This is why there are no supports.</strong> Every layer is identical, so nothing ever overhangs.</p>
+        <p><strong>Printed the way it is used</strong>, a middle piece would cantilever a 137.2 mm shelf over
+           open air.</p>
+        <p><strong>Back face down</strong> puts the widest cross-section — the one with the back stop — on the plate.
+           Brim on. No supports.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sheet">
+    <div class="sheethead"><span class="sheetno">SHEET 6</span><h2>Schedule &amp; bill of materials</h2></div>
+    <div class="sheetbody" style="grid-template-columns:minmax(0,1fr)">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:30px">
+        <div>
+          <p class="eyebrow" style="margin:0 0 10px">Parameter schedule</p>
+          <table><thead><tr><th>Dimension</th><th>mm</th><th>Where it comes from</th></tr></thead><tbody>
+          <tr><td>Case, feet included</td><td class="num">265 × 171 × 76</td><td class="why">caliper-verified</td></tr><tr><td>Bay pitch</td><td class="num">82.2</td><td class="why">76 + 3 headroom + 3.2 shelf</td></tr><tr><td>Bay clear opening</td><td class="num">79</td><td class="why">floor top to ceiling</td></tr><tr><td>Rack outside width</td><td class="num">274.4</td><td class="why">case + 1.5/side + 3.2 walls</td></tr><tr><td>Rack depth</td><td class="num">182</td><td class="why">also the print height</td></tr><tr><td>Overall height, 6 bays</td><td class="num">496.4</td><td class="why">2 caps + 5 middles</td></tr><tr><td>Middle piece</td><td class="num">82.2 tall</td><td class="why">sketch said 76 — that was the case</td></tr><tr><td>Cap piece</td><td class="num">42.7 tall</td><td class="why">sketch said 38</td></tr><tr><td>Shelf / wall</td><td class="num">3.2 / 3.2</td><td class="why">8 lines at a 0.4 nozzle</td></tr><tr><td>Fit clearance</td><td class="num">0.15</td><td class="why">every mating feature</td></tr><tr><td>Joint boss</td><td class="num">9.6</td><td class="why">wall 3.2 swelled outward 6.4</td></tr><tr><td>Wall beside socket</td><td class="num">1.65</td><td class="why">4.1 lines — what carries the stack</td></tr>
+          </tbody></table>
+        </div>
+        <div>
+          <p class="eyebrow" style="margin:0 0 10px">Bill of materials</p>
+          <table><thead><tr><th>File</th><th>Qty</th><th>Plate footprint</th><th>Vol</th></tr></thead><tbody>
+          <tr><td class="num" style="font-size:12px">rack_bottom_L.stl</td><td class="num">×1</td><td class="num">145.6 × 47.7</td><td class="num">128 cm³</td></tr><tr><td class="num" style="font-size:12px">rack_bottom_R.stl</td><td class="num">×1</td><td class="num">143.5 × 47.7</td><td class="num">127 cm³</td></tr><tr><td class="num" style="font-size:12px">rack_middle_L.stl</td><td class="num">×5</td><td class="num">145.6 × 87.2</td><td class="num">610 cm³</td></tr><tr><td class="num" style="font-size:12px">rack_middle_R.stl</td><td class="num">×5</td><td class="num">143.5 × 87.2</td><td class="num">600 cm³</td></tr><tr><td class="num" style="font-size:12px">rack_top_L.stl</td><td class="num">×1</td><td class="num">145.6 × 42.7</td><td class="num">95 cm³</td></tr><tr><td class="num" style="font-size:12px">rack_top_R.stl</td><td class="num">×1</td><td class="num">143.5 × 42.7</td><td class="num">94 cm³</td></tr>
+          <tr><td><strong>Total</strong></td><td class="num"><strong>14</strong></td>
+              <td class="why">all inside 256 × 256 × 260</td><td class="num"><strong>1654 cm³</strong></td></tr>
+          </tbody></table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sheet">
+    <div class="sheethead"><span class="sheetno">SHEET 7</span><h2>French cleat</h2>
+      <span class="eyebrow">section through the top of the rack</span></div>
+    <div class="sheetbody">
+      <figure class="drawing"><svg viewBox="0 0 362.88 394.4" role="img" aria-label="Section through the French cleat: the wall strip's bearing face rises away from the wall at 45 degrees, and the top cap's hook rests on it, so the rack's weight pulls it against the wall."><rect class="bed" x="62.4" y="34" width="67.2" height="344.4"/><text class="note" x="66.6" y="189.4">WALL</text><polygon class="part alt" points="129.6,328 180,328 129.6,185.2 129.6,185.2 129.6,183.1 133.8,183.1 133.8,178.9 138,178.9 138,174.7 142.2,174.7 142.2,170.5 146.4,170.5 146.4,166.3 150.6,166.3 150.6,162.1 154.8,162.1 154.8,157.9 159,157.9 159,153.7 163.2,153.7 163.2,149.5 167.4,149.5 167.4,145.3 171.6,145.3 171.6,141.1 175.8,141.1 175.8,136.9 180,136.9"/><polygon class="part" points="180,136.9 175.8,136.9 175.8,141.1 171.6,141.1 171.6,145.3 167.4,145.3 167.4,149.5 163.2,149.5 163.2,153.7 159,153.7 159,157.9 154.8,157.9 154.8,162.1 150.6,162.1 150.6,166.3 146.4,166.3 146.4,170.5 142.2,170.5 142.2,174.7 138,174.7 138,178.9 133.8,178.9 133.8,183.1 129.6,183.1 129.6,185.2 129.6,185.2 129.6,76 332.88,76 332.88,244 180,244"/><g class="dim">
+      <line x1="129.6" y1="340.6" x2="180" y2="340.6"/>
+      <line x1="126.4" y1="343.8" x2="132.8" y2="337.4"/>
+      <line x1="176.8" y1="343.8" x2="183.2" y2="337.4"/>
+      <text class="dimtext" x="154.8" y="335.6" text-anchor="middle">12 stand-off</text>
+    </g><text class="jointlbl" x="210.24" y="113.8">TOP CAP — the hook</text><text class="secttl alt" x="70.8" y="307">WALL STRIP</text><text class="note" x="70.8" y="353.2">screwed to the studs</text><defs><marker id="ca" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs><line class="arrow" x1="240.48" y1="42.4" x2="169.92" y2="92.8" marker-end="url(#ca)"/><text class="jointlbl" x="246.48" y="42.4">settles down and IN</text></svg>
+        <figcaption>The bearing face rises 45° <em>away</em> from the wall, so settling is also
+          settling inward. Bevel it the other way and the rack walks itself off.</figcaption></figure>
+      <div class="notes">
+        <p><strong>No bracket to attach.</strong> The hook is the top cap's own back, trimmed by the bearing
+           plane. Nothing to fasten, and nothing to come loose.</p>
+        <p><strong>It prints without support</strong> for the same reason it works: the hook's underside
+           <em>is</em> the bearing plane, so going up the print it rises and material only ever ends. The
+           strip prints outer-face down, losing height the same way — and its screw holes come out vertical.</p>
+        <p><strong>This is what ties the two towers.</strong> Both seat on the same strip, which is the one
+           thing that stops a course's halves lifting apart — the single direction the seam leaves free.
+           The two strip halves peg together so they cannot be mounted at different heights.</p>
+        <p><strong>Bottom cap</strong> carries a full-section pad instead of a hook, holding the rack
+           parallel to the wall. Full-section on purpose: clipping it meant the rest of the cap
+           reappeared in mid-air at the back face, and a slicer supported it from the bed.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="flag">
+    <h3>2.05 kg of filament — the shelves are already cut back</h3>
+    <p style="margin:0;color:var(--soft)">Skeletonising the shelves to a frame, ribs and
+  36 openings a course takes roughly a quarter off the whole rack. What is left is
+  sized by the print, not by eye: each opening is peaked at 8 mm so
+  nothing ever has to bridge across its top.</p>
+  </div>
+
+  <div class="decisions">
+    <div class="dec">
+      <h3>Shelves: skeletonised ✓</h3>
+    <p>A 12 mm frame, 6 mm ribs and 12.97 × 48.67 mm
+       openings. The case bears near its edges, over the frame, so the middle was the cheapest material to lose.</p>
+    <p class="opt">→ <span class="mono">skeletonShelf: false</span> returns solid shelves</p>
+    </div>
+  </div>
+
+  <footer>
+    Drawn from the same code that exports the STLs — <span class="mono">src/rack/geometry.ts</span>, verified watertight
+    with a band-volume identity check. Print the joint coupon (<span class="mono">npm run rack:build -- --coupon</span>)
+    and confirm the 0.15 mm fit before committing to 14 pieces.
+  </footer>
+  </div>

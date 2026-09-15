@@ -12,7 +12,7 @@ import { auditDrawings, buildDrawings } from '../src/rack/drawings.ts'
 
 const argv = process.argv.slice(2)
 const i = argv.indexOf('--out')
-const out = resolve(i >= 0 ? (argv[i + 1] ?? '') : 'out/rack/drawings.html')
+const out = resolve(i >= 0 ? (argv[i + 1] ?? '') : 'models/rack/drawings.html')
 
 const issues = checkConfig(RACK)
 if (issues.length) {

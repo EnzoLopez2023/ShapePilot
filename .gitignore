@@ -14,7 +14,7 @@ data/
 artifacts/
 legacy-export/
 
-# Generated STL sets (npm run rack:build).
+# Scratch output. The published STL set lives in models/, which IS tracked.
 out/
 
 # Scratch extraction of the pinned Hearth source used during the port.
