@@ -272,6 +272,13 @@ export function derive(cfg: RackConfig): RackDerived {
 export function checkConfig(cfg: RackConfig): string[] {
   const out: string[] = []
   const d = derive(cfg)
+  if (cfg.frontLipHeightMm * 2 > cfg.frontLipDepthMm) {
+    out.push(
+      `a ${cfg.frontLipHeightMm} mm lip needs a ${cfg.frontLipHeightMm * 2} mm band to ramp up and ` +
+      `back down at 45 degrees, but the band is ${cfg.frontLipDepthMm} mm -- it would appear too ` +
+      'abruptly to print without support',
+    )
+  }
   if (cfg.frontLipHeightMm >= cfg.clearTopMm) {
     out.push(
       `front lip ${cfg.frontLipHeightMm} needs headroom to lift over, but clearTop is ` +

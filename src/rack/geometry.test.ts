@@ -10,8 +10,8 @@ import type { MultiPolygon } from '../geometry/vec.ts'
 import type { PieceSpec } from './geometry.ts'
 import {
   bandVolume, buildPiece, crossSectionAt, frameFor, originShiftFor, pieceList, pieceName,
-  backReachMm, bevelYAt, buildCleat, cleatHeightMm, gableHeight, openingSpanAt, seamVee,
-  shelfOpenings, stackLayout,
+  backReachMm, bevelYAt, buildCleat, cleatHeightMm, frontLipHeightAt, gableHeight, openingSpanAt,
+  seamVee, shelfOpenings, stackLayout,
 } from './geometry.ts'
 
 const D = derive(RACK)
@@ -271,6 +271,46 @@ describe('the skeletonised shelf', () => {
     assert.ok(vk < vs * 0.9, `only saved ${(100 * (1 - vk / vs)).toFixed(1)}%`)
     assert.equal(checkManifold(skel.mesh).danglingEdges, 0)
     assert.ok(Math.abs(bandVolume(skel.bands) - vk) / vk < 1e-6)
+  })
+})
+
+describe('the front lip', () => {
+  const L = RACK.layerHeightMm
+
+  test('never rises more than one layer per layer', () => {
+    // A square lip appeared all at once, sliced as 4.6 degrees, and pulled a
+    // tree support up from the bed.
+    let prev = 0
+    for (let z = D.rackDepthMm - RACK.frontLipDepthMm - L; z <= D.rackDepthMm; z += L) {
+      const h = frontLipHeightAt(RACK, D, +z.toFixed(4))
+      assert.ok(h - prev <= L + 1e-9,
+        `lip jumps ${(h - prev).toFixed(2)} mm at z=${z.toFixed(1)} -- ` +
+        `${(Math.atan2(L, h - prev) * 180 / Math.PI).toFixed(1)} degrees`)
+      prev = h
+    }
+  })
+
+  test('is symmetric, so it inserts as well as it retains', () => {
+    const mid = D.rackDepthMm - RACK.frontLipDepthMm / 2
+    for (let off = 0.1; off < RACK.frontLipDepthMm / 2; off += 0.1) {
+      assert.equal(
+        frontLipHeightAt(RACK, D, +(mid - off).toFixed(4)),
+        frontLipHeightAt(RACK, D, +(mid + off).toFixed(4)),
+        `flanks differ ${off.toFixed(1)} mm from the peak`,
+      )
+    }
+  })
+
+  test('still stands proud enough to retain, and low enough to lift over', () => {
+    const mid = D.rackDepthMm - RACK.frontLipDepthMm / 2
+    const peak = frontLipHeightAt(RACK, D, mid)
+    assert.ok(peak >= RACK.frontLipHeightMm - L, `peak is only ${peak.toFixed(2)} mm`)
+    assert.ok(peak < RACK.clearTopMm, 'the case could not be lifted over it')
+  })
+
+  test('a lip too tall for its band is rejected', () => {
+    assert.ok(checkConfig({ ...RACK, frontLipHeightMm: 4 })
+      .some(m => m.includes('too\n      abruptly'.replace(/\s+/g, ' ')) || m.includes('abruptly')))
   })
 })
 

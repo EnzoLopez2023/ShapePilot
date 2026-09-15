@@ -210,6 +210,31 @@ export function cleatBevelDropAt(cfg: RackConfig, u: number): number {
   )
 }
 
+/**
+ * Height of the front retaining lip at depth `z`: a symmetric 45 degree bump.
+ *
+ * A square lip appears all at once, which slices as 4.6 degrees and drew a tree
+ * support from the bed 177 mm up. It cannot simply be ramped on one side: the
+ * case sits BEHIND the lip and is pulled forward to come out, so the back face
+ * is what retains and the front face is what you insert over. Ramping the back
+ * alone would print but trade retention away; ramping the front alone is free
+ * but fixes nothing, because material ending as the print rises never needed
+ * holding up.
+ *
+ * Ramping both gives a bump that is self-supporting AND better at both jobs
+ * than the square step was -- the case rides on and off it instead of catching.
+ * Retention is still real: the case has to lift its full height against its own
+ * weight, and `clearTopMm` leaves just enough room to do it deliberately.
+ */
+export function frontLipHeightAt(cfg: RackConfig, d: RackDerived, z: number): number {
+  const from = d.rackDepthMm - cfg.frontLipDepthMm
+  if (z <= from || z >= d.rackDepthMm) return 0
+  const ramp = Math.min(z - from, d.rackDepthMm - z, cfg.frontLipHeightMm)
+  // One layer of rise per layer of run is the 45 degrees; quantise so the two
+  // flanks step identically however the bands happen to fall.
+  return Math.floor(ramp / cfg.layerHeightMm + 1e-9) * cfg.layerHeightMm
+}
+
 /** Height of the bearing plane at depth `z`. Rises with z -- see RackConfig. */
 export const bevelYAt = (cfg: RackConfig, z: number): number =>
   cfg.cleatBevelTopMm - cleatBevelDropAt(cfg, -z)
@@ -248,9 +273,8 @@ export function crossSectionAt(cfg: RackConfig, spec: PieceSpec, z: number): Mul
     if (z < cfg.backLipDepthMm) {
       parts.push(multi(box(plateX0, py1, plateX1, py1 + cfg.backLipHeightMm)))
     }
-    if (z > d.rackDepthMm - cfg.frontLipDepthMm) {
-      parts.push(multi(box(plateX0, py1, plateX1, py1 + cfg.frontLipHeightMm)))
-    }
+    const h = frontLipHeightAt(cfg, d, z)
+    if (h > 1e-9) parts.push(multi(box(plateX0, py1, plateX1, py1 + h)))
   }
   if (isLeft) parts.push([[seamVee(cfg, d, 'left', py0, py1)]])
 
@@ -308,7 +332,13 @@ export function breakpoints(cfg: RackConfig, spec: PieceSpec): number[] {
   const f = frameFor(cfg, spec)
   if (f.isFloor) {
     set.add(cfg.backLipDepthMm)
-    set.add(d.rackDepthMm - cfg.frontLipDepthMm)
+    const from = d.rackDepthMm - cfg.frontLipDepthMm
+    const steps = Math.ceil(cfg.frontLipHeightMm / cfg.layerHeightMm)
+    for (let k = 0; k <= steps; k++) {
+      const off = k * cfg.layerHeightMm
+      set.add(Number((from + off).toFixed(4)))
+      set.add(Number((d.rackDepthMm - off).toFixed(4)))
+    }
   }
   for (const o of shelfOpenings(cfg, spec)) {
     const steps = Math.ceil(gableHeight(o) / cfg.layerHeightMm)
