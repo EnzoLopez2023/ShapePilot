@@ -127,6 +127,31 @@ describe('the centre seam', () => {
       `tip ${atTip.toFixed(1)} mm is not wider than the neck ${atSeam.toFixed(1)} mm -- it would pull out`)
   })
 
+  test('both flanks of a tab step identically', () => {
+    // They did not. Band breakpoints are shared across the whole piece, so the
+    // shelf gables landed inside one flank of every tab and chopped it into
+    // 0.02-0.58 mm slivers while the other kept a clean tread. The profile is
+    // quantised now, so nothing else in the piece can shift it.
+    for (const zc of seamTabCentres(RACK, D)) {
+      for (let off = 0.1; off < RACK.seamTabRootMm / 2 + RACK.seamTabReachMm; off += 0.1) {
+        const below = tabSpanAt(RACK, D, zc - off, 0)
+        const above = tabSpanAt(RACK, D, zc + off, 0)
+        assert.deepEqual(below, above, `flanks differ ${off.toFixed(1)} mm from the centre`)
+      }
+    }
+  })
+
+  test('a tab flank insets one layer per layer, so it prints', () => {
+    // One flank of every tab is an overhang -- material appears there as the
+    // print rises -- so it needs the same one-layer tread the shelf peaks do.
+    const zc = seamTabCentres(RACK, D)[0]!
+    const L = RACK.layerHeightMm
+    const at = (o: number): number => tabSpanAt(RACK, D, zc + o, 0)![0]
+    const base = RACK.seamTabRootMm / 2 + 4
+    assert.equal(+(at(base + L) - at(base)).toFixed(6), L,
+      'the flank does not slice as 45 degrees')
+  })
+
   test('the halves cannot be pulled apart, and cannot shift fore or aft', () => {
     // Kinematic, not geometric: nudge one half and require a collision.
     const nudge = 0.6

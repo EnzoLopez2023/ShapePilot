@@ -65,8 +65,7 @@ export interface RackConfig {
   seamTabs: number
   seamTabReachMm: number
   seamTabRootMm: number
-  /** Staircase step for the 45 degree tab flanks. */
-  seamStepMm: number
+
 
   /** Clearance on every mating feature. Dial this from a coupon print. */
   fitMm: number
@@ -135,7 +134,8 @@ export interface RackConfig {
    */
   shelfOpeningDepthMm: number
   /**
-   * Layer height, which is also the tread of the peak over every opening.
+   * Layer height, which is also the tread of every 45 degree face that has to
+   * PRINT: the peak over each shelf opening, and the seam tabs' flanks.
    *
    * The shelf stands as a VERTICAL WALL in the print, so an opening is a hole
    * in a wall and its top is a horizontal roof -- which is why flat-topped
@@ -149,6 +149,10 @@ export interface RackConfig {
    * tread per layer of rise slices as a true 45 degrees. Two layers of tread
    * slices as 26.6 degrees, under Bambu's 30 degree threshold, and the
    * supports come back.
+   *
+   * The cleat bevel is the exception and has its own coarser tread, because
+   * there material ends across the face instead of appearing -- see
+   * `cleatTreadMm`.
    */
   layerHeightMm: number
 }
@@ -179,10 +183,9 @@ export const RACK: RackConfig = {
   railNeckMm: 4.4,
   railHeadMm: 6.0,
 
-  seamTabs: 3,
+  seamTabs: 2,
   seamTabReachMm: 12,
   seamTabRootMm: 16,
-  seamStepMm: 1.0,
 
   fitMm: 0.15,
 

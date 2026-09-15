@@ -107,13 +107,29 @@ export function frameFor(cfg: RackConfig, spec: PieceSpec): Frame {
 export function tabSpanAt(
   cfg: RackConfig, d: RackDerived, z: number, inflate: number,
 ): [number, number] | null {
-  const neck = cfg.seamTabRootMm / 2 + inflate
-  const reach = cfg.seamTabReachMm + inflate
-  const far = d.halfWidthMm + reach
+  const neck = cfg.seamTabRootMm / 2
+  const reach = cfg.seamTabReachMm
   for (const zc of seamTabCentres(cfg, d)) {
     const dist = Math.abs(z - zc)
-    if (dist > neck + reach) continue
-    return [dist <= neck ? d.halfWidthMm : d.halfWidthMm + (dist - neck), far]
+    if (dist > neck + reach + inflate) continue
+    // QUANTISED to the tab's own tread, and the mating cavity is this same
+    // profile offset -- not a second profile of its own.
+    //
+    // Both matter. Evaluating a continuous flank at each band's midpoint made
+    // the steps depend on where unrelated breakpoints fell, and the shelf
+    // gables land inside one flank of every tab: one side came out on a clean
+    // 1 mm tread and the other in ragged 0.02-0.58 mm slivers. Quantising the
+    // two halves independently instead would have broken the fit, because
+    // q(over) and q(over - fit) sit in the same cell or one apart.
+    const distEff = Math.min(dist, neck + reach)
+    const over = Math.max(distEff - neck, 0)
+    const q = over <= 0
+      ? 0
+      // The epsilon matters: an `over` that lands exactly on a cell boundary
+      // flips `floor` on float noise, and the two flanks of a tab then differ
+      // by a whole tread at that one depth.
+      : Math.min((Math.floor(over / cfg.layerHeightMm + 1e-9) + 0.5) * cfg.layerHeightMm, reach)
+    return [d.halfWidthMm + q - inflate, d.halfWidthMm + reach + inflate]
   }
   return null
 }
@@ -223,7 +239,7 @@ export const backReachMm = (cfg: RackConfig, spec: PieceSpec): number =>
 export function cleatBevelDropAt(cfg: RackConfig, u: number): number {
   const clamped = Math.min(Math.max(u, 0), cfg.cleatThicknessMm)
   return Math.min(
-    (Math.floor(clamped / cfg.cleatTreadMm) + 0.5) * cfg.cleatTreadMm,
+    (Math.floor(clamped / cfg.cleatTreadMm + 1e-9) + 0.5) * cfg.cleatTreadMm,
     cfg.cleatThicknessMm,
   )
 }
@@ -349,12 +365,16 @@ export function breakpoints(cfg: RackConfig, spec: PieceSpec): number[] {
       if (z > 1e-9 && z < d.rackDepthMm - 1e-9) set.add(Number(z.toFixed(4)))
     }
   }
-  const half = cfg.seamTabRootMm / 2 + inflate
-  const reach = cfg.seamTabReachMm + inflate
-  const steps = Math.ceil(reach / cfg.seamStepMm)
+  // On the tread grid, identical for both halves, plus the cavity's extra
+  // reach at the tip. Anything else here and the two flanks stop matching.
+  const half = cfg.seamTabRootMm / 2
+  const reach = cfg.seamTabReachMm
+  const steps = Math.ceil(reach / cfg.layerHeightMm)
   for (const zc of seamTabCentres(cfg, d)) {
-    for (let k = 0; k <= steps; k++) {
-      const off = half + Math.min(k * cfg.seamStepMm, reach)
+    for (let k = 0; k <= steps + 1; k++) {
+      const off = k > steps
+        ? half + reach + inflate
+        : half + Math.min(k * cfg.layerHeightMm, reach)
       for (const z of [zc - off, zc + off]) {
         if (z > 1e-9 && z < d.rackDepthMm - 1e-9) set.add(Number(z.toFixed(4)))
       }
