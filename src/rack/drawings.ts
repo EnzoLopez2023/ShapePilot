@@ -295,9 +295,11 @@ export function buildDrawings(cfg: RackConfig): string {
   function sheetCleat(): string {
     const sc = 4.2
     const T = C.cleatThicknessMm, Hs = cleatHeightMm(C), top = C.cleatBevelTopMm
-    const ox = 180, oy = 54
-    // Section looking along the rack's width: depth across, height up.
-    const P = (z: number, y: number): [number, number] => [ox + z * sc, oy + (50 - y) * sc]
+    const ox = 180, oy = 34
+    // Section looking along the rack's width: depth across, height up. The y
+    // window is derived, not pinned -- it moved when the bevel height changed.
+    const yTop = top + 24, yBot = top - Hs - 12
+    const P = (z: number, y: number): [number, number] => [ox + z * sc, oy + (yTop - y) * sc]
     const out: string[] = []
     const stair = (from: number, to: number): [number, number][] => {
       const pts: [number, number][] = []
@@ -310,8 +312,8 @@ export function buildDrawings(cfg: RackConfig): string {
     const chain = (pts: [number, number][]): string =>
       pts.map(([z, y]) => P(z, y).map(f).join(',')).join(' ')
 
-    out.push(`<rect class="bed" x="${f(P(-T - 16, 0)[0])}" y="${f(P(0, 50)[1])}" ` +
-      `width="${f(16 * sc)}" height="${f(52 * sc)}"/>`)
+    out.push(`<rect class="bed" x="${f(P(-T - 16, 0)[0])}" y="${f(P(0, yTop)[1])}" ` +
+      `width="${f(16 * sc)}" height="${f((yTop - yBot) * sc)}"/>`)
     out.push(`<text class="note" x="${f(P(-T - 15, 0)[0])}" y="${f(P(0, -1)[1])}">WALL</text>`)
 
     const strip: [number, number][] = [[-T, top - Hs], [0, top - Hs], ...stair(0, T).reverse()]
@@ -329,7 +331,7 @@ export function buildDrawings(cfg: RackConfig): string {
     out.push(`<defs><marker id="ca" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>`)
     out.push(`<line class="arrow" x1="${f(a0[0])}" y1="${f(a0[1])}" x2="${f(a1[0])}" y2="${f(a1[1])}" marker-end="url(#ca)"/>`)
     out.push(`<text class="jointlbl" x="${f(a0[0] + 6)}" y="${f(a0[1])}">settles down and IN</text>`)
-    return `<svg viewBox="0 0 ${f(ox + D.rackDepthMm / 5 * sc + 30)} 356" role="img" aria-label="Section through the French cleat: the wall strip's bearing face rises away from the wall at 45 degrees, and the top cap's hook rests on it, so the rack's weight pulls it against the wall.">${out.join('')}</svg>`
+    return `<svg viewBox="0 0 ${f(ox + D.rackDepthMm / 5 * sc + 30)} ${f(oy + (yTop - yBot) * sc + 16)}" role="img" aria-label="Section through the French cleat: the wall strip's bearing face rises away from the wall at 45 degrees, and the top cap's hook rests on it, so the rack's weight pulls it against the wall.">${out.join('')}</svg>`
   }
 
   /* ================= SHEET 5 — print orientation ================= */
@@ -637,8 +639,9 @@ export function buildDrawings(cfg: RackConfig): string {
         <p><strong>This is what ties the two towers.</strong> Both seat on the same strip, which is the one
            thing that stops a course's halves lifting apart — the single direction the seam leaves free.
            The two strip halves peg together so they cannot be mounted at different heights.</p>
-        <p><strong>Bottom cap</strong> carries a ${f(C.spacerHeightMm)} mm pad instead of a hook, holding the
-           rack parallel to the wall.</p>
+        <p><strong>Bottom cap</strong> carries a full-section pad instead of a hook, holding the rack
+           parallel to the wall. Full-section on purpose: clipping it meant the rest of the cap
+           reappeared in mid-air at the back face, and a slicer supported it from the bed.</p>
       </div>
     </div>
   </section>

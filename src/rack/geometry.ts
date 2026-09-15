@@ -239,6 +239,24 @@ export function frontLipHeightAt(cfg: RackConfig, d: RackDerived, z: number): nu
 export const bevelYAt = (cfg: RackConfig, z: number): number =>
   cfg.cleatBevelTopMm - cleatBevelDropAt(cfg, -z)
 
+/**
+ * Lowest y a cap carries at depth `z`, or null where it carries everything.
+ *
+ * Behind the back face this is the hook's underside. IN FRONT of it the clip
+ * has to be RELEASED gradually rather than dropped, and that is the whole
+ * reason this function exists: letting the full section reappear at z=0 put a
+ * 34 mm tall strip of wall in mid-air, and a slicer supported it from the bed.
+ * Releasing at one layer per layer is the same 45 degrees used everywhere else,
+ * and reads as a chamfer on the underside of the cap's back corner.
+ */
+export function capUndersideAt(cfg: RackConfig, spec: PieceSpec, z: number): number | null {
+  if (spec.kind !== 'top') return null       // the bottom cap's pad is full-section
+  if (z <= 0) return bevelYAt(cfg, z)
+  const released = bevelYAt(cfg, 0) - z
+  if (released <= 0) return null
+  return Math.ceil(released / cfg.layerHeightMm - 1e-9) * cfg.layerHeightMm
+}
+
 /** The piece's solid cross-section at depth `z`, already moved to x >= 0. */
 export function crossSectionAt(cfg: RackConfig, spec: PieceSpec, z: number): MultiPolygon {
   const d = derive(cfg)
@@ -280,15 +298,10 @@ export function crossSectionAt(cfg: RackConfig, spec: PieceSpec, z: number): Mul
 
   let region = union(...parts)
 
-  // Behind the back face the piece becomes either the hook or the wall pad.
-  if (z < 0) {
+  const floorY = capUndersideAt(cfg, spec, z)
+  if (floorY !== null) {
     const big = 1e4
-    const keep: MultiPolygon = spec.kind === 'top'
-      // Everything above the bearing plane. Its underside is the plane, so the
-      // hook's underside rises with z and material only ever ends.
-      ? [[[[-big, bevelYAt(cfg, z)], [big, bevelYAt(cfg, z)], [big, big], [-big, big]]]]
-      : [[[[-big, -big], [big, -big], [big, cfg.spacerHeightMm], [-big, cfg.spacerHeightMm]]]]
-    region = intersection(region, keep)
+    region = intersection(region, [[[[-big, floorY], [big, floorY], [big, big], [-big, big]]]])
   }
 
   for (const o of shelfOpenings(cfg, spec)) {
@@ -328,6 +341,9 @@ export function breakpoints(cfg: RackConfig, spec: PieceSpec): number[] {
     for (let k = 0; k <= steps; k++) {
       set.add(Number(Math.max(back, -k * cfg.cleatTreadMm).toFixed(4)))
     }
+    // ...and the release chamfer in front of it, at one layer per layer.
+    const release = Math.ceil(bevelYAt(cfg, 0) / cfg.layerHeightMm)
+    for (let k = 0; k <= release; k++) set.add(Number((k * cfg.layerHeightMm).toFixed(4)))
   }
   const f = frameFor(cfg, spec)
   if (f.isFloor) {
@@ -495,7 +511,9 @@ export function buildCleat(cfg: RackConfig, side: CleatSide): Piece {
   const pegY1 = lowestTop - 4
   const pegY0 = pegY1 - 8
 
-  const bps = new Set<number>([0, T, Math.min(cfg.cleatScrewHeadDepthMm, T)])
+  const bps = new Set<number>([0, T])
+  const taper = (cfg.cleatScrewHeadDiaMm - cfg.cleatScrewDiaMm) / 2
+  for (let u = 0; u <= taper + 1e-9; u += cfg.layerHeightMm) bps.add(Number(u.toFixed(4)))
   for (let u = 0; u <= T + 1e-9; u += cfg.cleatTreadMm) bps.add(Number(Math.min(u, T).toFixed(4)))
   const zs = [...bps].sort((a, b) => a - b)
 
@@ -514,7 +532,14 @@ export function buildCleat(cfg: RackConfig, side: CleatSide): Piece {
         -1, pegY0 - cfg.fitMm, cfg.cleatPegMm + cfg.fitMm, pegY1 + cfg.fitMm,
       )]])
     }
-    const dia = u < cfg.cleatScrewHeadDepthMm ? cfg.cleatScrewHeadDiaMm : cfg.cleatScrewDiaMm
+    // A COUNTERSINK, not a counterbore. A stepped bore leaves an annular ledge
+    // -- here 2.25 mm of it -- which slices as 5 degrees and drew support into
+    // every screw hole. A 45 degree cone is self-supporting, and it is what a
+    // countersunk screw wants anyway.
+    const taper = (cfg.cleatScrewHeadDiaMm - cfg.cleatScrewDiaMm) / 2
+    const dia = u >= taper
+      ? cfg.cleatScrewDiaMm
+      : cfg.cleatScrewHeadDiaMm - 2 * (Math.floor(u / cfg.layerHeightMm + 1e-9) * cfg.layerHeightMm)
     for (let k = 0; k < cfg.cleatScrewsPerHalf; k++) {
       const cx = L * ((k + 1) / (cfg.cleatScrewsPerHalf + 1))
       region = difference(region, [[circleRing(dia / 2, 32).map(([x, y]) => [x + cx, y + screwY])]])

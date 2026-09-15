@@ -96,7 +96,15 @@ export interface RackConfig {
    * way.
    */
   cleatThicknessMm: number
-  /** Height of the bevel's high point, in the top cap's own frame. */
+  /**
+   * Height of the bevel's high point, in the top cap's own frame.
+   *
+   * Kept as low as the bevel allows, because the cap has to release the clip
+   * again in FRONT of the back face -- at one layer per layer, or the full
+   * section reappears in mid-air -- and that release chamfer is exactly this
+   * tall. At the wall face the plane sits on the cap's own bottom edge, which
+   * is the lowest it can be and still run the full thickness.
+   */
   cleatBevelTopMm: number
   /** How far the wall strip's body hangs below the bevel's low point. */
   cleatDropMm: number
@@ -113,8 +121,7 @@ export interface RackConfig {
   cleatScrewsPerHalf: number
   /** Peg joining the two wall strips, so they cannot mount at different heights. */
   cleatPegMm: number
-  /** Pad on the back of the bottom cap, holding the rack parallel to the wall. */
-  spacerHeightMm: number
+
 
   /**
    * Cut the shelves back to a waffle: a perimeter frame and ribs around a grid
@@ -201,7 +208,7 @@ export const RACK: RackConfig = {
   shelfFrameMm: 12,
   shelfRibMm: 6,
   cleatThicknessMm: 12,
-  cleatBevelTopMm: 34,
+  cleatBevelTopMm: 12,
   cleatDropMm: 34,
   cleatTreadMm: 1.0,
   cleatScrewDiaMm: 4.5,
@@ -209,7 +216,6 @@ export const RACK: RackConfig = {
   cleatScrewHeadDepthMm: 4.5,
   cleatScrewsPerHalf: 3,
   cleatPegMm: 7,
-  spacerHeightMm: 16,
 
   shelfOpeningWidthMm: 16,
   shelfOpeningDepthMm: 60,
@@ -317,8 +323,11 @@ export function checkConfig(cfg: RackConfig): string[] {
       `${d.capHeightMm.toFixed(1)} tall -- the hook would have no piece to hang from`,
     )
   }
-  if (cfg.cleatBevelTopMm - cfg.cleatThicknessMm <= 0) {
-    out.push('the bevel runs off the bottom of the top cap')
+  if (cfg.cleatBevelTopMm < cfg.cleatThicknessMm) {
+    out.push(
+      `a ${cfg.cleatBevelTopMm} mm bevel top cannot run a full ${cfg.cleatThicknessMm} mm of ` +
+      'thickness without dropping below the cap',
+    )
   }
   // The strip is shortest at the wall face; everything in it has to fit there.
   const lowestTop = cfg.cleatDropMm - cfg.fitMm
