@@ -5,13 +5,13 @@ import { intersection } from '../geometry/boolean.ts'
 import { multiArea } from '../geometry/vec.ts'
 import { readBinaryStl, writeBinaryStl } from '../export/stl.ts'
 import { BAMBU_X2D } from '../model/machines.ts'
-import { checkConfig, derive, RACK, seamTabCentres } from './config.ts'
+import { checkConfig, derive, RACK } from './config.ts'
 import type { MultiPolygon } from '../geometry/vec.ts'
 import type { PieceSpec } from './geometry.ts'
 import {
   bandVolume, buildPiece, crossSectionAt, frameFor, originShiftFor, pieceList, pieceName,
-  backReachMm, bevelYAt, buildCleat, cleatHeightMm, gableHeight, openingSpanAt, shelfOpenings,
-  stackLayout, tabSpanAt,
+  backReachMm, bevelYAt, buildCleat, cleatHeightMm, gableHeight, openingSpanAt, seamVee,
+  shelfOpenings, stackLayout,
 } from './geometry.ts'
 
 const D = derive(RACK)
@@ -74,15 +74,20 @@ test('pieces are the size the stack arithmetic expects', () => {
   }
   const round = (v: number[]): number[] => v.map(n => +n.toFixed(3))
   assert.deepEqual(size({ kind: 'middle', side: 'left' }),
-    round([D.halfWidthMm + RACK.bossOutMm + RACK.seamTabReachMm, D.middleHeightMm + rail, D.rackDepthMm]))
+    round([D.halfWidthMm + RACK.bossOutMm + RACK.seamVeeDepthMm, D.middleHeightMm + rail, D.rackDepthMm]))
   assert.deepEqual(size({ kind: 'middle', side: 'right' }),
-    round([D.halfWidthMm + RACK.bossOutMm, D.middleHeightMm + rail, D.rackDepthMm]))
+    // narrower than the left by the glue gap it holds off the centreline
+    round([D.halfWidthMm + RACK.bossOutMm - RACK.fitMm, D.middleHeightMm + rail, D.rackDepthMm]))
   // The top cap ends the stack, so it carries no rail.
   assert.deepEqual(size({ kind: 'top', side: 'right' })[1], D.capHeightMm)
 })
 
 describe('the centre seam', () => {
-  test('the two halves never share solid material', () => {
+  const spec: PieceSpec = { kind: 'middle', side: 'left' }
+  const py0 = frameFor(RACK, spec).plateY0
+  const py1 = py0 + RACK.shelfMm
+
+  test('the halves never share solid material', () => {
     for (let z = 0.25; z < D.rackDepthMm; z += 0.25) {
       const overlap = multiArea(intersection(
         inRackFrame({ kind: 'middle', side: 'left' }, z),
@@ -92,92 +97,40 @@ describe('the centre seam', () => {
     }
   })
 
-  test('a tab crosses the seam and leaves exactly the fit clearance', () => {
-    const zc = seamTabCentres(RACK, D)[0]!
-    const maxX = (mp: MultiPolygon): number =>
-      Math.max(...mp.flat(2).map(([x]) => x))
-    const minX = (mp: MultiPolygon): number =>
-      Math.min(...mp.flat(2).map(([x]) => x))
-    const tabTip = maxX(inRackFrame({ kind: 'middle', side: 'left' }, zc))
-    const cavity = minX(inRackFrame({ kind: 'middle', side: 'right' }, zc))
-    assert.equal(+tabTip.toFixed(3), D.halfWidthMm + RACK.seamTabReachMm)
-    assert.equal(+(cavity - tabTip).toFixed(3), RACK.fitMm)
-  })
-
-  test('the tab is an undercut: wider at the tip than at the seam', () => {
-    // The property the joint exists for, measured off the shape. The first
-    // version was an arrowhead -- widest AT the seam, tapering to a point --
-    // which pulls straight out. Everything else about it tested fine.
-    const zc = seamTabCentres(RACK, D)[1]!
-    const widthAt = (x: number): number => {
-      // Scan one tab only -- the centres are ~43 mm apart, so a wider window
-      // picks up the neighbours and reports them as one enormous tab.
-      const reachZ = RACK.seamTabRootMm / 2 + RACK.seamTabReachMm + 1
-      let lo = Infinity, hi = -Infinity
-      for (let z = zc - reachZ; z < zc + reachZ; z += 0.02) {
-        const span = tabSpanAt(RACK, D, z, 0)
-        if (!span || span[0] > x || span[1] < x) continue
-        lo = Math.min(lo, z); hi = Math.max(hi, z)
-      }
-      return hi - lo
-    }
-    const atSeam = widthAt(D.halfWidthMm + 0.05)
-    const atTip = widthAt(D.halfWidthMm + RACK.seamTabReachMm - 0.05)
-    assert.ok(atTip > atSeam + 1,
-      `tip ${atTip.toFixed(1)} mm is not wider than the neck ${atSeam.toFixed(1)} mm -- it would pull out`)
-  })
-
-  test('both flanks of a tab step identically', () => {
-    // They did not. Band breakpoints are shared across the whole piece, so the
-    // shelf gables landed inside one flank of every tab and chopped it into
-    // 0.02-0.58 mm slivers while the other kept a clean tread. The profile is
-    // quantised now, so nothing else in the piece can shift it.
-    for (const zc of seamTabCentres(RACK, D)) {
-      for (let off = 0.1; off < RACK.seamTabRootMm / 2 + RACK.seamTabReachMm; off += 0.1) {
-        const below = tabSpanAt(RACK, D, zc - off, 0)
-        const above = tabSpanAt(RACK, D, zc + off, 0)
-        assert.deepEqual(below, above, `flanks differ ${off.toFixed(1)} mm from the centre`)
-      }
+  test('the V is the same shape on both halves, offset by the glue gap', () => {
+    const l = seamVee(RACK, D, 'left', py0, py1)
+    const r = seamVee(RACK, D, 'right', py0, py1)
+    assert.equal(l.length, r.length)
+    for (const [i, p] of l.entries()) {
+      assert.equal(+(r[i]![0] - p[0]).toFixed(6), RACK.fitMm, `point ${i} x`)
+      assert.equal(r[i]![1], p[1], `point ${i} y`)
     }
   })
 
-  test('a tab flank insets one layer per layer, so it prints', () => {
-    // One flank of every tab is an overhang -- material appears there as the
-    // print rises -- so it needs the same one-layer tread the shelf peaks do.
-    const zc = seamTabCentres(RACK, D)[0]!
-    const L = RACK.layerHeightMm
-    const at = (o: number): number => tabSpanAt(RACK, D, zc + o, 0)![0]
-    const base = RACK.seamTabRootMm / 2 + 4
-    assert.equal(+(at(base + L) - at(base)).toFixed(6), L,
-      'the flank does not slice as 45 degrees')
-  })
-
-  test('the halves cannot be pulled apart, and cannot shift fore or aft', () => {
-    // Kinematic, not geometric: nudge one half and require a collision.
-    const nudge = 0.6
-    const moved = (dx: number, dz: number): number => {
-      let worst = 0
-      for (let z = 1; z < D.rackDepthMm - 1; z += 0.5) {
-        const right = inRackFrame({ kind: 'middle', side: 'right' }, z - dz)
-        const a = multiArea(intersection(
-          inRackFrame({ kind: 'middle', side: 'left' }, z),
-          right.map(p => p.map(r => r.map(([x, y]) => [x + dx, y] as const))),
-        ))
-        if (a > worst) worst = a
-      }
-      return worst
+  test('the tongue is centred in the plate and reaches the full depth', () => {
+    const v = seamVee(RACK, D, 'left', py0, py1)
+    assert.equal(v[1]![1], (py0 + py1) / 2, 'the apex is not on the plate centreline')
+    assert.equal(+(v[1]![0] - v[0]![0]).toFixed(6), RACK.seamVeeDepthMm)
+    // Constant along the depth is the whole point: it is what costs no bands.
+    const at = (z: number): number =>
+      Math.max(...inRackFrame(spec, z).flat(2).map(([x]) => x))
+    for (const z of [1, 40, 91, 150, D.rackDepthMm - 1]) {
+      assert.equal(+at(z).toFixed(4), +(D.halfWidthMm + RACK.seamVeeDepthMm).toFixed(4),
+        `the seam edge moves at z=${z}`)
     }
-    assert.ok(moved(nudge, 0) > 0.1, 'the halves pull apart sideways -- the seam does not lock')
-    assert.ok(moved(0, nudge) > 0.1, 'the halves shift forward')
-    assert.ok(moved(0, -nudge) > 0.1, 'the halves shift back')
   })
 
-  test('lifting is the ONE free direction, and that is the assembly move', () => {
-    // Documented, not a defect: an undercut can only be assembled along the
-    // axis it is constant in, and for these tabs that axis is the height.
-    // Nothing in the rack resists it -- the mount does. See the drawings.
+  test('the V beats a flat butt on bonded area', () => {
+    const butt = RACK.shelfMm
+    const vee = 2 * Math.hypot(RACK.seamVeeDepthMm, RACK.shelfMm / 2)
+    assert.ok(vee > butt * 1.2, `only ${(vee / butt).toFixed(2)}x the glue area`)
+  })
+
+  test('the halves cannot slide vertically past each other', () => {
+    // The V does this unglued -- the tongue would have to climb out of the
+    // groove. It is the direction the flared tabs left free.
     let worst = 0
-    for (let z = 1; z < D.rackDepthMm - 1; z += 0.5) {
+    for (let z = 1; z < D.rackDepthMm - 1; z += 1) {
       const a = multiArea(intersection(
         inRackFrame({ kind: 'middle', side: 'left' }, z),
         inRackFrame({ kind: 'middle', side: 'right' }, z)
@@ -185,16 +138,7 @@ describe('the centre seam', () => {
       ))
       if (a > worst) worst = a
     }
-    assert.ok(worst < 1e-6, 'something now blocks the assembly direction')
-  })
-
-  test('between tabs the halves butt on the seam line', () => {
-    // Midway between the first two tabs there is no tab, so both halves stop
-    // dead on the centreline.
-    const centres = seamTabCentres(RACK, D)
-    const z = (centres[0]! + centres[1]!) / 2
-    const left = inRackFrame({ kind: 'middle', side: 'left' }, z)
-    assert.equal(+Math.max(...left.flat(2).map(([x]) => x)).toFixed(3), D.halfWidthMm)
+    assert.ok(worst > 0.05, 'the halves shear vertically -- the V does not locate them')
   })
 })
 
@@ -263,7 +207,7 @@ describe('the skeletonised shelf', () => {
         assert.ok(o.x1 <= D.rackWidthMm - RACK.wallMm, 'opening undercuts the wall')
         // The tab and its mating cavity both live inside the seam frame.
         const toSeam = side === 'left' ? D.halfWidthMm - o.x1 : o.x0 - D.halfWidthMm
-        assert.ok(toSeam >= RACK.seamTabReachMm + RACK.fitMm,
+        assert.ok(toSeam >= RACK.seamVeeDepthMm + RACK.fitMm,
           `opening comes within ${toSeam.toFixed(1)} mm of the seam, inside the joint`)
       }
     }

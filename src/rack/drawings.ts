@@ -12,20 +12,18 @@
 import type { MultiPolygon } from '../geometry/vec.ts'
 import { checkManifold } from '../geometry/mesh.ts'
 import type { RackConfig } from './config.ts'
-import { derive, seamTabCentres } from './config.ts'
+import { derive } from './config.ts'
 import type { PieceKind, PieceSpec } from './geometry.ts'
 import {
   buildPiece, cleatBevelDropAt, cleatHeightMm, crossSectionAt, gableHeight, originShiftFor,
-  pieceList, pieceName, seamOutline, shelfOpenings, stackLayout,
+  pieceList, pieceName, shelfOpenings, stackLayout,
 } from './geometry.ts'
 
 /** A projector from drawing units into SVG pixels. */
 type Pt = (a: number, b: number) => [number, number]
 
 interface Geom {
-  centres: number[]
   section: Record<PieceKind, { plain: { left: MultiPolygon; right: MultiPolygon } }>
-  plan: { tab: [number, number][]; cavity: [number, number][] }
   pieces: { file: string; qty: number; w: number; h: number; dep: number; cm3: number }[]
 }
 
@@ -42,7 +40,6 @@ export function buildDrawings(cfg: RackConfig): string {
     shiftBack(crossSectionAt(cfg, { kind, side }, z), { kind, side })
 
   const plainZ = C.backLipDepthMm + 16   // clear of both the lip bands and every tab
-  const seamAt = (inflate: number): [number, number][] => seamOutline(cfg, inflate)
 
   const qty = new Map<string, number>()
   for (const s of pieceList(cfg)) qty.set(pieceName(s), (qty.get(pieceName(s)) ?? 0) + 1)
@@ -61,13 +58,11 @@ export function buildDrawings(cfg: RackConfig): string {
   }
 
   const J: Geom = {
-    centres: seamTabCentres(cfg, D),
     section: {
       bottom: { plain: { left: frame('bottom', 'left', plainZ), right: frame('bottom', 'right', plainZ) } },
       middle: { plain: { left: frame('middle', 'left', plainZ), right: frame('middle', 'right', plainZ) } },
       top: { plain: { left: frame('top', 'left', plainZ), right: frame('top', 'right', plainZ) } },
     },
-    plan: { tab: seamAt(0), cavity: seamAt(C.fitMm) },
     pieces: pieceStats,
   }
 
@@ -198,13 +193,13 @@ export function buildDrawings(cfg: RackConfig): string {
     const out: string[] = []
     const W = ox + D.rackWidthMm * s + 178, H = oy + D.rackDepthMm * s + 54
 
-    // left half outline: plate 0..half plus tabs; right half: half..W minus cavity
-    const tab = J.plan.tab, cav = J.plan.cavity
-    const chain = (pts: [number, number][]): string => pts.map(([x, z]) => { const [a, b] = P(x, z); return `${f(a)},${f(b)}` }).join(' ')
+    // The seam runs dead straight in plan: the V lives in the section, not here.
     const [x0, z0] = P(0, 0), [, z1] = P(0, D.rackDepthMm)
-    out.push(`<polygon class="part" points="${f(x0)},${f(z0)} ${chain(tab)} ${f(x0)},${f(z1)}"/>`)
+    const [xv] = P(D.halfWidthMm + C.seamVeeDepthMm, 0)
+    const [xg] = P(D.halfWidthMm + C.fitMm, 0)
     const [xw] = P(D.rackWidthMm, 0)
-    out.push(`<polygon class="part alt" points="${f(xw)},${f(z0)} ${chain(cav)} ${f(xw)},${f(z1)}"/>`)
+    out.push(`<rect class="part" x="${f(x0)}" y="${f(z0)}" width="${f(xv - x0)}" height="${f(z1 - z0)}"/>`)
+    out.push(`<rect class="part alt" x="${f(xg)}" y="${f(z0)}" width="${f(xw - xg)}" height="${f(z1 - z0)}"/>`)
 
     // The waffle. Drawn as the peaked pentagon it actually is -- a rectangle
     // here would be the picture disagreeing with the part again.
@@ -227,10 +222,6 @@ export function buildDrawings(cfg: RackConfig): string {
     out.push(`<line class="hidden" x1="${f(x0)}" y1="${f(fb)}" x2="${f(xw)}" y2="${f(fb)}"/>`)
     out.push(`<text class="note" x="${f(xw + 6)}" y="${f(fb + 3)}">front retainer ${f(C.frontLipHeightMm)}</text>`)
 
-    for (const zc of J.centres) {
-      const [tx, tz] = P(D.halfWidthMm + C.seamTabReachMm + 3, zc)
-      out.push(`<text class="jointlbl" x="${f(tx)}" y="${f(tz + 3)}">tab</text>`)
-    }
     out.push(`<text class="note" x="${f(P(4, 0)[0])}" y="${f(oy - 10)}">BACK</text>`)
     out.push(`<text class="note" x="${f(P(4, 0)[0])}" y="${f(oy + D.rackDepthMm * s + 16)}">FRONT — cases slide out this way</text>`)
     out.push(dimV(P(0, 0)[1], P(0, D.rackDepthMm)[1], ox - 22, `${f(D.rackDepthMm)} deep`))
@@ -278,41 +269,27 @@ export function buildDrawings(cfg: RackConfig): string {
     return `<svg viewBox="0 0 448 232" role="img" aria-label="Course dovetail at ten to one: a tongue 4.4 mm at the neck flaring to 6 mm at the head, centred on a 9.6 mm boss that leaves 1.65 mm of wall each side of the socket.">${out.join('')}</svg>`
   }
 
-  function detailTab() {
-    const s = 4.6
-    const zc = J.centres[1]!
-    const neck = C.seamTabRootMm / 2, reach = C.seamTabReachMm, fit = C.fitMm
-    const span = neck + reach + 8
-    const ox = 70, oy = 26
-    const P = (x: number, z: number): [number, number] =>
-      [ox + (x - (D.halfWidthMm - 16)) * s, oy + (z - (zc - span)) * s]
+  function detailVee(): string {
+    const sc = 26
+    const t = C.shelfMm, vee = C.seamVeeDepthMm, fit = C.fitMm
+    const ox = 150, oy = 40
+    const P = (x: number, y: number): [number, number] => [ox + x * sc, oy + (t + 1 - y) * sc]
     const out: string[] = []
-    const hw = D.halfWidthMm
-    const chain = (pts: [number, number][]): string =>
-      pts.map(([x, z]) => P(x, z).map(f).join(',')).join(' ')
+    const pts = (r: [number, number][]): string => r.map(([x, y]) => P(x, y).map(f).join(',')).join(' ')
 
-    // left half: plate edge with one tab hanging off it, doubling back
-    const left: [number, number][] = [
-      [hw - 16, zc - span], [hw, zc - span], [hw, zc - neck],
-      [hw + reach, zc - neck - reach], [hw + reach, zc + neck + reach],
-      [hw, zc + neck], [hw, zc + span], [hw - 16, zc + span],
-    ]
-    out.push(`<polygon class="part" points="${chain(left)}"/>`)
-    // right half: the same shape grown by the fit, cut out of its plate
-    const n2 = neck + fit, r2 = reach + fit
-    const right: [number, number][] = [
-      [hw + 40, zc - span], [hw, zc - span], [hw, zc - n2],
-      [hw + r2, zc - n2 - r2], [hw + r2, zc + n2 + r2],
-      [hw, zc + n2], [hw, zc + span], [hw + 40, zc + span],
-    ]
-    out.push(`<polygon class="part alt" points="${chain(right)}"/>`)
+    // left half: plate with the V tongue on its seam edge
+    out.push(`<polygon class="part" points="${pts([[-3.4, 0], [0, 0], [vee, t / 2], [0, t], [-3.4, t]])}"/>`)
+    // right half: the same V as a groove, offset by the glue gap
+    out.push(`<polygon class="part alt" points="${pts([
+      [fit, 0], [vee + fit, t / 2], [fit, t], [vee + 3.4, t], [vee + 3.4, 0],
+    ])}"/>`)
 
-    out.push(dimH(P(hw, 0)[0], P(hw + reach, 0)[0], P(0, zc + span)[1] + 22, `${f(reach)} reach`))
-    out.push(dimV(P(0, zc - neck)[1], P(0, zc + neck)[1], P(hw - 4, 0)[0], `${f(C.seamTabRootMm)} neck`))
-    out.push(dimV(P(0, zc - neck - reach)[1], P(0, zc + neck + reach)[1], P(hw + reach + 5, 0)[0],
-      `${f(2 * (neck + reach))} head`))
-    out.push(`<text class="jointlbl" x="${f(P(hw + 2, 0)[0])}" y="${f(oy - 10)}">head wider than neck — it cannot pull out</text>`)
-    return `<svg viewBox="0 0 ${f(ox + 62 * s + 60)} ${f(oy + 2 * span * s + 42)}" role="img" aria-label="One seam tab in plan at four to one: a 16 mm neck opening to a 40 mm head 12 mm past the seam, so the head cannot withdraw through the neck.">${out.join('')}</svg>`
+    out.push(dimH(P(0, 0)[0], P(vee, 0)[0], P(0, -0.35)[1], `${f(vee)}`))
+    out.push(dimV(P(0, t)[1], P(0, 0)[1], P(-3.4, 0)[0] - 16, `${f(t)}`))
+    out.push(`<text class="secttl" x="${f(P(-3.4, 0)[0])}" y="${f(P(0, -0.95)[1])}">LEFT — tongue</text>`)
+    out.push(`<text class="secttl alt" x="${f(P(vee + 0.6, 0)[0])}" y="${f(P(0, -0.95)[1])}">RIGHT — groove</text>`)
+    out.push(`<text class="jointlbl" x="${f(P(vee / 2, t + 0.75)[0])}" y="${f(P(0, t + 0.6)[1])}" text-anchor="middle">${f(fit)} glue gap all round</text>`)
+    return `<svg viewBox="0 0 ${f(ox + (vee + 4.4) * sc + 20)} ${f(oy + (t + 2.4) * sc)}" role="img" aria-label="Section through the centre seam: a V tongue on the left half meets a matching groove on the right, with a 0.15 mm gap for glue.">${out.join('')}</svg>`
   }
 
   function sheetCleat(): string {
@@ -333,15 +310,12 @@ export function buildDrawings(cfg: RackConfig): string {
     const chain = (pts: [number, number][]): string =>
       pts.map(([z, y]) => P(z, y).map(f).join(',')).join(' ')
 
-    // wall
     out.push(`<rect class="bed" x="${f(P(-T - 16, 0)[0])}" y="${f(P(0, 50)[1])}" ` +
       `width="${f(16 * sc)}" height="${f(52 * sc)}"/>`)
     out.push(`<text class="note" x="${f(P(-T - 15, 0)[0])}" y="${f(P(0, -1)[1])}">WALL</text>`)
 
-    // wall strip: body under the staircase
     const strip: [number, number][] = [[-T, top - Hs], [0, top - Hs], ...stair(0, T).reverse()]
     out.push(`<polygon class="part alt" points="${chain(strip)}"/>`)
-    // the rack's top cap, hook and all
     const hook: [number, number][] = [
       ...stair(0, T), [-T, top + 14], [D.rackDepthMm / 5, top + 14], [D.rackDepthMm / 5, top - 26], [0, top - 26],
     ]
@@ -351,7 +325,6 @@ export function buildDrawings(cfg: RackConfig): string {
     out.push(`<text class="jointlbl" x="${f(P(T * 0.6, top + 5)[0])}" y="${f(P(0, top + 5)[1])}">TOP CAP — the hook</text>`)
     out.push(`<text class="secttl alt" x="${f(P(-T - 14, 0)[0])}" y="${f(P(0, top - Hs + 5)[1])}">WALL STRIP</text>`)
     out.push(`<text class="note" x="${f(P(-T - 14, 0)[0])}" y="${f(P(0, top - Hs - 6)[1])}">screwed to the studs</text>`)
-    // the arrow that explains the whole joint
     const a0 = P(T * 1.2, top + 22), a1 = P(-T * 0.2, top + 10)
     out.push(`<defs><marker id="ca" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>`)
     out.push(`<line class="arrow" x1="${f(a0[0])}" y1="${f(a0[1])}" x2="${f(a1[0])}" y2="${f(a1[1])}" marker-end="url(#ca)"/>`)
@@ -518,7 +491,7 @@ export function buildDrawings(cfg: RackConfig): string {
       <p class="eyebrow">Shop drawings · generated from src/rack/geometry.ts</p>
       <h1>Systainer3 S76 modular rack</h1>
       <p class="lede">A ${C.bays}-bay wall rack in ${pieces.reduce((t, p) => t + p[1], 0)} printed pieces, split down the middle because a 265&nbsp;mm case
-        is wider than the X2D's 256&nbsp;mm plate. Every joint is printed — no bolts, no inserts, no glue.</p>
+        is wider than the X2D's 256&nbsp;mm plate. No bolts and no inserts: the courses interlock, and the centre seam is a glued V joint.</p>
     </div>
     <dl class="tbgrid">
       <div class="tbcell"><dt>Bay pitch</dt><dd>${f(D.pitchMm)} mm</dd></div>
@@ -569,18 +542,18 @@ export function buildDrawings(cfg: RackConfig): string {
       <span class="eyebrow">one course · scale ≈ 1.2:1</span></div>
     <div class="sheetbody">
       <figure class="drawing">${plan.svg}
-        <figcaption>${C.seamTabs} flared tabs carry the left half across the seam into slots in the right half.
-          The seam sits at mid-span, where a plain butt joint would act as a hinge and let the shelf sag into a V.</figcaption></figure>
+        <figcaption>The seam runs dead straight in plan — the joint is a V tongue and groove down the
+          full depth, so it lives in the section rather than here. Sheet 4 shows it.</figcaption></figure>
       <div class="notes">
-        <p><strong>How it goes together.</strong> The tabs are undercut, so they can only be assembled along the axis
-           they are constant in — the height. You <em>drop</em> the right half onto the left.</p>
-        <p><strong>What it locks.</strong> Sideways and fore-and-aft — everything in the plane of the shelf,
-           which is where bending puts the seam in tension. The head is ${f(2 * (C.seamTabRootMm / 2 + C.seamTabReachMm))} mm
-           across and the neck ${f(C.seamTabRootMm)} mm, so it cannot withdraw.</p>
-        <p><strong>What it does NOT lock: straight up.</strong> An undercut can only be assembled along the
-           axis it is constant in, so the one direction that lets the halves go together is also the one
-           nothing in the rack resists. The <em>mount</em> resists it: both towers seat on one continuous
-           cleat, or on one floor. In service the load only ever pushes the seam down.</p>
+        <p><strong>How it goes together.</strong> Butter the V, press the halves together sideways, clamp
+           until the glue grabs. No undercut, so no assembly direction to get wrong.</p>
+        <p><strong>Glue carries the tension</strong> that the seam sees at mid-span, where a plain butt joint
+           would act as a hinge and let the shelf sag into a V. The joint adds ${f(100 * (2 * Math.hypot(C.seamVeeDepthMm, C.shelfMm / 2)) / C.shelfMm - 100)}% more
+           bonded area than a flat butt, and it locates the halves so they cannot slide vertically past
+           each other while the glue sets.</p>
+        <p><strong>It is why nothing needs support.</strong> A V is constant along the depth, which is the
+           print axis — no staircase, no overhang, and no bands at all. The flared tabs it replaced cost
+           ~250 breakpoints a piece and still left one flank overhanging.</p>
         <p><strong>Every opening is peaked.</strong> The shelf stands as a vertical wall in the print, so a
            flat-topped hole is a horizontal roof — the first version filled all of them with tree supports.
            The peak insets one layer per layer, which slices as a true 45°. The flat bottom needs nothing:
@@ -588,7 +561,7 @@ export function buildDrawings(cfg: RackConfig): string {
         <p><strong>Why not a diamond.</strong> Same idea, but a rotated square is always half its bounding
            box however you size it. Peaking only the top keeps 80% of the hole instead of 50%.</p>
         <p><strong>The seam frame is ${f(D.seamFrameMm)} mm</strong> — wider than the ${f(C.shelfFrameMm)} mm frame
-           elsewhere, because the tab cavity is cut ${f(C.seamTabReachMm + C.fitMm)} mm into it.</p>
+           elsewhere, because the groove is cut ${f(C.seamVeeDepthMm + C.fitMm)} mm into it.</p>
       </div>
     </div>
   </section>
@@ -602,7 +575,7 @@ export function buildDrawings(cfg: RackConfig): string {
           <figcaption><strong>Course joint, 10:1.</strong> A sliding dovetail running the full ${f(D.rackDepthMm)} mm depth.
             The head is wider than the neck, so it carries tension — which matters, because the cleat hangs the whole
             stack from the top course. Slide the course on from the front.</figcaption></figure>
-        <figure class="drawing">${detailTab()}
+        <figure class="drawing">${detailVee()}
           <figcaption><strong>Seam tab, 4.6:1.</strong> 45° flanks are the compromise: steep enough that the tip is wider
             than the root and locks, shallow enough that the overhang still prints. Anything flatter needs support.</figcaption></figure>
       </div>

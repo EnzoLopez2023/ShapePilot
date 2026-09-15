@@ -34,19 +34,19 @@ const outDir = resolve(flag('--out') ?? (coupon ? 'out/rack-coupon' : 'out/rack'
 // frames, and the waffle has nothing to do with any of the three joints.
 //
 // It takes TWO configs, because the joints do not all shrink the same way. The
-// seam tab and the course dovetail only need depth and a stub of wall, so that
+// seam V and the course dovetail only need depth and a stub of wall, so that
 // pair can shrink in every direction. The cleat hangs off the top cap and its
 // bevel tops out 34 mm up, so that piece has to keep its real HEIGHT and can
 // only be narrowed -- shrinking it like the others is what checkConfig refused.
 const JOINT_COUPON: RackConfig = {
-  ...RACK, bays: 2, seamTabs: 1, skeletonShelf: false,
+  ...RACK, bays: 2, skeletonShelf: false,
   caseWidthMm: 60, caseDepthMm: 40, caseHeightMm: 20,
   // It emits no cap and no strip, so these go unused -- but a config still has
   // to be valid on its own terms, and a 34 mm bevel on a 14.7 mm cap is not.
   cleatThicknessMm: 6, cleatBevelTopMm: 11,
 }
 const CLEAT_COUPON: RackConfig = {
-  ...RACK, bays: 2, seamTabs: 1, skeletonShelf: false, cleatScrewsPerHalf: 1,
+  ...RACK, bays: 2, skeletonShelf: false, cleatScrewsPerHalf: 1,
   caseWidthMm: 40, caseDepthMm: 40,   // full height on purpose
 }
 
@@ -200,7 +200,7 @@ const readme = [
   ...(coupon ? [
     '',
     '  THIS COUPON TESTS ALL THREE JOINTS:',
-    '    rack_middle_L + _R   drop together  -> the seam tab',
+    '    rack_middle_L + _R   glue together  -> the seam V',
     '    two of rack_middle_L slide together -> the course dovetail',
     '    hook onto strip                     -> the cleat',
     '  The cleat pieces keep their real height because the bevel tops out 34 mm',

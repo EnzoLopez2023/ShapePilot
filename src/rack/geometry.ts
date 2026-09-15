@@ -36,7 +36,7 @@ import { circleRing } from '../geometry/primitives.ts'
 import type { Mesh } from '../geometry/mesh.ts'
 import { MeshBuilder } from '../geometry/mesh.ts'
 import type { RackConfig, RackDerived } from './config.ts'
-import { derive, seamTabCentres } from './config.ts'
+import { derive } from './config.ts'
 
 export type Side = 'left' | 'right'
 export type PieceKind = 'bottom' | 'middle' | 'top'
@@ -104,53 +104,19 @@ export function frameFor(cfg: RackConfig, spec: PieceSpec): Frame {
  * tip, so it locks. The flank rises 1:1 with depth -- 45 degrees, which is the
  * steepest an undercut can be and still print, since depth is the print axis.
  */
-export function tabSpanAt(
-  cfg: RackConfig, d: RackDerived, z: number, inflate: number,
-): [number, number] | null {
-  const neck = cfg.seamTabRootMm / 2
-  const reach = cfg.seamTabReachMm
-  for (const zc of seamTabCentres(cfg, d)) {
-    const dist = Math.abs(z - zc)
-    if (dist > neck + reach + inflate) continue
-    // QUANTISED to the tab's own tread, and the mating cavity is this same
-    // profile offset -- not a second profile of its own.
-    //
-    // Both matter. Evaluating a continuous flank at each band's midpoint made
-    // the steps depend on where unrelated breakpoints fell, and the shelf
-    // gables land inside one flank of every tab: one side came out on a clean
-    // 1 mm tread and the other in ragged 0.02-0.58 mm slivers. Quantising the
-    // two halves independently instead would have broken the fit, because
-    // q(over) and q(over - fit) sit in the same cell or one apart.
-    const distEff = Math.min(dist, neck + reach)
-    const over = Math.max(distEff - neck, 0)
-    const q = over <= 0
-      ? 0
-      // The epsilon matters: an `over` that lands exactly on a cell boundary
-      // flips `floor` on float noise, and the two flanks of a tab then differ
-      // by a whole tread at that one depth.
-      : Math.min((Math.floor(over / cfg.layerHeightMm + 1e-9) + 0.5) * cfg.layerHeightMm, reach)
-    return [d.halfWidthMm + q - inflate, d.halfWidthMm + reach + inflate]
-  }
-  return null
-}
-
 /**
- * The seam edge of a half, as one open chain from z=0 to z=depth.
+ * The seam profile of a half, as a polyline up the plate's thickness.
  *
- * It doubles back on itself at every tab, which is what an undercut looks like
- * drawn in plan.
+ * A V tongue on the left, the same V as a groove on the right, offset by
+ * `fitMm` so there is a uniform gap for glue. Constant along the depth, so the
+ * whole joint sits in the cross-section: no bands, no staircase, nothing to
+ * overhang. That is the entire reason it replaced flared tabs.
  */
-export function seamOutline(cfg: RackConfig, inflate: number): [number, number][] {
-  const d = derive(cfg)
-  const neck = cfg.seamTabRootMm / 2 + inflate
-  const reach = cfg.seamTabReachMm + inflate
-  const x = d.halfWidthMm, far = x + reach
-  const pts: [number, number][] = [[x, 0]]
-  for (const zc of seamTabCentres(cfg, d)) {
-    pts.push([x, zc - neck], [far, zc - neck - reach], [far, zc + neck + reach], [x, zc + neck])
-  }
-  pts.push([x, d.rackDepthMm])
-  return pts
+export function seamVee(
+  cfg: RackConfig, d: RackDerived, side: Side, py0: number, py1: number,
+): Ring {
+  const x = d.halfWidthMm + (side === 'left' ? 0 : cfg.fitMm)
+  return [[x, py0], [x + cfg.seamVeeDepthMm, (py0 + py1) / 2], [x, py1]]
 }
 
 export interface ShelfOpening { x0: number; x1: number; z0: number; z1: number }
@@ -261,7 +227,9 @@ export function crossSectionAt(cfg: RackConfig, spec: PieceSpec, z: number): Mul
   const wallX1 = isLeft ? cfg.wallMm : W
   const bossX0 = isLeft ? -cfg.bossOutMm : W - cfg.wallMm
   const bossX1 = isLeft ? cfg.wallMm : W + cfg.bossOutMm
-  const plateX0 = isLeft ? 0 : half
+  // A right piece stops fitMm short of the centreline so the joint has a glue
+  // gap. The lips sit on the plate and have to start there too.
+  const plateX0 = isLeft ? 0 : half + cfg.fitMm
   const plateX1 = isLeft ? half : W
   const cx = (bossX0 + bossX1) / 2
   const py0 = f.plateY0
@@ -284,12 +252,7 @@ export function crossSectionAt(cfg: RackConfig, spec: PieceSpec, z: number): Mul
       parts.push(multi(box(plateX0, py1, plateX1, py1 + cfg.frontLipHeightMm)))
     }
   }
-  if (isLeft) {
-    const span = tabSpanAt(cfg, d, z, 0)
-    // Beyond the neck this box does not touch the plate. That island is the
-    // undercut: it is what the other half cannot pull off over.
-    if (span) parts.push(multi(box(span[0], py0, span[1], py1)))
-  }
+  if (isLeft) parts.push([[seamVee(cfg, d, 'left', py0, py1)]])
 
   let region = union(...parts)
 
@@ -315,16 +278,7 @@ export function crossSectionAt(cfg: RackConfig, spec: PieceSpec, z: number): Mul
       trapezoid(cx, 0, cfg.railHeightMm, cfg.railNeckMm + f2, cfg.railHeadMm + f2),
     ))
   }
-  if (!isLeft) {
-    const span = tabSpanAt(cfg, d, z, cfg.fitMm)
-    if (span) {
-      // Overshoot past the seam only where the cavity actually reaches it.
-      // On the flank the near edge must stay put -- the material inboard of it
-      // is the wedge that traps the tab's head.
-      const x0 = span[0] <= half + 1e-9 ? half - 1 : span[0]
-      region = difference(region, multi(box(x0, py0 - 1, span[1], py1 + 1)))
-    }
-  }
+  if (!isLeft) region = difference(region, [[seamVee(cfg, d, 'right', py0, py1)]])
 
   return shift(region, originShiftFor(cfg, spec))
 }
@@ -336,12 +290,13 @@ export function crossSectionAt(cfg: RackConfig, spec: PieceSpec, z: number): Mul
  * interference and engagement tests do.
  */
 export const originShiftFor = (cfg: RackConfig, spec: PieceSpec): number =>
-  spec.side === 'left' ? cfg.bossOutMm : -derive(cfg).halfWidthMm
+  // A right piece's leftmost material is its seam face, which the glue gap
+  // holds fitMm clear of the centreline -- not the centreline itself.
+  spec.side === 'left' ? cfg.bossOutMm : -(derive(cfg).halfWidthMm + cfg.fitMm)
 
 /** Every depth at which the cross-section changes, ascending and deduped. */
 export function breakpoints(cfg: RackConfig, spec: PieceSpec): number[] {
   const d = derive(cfg)
-  const inflate = spec.side === 'left' ? 0 : cfg.fitMm
   const back = -backReachMm(cfg, spec)
   const set = new Set<number>([back, 0, d.rackDepthMm])
   if (spec.kind === 'top') {
@@ -363,21 +318,6 @@ export function breakpoints(cfg: RackConfig, spec: PieceSpec): number[] {
     }
     for (const z of zs) {
       if (z > 1e-9 && z < d.rackDepthMm - 1e-9) set.add(Number(z.toFixed(4)))
-    }
-  }
-  // On the tread grid, identical for both halves, plus the cavity's extra
-  // reach at the tip. Anything else here and the two flanks stop matching.
-  const half = cfg.seamTabRootMm / 2
-  const reach = cfg.seamTabReachMm
-  const steps = Math.ceil(reach / cfg.layerHeightMm)
-  for (const zc of seamTabCentres(cfg, d)) {
-    for (let k = 0; k <= steps + 1; k++) {
-      const off = k > steps
-        ? half + reach + inflate
-        : half + Math.min(k * cfg.layerHeightMm, reach)
-      for (const z of [zc - off, zc + off]) {
-        if (z > 1e-9 && z < d.rackDepthMm - 1e-9) set.add(Number(z.toFixed(4)))
-      }
     }
   }
   return [...set].sort((a, b) => a - b)

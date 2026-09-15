@@ -61,10 +61,20 @@ export interface RackConfig {
   railNeckMm: number
   railHeadMm: number
 
-  /** Left-to-right seam: flared tabs through the shelf plate. */
-  seamTabs: number
-  seamTabReachMm: number
-  seamTabRootMm: number
+  /**
+   * Left-to-right seam: a V tongue down one half, a matching groove down the
+   * other, glued.
+   *
+   * It replaced flared tabs, and the win is that a V is CONSTANT ALONG THE
+   * DEPTH -- which is the print axis. No staircase, no overhang, no bands: the
+   * whole joint lives in the cross-section. The tabs needed ~250 breakpoints a
+   * piece and still left one flank overhanging.
+   *
+   * Glue carries the tension the tabs' undercut used to. The V still earns its
+   * keep unglued: it locates the halves and stops them sliding vertically past
+   * each other, which is the direction the tabs left free.
+   */
+  seamVeeDepthMm: number
 
 
   /** Clearance on every mating feature. Dial this from a coupon print. */
@@ -183,9 +193,7 @@ export const RACK: RackConfig = {
   railNeckMm: 4.4,
   railHeadMm: 6.0,
 
-  seamTabs: 2,
-  seamTabReachMm: 12,
-  seamTabRootMm: 16,
+  seamVeeDepthMm: 2.0,
 
   fitMm: 0.15,
 
@@ -226,9 +234,8 @@ export interface RackDerived {
   /** Flat bearing face the tongue leaves on top of the boss, per side. */
   tongueShoulderMm: number
   /**
-   * Solid margin on the seam edge of a shelf. Wider than the frame, because
-   * the tab reaches this far across it and the mating cavity is cut this deep
-   * into it -- an opening any closer would break into the joint.
+   * Solid margin on the seam edge of a shelf. Wider than the frame by the
+   * depth of the V, so an opening can never break into the joint.
    */
   seamFrameMm: number
   /** Widest and tallest any single piece gets, for the plate check. */
@@ -253,9 +260,9 @@ export function derive(cfg: RackConfig): RackDerived {
     totalHeightMm: 2 * capHeightMm + (cfg.bays - 1) * pitchMm,
     socketWallMm: (cfg.wallMm + cfg.bossOutMm - cfg.railHeadMm - 2 * cfg.fitMm) / 2,
     tongueShoulderMm: (cfg.wallMm + cfg.bossOutMm - cfg.railHeadMm) / 2,
-    seamFrameMm: cfg.seamTabReachMm + cfg.fitMm + cfg.shelfFrameMm,
+    seamFrameMm: cfg.seamVeeDepthMm + cfg.fitMm + cfg.shelfFrameMm,
     // A left piece runs from its boss face out to the tip of a seam tab.
-    pieceWidthMm: rackWidthMm / 2 + cfg.bossOutMm + cfg.seamTabReachMm,
+    pieceWidthMm: rackWidthMm / 2 + cfg.bossOutMm + cfg.seamVeeDepthMm,
     pieceDepthMm:
       cfg.backLipDepthMm + cfg.caseDepthMm + cfg.clearDepthMm + cfg.frontLipDepthMm,
   }
@@ -291,6 +298,12 @@ export function checkConfig(cfg: RackConfig): string[] {
     out.push('rail neck must be narrower than the head or the dovetail does not lock')
   }
   if (cfg.bays < 1) out.push('a rack needs at least one bay')
+  if (cfg.seamVeeDepthMm <= 0) out.push('the seam needs a V to locate on')
+  if (cfg.seamVeeDepthMm > cfg.shelfMm * 2) {
+    out.push(
+      `a ${cfg.seamVeeDepthMm} mm V on a ${cfg.shelfMm} mm plate is too slender to print or glue`,
+    )
+  }
   if (cfg.cleatBevelTopMm >= d.capHeightMm) {
     out.push(
       `the cleat bevel tops out at ${cfg.cleatBevelTopMm} but the top cap is only ` +
@@ -315,31 +328,14 @@ export function checkConfig(cfg: RackConfig): string[] {
         `(${cfg.backLipDepthMm} back, ${cfg.frontLipDepthMm} front) -- a lip would stand over a hole`,
       )
     }
-    if (d.seamFrameMm <= cfg.seamTabReachMm + cfg.fitMm) {
-      out.push('the seam frame is narrower than the tab cavity cut into it')
+    if (d.seamFrameMm <= cfg.seamVeeDepthMm + cfg.fitMm) {
+      out.push('the seam frame is narrower than the groove cut into it')
     }
     const usableX = d.halfWidthMm - d.seamFrameMm - cfg.wallMm - cfg.shelfFrameMm
     if (usableX <= cfg.shelfRibMm) {
       out.push(`nothing left to open up between the frames (${usableX.toFixed(1)} mm)`)
     }
   }
-  // Tabs must clear the lip bands, or the seam cavity would cut through a lip.
-  const span = cfg.seamTabRootMm / 2 + cfg.seamTabReachMm + cfg.fitMm
-  for (const zc of seamTabCentres(cfg, d)) {
-    if (zc - span < cfg.backLipDepthMm || zc + span > d.rackDepthMm - cfg.frontLipDepthMm) {
-      out.push(`seam tab at z=${zc.toFixed(1)} overlaps a lip band`)
-    }
-  }
   return out
 }
 
-/** Tab centres, spread evenly through the depth between the two lip bands. */
-export function seamTabCentres(cfg: RackConfig, d: RackDerived): number[] {
-  const lo = cfg.backLipDepthMm
-  const hi = d.rackDepthMm - cfg.frontLipDepthMm
-  const out: number[] = []
-  for (let i = 0; i < cfg.seamTabs; i++) {
-    out.push(lo + ((i + 1) * (hi - lo)) / (cfg.seamTabs + 1))
-  }
-  return out
-}

@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
-import { RACK } from './config.ts'
+import { derive, RACK } from './config.ts'
 import { auditDrawings, buildDrawings } from './drawings.ts'
+
+const f = (n: number): string => String(+n.toFixed(2))
 
 // Both bugs these catch shipped once. The sheets are generated from the same
 // geometry as the STLs, but the *detail* views redraw simplified shapes, and
@@ -36,7 +38,8 @@ test('the audit actually catches a broken figure', () => {
 
 test('the sheets carry the numbers the parts were built from', () => {
   const html = buildDrawings(RACK)
-  for (const n of ['82.2', '79', '496.4', '1.65', '155.6', 'stand-off']) {
+  const d = derive(RACK)
+  for (const n of ['82.2', '79', '496.4', '1.65', f(d.pieceWidthMm), 'stand-off']) {
     assert.ok(html.includes(n), `sheet should quote ${n}`)
   }
 })
