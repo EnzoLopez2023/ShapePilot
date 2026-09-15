@@ -29,17 +29,30 @@ const coupon = argv.includes('--coupon')
 const bays = Number(flag('--bays') ?? RACK.bays)
 const outDir = resolve(flag('--out') ?? (coupon ? 'out/rack-coupon' : 'out/rack'))
 
-// A coupon is the same joints on a piece small enough to print in minutes.
-// Shelves stay solid: it exists to prove the fit of the tongue and the tab, and
-// a shelf shrunk this far has no room between its own frames anyway.
-const cfg: RackConfig = coupon
-  ? {
-      ...RACK, bays: 2, seamTabs: 1, skeletonShelf: false,
-      caseWidthMm: 60, caseDepthMm: 40, caseHeightMm: 20,
-    }
-  : { ...RACK, bays }
+// Coupons: the same joints at the same fit, on pieces that print in minutes.
+// Shelves stay solid -- a shelf shrunk this far has no room between its own
+// frames, and the waffle has nothing to do with any of the three joints.
+//
+// It takes TWO configs, because the joints do not all shrink the same way. The
+// seam tab and the course dovetail only need depth and a stub of wall, so that
+// pair can shrink in every direction. The cleat hangs off the top cap and its
+// bevel tops out 34 mm up, so that piece has to keep its real HEIGHT and can
+// only be narrowed -- shrinking it like the others is what checkConfig refused.
+const JOINT_COUPON: RackConfig = {
+  ...RACK, bays: 2, seamTabs: 1, skeletonShelf: false,
+  caseWidthMm: 60, caseDepthMm: 40, caseHeightMm: 20,
+  // It emits no cap and no strip, so these go unused -- but a config still has
+  // to be valid on its own terms, and a 34 mm bevel on a 14.7 mm cap is not.
+  cleatThicknessMm: 6, cleatBevelTopMm: 11,
+}
+const CLEAT_COUPON: RackConfig = {
+  ...RACK, bays: 2, seamTabs: 1, skeletonShelf: false, cleatScrewsPerHalf: 1,
+  caseWidthMm: 40, caseDepthMm: 40,   // full height on purpose
+}
 
-const issues = checkConfig(cfg)
+const cfg: RackConfig = coupon ? JOINT_COUPON : { ...RACK, bays }
+
+const issues = [...checkConfig(cfg), ...(coupon ? checkConfig(CLEAT_COUPON) : [])]
 if (issues.length) {
   console.error('This rack cannot be built:')
   for (const m of issues) console.error(`  - ${m}`)
@@ -87,6 +100,29 @@ for (const spec of specs) {
     `${size.map(v => v.toFixed(1).padStart(6)).join(' x ')} mm` +
     `  ${(report.volume * qty / 1000).toFixed(0).padStart(5)} cm3`,
   )
+}
+
+const emit = (name: string, mesh: Parameters<typeof writeBinaryStl>[0], qty = 1): void => {
+  const report = checkManifold(mesh)
+  if (!report.ok) {
+    console.error(`${name} is not watertight: ${report.danglingEdges} dangling edges`)
+    process.exit(1)
+  }
+  const [x0, y0, z0, x1, y1, z1] = mesh.bbox
+  const size: [number, number, number] = [x1 - x0, y1 - y0, z1 - z0]
+  writeFileSync(resolve(outDir, name), Buffer.from(writeBinaryStl(mesh, `ShapePilot ${name}`)))
+  totalMm3 += report.volume * qty
+  rows.push(
+    `  ${name.padEnd(24)} x${String(qty).padEnd(3)} ` +
+    `${size.map(v => v.toFixed(1).padStart(6)).join(' x ')} mm` +
+    `  ${(report.volume * qty / 1000).toFixed(0).padStart(5)} cm3`,
+  )
+}
+
+// The cleat coupon: the hook on a narrowed top cap, and the strip it hangs on.
+if (coupon) {
+  emit('coupon_cleat_hook.stl', buildPiece(CLEAT_COUPON, { kind: 'top', side: 'left' }).mesh)
+  emit('coupon_cleat_strip.stl', buildCleat(CLEAT_COUPON, 'left').mesh)
 }
 
 // The wall side of the French cleat: two halves, pegged so they cannot be
@@ -161,6 +197,15 @@ const readme = [
   `  Every mating feature carries ${cfg.fitMm} mm of clearance. If the coupon is`,
   '  tight or sloppy, change fitMm in src/rack/config.ts and re-run. Do that',
   '  BEFORE printing the full set.',
+  ...(coupon ? [
+    '',
+    '  THIS COUPON TESTS ALL THREE JOINTS:',
+    '    rack_middle_L + _R   drop together  -> the seam tab',
+    '    two of rack_middle_L slide together -> the course dovetail',
+    '    hook onto strip                     -> the cleat',
+    '  The cleat pieces keep their real height because the bevel tops out 34 mm',
+    '  up the cap; only their width is cut down.',
+  ] : []),
   '',
 ].join('\n')
 
