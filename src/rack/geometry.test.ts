@@ -10,7 +10,7 @@ import type { MultiPolygon } from '../geometry/vec.ts'
 import type { PieceSpec } from './geometry.ts'
 import {
   bandVolume, buildPiece, crossSectionAt, frameFor, originShiftFor, pieceList, pieceName,
-  stackLayout,
+  shelfOpenings, stackLayout,
 } from './geometry.ts'
 
 const D = derive(RACK)
@@ -153,6 +153,73 @@ describe('the course joint', () => {
     // Head wider than neck is the whole point: a straight tongue would carry no
     // tension, and the cleat hangs the stack from the top course.
     assert.ok(RACK.railHeadMm > RACK.railNeckMm)
+  })
+})
+
+describe('the skeletonised shelf', () => {
+  const spec: PieceSpec = { kind: 'middle', side: 'left' }
+  const plateY = frameFor(RACK, spec).plateY0 + RACK.shelfMm / 2
+  /**
+   * Width of shelf material across the half at depth `z`, stopping at the seam
+   * so a tab reaching past it is not counted as shelf.
+   */
+  const shelfWidthAt = (z: number): number => {
+    const h = 0.02, x1 = D.halfWidthMm
+    const strip: MultiPolygon = [[[[-20, plateY - h], [x1, plateY - h], [x1, plateY], [-20, plateY]]]]
+    return multiArea(intersection(inRackFrame(spec, z), strip)) / h
+  }
+
+  test('an opening never reaches the lips, the wall or the seam joint', () => {
+    for (const side of ['left', 'right'] as const) {
+      for (const o of shelfOpenings(RACK, { kind: 'middle', side })) {
+        assert.ok(o.z0 >= RACK.backLipDepthMm, 'opening runs under the back stop')
+        assert.ok(o.z1 <= D.rackDepthMm - RACK.frontLipDepthMm, 'opening runs under the front lip')
+        assert.ok(o.x0 >= RACK.wallMm, 'opening undercuts the wall')
+        assert.ok(o.x1 <= D.rackWidthMm - RACK.wallMm, 'opening undercuts the wall')
+        // The tab and its mating cavity both live inside the seam frame.
+        const toSeam = side === 'left' ? D.halfWidthMm - o.x1 : o.x0 - D.halfWidthMm
+        assert.ok(toSeam >= RACK.seamTabReachMm + RACK.fitMm,
+          `opening comes within ${toSeam.toFixed(1)} mm of the seam, inside the joint`)
+      }
+    }
+  })
+
+  test('every bridge stays under the span cap', () => {
+    // Depth is the print axis, so a rib appears over its opening in one layer,
+    // spanning the opening's width. That width is the bridge.
+    for (const o of shelfOpenings(RACK, spec)) {
+      assert.ok(o.x1 - o.x0 <= RACK.shelfOpeningMaxMm + 1e-9,
+        `a ${(o.x1 - o.x0).toFixed(1)} mm bridge exceeds the ${RACK.shelfOpeningMaxMm} mm cap`)
+    }
+  })
+
+  test('the shelf still runs wall to seam at a rib', () => {
+    const os = shelfOpenings(RACK, spec)
+    const zs = [...new Set(os.map(o => o.z1))].sort((a, b) => a - b)
+    const rib = zs[0]! + RACK.shelfRibMm / 2      // between the first two rows
+    assert.ok(Math.abs(shelfWidthAt(rib) - D.halfWidthMm) < 0.05,
+      `shelf is ${shelfWidthAt(rib).toFixed(1)} mm at a rib, expected the full ${D.halfWidthMm}`)
+  })
+
+  test('the frames survive at both ends of the depth', () => {
+    for (const z of [1, D.rackDepthMm - 1]) {
+      assert.ok(Math.abs(shelfWidthAt(z) - D.halfWidthMm) < 0.05, `shelf is cut at z=${z}`)
+    }
+  })
+
+  test('an opening actually removes material', () => {
+    const o = shelfOpenings(RACK, spec)[0]!
+    const inside = shelfWidthAt((o.z0 + o.z1) / 2)
+    assert.ok(inside < D.halfWidthMm - 20, `expected a cut, got ${inside.toFixed(1)} mm of material`)
+  })
+
+  test('skeletonising is lighter and still watertight', () => {
+    const solid = buildPiece({ ...RACK, skeletonShelf: false }, spec)
+    const skel = buildPiece(RACK, spec)
+    const vs = checkManifold(solid.mesh).volume, vk = checkManifold(skel.mesh).volume
+    assert.ok(vk < vs * 0.9, `only saved ${(100 * (1 - vk / vs)).toFixed(1)}%`)
+    assert.equal(checkManifold(skel.mesh).danglingEdges, 0)
+    assert.ok(Math.abs(bandVolume(skel.bands) - vk) / vk < 1e-6)
   })
 })
 

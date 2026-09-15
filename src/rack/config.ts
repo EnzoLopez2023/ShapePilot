@@ -70,6 +70,25 @@ export interface RackConfig {
 
   /** Clearance on every mating feature. Dial this from a coupon print. */
   fitMm: number
+
+  /**
+   * Cut the shelves back to a waffle: a perimeter frame and ribs around a grid
+   * of openings.
+   *
+   * A grid, not long slots or plain cross ribs, and the print direction is why.
+   * Depth is the print axis, so an opening ENDS in a bridge: the rib above it
+   * appears in one layer, spanning the opening's width, anchored to the ribs
+   * either side. Keeping every opening under `shelfOpeningMaxMm` keeps that
+   * bridge short. Ribs running only along the depth would need no bridge at
+   * all, but they leave the shelf with almost no material at a slot's x, and
+   * that is where it has to carry the case.
+   */
+  skeletonShelf: boolean
+  /** Solid margin at the wall, front and back edges. Clears the lip bands. */
+  shelfFrameMm: number
+  shelfRibMm: number
+  /** Largest an opening may get, in either direction. This is the bridge span. */
+  shelfOpeningMaxMm: number
 }
 
 export const RACK: RackConfig = {
@@ -104,6 +123,11 @@ export const RACK: RackConfig = {
   seamStepMm: 1.0,
 
   fitMm: 0.15,
+
+  skeletonShelf: true,
+  shelfFrameMm: 12,
+  shelfRibMm: 6,
+  shelfOpeningMaxMm: 40,
 }
 
 export interface RackDerived {
@@ -123,6 +147,12 @@ export interface RackDerived {
   socketWallMm: number
   /** Flat bearing face the tongue leaves on top of the boss, per side. */
   tongueShoulderMm: number
+  /**
+   * Solid margin on the seam edge of a shelf. Wider than the frame, because
+   * the tab reaches this far across it and the mating cavity is cut this deep
+   * into it -- an opening any closer would break into the joint.
+   */
+  seamFrameMm: number
   /** Widest and tallest any single piece gets, for the plate check. */
   pieceWidthMm: number
   pieceDepthMm: number
@@ -145,6 +175,7 @@ export function derive(cfg: RackConfig): RackDerived {
     totalHeightMm: 2 * capHeightMm + (cfg.bays - 1) * pitchMm,
     socketWallMm: (cfg.wallMm + cfg.bossOutMm - cfg.railHeadMm - 2 * cfg.fitMm) / 2,
     tongueShoulderMm: (cfg.wallMm + cfg.bossOutMm - cfg.railHeadMm) / 2,
+    seamFrameMm: cfg.seamTabReachMm + cfg.fitMm + cfg.shelfFrameMm,
     // A left piece runs from its boss face out to the tip of a seam tab.
     pieceWidthMm: rackWidthMm / 2 + cfg.bossOutMm + cfg.seamTabReachMm,
     pieceDepthMm:
@@ -182,6 +213,21 @@ export function checkConfig(cfg: RackConfig): string[] {
     out.push('rail neck must be narrower than the head or the dovetail does not lock')
   }
   if (cfg.bays < 1) out.push('a rack needs at least one bay')
+  if (cfg.skeletonShelf) {
+    if (cfg.shelfFrameMm <= cfg.backLipDepthMm || cfg.shelfFrameMm <= cfg.frontLipDepthMm) {
+      out.push(
+        `a ${cfg.shelfFrameMm} mm shelf frame does not clear the lip bands ` +
+        `(${cfg.backLipDepthMm} back, ${cfg.frontLipDepthMm} front) -- a lip would stand over a hole`,
+      )
+    }
+    if (d.seamFrameMm <= cfg.seamTabReachMm + cfg.fitMm) {
+      out.push('the seam frame is narrower than the tab cavity cut into it')
+    }
+    const usableX = d.halfWidthMm - d.seamFrameMm - cfg.wallMm - cfg.shelfFrameMm
+    if (usableX <= cfg.shelfRibMm) {
+      out.push(`nothing left to open up between the frames (${usableX.toFixed(1)} mm)`)
+    }
+  }
   // Tabs must clear the lip bands, or the seam cavity would cut through a lip.
   const span = cfg.seamTabRootMm / 2 + cfg.seamTabReachMm + cfg.fitMm
   for (const zc of seamTabCentres(cfg, d)) {

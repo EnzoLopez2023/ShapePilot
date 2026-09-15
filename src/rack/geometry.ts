@@ -109,6 +109,50 @@ export function tabReachAt(
   return best
 }
 
+export interface ShelfOpening { x0: number; x1: number; z0: number; z1: number }
+
+/**
+ * Split `lo..hi` into the fewest openings no longer than `maxLen`, separated by
+ * ribs. Returns the openings, not the ribs.
+ */
+function spans(lo: number, hi: number, maxLen: number, rib: number): [number, number][] {
+  const total = hi - lo
+  if (total <= 0) return []
+  const n = Math.max(1, Math.ceil((total + rib) / (maxLen + rib)))
+  const len = (total - (n - 1) * rib) / n
+  if (len <= 0.5) return []
+  const out: [number, number][] = []
+  for (let i = 0; i < n; i++) {
+    const a = lo + i * (len + rib)
+    out.push([a, a + len])
+  }
+  return out
+}
+
+/**
+ * The grid of holes cut out of one piece's shelf.
+ *
+ * Bounded by the frame on three edges and by the wider seam frame on the
+ * fourth, so an opening can never reach the tabs, the lips or the wall.
+ */
+export function shelfOpenings(cfg: RackConfig, spec: PieceSpec): ShelfOpening[] {
+  if (!cfg.skeletonShelf) return []
+  const d = derive(cfg)
+  const isLeft = spec.side === 'left'
+  // The seam edge is the high side for a left piece and the low side for a right.
+  const xLo = isLeft ? cfg.wallMm + cfg.shelfFrameMm : d.halfWidthMm + d.seamFrameMm
+  const xHi = isLeft ? d.halfWidthMm - d.seamFrameMm : d.rackWidthMm - cfg.wallMm - cfg.shelfFrameMm
+  const out: ShelfOpening[] = []
+  for (const [x0, x1] of spans(xLo, xHi, cfg.shelfOpeningMaxMm, cfg.shelfRibMm)) {
+    for (const [z0, z1] of spans(
+      cfg.shelfFrameMm, d.rackDepthMm - cfg.shelfFrameMm, cfg.shelfOpeningMaxMm, cfg.shelfRibMm,
+    )) {
+      out.push({ x0, x1, z0, z1 })
+    }
+  }
+  return out
+}
+
 /** The piece's solid cross-section at depth `z`, already moved to x >= 0. */
 export function crossSectionAt(cfg: RackConfig, spec: PieceSpec, z: number): MultiPolygon {
   const d = derive(cfg)
@@ -152,6 +196,11 @@ export function crossSectionAt(cfg: RackConfig, spec: PieceSpec, z: number): Mul
 
   let region = union(...parts)
 
+  for (const o of shelfOpenings(cfg, spec)) {
+    if (z <= o.z0 || z >= o.z1) continue
+    region = difference(region, multi(box(o.x0, py0 - 0.5, o.x1, py1 + 0.5)))
+  }
+
   if (f.hasSocket) {
     const f2 = cfg.fitMm * 2
     region = difference(region, multi(
@@ -186,6 +235,11 @@ export function breakpoints(cfg: RackConfig, spec: PieceSpec): number[] {
   if (f.isFloor) {
     set.add(cfg.backLipDepthMm)
     set.add(d.rackDepthMm - cfg.frontLipDepthMm)
+  }
+  for (const o of shelfOpenings(cfg, spec)) {
+    for (const z of [o.z0, o.z1]) {
+      if (z > 1e-9 && z < d.rackDepthMm - 1e-9) set.add(Number(z.toFixed(4)))
+    }
   }
   const half = cfg.seamTabRootMm / 2 + inflate
   const reach = cfg.seamTabReachMm + inflate

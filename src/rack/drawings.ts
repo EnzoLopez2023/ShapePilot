@@ -15,7 +15,8 @@ import type { RackConfig } from './config.ts'
 import { derive, seamTabCentres } from './config.ts'
 import type { PieceKind, PieceSpec } from './geometry.ts'
 import {
-  buildPiece, crossSectionAt, originShiftFor, pieceList, pieceName, stackLayout, tabReachAt,
+  buildPiece, crossSectionAt, originShiftFor, pieceList, pieceName, shelfOpenings, stackLayout,
+  tabReachAt,
 } from './geometry.ts'
 
 /** A projector from drawing units into SVG pixels. */
@@ -211,6 +212,14 @@ export function buildDrawings(cfg: RackConfig): string {
     const [xw] = P(D.rackWidthMm, 0)
     out.push(`<polygon class="part alt" points="${f(xw)},${f(z0)} ${chain(cav)} ${f(xw)},${f(z1)}"/>`)
 
+    // the waffle: openings on both halves
+    for (const side of ['left', 'right'] as const) {
+      for (const o of shelfOpenings(C, { kind: 'middle', side })) {
+        const [ax, az] = P(o.x0, o.z0), [bx, bz] = P(o.x1, o.z1)
+        out.push(`<rect class="void" x="${f(ax)}" y="${f(az)}" width="${f(bx - ax)}" height="${f(bz - az)}"/>`)
+      }
+    }
+
     // lip bands
     const [, lb] = P(0, C.backLipDepthMm)
     out.push(`<line class="hidden" x1="${f(x0)}" y1="${f(lb)}" x2="${f(xw)}" y2="${f(lb)}"/>`)
@@ -323,8 +332,9 @@ export function buildDrawings(cfg: RackConfig): string {
   const pieces: [string, number, number, number, number][] =
       J.pieces.map(p => [p.file, p.qty, p.w, p.h, p.cm3])
   const totalCm3 = pieces.reduce((t, p) => t + p[1] * p[4], 0)
-  // A one-bay rack has no middle course, so fall back to whatever is first.
-  const midVol = (J.pieces.find(p => p.file.includes('middle_L')) ?? J.pieces[0])?.cm3 ?? 1
+
+  const skelOpenings = shelfOpenings(C, { kind: 'middle', side: 'left' })
+  const openingW = skelOpenings.length ? skelOpenings[0]!.x1 - skelOpenings[0]!.x0 : 0
 
   const schedule: [string, string, string][] = [
     ['Case, feet included', `${C.caseWidthMm} × ${C.caseDepthMm} × ${C.caseHeightMm}`, 'caliper-verified'],
@@ -396,6 +406,7 @@ export function buildDrawings(cfg: RackConfig): string {
   .part.alt{fill:var(--faint);stroke:var(--joint);stroke-width:1.1}
   polygon.part.alt,path.part.alt{stroke:var(--joint)}
   .case{fill:var(--case);stroke:var(--rule);stroke-width:.8;stroke-dasharray:4 3}
+.void{fill:var(--paper);stroke:var(--rule);stroke-width:.7}
   .caselbl{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:9px;fill:var(--soft)}
   .seam{stroke:var(--joint);stroke-width:1;stroke-dasharray:7 4}
   .centre{stroke:var(--joint);stroke-width:.9;stroke-dasharray:9 3 2 3}
@@ -505,6 +516,12 @@ export function buildDrawings(cfg: RackConfig): string {
            they are constant in — the height. You <em>drop</em> the right half onto the left.</p>
         <p><strong>What it locks.</strong> Everything in the plane of the shelf, which is where bending puts the
            seam in tension. It stays free straight up, and that is how you take the rack apart again.</p>
+        <p><strong>Why a grid and not slots.</strong> Depth is the print axis, so every opening ends in a bridge —
+           the rib above it arrives in one layer. The grid holds each bridge to ${f(openingW)} mm. Ribs running
+           only front-to-back would need no bridge at all, but would leave the shelf nearly hollow across a slot's
+           width, which is exactly where it carries the case.</p>
+        <p><strong>The seam frame is ${f(D.seamFrameMm)} mm</strong> — wider than the ${f(C.shelfFrameMm)} mm frame
+           elsewhere, because the tab cavity is cut ${f(C.seamTabReachMm + C.fitMm)} mm into it.</p>
       </div>
     </div>
   </section>
@@ -565,30 +582,19 @@ export function buildDrawings(cfg: RackConfig): string {
   </section>
 
   <div class="flag">
-    <h3>${(totalCm3 / 1000 * 1.24).toFixed(2)} kg of filament, and over half of it is shelf</h3>
-    <p style="margin:0;color:var(--soft)">Solid shelves are ${Math.round(100 * (D.halfWidthMm * C.shelfMm * D.rackDepthMm) / (midVol * 1000))}% of a middle piece by
-    volume. Skeletonising them to a perimeter frame plus two ribs costs nothing in this geometry model — the openings
-    are just holes in the cross-section — and would take roughly a third off the total. It is a parameter, not a redesign.</p>
+    <h3>${(totalCm3 / 1000 * 1.24).toFixed(2)} kg of filament — the shelves are already cut back</h3>
+    <p style="margin:0;color:var(--soft)">Skeletonising the shelves to a frame, ribs and
+  ${skelOpenings.length * 2} openings a course takes roughly a quarter off the whole rack. What is left is
+  sized by the print, not by eye: each opening is capped at ${f(C.shelfOpeningMaxMm)} mm so the rib arriving
+  over it never bridges further than that.</p>
   </div>
 
   <div class="decisions">
     <div class="dec">
-      <h3>Solid or skeletonised shelves?</h3>
-      <p>Solid is drawn here and is stiffer. Skeletonised saves around 700&nbsp;g and a lot of hours, and the case bears
-         near its edges anyway, where the frame would stay.</p>
-      <p class="opt">→ flips <span class="mono">skeletonShelf</span> in config.ts</p>
-    </div>
-    <div class="dec">
-      <h3>Does the top cap need a ceiling?</h3>
-      <p>It closes the box and gives the upper cleat something to bite, but the top bay does not need it — the case
-         under it already sits on a middle. Dropping it to a brace saves a piece.</p>
-      <p class="opt">→ changes the <span class="mono">top</span> frame only</p>
-    </div>
-    <div class="dec">
-      <h3>Wall mount — not yet drawn</h3>
-      <p>French cleat: a 45° bar per column sliding into the back of the top course, a plain spacer at the bottom,
-         and a beveled strip screwed to the studs. Sheet 7 once the rack itself is settled.</p>
-      <p class="opt">→ phase 3</p>
+      <h3>Shelves: skeletonised ✓</h3>
+    <p>A ${f(C.shelfFrameMm)} mm frame, ${f(C.shelfRibMm)} mm ribs and ${f(openingW)} × ${f(skelOpenings.length ? skelOpenings[0]!.z1 - skelOpenings[0]!.z0 : 0)} mm
+       openings. The case bears near its edges, over the frame, so the middle was the cheapest material to lose.</p>
+    <p class="opt">→ <span class="mono">skeletonShelf: false</span> returns solid shelves</p>
     </div>
   </div>
 
