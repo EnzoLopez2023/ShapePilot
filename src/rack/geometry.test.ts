@@ -10,7 +10,7 @@ import type { MultiPolygon } from '../geometry/vec.ts'
 import type { PieceSpec } from './geometry.ts'
 import {
   bandVolume, buildPiece, crossSectionAt, frameFor, originShiftFor, pieceList, pieceName,
-  shelfOpenings, stackLayout,
+  shelfOpenings, stackLayout, tabSpanAt,
 } from './geometry.ts'
 
 const D = derive(RACK)
@@ -101,6 +101,65 @@ describe('the centre seam', () => {
     const cavity = minX(inRackFrame({ kind: 'middle', side: 'right' }, zc))
     assert.equal(+tabTip.toFixed(3), D.halfWidthMm + RACK.seamTabReachMm)
     assert.equal(+(cavity - tabTip).toFixed(3), RACK.fitMm)
+  })
+
+  test('the tab is an undercut: wider at the tip than at the seam', () => {
+    // The property the joint exists for, measured off the shape. The first
+    // version was an arrowhead -- widest AT the seam, tapering to a point --
+    // which pulls straight out. Everything else about it tested fine.
+    const zc = seamTabCentres(RACK, D)[1]!
+    const widthAt = (x: number): number => {
+      // Scan one tab only -- the centres are ~43 mm apart, so a wider window
+      // picks up the neighbours and reports them as one enormous tab.
+      const reachZ = RACK.seamTabRootMm / 2 + RACK.seamTabReachMm + 1
+      let lo = Infinity, hi = -Infinity
+      for (let z = zc - reachZ; z < zc + reachZ; z += 0.02) {
+        const span = tabSpanAt(RACK, D, z, 0)
+        if (!span || span[0] > x || span[1] < x) continue
+        lo = Math.min(lo, z); hi = Math.max(hi, z)
+      }
+      return hi - lo
+    }
+    const atSeam = widthAt(D.halfWidthMm + 0.05)
+    const atTip = widthAt(D.halfWidthMm + RACK.seamTabReachMm - 0.05)
+    assert.ok(atTip > atSeam + 1,
+      `tip ${atTip.toFixed(1)} mm is not wider than the neck ${atSeam.toFixed(1)} mm -- it would pull out`)
+  })
+
+  test('the halves cannot be pulled apart, and cannot shift fore or aft', () => {
+    // Kinematic, not geometric: nudge one half and require a collision.
+    const nudge = 0.6
+    const moved = (dx: number, dz: number): number => {
+      let worst = 0
+      for (let z = 1; z < D.rackDepthMm - 1; z += 0.5) {
+        const right = inRackFrame({ kind: 'middle', side: 'right' }, z - dz)
+        const a = multiArea(intersection(
+          inRackFrame({ kind: 'middle', side: 'left' }, z),
+          right.map(p => p.map(r => r.map(([x, y]) => [x + dx, y] as const))),
+        ))
+        if (a > worst) worst = a
+      }
+      return worst
+    }
+    assert.ok(moved(nudge, 0) > 0.1, 'the halves pull apart sideways -- the seam does not lock')
+    assert.ok(moved(0, nudge) > 0.1, 'the halves shift forward')
+    assert.ok(moved(0, -nudge) > 0.1, 'the halves shift back')
+  })
+
+  test('lifting is the ONE free direction, and that is the assembly move', () => {
+    // Documented, not a defect: an undercut can only be assembled along the
+    // axis it is constant in, and for these tabs that axis is the height.
+    // Nothing in the rack resists it -- the mount does. See the drawings.
+    let worst = 0
+    for (let z = 1; z < D.rackDepthMm - 1; z += 0.5) {
+      const a = multiArea(intersection(
+        inRackFrame({ kind: 'middle', side: 'left' }, z),
+        inRackFrame({ kind: 'middle', side: 'right' }, z)
+          .map(p => p.map(r => r.map(([x, y]) => [x, y + 0.6] as const))),
+      ))
+      if (a > worst) worst = a
+    }
+    assert.ok(worst < 1e-6, 'something now blocks the assembly direction')
   })
 
   test('between tabs the halves butt on the seam line', () => {

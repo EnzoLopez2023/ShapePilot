@@ -15,8 +15,8 @@ import type { RackConfig } from './config.ts'
 import { derive, seamTabCentres } from './config.ts'
 import type { PieceKind, PieceSpec } from './geometry.ts'
 import {
-  buildPiece, crossSectionAt, originShiftFor, pieceList, pieceName, shelfOpenings, stackLayout,
-  tabReachAt,
+  buildPiece, crossSectionAt, originShiftFor, pieceList, pieceName, seamOutline, shelfOpenings,
+  stackLayout,
 } from './geometry.ts'
 
 /** A projector from drawing units into SVG pixels. */
@@ -42,13 +42,7 @@ export function buildDrawings(cfg: RackConfig): string {
     shiftBack(crossSectionAt(cfg, { kind, side }, z), { kind, side })
 
   const plainZ = C.backLipDepthMm + 16   // clear of both the lip bands and every tab
-  const seamAt = (inflate: number): [number, number][] => {
-    const pts: [number, number][] = []
-    for (let z = 0; z <= D.rackDepthMm; z += 0.25) {
-      pts.push([D.halfWidthMm + tabReachAt(cfg, D, z, inflate), z])
-    }
-    return pts
-  }
+  const seamAt = (inflate: number): [number, number][] => seamOutline(cfg, inflate)
 
   const qty = new Map<string, number>()
   for (const s of pieceList(cfg)) qty.set(pieceName(s), (qty.get(pieceName(s)) ?? 0) + 1)
@@ -281,22 +275,39 @@ export function buildDrawings(cfg: RackConfig): string {
 
   function detailTab() {
     const s = 4.6
-    const zc = J.centres[1]
-    const span = C.seamTabRootMm / 2 + C.seamTabReachMm + 6
+    const zc = J.centres[1]!
+    const neck = C.seamTabRootMm / 2, reach = C.seamTabReachMm, fit = C.fitMm
+    const span = neck + reach + 8
     const ox = 70, oy = 26
-    const P = (x: number, z: number): [number, number] => [ox + (x - (D.halfWidthMm - 14)) * s, oy + (z - (zc - span)) * s]
+    const P = (x: number, z: number): [number, number] =>
+      [ox + (x - (D.halfWidthMm - 16)) * s, oy + (z - (zc - span)) * s]
     const out: string[] = []
-    const near = J.plan.tab.filter(([, z]) => z > zc - span && z < zc + span)
-    const chain = (pts: [number, number][]): string => pts.map(([x, z]) => { const [a, b] = P(x, z); return `${f(a)},${f(b)}` }).join(' ')
-    const [xl, zt] = P(D.halfWidthMm - 14, zc - span), [, zb] = P(0, zc + span)
-    out.push(`<polygon class="part" points="${f(xl)},${f(zt)} ${chain(near)} ${f(xl)},${f(zb)}"/>`)
-    const cav = J.plan.cavity.filter(([, z]) => z > zc - span && z < zc + span)
-    const [xr] = P(D.halfWidthMm + 34, 0)
-    out.push(`<polygon class="part alt" points="${f(xr)},${f(zt)} ${chain(cav)} ${f(xr)},${f(zb)}"/>`)
-    out.push(dimH(P(D.halfWidthMm, 0)[0], P(D.halfWidthMm + C.seamTabReachMm, 0)[0], P(0, zc + span)[1] + 22, `${f(C.seamTabReachMm)} reach`))
-    out.push(dimV(P(0, zc - C.seamTabRootMm / 2)[1], P(0, zc + C.seamTabRootMm / 2)[1], P(D.halfWidthMm - 3, 0)[0], `${f(C.seamTabRootMm)} root`))
-    out.push(`<text class="jointlbl" x="${f(P(D.halfWidthMm + 6, zc - C.seamTabRootMm / 2 - C.seamTabReachMm - 2)[0])}" y="${f(P(0, zc - C.seamTabRootMm / 2 - C.seamTabReachMm - 3)[1])}" text-anchor="middle">45° flank — undercut, and still prints</text>`)
-    return `<svg viewBox="0 0 ${f(ox + 62 * s + 40)} ${f(oy + 2 * span * s + 42)}" role="img" aria-label="One seam tab in plan at four to one: 16 mm at the root, reaching 12 mm past the seam, flanks at 45 degrees so the tip is wider than the root.">${out.join('')}</svg>`
+    const hw = D.halfWidthMm
+    const chain = (pts: [number, number][]): string =>
+      pts.map(([x, z]) => P(x, z).map(f).join(',')).join(' ')
+
+    // left half: plate edge with one tab hanging off it, doubling back
+    const left: [number, number][] = [
+      [hw - 16, zc - span], [hw, zc - span], [hw, zc - neck],
+      [hw + reach, zc - neck - reach], [hw + reach, zc + neck + reach],
+      [hw, zc + neck], [hw, zc + span], [hw - 16, zc + span],
+    ]
+    out.push(`<polygon class="part" points="${chain(left)}"/>`)
+    // right half: the same shape grown by the fit, cut out of its plate
+    const n2 = neck + fit, r2 = reach + fit
+    const right: [number, number][] = [
+      [hw + 40, zc - span], [hw, zc - span], [hw, zc - n2],
+      [hw + r2, zc - n2 - r2], [hw + r2, zc + n2 + r2],
+      [hw, zc + n2], [hw, zc + span], [hw + 40, zc + span],
+    ]
+    out.push(`<polygon class="part alt" points="${chain(right)}"/>`)
+
+    out.push(dimH(P(hw, 0)[0], P(hw + reach, 0)[0], P(0, zc + span)[1] + 22, `${f(reach)} reach`))
+    out.push(dimV(P(0, zc - neck)[1], P(0, zc + neck)[1], P(hw - 4, 0)[0], `${f(C.seamTabRootMm)} neck`))
+    out.push(dimV(P(0, zc - neck - reach)[1], P(0, zc + neck + reach)[1], P(hw + reach + 5, 0)[0],
+      `${f(2 * (neck + reach))} head`))
+    out.push(`<text class="jointlbl" x="${f(P(hw + 2, 0)[0])}" y="${f(oy - 10)}">head wider than neck — it cannot pull out</text>`)
+    return `<svg viewBox="0 0 ${f(ox + 62 * s + 60)} ${f(oy + 2 * span * s + 42)}" role="img" aria-label="One seam tab in plan at four to one: a 16 mm neck opening to a 40 mm head 12 mm past the seam, so the head cannot withdraw through the neck.">${out.join('')}</svg>`
   }
 
   /* ================= SHEET 5 — print orientation ================= */
@@ -514,8 +525,13 @@ export function buildDrawings(cfg: RackConfig): string {
       <div class="notes">
         <p><strong>How it goes together.</strong> The tabs are undercut, so they can only be assembled along the axis
            they are constant in — the height. You <em>drop</em> the right half onto the left.</p>
-        <p><strong>What it locks.</strong> Everything in the plane of the shelf, which is where bending puts the
-           seam in tension. It stays free straight up, and that is how you take the rack apart again.</p>
+        <p><strong>What it locks.</strong> Sideways and fore-and-aft — everything in the plane of the shelf,
+           which is where bending puts the seam in tension. The head is ${f(2 * (C.seamTabRootMm / 2 + C.seamTabReachMm))} mm
+           across and the neck ${f(C.seamTabRootMm)} mm, so it cannot withdraw.</p>
+        <p><strong>What it does NOT lock: straight up.</strong> An undercut can only be assembled along the
+           axis it is constant in, so the one direction that lets the halves go together is also the one
+           nothing in the rack resists. The <em>mount</em> resists it: both towers seat on one continuous
+           cleat, or on one floor. In service the load only ever pushes the seam down.</p>
         <p><strong>Why a grid and not slots.</strong> Depth is the print axis, so every opening ends in a bridge —
            the rib above it arrives in one layer. The grid holds each bridge to ${f(openingW)} mm. Ribs running
            only front-to-back would need no bridge at all, but would leave the shelf nearly hollow across a slot's

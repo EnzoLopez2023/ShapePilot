@@ -87,26 +87,53 @@ export function frameFor(cfg: RackConfig, spec: PieceSpec): Frame {
 }
 
 /**
- * How far past the seam a tab reaches at depth `z`, 0 between tabs.
+ * The x-interval one seam tab occupies at depth `z`, or null between tabs.
  *
- * The flank falls off 1:1 with depth, which is a 45 degree undercut -- steep
- * enough to lock, shallow enough to print. `inflate` grows the tab uniformly,
- * which is how the mating half gets its clearance without a polygon buffer
- * (this codebase has none).
+ * THE SHAPE HAS TO HAVE A NECK, and the first version did not. Defining a tab
+ * as "x from the seam out to reach(z)" makes it a graph over the seam line:
+ * star-shaped, so it withdraws straight out in +x no matter what reach() does.
+ * No undercut is reachable that way. A dovetail needs the tab to exist, at some
+ * depths, ONLY beyond the seam -- an island in that slice, joined to the plate
+ * at other depths. So the FAR edge is fixed and the NEAR edge is what moves:
+ *
+ *     |z-zc| <= neck      x from the seam    to seam + reach   (the neck)
+ *     |z-zc| <= neck+reach  x from seam+(d-neck) to seam + reach   (the flank)
+ *
+ * Width at the seam is 2*neck; at the tip it is 2*(neck+reach). Wider at the
+ * tip, so it locks. The flank rises 1:1 with depth -- 45 degrees, which is the
+ * steepest an undercut can be and still print, since depth is the print axis.
  */
-export function tabReachAt(
+export function tabSpanAt(
   cfg: RackConfig, d: RackDerived, z: number, inflate: number,
-): number {
-  const half = cfg.seamTabRootMm / 2 + inflate
+): [number, number] | null {
+  const neck = cfg.seamTabRootMm / 2 + inflate
   const reach = cfg.seamTabReachMm + inflate
-  let best = 0
+  const far = d.halfWidthMm + reach
   for (const zc of seamTabCentres(cfg, d)) {
     const dist = Math.abs(z - zc)
-    if (dist <= half) return reach
-    const over = dist - half
-    if (over < reach && reach - over > best) best = reach - over
+    if (dist > neck + reach) continue
+    return [dist <= neck ? d.halfWidthMm : d.halfWidthMm + (dist - neck), far]
   }
-  return best
+  return null
+}
+
+/**
+ * The seam edge of a half, as one open chain from z=0 to z=depth.
+ *
+ * It doubles back on itself at every tab, which is what an undercut looks like
+ * drawn in plan.
+ */
+export function seamOutline(cfg: RackConfig, inflate: number): [number, number][] {
+  const d = derive(cfg)
+  const neck = cfg.seamTabRootMm / 2 + inflate
+  const reach = cfg.seamTabReachMm + inflate
+  const x = d.halfWidthMm, far = x + reach
+  const pts: [number, number][] = [[x, 0]]
+  for (const zc of seamTabCentres(cfg, d)) {
+    pts.push([x, zc - neck], [far, zc - neck - reach], [far, zc + neck + reach], [x, zc + neck])
+  }
+  pts.push([x, d.rackDepthMm])
+  return pts
 }
 
 export interface ShelfOpening { x0: number; x1: number; z0: number; z1: number }
@@ -190,8 +217,10 @@ export function crossSectionAt(cfg: RackConfig, spec: PieceSpec, z: number): Mul
     }
   }
   if (isLeft) {
-    const reach = tabReachAt(cfg, d, z, 0)
-    if (reach > 0) parts.push(multi(box(half, py0, half + reach, py1)))
+    const span = tabSpanAt(cfg, d, z, 0)
+    // Beyond the neck this box does not touch the plate. That island is the
+    // undercut: it is what the other half cannot pull off over.
+    if (span) parts.push(multi(box(span[0], py0, span[1], py1)))
   }
 
   let region = union(...parts)
@@ -208,10 +237,14 @@ export function crossSectionAt(cfg: RackConfig, spec: PieceSpec, z: number): Mul
     ))
   }
   if (!isLeft) {
-    const reach = tabReachAt(cfg, d, z, cfg.fitMm)
-    // Overshoot in x and y: everything it reaches beyond the plate is air,
-    // because tabs are placed clear of both lip bands (checkConfig asserts it).
-    if (reach > 0) region = difference(region, multi(box(half - 1, py0 - 1, half + reach, py1 + 1)))
+    const span = tabSpanAt(cfg, d, z, cfg.fitMm)
+    if (span) {
+      // Overshoot past the seam only where the cavity actually reaches it.
+      // On the flank the near edge must stay put -- the material inboard of it
+      // is the wedge that traps the tab's head.
+      const x0 = span[0] <= half + 1e-9 ? half - 1 : span[0]
+      region = difference(region, multi(box(x0, py0 - 1, span[1], py1 + 1)))
+    }
   }
 
   return shift(region, originShiftFor(cfg, spec))
