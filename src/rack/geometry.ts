@@ -30,8 +30,9 @@
 // seam tabs, which is the only direction the seam is free in.
 import type { MultiPolygon, Ring } from '../geometry/vec.ts'
 import { multiArea } from '../geometry/vec.ts'
-import { difference, union } from '../geometry/boolean.ts'
+import { difference, intersection, union } from '../geometry/boolean.ts'
 import { insertTJunctions } from '../geometry/tjunction.ts'
+import { circleRing } from '../geometry/primitives.ts'
 import type { Mesh } from '../geometry/mesh.ts'
 import { MeshBuilder } from '../geometry/mesh.ts'
 import type { RackConfig, RackDerived } from './config.ts'
@@ -200,6 +201,37 @@ export function shelfOpenings(cfg: RackConfig, spec: PieceSpec): ShelfOpening[] 
   return out
 }
 
+/**
+ * How far a piece reaches BEHIND the rack's back face, into the wall standoff.
+ *
+ * Only the caps do: the top one to make the hook, the bottom one to make the
+ * pad that holds the rack parallel to the wall. Every middle course stops at
+ * z=0 and stands off the wall, which is normal for a cleat.
+ */
+export const backReachMm = (cfg: RackConfig, spec: PieceSpec): number =>
+  spec.kind === 'middle' ? 0 : cfg.cleatThicknessMm
+
+/**
+ * How far the bearing plane has dropped `u` behind the back face, QUANTISED to
+ * the tread.
+ *
+ * Quantised rather than continuous so the hook and the strip agree even though
+ * they are banded differently -- the strip carries extra breakpoints for the
+ * screw counterbores, and evaluating a continuous plane at each part's own band
+ * midpoints put their staircases a quarter-step out of register.
+ */
+export function cleatBevelDropAt(cfg: RackConfig, u: number): number {
+  const clamped = Math.min(Math.max(u, 0), cfg.cleatThicknessMm)
+  return Math.min(
+    (Math.floor(clamped / cfg.cleatTreadMm) + 0.5) * cfg.cleatTreadMm,
+    cfg.cleatThicknessMm,
+  )
+}
+
+/** Height of the bearing plane at depth `z`. Rises with z -- see RackConfig. */
+export const bevelYAt = (cfg: RackConfig, z: number): number =>
+  cfg.cleatBevelTopMm - cleatBevelDropAt(cfg, -z)
+
 /** The piece's solid cross-section at depth `z`, already moved to x >= 0. */
 export function crossSectionAt(cfg: RackConfig, spec: PieceSpec, z: number): MultiPolygon {
   const d = derive(cfg)
@@ -245,6 +277,17 @@ export function crossSectionAt(cfg: RackConfig, spec: PieceSpec, z: number): Mul
 
   let region = union(...parts)
 
+  // Behind the back face the piece becomes either the hook or the wall pad.
+  if (z < 0) {
+    const big = 1e4
+    const keep: MultiPolygon = spec.kind === 'top'
+      // Everything above the bearing plane. Its underside is the plane, so the
+      // hook's underside rises with z and material only ever ends.
+      ? [[[[-big, bevelYAt(cfg, z)], [big, bevelYAt(cfg, z)], [big, big], [-big, big]]]]
+      : [[[[-big, -big], [big, -big], [big, cfg.spacerHeightMm], [-big, cfg.spacerHeightMm]]]]
+    region = intersection(region, keep)
+  }
+
   for (const o of shelfOpenings(cfg, spec)) {
     const span = openingSpanAt(o, z)
     if (span) region = difference(region, multi(box(span[0], py0 - 0.5, span[1], py1 + 0.5)))
@@ -283,7 +326,14 @@ export const originShiftFor = (cfg: RackConfig, spec: PieceSpec): number =>
 export function breakpoints(cfg: RackConfig, spec: PieceSpec): number[] {
   const d = derive(cfg)
   const inflate = spec.side === 'left' ? 0 : cfg.fitMm
-  const set = new Set<number>([0, d.rackDepthMm])
+  const back = -backReachMm(cfg, spec)
+  const set = new Set<number>([back, 0, d.rackDepthMm])
+  if (spec.kind === 'top') {
+    const steps = Math.ceil(cfg.cleatThicknessMm / cfg.cleatTreadMm)
+    for (let k = 0; k <= steps; k++) {
+      set.add(Number(Math.max(back, -k * cfg.cleatTreadMm).toFixed(4)))
+    }
+  }
   const f = frameFor(cfg, spec)
   if (f.isFloor) {
     set.add(cfg.backLipDepthMm)
@@ -335,6 +385,9 @@ export function bandsFor(cfg: RackConfig, spec: PieceSpec): Band[] {
  */
 export function buildPiece(cfg: RackConfig, spec: PieceSpec): Piece {
   const raw = bandsFor(cfg, spec)
+  // Regions are evaluated at TRUE depth, which runs negative behind the back
+  // face on the caps. Shift once here so every exported piece sits at z=0.
+  const zOff = backReachMm(cfg, spec)
   const b = new MeshBuilder()
   if (!raw.length) return { spec, mesh: b.finish(), bands: [] }
 
@@ -347,7 +400,7 @@ export function buildPiece(cfg: RackConfig, spec: PieceSpec): Piece {
 
   const n = raw.length
   const flat = insertTJunctions([...raw.map(x => x.region), ...rawUp, ...rawDown])
-  const bands = raw.map((x, i) => ({ ...x, region: flat[i]! }))
+  const bands = raw.map((x, i) => ({ z0: x.z0 + zOff, z1: x.z1 + zOff, region: flat[i]! }))
   const floorsUp = flat.slice(n, 2 * n)
   const ceilingsDown = flat.slice(2 * n, 3 * n)
 
@@ -418,4 +471,83 @@ export function stackLayout(cfg: RackConfig): StackLayout {
     })
   }
   return { courses, bays, totalHeightMm: y }
+}
+
+/* ---------------------------------------------------------------- the cleat */
+
+export type CleatSide = 'left' | 'right'
+
+/** Overall height of the wall strip, base to the bevel's high point. */
+export const cleatHeightMm = (cfg: RackConfig): number =>
+  cfg.cleatDropMm + cfg.cleatThicknessMm
+
+/**
+ * One half of the wall strip, in its own frame.
+ *
+ * Built along the THICKNESS: mesher-z runs 0 at the outer face to
+ * `cleatThicknessMm` at the wall face, which is also how it prints. The strip
+ * is tallest at the outer face and loses height 1:1 going back, so material
+ * only ever ends -- no supports, and the screw holes come out vertical, which
+ * is the one orientation that needs no teardrop.
+ *
+ * Its top in each band sits exactly `fitMm` below the hook's underside in the
+ * matching band, because both are cut from the same staircase.
+ */
+export function buildCleat(cfg: RackConfig, side: CleatSide): Piece {
+  const d = derive(cfg)
+  const T = cfg.cleatThicknessMm
+  const Hs = cleatHeightMm(cfg)
+  const L = d.halfWidthMm
+  // Everything must stay under the bevel at its LOWEST, which is at the wall
+  // face. The peg first sat above it and poked through the back of the strip.
+  const lowestTop = Hs - T - cfg.fitMm
+  const screwY = cfg.cleatScrewHeadDiaMm / 2 + 6
+  const pegY1 = lowestTop - 4
+  const pegY0 = pegY1 - 8
+
+  const bps = new Set<number>([0, T, Math.min(cfg.cleatScrewHeadDepthMm, T)])
+  for (let u = 0; u <= T + 1e-9; u += cfg.cleatTreadMm) bps.add(Number(Math.min(u, T).toFixed(4)))
+  const zs = [...bps].sort((a, b) => a - b)
+
+  const raw: Band[] = []
+  for (let i = 0; i < zs.length - 1; i++) {
+    const z0 = zs[i]!, z1 = zs[i + 1]!
+    if (z1 - z0 < 1e-6) continue
+    const u = (z0 + z1) / 2
+    const top = Hs - cleatBevelDropAt(cfg, u) - cfg.fitMm
+    let region: MultiPolygon = [[box(0, 0, L, top)]]
+    // The peg that stops the two halves mounting at different heights.
+    if (side === 'left') {
+      region = union(region, [[box(L, pegY0, L + cfg.cleatPegMm, pegY1)]])
+    } else {
+      region = difference(region, [[box(
+        -1, pegY0 - cfg.fitMm, cfg.cleatPegMm + cfg.fitMm, pegY1 + cfg.fitMm,
+      )]])
+    }
+    const dia = u < cfg.cleatScrewHeadDepthMm ? cfg.cleatScrewHeadDiaMm : cfg.cleatScrewDiaMm
+    for (let k = 0; k < cfg.cleatScrewsPerHalf; k++) {
+      const cx = L * ((k + 1) / (cfg.cleatScrewsPerHalf + 1))
+      region = difference(region, [[circleRing(dia / 2, 32).map(([x, y]) => [x + cx, y + screwY])]])
+    }
+    raw.push({ z0, z1, region })
+  }
+
+  const b = new MeshBuilder()
+  const rawUp: MultiPolygon[] = [[]], rawDown: MultiPolygon[] = [[]]
+  for (let i = 1; i < raw.length; i++) {
+    rawUp.push(difference(raw[i - 1]!.region, raw[i]!.region))
+    rawDown.push(difference(raw[i]!.region, raw[i - 1]!.region))
+  }
+  const n = raw.length
+  const flat = insertTJunctions([...raw.map(x => x.region), ...rawUp, ...rawDown])
+  const bands = raw.map((x, i) => ({ ...x, region: flat[i]! }))
+  b.addHorizontal(bands[0]!.region, bands[0]!.z0, 'down')
+  for (let i = 1; i < bands.length; i++) {
+    b.addHorizontal(flat.slice(n, 2 * n)[i] ?? [], bands[i]!.z0, 'up')
+    b.addHorizontal(flat.slice(2 * n, 3 * n)[i] ?? [], bands[i]!.z0, 'down')
+  }
+  b.addHorizontal(bands[n - 1]!.region, bands[n - 1]!.z1, 'up')
+  for (const band of bands) b.addWalls(band.region, band.z0, band.z1)
+
+  return { spec: { kind: 'top', side }, mesh: b.finish(), bands }
 }

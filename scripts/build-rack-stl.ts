@@ -10,7 +10,9 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { RackConfig } from '../src/rack/config.ts'
 import { checkConfig, derive, RACK } from '../src/rack/config.ts'
-import { buildPiece, pieceList, pieceName, stackLayout } from '../src/rack/geometry.ts'
+import {
+  buildCleat, buildPiece, cleatHeightMm, pieceList, pieceName, stackLayout,
+} from '../src/rack/geometry.ts'
 import { checkManifold } from '../src/geometry/mesh.ts'
 import { writeBinaryStl } from '../src/export/stl.ts'
 import { BAMBU_X2D } from '../src/model/machines.ts'
@@ -87,6 +89,31 @@ for (const spec of specs) {
   )
 }
 
+// The wall side of the French cleat: two halves, pegged so they cannot be
+// mounted at different heights. Not part of the stack, so it is emitted apart.
+if (!coupon) {
+  for (const side of ['left', 'right'] as const) {
+    const piece = buildCleat(cfg, side)
+    const report = checkManifold(piece.mesh)
+    if (!report.ok) {
+      console.error(`cleat_${side} is not watertight`)
+      process.exit(1)
+    }
+    const [x0, y0, z0, x1, y1, z1] = piece.mesh.bbox
+    const size: [number, number, number] = [x1 - x0, y1 - y0, z1 - z0]
+    const name = `cleat_wall_${side === 'left' ? 'L' : 'R'}.stl`
+    writeFileSync(
+      resolve(outDir, name),
+      Buffer.from(writeBinaryStl(piece.mesh, `ShapePilot S76 rack ${name}`)),
+    )
+    totalMm3 += report.volume
+    rows.push(
+      `  ${name.padEnd(22)} x1   ${size.map(v => v.toFixed(1).padStart(6)).join(' x ')} mm` +
+      `  ${(report.volume / 1000).toFixed(0).padStart(5)} cm3`,
+    )
+  }
+}
+
 const counts = new Map<string, number>()
 for (const s of wanted) counts.set(s.kind, (counts.get(s.kind) ?? 0) + 1)
 const layout = stackLayout(cfg)
@@ -121,6 +148,14 @@ const readme = [
   '  3. Repeat: bottom cap, then middles, then the top cap.',
   '  The halves are locked in the loaded directions and free only straight up,',
   '  which is how you take it apart again.',
+  '',
+  'WALL MOUNT',
+  `  A French cleat. Screw cleat_wall_L and _R to the studs, pegged end to pegged`,
+  `  end, ${cleatHeightMm(cfg).toFixed(0)} mm tall, level. The rack's top cap hooks over them and its`,
+  `  weight pulls it against the wall; the bottom cap's pad holds it parallel.`,
+  `  Both towers seat on the same strip -- that is what stops the two halves of`,
+  `  a course lifting apart, which is the one direction the seam leaves free.`,
+  `  Stand-off from the wall is ${cfg.cleatThicknessMm} mm.`,
   '',
   'FIT',
   `  Every mating feature carries ${cfg.fitMm} mm of clearance. If the coupon is`,

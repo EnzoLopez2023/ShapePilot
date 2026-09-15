@@ -32,6 +32,7 @@
     "scripts",
     "src/rack",
     "src/geometry/vec.ts",
+    "src/geometry/primitives.ts",
     "src/geometry/boolean.ts",
     "src/geometry/tjunction.ts",
     "src/geometry/mesh.ts",

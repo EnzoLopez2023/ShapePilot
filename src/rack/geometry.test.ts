@@ -10,7 +10,8 @@ import type { MultiPolygon } from '../geometry/vec.ts'
 import type { PieceSpec } from './geometry.ts'
 import {
   bandVolume, buildPiece, crossSectionAt, frameFor, originShiftFor, pieceList, pieceName,
-  gableHeight, openingSpanAt, shelfOpenings, stackLayout, tabSpanAt,
+  backReachMm, bevelYAt, buildCleat, cleatHeightMm, gableHeight, openingSpanAt, shelfOpenings,
+  stackLayout, tabSpanAt,
 } from './geometry.ts'
 
 const D = derive(RACK)
@@ -301,6 +302,88 @@ describe('the skeletonised shelf', () => {
     assert.ok(vk < vs * 0.9, `only saved ${(100 * (1 - vk / vs)).toFixed(1)}%`)
     assert.equal(checkManifold(skel.mesh).danglingEdges, 0)
     assert.ok(Math.abs(bandVolume(skel.bands) - vk) / vk < 1e-6)
+  })
+})
+
+describe('the french cleat', () => {
+  test('the bevel rises away from the wall, so the rack is pulled in', () => {
+    // Get this backwards and the rack walks itself off the wall.
+    const atWall = bevelYAt(RACK, -RACK.cleatThicknessMm)
+    const atFace = bevelYAt(RACK, 0)
+    assert.ok(atFace > atWall, 'the bearing plane falls away from the wall')
+    // One tread of drop per tread of depth is 45 degrees; the staircase means
+    // the ends are half a tread in from the true plane.
+    const rise = (bevelYAt(RACK, -2 * RACK.cleatTreadMm) - bevelYAt(RACK, -3 * RACK.cleatTreadMm))
+    assert.equal(+rise.toFixed(6), RACK.cleatTreadMm, 'not 45 degrees')
+  })
+
+  test('only the caps reach behind the back face', () => {
+    assert.equal(backReachMm(RACK, { kind: 'middle', side: 'left' }), 0)
+    assert.equal(backReachMm(RACK, { kind: 'top', side: 'left' }), RACK.cleatThicknessMm)
+    assert.equal(backReachMm(RACK, { kind: 'bottom', side: 'left' }), RACK.cleatThicknessMm)
+  })
+
+  test('the hook only ever loses material going up the print', () => {
+    // Its underside IS the bearing plane, so it rises with z. That is the whole
+    // reason neither part needs support -- material ends, never appears.
+    const spec: PieceSpec = { kind: 'top', side: 'left' }
+    const lowest = (z: number): number => {
+      const mp = crossSectionAt(RACK, spec, z)
+      return Math.min(...mp.flat(2).map(([, y]) => y))
+    }
+    let prev = -Infinity
+    for (let z = -RACK.cleatThicknessMm + 0.01; z < -0.01; z += 0.25) {
+      const y = lowest(z)
+      assert.ok(y >= prev - 1e-6, `the hook's underside drops at z=${z.toFixed(2)} -- an overhang`)
+      prev = y
+    }
+  })
+
+  test('the strip clears the hook by exactly the fit, all the way along', () => {
+    const cleat = buildCleat(RACK, 'left')
+    const top = RACK.cleatBevelTopMm, Hs = cleatHeightMm(RACK)
+    for (const band of cleat.bands) {
+      const u = (band.z0 + band.z1) / 2
+      const stripTop = Math.max(...band.region.flat(2).map(([, y]) => y))
+      // Put the strip in the rack's frame: its base sits Hs below the high point.
+      const inRack = stripTop + (top - Hs)
+      const hookUnder = bevelYAt(RACK, -u)
+      assert.ok(Math.abs((hookUnder - inRack) - RACK.fitMm) < 1e-6,
+        `gap is ${(hookUnder - inRack).toFixed(3)} at u=${u.toFixed(2)}, want ${RACK.fitMm}`)
+    }
+  })
+
+  test('the strip loses height going back, so it prints without support', () => {
+    const cleat = buildCleat(RACK, 'left')
+    let prev = Infinity
+    for (const band of cleat.bands) {
+      const top = Math.max(...band.region.flat(2).map(([, y]) => y))
+      assert.ok(top <= prev + 1e-6, 'the strip gains height going back -- an overhang')
+      prev = top
+    }
+  })
+
+  test('both strips are watertight and fit the plate', () => {
+    for (const side of ['left', 'right'] as const) {
+      const mesh = buildCleat(RACK, side).mesh
+      const r = checkManifold(mesh)
+      assert.equal(r.danglingEdges, 0, `cleat_${side} leaks`)
+      assert.ok(r.volume > 0)
+      const [x0, y0, z0, x1, y1, z1] = mesh.bbox
+      const [bx, by, bz] = BAMBU_X2D.buildMm
+      assert.ok(x1 - x0 <= bx - PLATE_MARGIN_MM && y1 - y0 <= by - PLATE_MARGIN_MM && z1 - z0 <= bz)
+    }
+  })
+
+  test('the two strips peg together', () => {
+    const l = buildCleat(RACK, 'left').mesh.bbox
+    const r = buildCleat(RACK, 'right').mesh.bbox
+    assert.ok(l[3] - l[0] > r[3] - r[0], 'the left strip should carry the peg')
+    assert.equal(+((l[3] - l[0]) - (r[3] - r[0])).toFixed(3), RACK.cleatPegMm)
+  })
+
+  test('a bevel taller than the top cap is rejected', () => {
+    assert.ok(checkConfig({ ...RACK, cleatBevelTopMm: 60 }).some(m => m.includes('no piece to hang')))
   })
 })
 

@@ -8,7 +8,7 @@ import { auditDrawings, buildDrawings } from './drawings.ts'
 // that is where a drawing can still disagree with the part.
 test('the drawing set renders every sheet', () => {
   const html = buildDrawings(RACK)
-  assert.equal((html.match(/<svg /g) ?? []).length, 6)
+  assert.equal((html.match(/<svg /g) ?? []).length, 7, 'one figure per sheet')
   assert.ok(html.includes('<title>'), 'needs a title')
 })
 
@@ -36,7 +36,7 @@ test('the audit actually catches a broken figure', () => {
 
 test('the sheets carry the numbers the parts were built from', () => {
   const html = buildDrawings(RACK)
-  for (const n of ['82.2', '79', '496.4', '1.65', '155.6']) {
+  for (const n of ['82.2', '79', '496.4', '1.65', '155.6', 'stand-off']) {
     assert.ok(html.includes(n), `sheet should quote ${n}`)
   }
 })

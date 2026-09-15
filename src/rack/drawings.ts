@@ -15,8 +15,8 @@ import type { RackConfig } from './config.ts'
 import { derive, seamTabCentres } from './config.ts'
 import type { PieceKind, PieceSpec } from './geometry.ts'
 import {
-  buildPiece, crossSectionAt, gableHeight, originShiftFor, pieceList, pieceName, seamOutline,
-  shelfOpenings, stackLayout,
+  buildPiece, cleatBevelDropAt, cleatHeightMm, crossSectionAt, gableHeight, originShiftFor,
+  pieceList, pieceName, seamOutline, shelfOpenings, stackLayout,
 } from './geometry.ts'
 
 /** A projector from drawing units into SVG pixels. */
@@ -315,6 +315,50 @@ export function buildDrawings(cfg: RackConfig): string {
     return `<svg viewBox="0 0 ${f(ox + 62 * s + 60)} ${f(oy + 2 * span * s + 42)}" role="img" aria-label="One seam tab in plan at four to one: a 16 mm neck opening to a 40 mm head 12 mm past the seam, so the head cannot withdraw through the neck.">${out.join('')}</svg>`
   }
 
+  function sheetCleat(): string {
+    const sc = 4.2
+    const T = C.cleatThicknessMm, Hs = cleatHeightMm(C), top = C.cleatBevelTopMm
+    const ox = 180, oy = 54
+    // Section looking along the rack's width: depth across, height up.
+    const P = (z: number, y: number): [number, number] => [ox + z * sc, oy + (50 - y) * sc]
+    const out: string[] = []
+    const stair = (from: number, to: number): [number, number][] => {
+      const pts: [number, number][] = []
+      for (let u = from; u <= to + 1e-9; u += C.cleatTreadMm) {
+        const yy = top - cleatBevelDropAt(C, u)
+        pts.push([-u, yy], [-Math.min(u + C.cleatTreadMm, to), yy])
+      }
+      return pts
+    }
+    const chain = (pts: [number, number][]): string =>
+      pts.map(([z, y]) => P(z, y).map(f).join(',')).join(' ')
+
+    // wall
+    out.push(`<rect class="bed" x="${f(P(-T - 16, 0)[0])}" y="${f(P(0, 50)[1])}" ` +
+      `width="${f(16 * sc)}" height="${f(52 * sc)}"/>`)
+    out.push(`<text class="note" x="${f(P(-T - 15, 0)[0])}" y="${f(P(0, -1)[1])}">WALL</text>`)
+
+    // wall strip: body under the staircase
+    const strip: [number, number][] = [[-T, top - Hs], [0, top - Hs], ...stair(0, T).reverse()]
+    out.push(`<polygon class="part alt" points="${chain(strip)}"/>`)
+    // the rack's top cap, hook and all
+    const hook: [number, number][] = [
+      ...stair(0, T), [-T, top + 14], [D.rackDepthMm / 5, top + 14], [D.rackDepthMm / 5, top - 26], [0, top - 26],
+    ]
+    out.push(`<polygon class="part" points="${chain(hook)}"/>`)
+
+    out.push(dimH(P(-T, 0)[0], P(0, 0)[0], P(0, top - Hs - 3)[1], `${f(T)} stand-off`))
+    out.push(`<text class="jointlbl" x="${f(P(T * 0.6, top + 5)[0])}" y="${f(P(0, top + 5)[1])}">TOP CAP — the hook</text>`)
+    out.push(`<text class="secttl alt" x="${f(P(-T - 14, 0)[0])}" y="${f(P(0, top - Hs + 5)[1])}">WALL STRIP</text>`)
+    out.push(`<text class="note" x="${f(P(-T - 14, 0)[0])}" y="${f(P(0, top - Hs - 6)[1])}">screwed to the studs</text>`)
+    // the arrow that explains the whole joint
+    const a0 = P(T * 1.2, top + 22), a1 = P(-T * 0.2, top + 10)
+    out.push(`<defs><marker id="ca" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>`)
+    out.push(`<line class="arrow" x1="${f(a0[0])}" y1="${f(a0[1])}" x2="${f(a1[0])}" y2="${f(a1[1])}" marker-end="url(#ca)"/>`)
+    out.push(`<text class="jointlbl" x="${f(a0[0] + 6)}" y="${f(a0[1])}">settles down and IN</text>`)
+    return `<svg viewBox="0 0 ${f(ox + D.rackDepthMm / 5 * sc + 30)} 356" role="img" aria-label="Section through the French cleat: the wall strip's bearing face rises away from the wall at 45 degrees, and the top cap's hook rests on it, so the rack's weight pulls it against the wall.">${out.join('')}</svg>`
+  }
+
   /* ================= SHEET 5 — print orientation ================= */
   function sheetPrint() {
     const s = 0.78, dep = D.rackDepthMm
@@ -600,6 +644,28 @@ export function buildDrawings(cfg: RackConfig): string {
               <td class="why">all inside 256 × 256 × 260</td><td class="num"><strong>${totalCm3} cm³</strong></td></tr>
           </tbody></table>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="sheet">
+    <div class="sheethead"><span class="sheetno">SHEET 7</span><h2>French cleat</h2>
+      <span class="eyebrow">section through the top of the rack</span></div>
+    <div class="sheetbody">
+      <figure class="drawing">${sheetCleat()}
+        <figcaption>The bearing face rises 45° <em>away</em> from the wall, so settling is also
+          settling inward. Bevel it the other way and the rack walks itself off.</figcaption></figure>
+      <div class="notes">
+        <p><strong>No bracket to attach.</strong> The hook is the top cap's own back, trimmed by the bearing
+           plane. Nothing to fasten, and nothing to come loose.</p>
+        <p><strong>It prints without support</strong> for the same reason it works: the hook's underside
+           <em>is</em> the bearing plane, so going up the print it rises and material only ever ends. The
+           strip prints outer-face down, losing height the same way — and its screw holes come out vertical.</p>
+        <p><strong>This is what ties the two towers.</strong> Both seat on the same strip, which is the one
+           thing that stops a course's halves lifting apart — the single direction the seam leaves free.
+           The two strip halves peg together so they cannot be mounted at different heights.</p>
+        <p><strong>Bottom cap</strong> carries a ${f(C.spacerHeightMm)} mm pad instead of a hook, holding the
+           rack parallel to the wall.</p>
       </div>
     </div>
   </section>

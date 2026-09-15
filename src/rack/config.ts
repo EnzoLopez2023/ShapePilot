@@ -72,6 +72,42 @@ export interface RackConfig {
   fitMm: number
 
   /**
+   * French cleat. The wall strip stands the rack off the wall by this much,
+   * and it is also the run of the 45 degree bearing bevel.
+   *
+   * WHICH WAY THE BEVEL FACES is the thing to get right. The rack has to be
+   * pulled TOWARD the wall as it settles, so the bearing plane must be low at
+   * the wall and high away from it -- then sliding down is sliding in. The
+   * rack's back face is z=0 and the wall is at z=-cleatThicknessMm, so the
+   * plane RISES with z.
+   *
+   * That is also why neither part needs support. The hook's underside IS that
+   * plane, so going up the print its underside rises and material only ever
+   * ENDS. The strip prints outer-face down, where its height falls the same
+   * way.
+   */
+  cleatThicknessMm: number
+  /** Height of the bevel's high point, in the top cap's own frame. */
+  cleatBevelTopMm: number
+  /** How far the wall strip's body hangs below the bevel's low point. */
+  cleatDropMm: number
+  /**
+   * Tread of the bevel staircase. Coarse on purpose: this is a MATING face,
+   * not an overhang -- material ends across it rather than appearing -- so it
+   * does not need the one-layer tread the shelf peaks do. The hook and the
+   * strip are cut from the same staircase, so they seat face to face.
+   */
+  cleatTreadMm: number
+  cleatScrewDiaMm: number
+  cleatScrewHeadDiaMm: number
+  cleatScrewHeadDepthMm: number
+  cleatScrewsPerHalf: number
+  /** Peg joining the two wall strips, so they cannot mount at different heights. */
+  cleatPegMm: number
+  /** Pad on the back of the bottom cap, holding the rack parallel to the wall. */
+  spacerHeightMm: number
+
+  /**
    * Cut the shelves back to a waffle: a perimeter frame and ribs around a grid
    * of openings.
    *
@@ -153,6 +189,17 @@ export const RACK: RackConfig = {
   skeletonShelf: true,
   shelfFrameMm: 12,
   shelfRibMm: 6,
+  cleatThicknessMm: 12,
+  cleatBevelTopMm: 34,
+  cleatDropMm: 34,
+  cleatTreadMm: 1.0,
+  cleatScrewDiaMm: 4.5,
+  cleatScrewHeadDiaMm: 9,
+  cleatScrewHeadDepthMm: 4.5,
+  cleatScrewsPerHalf: 3,
+  cleatPegMm: 7,
+  spacerHeightMm: 16,
+
   shelfOpeningWidthMm: 16,
   shelfOpeningDepthMm: 60,
   layerHeightMm: 0.2,
@@ -241,6 +288,23 @@ export function checkConfig(cfg: RackConfig): string[] {
     out.push('rail neck must be narrower than the head or the dovetail does not lock')
   }
   if (cfg.bays < 1) out.push('a rack needs at least one bay')
+  if (cfg.cleatBevelTopMm >= d.capHeightMm) {
+    out.push(
+      `the cleat bevel tops out at ${cfg.cleatBevelTopMm} but the top cap is only ` +
+      `${d.capHeightMm.toFixed(1)} tall -- the hook would have no piece to hang from`,
+    )
+  }
+  if (cfg.cleatBevelTopMm - cfg.cleatThicknessMm <= 0) {
+    out.push('the bevel runs off the bottom of the top cap')
+  }
+  // The strip is shortest at the wall face; everything in it has to fit there.
+  const lowestTop = cfg.cleatDropMm - cfg.fitMm
+  if (cfg.cleatScrewHeadDiaMm + 12 > lowestTop) {
+    out.push(
+      `a ${cfg.cleatScrewHeadDiaMm} mm screw head does not fit under the bevel at the wall ` +
+      `face, where the strip is only ${lowestTop.toFixed(1)} mm tall`,
+    )
+  }
   if (cfg.skeletonShelf) {
     if (cfg.shelfFrameMm <= cfg.backLipDepthMm || cfg.shelfFrameMm <= cfg.frontLipDepthMm) {
       out.push(
