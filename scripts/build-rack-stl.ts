@@ -28,8 +28,13 @@ const bays = Number(flag('--bays') ?? RACK.bays)
 const outDir = resolve(flag('--out') ?? (coupon ? 'out/rack-coupon' : 'out/rack'))
 
 // A coupon is the same joints on a piece small enough to print in minutes.
+// Shelves stay solid: it exists to prove the fit of the tongue and the tab, and
+// a shelf shrunk this far has no room between its own frames anyway.
 const cfg: RackConfig = coupon
-  ? { ...RACK, bays: 2, seamTabs: 1, caseWidthMm: 60, caseDepthMm: 40, caseHeightMm: 20 }
+  ? {
+      ...RACK, bays: 2, seamTabs: 1, skeletonShelf: false,
+      caseWidthMm: 60, caseDepthMm: 40, caseHeightMm: 20,
+    }
   : { ...RACK, bays }
 
 const issues = checkConfig(cfg)

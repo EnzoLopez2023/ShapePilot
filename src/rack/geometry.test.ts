@@ -247,6 +247,14 @@ describe('the assembled rack', () => {
 })
 
 describe('config checks', () => {
+  test('a shelf with no room between its frames is rejected', () => {
+    // The coupon shrinks the case far enough to hit this, which is how it was
+    // found -- the validator refused to build it rather than emitting a shelf
+    // with silently empty openings.
+    const issues = checkConfig({ ...RACK, caseWidthMm: 60 })
+    assert.ok(issues.some(m => m.includes('nothing left to open up')), issues.join('; '))
+  })
+
   test('the shipped config is sound', () => {
     assert.deepEqual(checkConfig(RACK), [])
   })
