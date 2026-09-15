@@ -54,6 +54,12 @@ export interface ProfilePreset {
    * base cavity is 48 of it, the rest being the lid's own recess. See
    * `lidRecessHeightMm`.
    *
+   * The 71 is the BODY, without the feet. Overall height on the feet is 76 --
+   * also measured with calipers, 2026-09-14 -- and that is the figure anything
+   * the case stands ON needs, because it stands on its feet. Both numbers are
+   * real and they measure different things; 76 is not merely the model name.
+   * `src/rack/config.ts` uses the 76 for exactly that reason.
+   *
    * The 48 is MEASURED -- confirmed with calipers against a physical S 76 on
    * 2026-09-09. It replaced an estimate of 63 derived from the outer height.
    * Designers still let the user override it, because a different case in the
