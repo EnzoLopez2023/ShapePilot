@@ -15,8 +15,8 @@ import type { RackConfig } from './config.ts'
 import { derive, seamTabCentres } from './config.ts'
 import type { PieceKind, PieceSpec } from './geometry.ts'
 import {
-  buildPiece, crossSectionAt, originShiftFor, pieceList, pieceName, seamOutline, shelfOpenings,
-  stackLayout,
+  buildPiece, crossSectionAt, gableHeight, originShiftFor, pieceList, pieceName, seamOutline,
+  shelfOpenings, stackLayout,
 } from './geometry.ts'
 
 /** A projector from drawing units into SVG pixels. */
@@ -206,11 +206,16 @@ export function buildDrawings(cfg: RackConfig): string {
     const [xw] = P(D.rackWidthMm, 0)
     out.push(`<polygon class="part alt" points="${f(xw)},${f(z0)} ${chain(cav)} ${f(xw)},${f(z1)}"/>`)
 
-    // the waffle: openings on both halves
+    // The waffle. Drawn as the peaked pentagon it actually is -- a rectangle
+    // here would be the picture disagreeing with the part again.
     for (const side of ['left', 'right'] as const) {
       for (const o of shelfOpenings(C, { kind: 'middle', side })) {
-        const [ax, az] = P(o.x0, o.z0), [bx, bz] = P(o.x1, o.z1)
-        out.push(`<rect class="void" x="${f(ax)}" y="${f(az)}" width="${f(bx - ax)}" height="${f(bz - az)}"/>`)
+        const g = gableHeight(o)
+        const pent: [number, number][] = [
+          [o.x0, o.z0], [o.x1, o.z0], [o.x1, o.z1 - g],
+          [(o.x0 + o.x1) / 2, o.z1], [o.x0, o.z1 - g],
+        ]
+        out.push(`<polygon class="void" points="${pent.map(([x, z]) => P(x, z).map(f).join(',')).join(' ')}"/>`)
       }
     }
 
@@ -532,10 +537,12 @@ export function buildDrawings(cfg: RackConfig): string {
            axis it is constant in, so the one direction that lets the halves go together is also the one
            nothing in the rack resists. The <em>mount</em> resists it: both towers seat on one continuous
            cleat, or on one floor. In service the load only ever pushes the seam down.</p>
-        <p><strong>Why a grid and not slots.</strong> Depth is the print axis, so every opening ends in a bridge —
-           the rib above it arrives in one layer. The grid holds each bridge to ${f(openingW)} mm. Ribs running
-           only front-to-back would need no bridge at all, but would leave the shelf nearly hollow across a slot's
-           width, which is exactly where it carries the case.</p>
+        <p><strong>Every opening is peaked.</strong> The shelf stands as a vertical wall in the print, so a
+           flat-topped hole is a horizontal roof — the first version filled all of them with tree supports.
+           The peak insets one layer per layer, which slices as a true 45°. The flat bottom needs nothing:
+           material <em>ending</em> as the print rises is free.</p>
+        <p><strong>Why not a diamond.</strong> Same idea, but a rotated square is always half its bounding
+           box however you size it. Peaking only the top keeps 80% of the hole instead of 50%.</p>
         <p><strong>The seam frame is ${f(D.seamFrameMm)} mm</strong> — wider than the ${f(C.shelfFrameMm)} mm frame
            elsewhere, because the tab cavity is cut ${f(C.seamTabReachMm + C.fitMm)} mm into it.</p>
       </div>
@@ -601,8 +608,8 @@ export function buildDrawings(cfg: RackConfig): string {
     <h3>${(totalCm3 / 1000 * 1.24).toFixed(2)} kg of filament — the shelves are already cut back</h3>
     <p style="margin:0;color:var(--soft)">Skeletonising the shelves to a frame, ribs and
   ${skelOpenings.length * 2} openings a course takes roughly a quarter off the whole rack. What is left is
-  sized by the print, not by eye: each opening is capped at ${f(C.shelfOpeningMaxMm)} mm so the rib arriving
-  over it never bridges further than that.</p>
+  sized by the print, not by eye: each opening is peaked at ${f(C.shelfOpeningWidthMm / 2)} mm so
+  nothing ever has to bridge across its top.</p>
   </div>
 
   <div class="decisions">

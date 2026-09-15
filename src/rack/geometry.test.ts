@@ -10,7 +10,7 @@ import type { MultiPolygon } from '../geometry/vec.ts'
 import type { PieceSpec } from './geometry.ts'
 import {
   bandVolume, buildPiece, crossSectionAt, frameFor, originShiftFor, pieceList, pieceName,
-  shelfOpenings, stackLayout, tabSpanAt,
+  gableHeight, openingSpanAt, shelfOpenings, stackLayout, tabSpanAt,
 } from './geometry.ts'
 
 const D = derive(RACK)
@@ -243,13 +243,35 @@ describe('the skeletonised shelf', () => {
     }
   })
 
-  test('every bridge stays under the span cap', () => {
-    // Depth is the print axis, so a rib appears over its opening in one layer,
-    // spanning the opening's width. That width is the bridge.
+  test('no opening ever has to bridge: every top closes to a peak', () => {
+    // The shelf is a vertical wall in the print, so a flat-topped opening is a
+    // horizontal roof and fills with tree supports. This is the check that it
+    // closes gradually instead -- one layer of tread per layer of rise.
     for (const o of shelfOpenings(RACK, spec)) {
-      assert.ok(o.x1 - o.x0 <= RACK.shelfOpeningMaxMm + 1e-9,
-        `a ${(o.x1 - o.x0).toFixed(1)} mm bridge exceeds the ${RACK.shelfOpeningMaxMm} mm cap`)
+      const peak = gableHeight(o)
+      let widest = 0
+      // The last slice that still has an opening: whatever is open there is
+      // what the next layer has to span unaided.
+      for (let z = o.z1 - RACK.layerHeightMm + 1e-6; z < o.z1; z += RACK.layerHeightMm / 8) {
+        const span = openingSpanAt(o, z)
+        if (span) widest = Math.max(widest, span[1] - span[0])
+      }
+      assert.ok(widest <= 2 * RACK.layerHeightMm + 1e-6,
+        `opening still ${widest.toFixed(2)} mm wide at its top -- that is a bridge`)
+      assert.ok(Math.abs(peak - (o.x1 - o.x0) / 2) < 1e-9, 'the peak is not at 45 degrees')
     }
+  })
+
+  test('the peak insets exactly one layer per layer, which slices as 45 degrees', () => {
+    const o = shelfOpenings(RACK, spec)[0]!
+    const L = RACK.layerHeightMm
+    const a = openingSpanAt(o, o.z1 - gableHeight(o) + 2 * L)
+    const b = openingSpanAt(o, o.z1 - gableHeight(o) + 3 * L)
+    assert.ok(a && b)
+    const insetPerLayer = ((a![1] - a![0]) - (b![1] - b![0])) / 2
+    assert.ok(Math.abs(insetPerLayer - L) < 1e-6,
+      `insets ${insetPerLayer.toFixed(3)} mm per layer, want ${L} -- a slicer would call this ` +
+      `${(Math.atan2(L, insetPerLayer) * 180 / Math.PI).toFixed(1)} degrees`)
   })
 
   test('the shelf still runs wall to seam at a rib', () => {

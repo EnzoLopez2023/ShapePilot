@@ -138,6 +138,26 @@ export function seamOutline(cfg: RackConfig, inflate: number): [number, number][
 
 export interface ShelfOpening { x0: number; x1: number; z0: number; z1: number }
 
+/** Height of the 45 degree peak over an opening: half its width. */
+export const gableHeight = (o: ShelfOpening): number => (o.x1 - o.x0) / 2
+
+/**
+ * The x-interval an opening removes at depth `z`, or null outside it.
+ *
+ * Vertical sides, flat bottom, and a 45 degree peak at the top so nothing ever
+ * has to bridge across it. A diamond would do the same job but a rotated square
+ * is always half its bounding box, and peaking only the top costs 20% of the
+ * hole instead of 50%.
+ */
+export function openingSpanAt(o: ShelfOpening, z: number): [number, number] | null {
+  if (z <= o.z0 || z >= o.z1) return null
+  const peakFrom = o.z1 - gableHeight(o)
+  if (z <= peakFrom) return [o.x0, o.x1]
+  const inset = z - peakFrom                   // 45 degrees: 1 in x per 1 in z
+  const x0 = o.x0 + inset, x1 = o.x1 - inset
+  return x1 - x0 > 1e-6 ? [x0, x1] : null
+}
+
 /**
  * Split `lo..hi` into the fewest openings no longer than `maxLen`, separated by
  * ribs. Returns the openings, not the ribs.
@@ -170,9 +190,9 @@ export function shelfOpenings(cfg: RackConfig, spec: PieceSpec): ShelfOpening[] 
   const xLo = isLeft ? cfg.wallMm + cfg.shelfFrameMm : d.halfWidthMm + d.seamFrameMm
   const xHi = isLeft ? d.halfWidthMm - d.seamFrameMm : d.rackWidthMm - cfg.wallMm - cfg.shelfFrameMm
   const out: ShelfOpening[] = []
-  for (const [x0, x1] of spans(xLo, xHi, cfg.shelfOpeningMaxMm, cfg.shelfRibMm)) {
+  for (const [x0, x1] of spans(xLo, xHi, cfg.shelfOpeningWidthMm, cfg.shelfRibMm)) {
     for (const [z0, z1] of spans(
-      cfg.shelfFrameMm, d.rackDepthMm - cfg.shelfFrameMm, cfg.shelfOpeningMaxMm, cfg.shelfRibMm,
+      cfg.shelfFrameMm, d.rackDepthMm - cfg.shelfFrameMm, cfg.shelfOpeningDepthMm, cfg.shelfRibMm,
     )) {
       out.push({ x0, x1, z0, z1 })
     }
@@ -226,8 +246,8 @@ export function crossSectionAt(cfg: RackConfig, spec: PieceSpec, z: number): Mul
   let region = union(...parts)
 
   for (const o of shelfOpenings(cfg, spec)) {
-    if (z <= o.z0 || z >= o.z1) continue
-    region = difference(region, multi(box(o.x0, py0 - 0.5, o.x1, py1 + 0.5)))
+    const span = openingSpanAt(o, z)
+    if (span) region = difference(region, multi(box(span[0], py0 - 0.5, span[1], py1 + 0.5)))
   }
 
   if (f.hasSocket) {
@@ -270,7 +290,12 @@ export function breakpoints(cfg: RackConfig, spec: PieceSpec): number[] {
     set.add(d.rackDepthMm - cfg.frontLipDepthMm)
   }
   for (const o of shelfOpenings(cfg, spec)) {
-    for (const z of [o.z0, o.z1]) {
+    const steps = Math.ceil(gableHeight(o) / cfg.layerHeightMm)
+    const zs = [o.z0, o.z1]
+    for (let k = 0; k <= steps; k++) {
+      zs.push(o.z1 - Math.min(k * cfg.layerHeightMm, gableHeight(o)))
+    }
+    for (const z of zs) {
       if (z > 1e-9 && z < d.rackDepthMm - 1e-9) set.add(Number(z.toFixed(4)))
     }
   }

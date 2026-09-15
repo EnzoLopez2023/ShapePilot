@@ -78,17 +78,43 @@ export interface RackConfig {
    * A grid, not long slots or plain cross ribs, and the print direction is why.
    * Depth is the print axis, so an opening ENDS in a bridge: the rib above it
    * appears in one layer, spanning the opening's width, anchored to the ribs
-   * either side. Keeping every opening under `shelfOpeningMaxMm` keeps that
-   * bridge short. Ribs running only along the depth would need no bridge at
-   * all, but they leave the shelf with almost no material at a slot's x, and
-   * that is where it has to carry the case.
+   * either side -- so every opening is peaked at the top and nothing bridges
+   * at all. Ribs running only along the depth would need no peak either, but
+   * they leave a strip of shelf at mid-depth with no material across the
+   * width, and across the width is the direction it carries the case in.
    */
   skeletonShelf: boolean
   /** Solid margin at the wall, front and back edges. Clears the lip bands. */
   shelfFrameMm: number
   shelfRibMm: number
-  /** Largest an opening may get, in either direction. This is the bridge span. */
-  shelfOpeningMaxMm: number
+  /**
+   * Cap on an opening ACROSS THE WIDTH. This is the expensive one: the peak is
+   * half the opening's width, and every step of that peak is another band, so
+   * narrow openings are much cheaper to mesh than wide ones.
+   */
+  shelfOpeningWidthMm: number
+  /**
+   * Cap on an opening ALONG THE DEPTH, which is the print axis. Costs nothing
+   * extra -- the ribs between rows run straight up the print.
+   */
+  shelfOpeningDepthMm: number
+  /**
+   * Layer height, which is also the tread of the peak over every opening.
+   *
+   * The shelf stands as a VERTICAL WALL in the print, so an opening is a hole
+   * in a wall and its top is a horizontal roof -- which is why flat-topped
+   * openings filled with tree supports. Peaking the top fixes it; the flat
+   * bottom is left alone, because material ENDING as the print rises is free
+   * and only material returning has to be held up.
+   *
+   * Nothing here can loft, so the peak is a staircase, and the tread has to be
+   * exactly one layer. A slicer decides what to support from the difference
+   * between consecutive sliced layers, not from facet normals: one layer of
+   * tread per layer of rise slices as a true 45 degrees. Two layers of tread
+   * slices as 26.6 degrees, under Bambu's 30 degree threshold, and the
+   * supports come back.
+   */
+  layerHeightMm: number
 }
 
 export const RACK: RackConfig = {
@@ -127,7 +153,9 @@ export const RACK: RackConfig = {
   skeletonShelf: true,
   shelfFrameMm: 12,
   shelfRibMm: 6,
-  shelfOpeningMaxMm: 40,
+  shelfOpeningWidthMm: 16,
+  shelfOpeningDepthMm: 60,
+  layerHeightMm: 0.2,
 }
 
 export interface RackDerived {
