@@ -24,7 +24,13 @@ import type {
 } from '../../../lib/contracts/bambuFilaments.ts'
 import { ErrorState, LoadingState } from '../../components/LoadingState.tsx'
 import FilamentSection from './components/FilamentSection.tsx'
-import { createInventoryWriter, getFilaments } from './service.ts'
+import UsagePanel from './components/UsagePanel.tsx'
+import {
+  createInventoryWriter, getFilamentUsage, getFilaments, putUsageMappings,
+} from './service.ts'
+import type {
+  FilamentUsage, FilamentUsageMapping,
+} from '../../../lib/contracts/filamentUsage.ts'
 import {
   MAX_QUANTITY, inventoryToTicks, tickId, ticksToInventory, totalRolls,
 } from './model/types.ts'
@@ -72,6 +78,11 @@ export default function FilamentsPage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [hideDiscontinued, setHideDiscontinued] = useState(true)
+  // null: this account may not see usage, so the page shows without it.
+  // undefined: not loaded yet, or it failed and `usageError` says why.
+  const [usage, setUsage] = useState<FilamentUsage | null | undefined>(undefined)
+  const [usageError, setUsageError] = useState<string | null>(null)
+  const [linking, setLinking] = useState(false)
   // Which discontinued rows survive the filter. Sampled when the filter goes on
   // and when the inventory loads, never tracked live: a row that vanished the
   // instant you cleared its last tick would take with it the checkbox you were
@@ -95,6 +106,13 @@ export default function FilamentsPage() {
         setOwned(inventory)
       })
       .catch(error => { if (!cancelled) setLoadError(messageOf(error)) })
+    // Separate from the inventory on purpose. Usage is a second opinion on the
+    // page, and the statistics history being unreachable must never stop
+    // anyone ticking a spool.
+    setUsageError(null)
+    void getFilamentUsage()
+      .then(result => { if (!cancelled) setUsage(result) })
+      .catch(error => { if (!cancelled) setUsageError(messageOf(error)) })
     return () => { cancelled = true }
   }, [])
 
@@ -118,6 +136,20 @@ export default function FilamentsPage() {
     })
     setSaveError(null)
   }, [])
+
+  const saveMappings = useCallback((mappings: FilamentUsageMapping[]) => {
+    setLinking(true)
+    setUsageError(null)
+    void putUsageMappings(mappings)
+      .then(() => getFilamentUsage())
+      .then(result => setUsage(result))
+      .catch(error => setUsageError(messageOf(error)))
+      .finally(() => setLinking(false))
+  }, [])
+
+  const usageByKey = useMemo(
+    () => (usage ? new Map(usage.colors.map(color => [color.key, color])) : undefined),
+    [usage])
 
   const hide = useCallback((next: boolean) => {
     if (next && owned) setKept(ownedDiscontinued(owned))
@@ -201,6 +233,15 @@ export default function FilamentsPage() {
         </Alert>
       )}
 
+      {usageError && (
+        <Alert severity="warning">
+          <Typography variant="body2" sx={{ fontWeight: 600 }}>Print usage unavailable</Typography>
+          <Typography variant="body2">{usageError}</Typography>
+        </Alert>
+      )}
+
+      {owned && usage && <UsagePanel usage={usage} busy={linking} onMappings={saveMappings} />}
+
       {loadError && <ErrorState message={loadError} onRetry={load} />}
       {!loadError && !owned && <LoadingState label="Loading your filaments…" />}
 
@@ -211,6 +252,7 @@ export default function FilamentsPage() {
           colors={section.colors}
           owned={owned}
           onQuantity={setQuantity}
+          usage={usageByKey}
         />
       ))}
     </Stack>

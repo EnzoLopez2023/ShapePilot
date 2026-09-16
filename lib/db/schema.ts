@@ -394,6 +394,33 @@ export const FILAMENT_QUANTITY_STATEMENTS: readonly string[] = [
 ]
 
 /**
+ * `filament_usage_mappings` -- what a recorded print's filament *is*.
+ *
+ * A print reports a material, a preset filament ID and an AMS colour, and most
+ * of the time lib/contracts/filamentUsage.ts can turn that into a catalogue
+ * colour on its own. When it cannot -- a colour no catalogue line sells, a
+ * third-party spool, a preset that disagrees with its colour -- the account
+ * says so here, once, and every later print reporting the same thing follows.
+ *
+ * The source triple is stored normalised with unreported fields as '', so it
+ * can be unique. `filament_key` NULL means "don't track this filament": the
+ * usage is set aside rather than left nagging in the unmatched list.
+ */
+export const FILAMENT_USAGE_MAPPING_STATEMENTS: readonly string[] = [
+  `CREATE TABLE filament_usage_mappings (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_tenant_id TEXT    NOT NULL,
+  owner_oid       TEXT    NOT NULL,
+  material        TEXT    NOT NULL,
+  filament_id     TEXT    NOT NULL,
+  color           TEXT    NOT NULL CHECK (color = '' OR color GLOB '#[0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F][0-9A-F]'),
+  filament_key    TEXT,
+  created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (owner_tenant_id, owner_oid, material, filament_id, color)
+)`,
+]
+
+/**
  * Switch trays: a plate a mechanical keyboard switch passes through, with posts
  * underneath so a stack of them lives in a Systainer.
  *

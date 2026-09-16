@@ -16,7 +16,10 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded'
 import type { FilamentColor, FilamentLine, FilamentVariant } from '../../../../lib/contracts/bambuFilaments.ts'
 import { MAX_QUANTITY, tickId } from '../model/types.ts'
+import { Swatch } from './Swatch.tsx'
 import type { Inventory } from '../model/types.ts'
+import type { FilamentUsageTotals } from '../../../../lib/contracts/filamentUsage.ts'
+import { formatGrams } from '../model/usage.ts'
 
 export interface FilamentSectionProps {
   line: FilamentLine
@@ -24,6 +27,8 @@ export interface FilamentSectionProps {
   owned: Inventory
   /** Set the count for one filament in one form; 0 removes the tick. */
   onQuantity: (key: string, variant: FilamentVariant, quantity: number) => void
+  /** Printed so far, by colour key. Absent when this account cannot see usage. */
+  usage?: ReadonlyMap<string, FilamentUsageTotals>
 }
 
 const VARIANT_LABEL: Record<FilamentVariant, string> = {
@@ -65,36 +70,8 @@ const columnsFor = (variants: readonly FilamentVariant[]) => ({
   sm: `minmax(0, 1fr) ${variants.map(() => CHECKBOX_COLUMN.sm).join(' ')}`,
 })
 
-/**
- * The colour, as a dot rather than a squircle -- a 14px radius on an 18px chip
- * is a circle anyway, so it is drawn as one deliberately. The ring is
- * structural, not decoration: Jade White is `#FFFFFF` on a white surface and
- * several of the darks are near-black on the dark ground, so without it those
- * swatches simply are not there. A dual-colour filament is drawn as a split.
- */
-function Swatch({ hexes, discontinued }: { hexes: readonly string[]; discontinued?: true }) {
-  const background = hexes.length > 1
-    ? `linear-gradient(135deg, ${hexes[0]} 0 50%, ${hexes[1]} 50% 100%)`
-    : hexes[0]
-  return (
-    <Box
-      aria-hidden
-      sx={{
-        width: 18,
-        height: 18,
-        flexShrink: 0,
-        borderRadius: '50%',
-        background,
-        border: '1px solid',
-        borderColor: 'divider',
-        opacity: discontinued ? 0.55 : 1,
-      }}
-    />
-  )
-}
-
 export default function FilamentSection({
-  line, colors, owned, onQuantity,
+  line, colors, owned, onQuantity, usage,
 }: FilamentSectionProps) {
   const [stepping, setStepping] = useState<Stepping | null>(null)
   const steppingCount = stepping
@@ -192,6 +169,18 @@ export default function FilamentSection({
                     sx={{ fontStyle: 'italic' }}
                   >
                     discontinued
+                  </Typography>
+                )}
+                {/* Per colour, not per variant: a print cannot tell a spool
+                    from a refill, only which colour went through the nozzle. */}
+                {usage?.get(color.key) && (
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    title={`${usage.get(color.key)!.prints} prints`}
+                    sx={{ whiteSpace: 'nowrap' }}
+                  >
+                    {formatGrams(usage.get(color.key)!.grams)} used
                   </Typography>
                 )}
               </Stack>

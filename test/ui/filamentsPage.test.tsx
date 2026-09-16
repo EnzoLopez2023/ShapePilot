@@ -9,7 +9,12 @@ import assert from 'node:assert/strict'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import FilamentsPage from '../../src/features/filaments/FilamentsPage.tsx'
+import { computeFilamentUsage } from '../../lib/contracts/filamentUsage.ts'
+import type { FilamentUsageMapping } from '../../lib/contracts/filamentUsage.ts'
+import type { ElementJob } from '../../lib/contracts/elementStatistics.ts'
+import { syntheticRecordedElementJob } from '../fixtures/elementStatistics.ts'
 import { ThemeModeProvider } from '../../src/theme/ThemeModeProvider.tsx'
 import {
   FILAMENT_CATALOG, FILAMENT_LINES, FILAMENT_PAIR_COUNT,
@@ -31,10 +36,26 @@ let puts: PutBody[] = []
 let owned: { key: string; variant: string; quantity: number }[] = []
 let failLoad = false
 let failSave = false
+// Usage is administrator data. `admin: false` answers 403, as the server does
+// for everyone else; otherwise usage is computed from `jobs` and `mappings` by
+// the real matcher, so the page is tested against the numbers it would get.
+let admin = false
+let jobs: ElementJob[] = []
+let mappings: FilamentUsageMapping[] = []
+let mappingPuts: FilamentUsageMapping[][] = []
 
 const stubFetch = () => vi.stubGlobal('fetch', vi.fn(async (url: unknown, init?: RequestInit) => {
   const path = String(url)
   if (!path.includes('/api/filaments')) throw new Error(`unexpected fetch ${path}`)
+  if (path.includes('/api/filaments/usage')) {
+    if (!admin) return Response.json({ error: { code: 'forbidden', message: 'No.' } }, { status: 403 })
+    if ((init?.method ?? 'GET') === 'PUT') {
+      mappings = (JSON.parse(String(init?.body)) as { mappings: FilamentUsageMapping[] }).mappings
+      mappingPuts.push(mappings)
+      return Response.json({ mappings })
+    }
+    return Response.json(computeFilamentUsage(jobs, mappings))
+  }
   if ((init?.method ?? 'GET') === 'GET') {
     if (failLoad) return new Response('nope', { status: 500 })
     return Response.json({ owned })
@@ -47,7 +68,7 @@ const stubFetch = () => vi.stubGlobal('fetch', vi.fn(async (url: unknown, init?:
 }))
 
 const draw = () => render(
-  <ThemeModeProvider><FilamentsPage /></ThemeModeProvider>,
+  <MemoryRouter><ThemeModeProvider><FilamentsPage /></ThemeModeProvider></MemoryRouter>,
 )
 
 beforeEach(() => {
@@ -55,6 +76,10 @@ beforeEach(() => {
   owned = []
   failLoad = false
   failSave = false
+  admin = false
+  jobs = []
+  mappings = []
+  mappingPuts = []
   stubFetch()
 })
 
@@ -314,4 +339,78 @@ test('says so when a tick could not be saved', async () => {
   await user.click(screen.getByLabelText('PLA Basic Jade White 10100, with spool'))
   const alert = await screen.findByRole('alert')
   assert.match(alert.textContent ?? '', /Not saved/)
+})
+
+/** A recorded print using one filament, shaped as the statistics history holds it. */
+const printed = (id: string, material: string, filamentId: string, color: string, grams: number) =>
+  syntheticRecordedElementJob({
+    id,
+    materials: [{
+      material, filamentId, color, estimatedWeightGrams: grams,
+      nozzleId: '0', amsId: '0', slotId: '0',
+    }],
+  })
+
+test('shows nothing about usage to an account that may not see it', async () => {
+  jobs = [printed('1', 'PLA', 'GFA00', '#6F5034FF', 581)]
+  draw()
+  await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
+  assert.equal(screen.queryByRole('heading', { name: 'Print usage' }), null)
+  assert.equal(screen.queryByText(/used$/), null)
+  assert.equal(screen.queryByRole('alert'), null)
+})
+
+test('puts usage on the colour it matched, and links back to the statistics', async () => {
+  admin = true
+  jobs = [
+    printed('1', 'PLA', 'GFA00', '#6F5034FF', 400),
+    printed('2', 'PLA', 'GFA00', '#6F5034FF', 181),
+  ]
+  draw()
+  await screen.findByRole('heading', { name: 'Print usage', level: 2 })
+  await screen.findByText('581 g used')
+  const link = screen.getByRole('link', { name: 'EL-ement Statistics' })
+  assert.equal(link.getAttribute('href'), '/admin/el-ement-statistics')
+  // Everything matched, so there is nothing to link.
+  assert.equal(screen.queryByRole('heading', { name: /Not linked to a colour/ }), null)
+})
+
+test('lists unmatched filament, and a link moves its usage onto the colour', async () => {
+  const user = userEvent.setup()
+  admin = true
+  jobs = [printed('1', 'PLA', 'GFA00', '#307FE2FF', 816)]
+  draw()
+
+  await screen.findByRole('heading', { name: 'Not linked to a colour · 816 g', level: 3 })
+  const picker = screen.getByRole('combobox', { name: 'What PLA · GFA00 · #307FE2 is' })
+  await user.click(picker)
+  await user.type(picker, 'Blue 10601')
+  await user.click(await screen.findByRole('option', { name: 'PLA Basic · Blue 10601' }))
+
+  await waitFor(() => {
+    assert.deepEqual(mappingPuts.at(-1), [{
+      source: { material: 'PLA', filamentId: 'GFA00', color: '#307FE2' },
+      key: 'bambu-lab/pla/basic/blue-10601',
+    }])
+  })
+  await screen.findByText('816 g used')
+  assert.equal(screen.queryByRole('heading', { name: /Not linked to a colour/ }), null)
+  await screen.findByText(/PLA · GFA00 · #307FE2 →/)
+})
+
+test('"don\'t track" sets filament aside, and removing the link brings it back', async () => {
+  const user = userEvent.setup()
+  admin = true
+  jobs = [printed('1', 'ABS', 'GFB99', '#161616FF', 84.5)]
+  draw()
+
+  const picker = await screen.findByRole('combobox', { name: 'What ABS · GFB99 · #161616 is' })
+  await user.click(picker)
+  await user.click(await screen.findByRole('option', { name: 'Don’t track this filament' }))
+  await screen.findByText('not tracked (85 g)')
+  assert.equal(screen.queryByRole('heading', { name: /Not linked to a colour/ }), null)
+
+  await user.click(screen.getByRole('button', { name: 'Remove the link for ABS · GFB99 · #161616' }))
+  await screen.findByRole('heading', { name: 'Not linked to a colour · 85 g', level: 3 })
+  assert.deepEqual(mappingPuts.at(-1), [])
 })

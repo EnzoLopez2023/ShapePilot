@@ -114,6 +114,12 @@ const ROLLBACK_COMPATIBLE_LEDGER = [
     name: 'filament quantity',
     checksum: '395ef9fb005cb97f0bef536bcead8354714239b087570b98dc15e795da8292a6',
   },
+  {
+    ordinal: 14,
+    id: '015-filament-usage-mappings',
+    name: 'filament usage mappings',
+    checksum: '7a18b102737a0fca39567aebf7aadf14faa5b44fb797c2071bd81de117d7fd8b',
+  },
 ] as const
 
 const REQUIRED_TABLES = [
@@ -130,6 +136,7 @@ const REQUIRED_TABLES = [
   'element_statistics_telemetry',
   'element_statistics_events',
   'filament_inventory',
+  'filament_usage_mappings',
   'maintenance_events',
   'maintenance_profile',
   'keycap_pocket_library',

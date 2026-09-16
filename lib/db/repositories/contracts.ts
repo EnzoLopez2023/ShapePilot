@@ -4,6 +4,7 @@
 // the contracts are async so the storage engine can change without a rewrite of
 // every route, and so nothing above this line can accidentally depend on
 // synchronous statement execution.
+import type { FilamentUsageMapping } from '../../contracts/filamentUsage.ts'
 import type { ElementStatisticsRepository } from './elementStatisticsContract.ts'
 
 export type { ElementStatisticsRepository } from './elementStatisticsContract.ts'
@@ -707,6 +708,15 @@ export interface MaintenanceRepository {
   deleteEvent(owner: Owner, id: number): Promise<boolean>
 }
 
+/**
+ * Hand-made links from a print's reported filament to a catalogue colour.
+ * Replaced wholesale, like the inventory: the page edits the list and sends it.
+ */
+export interface FilamentUsageMappingRepository {
+  list(owner: Owner): Promise<FilamentUsageMapping[]>
+  replace(owner: Owner, mappings: readonly FilamentUsageMapping[]): Promise<FilamentUsageMapping[]>
+}
+
 export interface Repositories {
   memberships: MembershipRepository
   settings: SettingsRepository
@@ -720,4 +730,5 @@ export interface Repositories {
   filaments: FilamentInventoryRepository
   elementStatistics: ElementStatisticsRepository
   maintenance: MaintenanceRepository
+  filamentUsageMappings: FilamentUsageMappingRepository
 }
