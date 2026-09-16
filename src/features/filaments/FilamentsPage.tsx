@@ -29,11 +29,13 @@ import {
   createInventoryWriter, getFilamentUsage, getFilaments, putUsageMappings,
 } from './service.ts'
 import type {
-  FilamentUsage, FilamentUsageMapping,
+  FilamentUsageMapping, FilamentUsageReport,
 } from '../../../lib/contracts/filamentUsage.ts'
 import {
-  MAX_QUANTITY, inventoryToTicks, tickId, ticksToInventory, totalRolls,
+  MAX_QUANTITY, inventoryToTicks, ownedByColor, tickId, ticksToInventory, totalRolls,
 } from './model/types.ts'
+import { stockOf } from '../../../lib/contracts/filamentStock.ts'
+import ReorderBanner from './components/ReorderBanner.tsx'
 import type { Inventory } from './model/types.ts'
 
 const messageOf = (error: unknown): string =>
@@ -80,7 +82,7 @@ export default function FilamentsPage() {
   const [hideDiscontinued, setHideDiscontinued] = useState(true)
   // null: this account may not see usage, so the page shows without it.
   // undefined: not loaded yet, or it failed and `usageError` says why.
-  const [usage, setUsage] = useState<FilamentUsage | null | undefined>(undefined)
+  const [usage, setUsage] = useState<FilamentUsageReport | null | undefined>(undefined)
   const [usageError, setUsageError] = useState<string | null>(null)
   const [linking, setLinking] = useState(false)
   // Which discontinued rows survive the filter. Sampled when the filter goes on
@@ -150,6 +152,16 @@ export default function FilamentsPage() {
   const usageByKey = useMemo(
     () => (usage ? new Map(usage.colors.map(color => [color.key, color])) : undefined),
     [usage])
+
+  // Against the inventory being edited, not the one last saved: stepping a count
+  // up clears its warning the moment it is pressed.
+  const stock = useMemo(() => {
+    if (!usage?.ams || !owned) return []
+    const totals = ownedByColor(owned)
+    return stockOf(usage.ams, key => totals.get(key) ?? 0)
+  }, [usage, owned])
+
+  const stockByKey = useMemo(() => new Map(stock.map(entry => [entry.key, entry])), [stock])
 
   const hide = useCallback((next: boolean) => {
     if (next && owned) setKept(ownedDiscontinued(owned))
@@ -240,6 +252,8 @@ export default function FilamentsPage() {
         </Alert>
       )}
 
+      {owned && usage?.ams && <ReorderBanner stock={stock} receivedAt={usage.ams.receivedAt} />}
+
       {owned && usage && <UsagePanel usage={usage} busy={linking} onMappings={saveMappings} />}
 
       {loadError && <ErrorState message={loadError} onRetry={load} />}
@@ -253,6 +267,7 @@ export default function FilamentsPage() {
           owned={owned}
           onQuantity={setQuantity}
           usage={usageByKey}
+          stock={usage?.ams ? stockByKey : undefined}
         />
       ))}
     </Stack>

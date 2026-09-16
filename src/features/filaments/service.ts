@@ -13,7 +13,9 @@
 import { apiRequest } from '../../services/http.ts'
 import type { FilamentTick } from './model/types.ts'
 import { ApiRequestError } from '../../services/errors.ts'
-import type { FilamentUsage, FilamentUsageMapping } from '../../../lib/contracts/filamentUsage.ts'
+import type {
+  FilamentUsageMapping, FilamentUsageReport,
+} from '../../../lib/contracts/filamentUsage.ts'
 
 const base = '/filaments'
 
@@ -79,8 +81,8 @@ export function createInventoryWriter(
  * may not see it. Usage is administrator data; a 403 is the expected answer for
  * everyone else and means "show the page without it", not "something broke".
  */
-export const getFilamentUsage = (): Promise<FilamentUsage | null> =>
-  apiRequest<FilamentUsage>(`${base}/usage`).catch(error => {
+export const getFilamentUsage = (): Promise<FilamentUsageReport | null> =>
+  apiRequest<FilamentUsageReport>(`${base}/usage`).catch(error => {
     if (error instanceof ApiRequestError && error.status === 403) return null
     throw error
   })

@@ -14,7 +14,9 @@ import FilamentsPage from '../../src/features/filaments/FilamentsPage.tsx'
 import { computeFilamentUsage } from '../../lib/contracts/filamentUsage.ts'
 import type { FilamentUsageMapping } from '../../lib/contracts/filamentUsage.ts'
 import type { ElementJob } from '../../lib/contracts/elementStatistics.ts'
-import { syntheticRecordedElementJob } from '../fixtures/elementStatistics.ts'
+import { syntheticElementSnapshot, syntheticRecordedElementJob } from '../fixtures/elementStatistics.ts'
+import { amsStockOf } from '../../lib/contracts/filamentStock.ts'
+import type { ElementAmsSlot } from '../../lib/contracts/elementStatistics.ts'
 import { ThemeModeProvider } from '../../src/theme/ThemeModeProvider.tsx'
 import {
   FILAMENT_CATALOG, FILAMENT_LINES, FILAMENT_PAIR_COUNT,
@@ -43,6 +45,9 @@ let admin = false
 let jobs: ElementJob[] = []
 let mappings: FilamentUsageMapping[] = []
 let mappingPuts: FilamentUsageMapping[][] = []
+// The AMS as the printer last reported it; null is "never reported".
+let amsSlots: ElementAmsSlot[] | null = null
+let amsReportedAt = new Date().toISOString()
 
 const stubFetch = () => vi.stubGlobal('fetch', vi.fn(async (url: unknown, init?: RequestInit) => {
   const path = String(url)
@@ -54,7 +59,12 @@ const stubFetch = () => vi.stubGlobal('fetch', vi.fn(async (url: unknown, init?:
       mappingPuts.push(mappings)
       return Response.json({ mappings })
     }
-    return Response.json(computeFilamentUsage(jobs, mappings))
+    return Response.json({
+      ...computeFilamentUsage(jobs, mappings),
+      ams: amsStockOf(amsSlots === null ? null : {
+        ...syntheticElementSnapshot, ams: amsSlots, fieldUpdatedAt: { ams: amsReportedAt },
+      }),
+    })
   }
   if ((init?.method ?? 'GET') === 'GET') {
     if (failLoad) return new Response('nope', { status: 500 })
@@ -80,6 +90,8 @@ beforeEach(() => {
   jobs = []
   mappings = []
   mappingPuts = []
+  amsSlots = null
+  amsReportedAt = new Date().toISOString()
   stubFetch()
 })
 
@@ -413,4 +425,51 @@ test('"don\'t track" sets filament aside, and removing the link brings it back',
   await user.click(screen.getByRole('button', { name: 'Remove the link for ABS · GFB99 · #161616' }))
   await screen.findByRole('heading', { name: 'Not linked to a colour · 85 g', level: 3 })
   assert.deepEqual(mappingPuts.at(-1), [])
+})
+
+const loadedSlot = (slotId: string, color: string, remainingPercent: number | null): ElementAmsSlot => ({
+  amsId: '0', slotId, material: 'PLA', subBrand: 'PLA Basic', color, remainingPercent, empty: false,
+})
+
+test('says to reorder a low loaded spool with no spare, and a spare clears it', async () => {
+  const user = userEvent.setup()
+  admin = true
+  owned = [{ key: 'bambu-lab/pla/basic/cocoa-brown-10802', variant: 'spool', quantity: 1 }]
+  amsSlots = [loadedSlot('0', '#6F5034FF', 12), loadedSlot('1', '#8E9089FF', 62)]
+  draw()
+
+  const banner = await screen.findByRole('status', { name: 'Reorder soon' })
+  assert.match(banner.textContent ?? '', /PLA Basic · Cocoa Brown 10802 — 12% left in AMS 1 · slot 1, with no spare on the shelf/)
+  // Gray is loaded but not low, so it is not in the banner.
+  assert.doesNotMatch(banner.textContent ?? '', /Gray/)
+  await screen.findByText('AMS 12% · reorder')
+  await screen.findByText('AMS 62%')
+
+  // One more Cocoa Brown on the shelf is a spare behind the loaded spool.
+  const name = 'PLA Basic Cocoa Brown 10802, with spool'
+  await user.click(screen.getByRole('button', { name: `${name}: 1 spool. Change how many` }))
+  await user.click(await screen.findByRole('button', { name: 'One more' }))
+  await waitFor(() => {
+    assert.equal(screen.queryByRole('status', { name: /Reorder soon/ }), null)
+  })
+  await screen.findByText('AMS 12% · spare on shelf')
+})
+
+test('a low colour never ticked in the inventory says so', async () => {
+  admin = true
+  amsSlots = [loadedSlot('3', '#FFFFFFFF', 4)]
+  draw()
+  const banner = await screen.findByRole('status', { name: 'Reorder soon' })
+  assert.match(banner.textContent ?? '', /Jade White 10100 — 4% left in AMS 1 · slot 4, and it is not in your inventory/)
+})
+
+test('an old reading says when it was taken; an unreported percentage never warns', async () => {
+  admin = true
+  amsReportedAt = '2026-09-01T09:30:00.000Z'
+  amsSlots = [loadedSlot('0', '#6F5034FF', 3), loadedSlot('1', '#8E9089FF', null)]
+  draw()
+  const banner = await screen.findByRole('status', { name: 'Reorder soon' })
+  assert.match(banner.textContent ?? '', /last reading/)
+  assert.doesNotMatch(banner.textContent ?? '', /Gray/)
+  await screen.findByText('in AMS')
 })

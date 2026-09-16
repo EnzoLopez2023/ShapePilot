@@ -13,6 +13,8 @@ import { validateFilamentInventoryInput } from '../validation/filaments.ts'
 import { validateFilamentUsageMappingsInput } from '../validation/filamentUsage.ts'
 import { requireRole } from '../auth/requireRole.ts'
 import { computeFilamentUsage } from '../../lib/contracts/filamentUsage.ts'
+import type { FilamentUsageReport } from '../../lib/contracts/filamentUsage.ts'
+import { amsStockOf } from '../../lib/contracts/filamentStock.ts'
 import { REPORT_JOB_LIMIT } from '../element/synchronization.ts'
 import { ApiError } from '../errors/ApiError.ts'
 
@@ -56,15 +58,26 @@ export function createFilamentRouter(repos: Repositories): Router {
   router.get('/usage', adminOnly, (req, res, next) => {
     void (async () => {
       const owner = ownerOf(req)
-      const [jobs, mappings] = await Promise.all([
+      const [jobs, mappings, settings] = await Promise.all([
         repos.elementStatistics.listJobs(null, REPORT_JOB_LIMIT + 1),
         repos.filamentUsageMappings.list(owner),
+        repos.elementStatistics.getSettings(),
       ])
       if (jobs.length > REPORT_JOB_LIMIT) {
         throw new ApiError(413, 'report_limit',
           'The recorded history exceeds 50,000 jobs, so usage cannot be totalled in one pass.')
       }
-      res.json(computeFilamentUsage(jobs, mappings))
+      // The AMS of the printer the statistics page is recording, as last saved.
+      // Reported even when old: the panel shows when it was taken, and a stale
+      // percentage is still the best reading there is.
+      const snapshot = settings.activeConnectionId
+        ? await repos.elementStatistics.getSnapshot(settings.activeConnectionId)
+        : null
+      const report: FilamentUsageReport = {
+        ...computeFilamentUsage(jobs, mappings),
+        ams: amsStockOf(snapshot),
+      }
+      res.json(report)
     })().catch(next)
   })
 

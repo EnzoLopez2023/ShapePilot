@@ -34,6 +34,8 @@ const logger = {
 }
 
 let logoutCalls: unknown[] = []
+/** Extra JSON bodies by URL fragment, checked before the defaults. */
+let responses: Record<string, unknown> = {}
 
 /** Only what the shell touches: an active account and a redirect sign-out. */
 const stubMsal = () => ({
@@ -55,6 +57,10 @@ const renderAt = (path: string, role: 'user' | 'admin' = 'user') => {
   logoutCalls = []
   vi.stubGlobal('fetch', async (input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : String(input)
+    // Longest fragment first, so /api/filaments/usage is not answered as /api/filaments.
+    const extra = Object.keys(responses).sort((a, b) => b.length - a.length)
+      .find(fragment => url.includes(fragment))
+    if (extra) return Response.json(responses[extra])
     if (url.includes('/api/settings')) {
       return new Response(JSON.stringify(settingsResponse(role)), {
         status: 200, headers: { 'content-type': 'application/json' },
@@ -105,6 +111,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  responses = {}
 })
 
 test('the shell renders a real navigation region with a skip link', async () => {
@@ -269,4 +276,35 @@ test('the mobile header keeps its controls clear of the status bar', async () =>
     'the header must clear the status bar, or the hamburger is untappable')
   assert.match(block, /padding-left:\s*calc\([^)]*var\(--sp-safe-left\)\)/)
   assert.match(block, /padding-right:\s*calc\([^)]*var\(--sp-safe-right\)\)/)
+})
+
+// The shell carries the reorder count so a low spool is seen from any page, not
+// only from the Filaments page nobody opens until they are already out.
+test('an administrator sees how many colours to reorder on the Filaments link', async () => {
+  const slot = (slotId: string, color: string, remainingPercent: number) => ({
+    amsId: '0', slotId, key: null, material: 'PLA', subBrand: 'PLA Basic', color, remainingPercent,
+  })
+  responses = {
+    '/api/filaments/usage': {
+      colors: [], unmatched: [], untracked: [], mappings: [],
+      coverage: { prints: 0, since: null, grams: 0, unweighedEntries: 0 },
+      ams: {
+        receivedAt: '2026-09-16T14:00:00.000Z',
+        slots: [
+          { ...slot('0', '#6F5034', 12), key: 'bambu-lab/pla/basic/cocoa-brown-10802' },
+          { ...slot('1', '#8E9089', 9), key: 'bambu-lab/pla/basic/gray-10103' },
+          { ...slot('2', '#FF9016', 98), key: 'bambu-lab/pla/basic/pumpkin-orange-10301' },
+        ],
+      },
+    },
+    // Gray has a spare on the shelf; Cocoa Brown does not.
+    '/api/filaments': { owned: [{ key: 'bambu-lab/pla/basic/gray-10103', variant: 'spool', quantity: 2 }] },
+  }
+  renderAt('/keycap-tray', 'admin')
+  assert.ok(await screen.findByRole('link', { name: 'Filaments, 1 to reorder' }))
+
+  cleanup()
+  renderAt('/keycap-tray', 'user')
+  await waitFor(() => expect(screen.getByRole('link', { name: 'Filaments' })).toBeTruthy())
+  assert.equal(screen.queryByRole('link', { name: /to reorder/ }), null)
 })

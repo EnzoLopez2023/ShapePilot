@@ -13,9 +13,11 @@ import {
 } from '../helpers/server.ts'
 import type { TestServer } from '../helpers/server.ts'
 import {
-  syntheticElementConnection, syntheticElementJob, syntheticElementSyncState,
+  syntheticElementConnection, syntheticElementJob, syntheticElementSnapshot, syntheticElementSyncState,
 } from '../fixtures/elementStatistics.ts'
-import type { FilamentUsage, FilamentUsageMapping } from '../../lib/contracts/filamentUsage.ts'
+import type {
+  FilamentUsageMapping, FilamentUsageReport as FilamentUsage,
+} from '../../lib/contracts/filamentUsage.ts'
 
 const ADMIN = 'admin-token'
 const USER = 'user-token'
@@ -80,6 +82,31 @@ describe('filament usage routes', () => {
     ])
     assert.equal(response.body.unmatched[1].failedGrams, 80)
     assert.equal(response.body.coverage.prints, 2)
+  })
+
+  test('carries the AMS of the printer being recorded, matched to catalogue colours', async () => {
+    // No active printer yet: no AMS, and usage is still served.
+    assert.equal((await get()).body.ams, null)
+
+    const stats = server.repos.elementStatistics
+    await stats.saveSettings({
+      enabled: true, activeConnectionId: syntheticElementConnection.id, updatedAt: null,
+    })
+    await stats.recordSnapshot(syntheticElementConnection.id, {
+      ...syntheticElementSnapshot,
+      ams: [
+        { amsId: '0', slotId: '0', material: 'PLA', subBrand: 'PLA Basic', color: '#6F5034FF', remainingPercent: 12, empty: false },
+        { amsId: '0', slotId: '1', material: 'ABS', subBrand: '', color: '#161616FF', remainingPercent: null, empty: false },
+        { amsId: '0', slotId: '2', material: null, subBrand: null, color: null, remainingPercent: null, empty: true },
+      ],
+    })
+
+    const ams = (await get()).body.ams
+    assert.ok(ams)
+    assert.deepEqual(ams.slots.map(slot => [slot.slotId, slot.key, slot.remainingPercent]), [
+      ['0', COCOA, 12],
+      ['1', null, null],
+    ])
   })
 
   test('is administrator data, refused to everyone else', async () => {

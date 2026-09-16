@@ -20,6 +20,7 @@ import { Swatch } from './Swatch.tsx'
 import type { Inventory } from '../model/types.ts'
 import type { FilamentUsageTotals } from '../../../../lib/contracts/filamentUsage.ts'
 import { formatGrams } from '../model/usage.ts'
+import type { ColorStock } from '../../../../lib/contracts/filamentStock.ts'
 
 export interface FilamentSectionProps {
   line: FilamentLine
@@ -29,6 +30,8 @@ export interface FilamentSectionProps {
   onQuantity: (key: string, variant: FilamentVariant, quantity: number) => void
   /** Printed so far, by colour key. Absent when this account cannot see usage. */
   usage?: ReadonlyMap<string, FilamentUsageTotals>
+  /** Colours loaded in the AMS, by key. Absent when this account cannot see it. */
+  stock?: ReadonlyMap<string, ColorStock>
 }
 
 const VARIANT_LABEL: Record<FilamentVariant, string> = {
@@ -70,8 +73,32 @@ const columnsFor = (variants: readonly FilamentVariant[]) => ({
   sm: `minmax(0, 1fr) ${variants.map(() => CHECKBOX_COLUMN.sm).join(' ')}`,
 })
 
+/**
+ * What the AMS says about a loaded colour. Quiet while it is fine, and a warning
+ * only when a low spool has nothing behind it -- the one case that needs doing
+ * something about.
+ */
+function StockNote({ stock }: { stock: ColorStock }) {
+  const percent = stock.lowestPercent === null ? 'in AMS' : `AMS ${stock.lowestPercent}%`
+  if (stock.status === 'reorder') {
+    return (
+      <Typography
+        variant="body2"
+        sx={{ whiteSpace: 'nowrap', color: 'warning.main', fontWeight: 650 }}
+      >
+        {percent} · reorder
+      </Typography>
+    )
+  }
+  return (
+    <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
+      {percent}{stock.status === 'covered' && <> · spare on shelf</>}
+    </Typography>
+  )
+}
+
 export default function FilamentSection({
-  line, colors, owned, onQuantity, usage,
+  line, colors, owned, onQuantity, usage, stock,
 }: FilamentSectionProps) {
   const [stepping, setStepping] = useState<Stepping | null>(null)
   const steppingCount = stepping
@@ -183,6 +210,7 @@ export default function FilamentSection({
                     {formatGrams(usage.get(color.key)!.grams)} used
                   </Typography>
                 )}
+                {stock?.get(color.key) && <StockNote stock={stock.get(color.key)!} />}
               </Stack>
             </Box>
           </Stack>

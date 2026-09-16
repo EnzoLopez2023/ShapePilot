@@ -49,3 +49,14 @@ export const totalRolls = (owned: Inventory): number => {
   for (const quantity of owned.values()) total += quantity
   return total
 }
+
+/** Spools and refills owned of one colour, both forms together. */
+export const ownedByColor = (owned: Inventory): Map<string, number> => {
+  const totals = new Map<string, number>()
+  for (const [id, quantity] of owned) {
+    // tickId is `${key} ${variant}`, and keys never contain a space.
+    const key = id.slice(0, id.lastIndexOf(' '))
+    totals.set(key, (totals.get(key) ?? 0) + quantity)
+  }
+  return totals
+}

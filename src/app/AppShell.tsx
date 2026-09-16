@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useMsal } from '@azure/msal-react'
 import {
-  Avatar, Box, Drawer, IconButton, Stack, Tooltip, Typography, useMediaQuery,
+  Avatar, Badge, Box, Drawer, IconButton, Stack, Tooltip, Typography, useMediaQuery,
 } from '@mui/material'
 import { useTheme } from '@mui/material/styles'
 import type { SvgIconComponent } from '@mui/icons-material'
@@ -26,6 +26,9 @@ import { getSettings } from '../features/settings/preferences.ts'
 import type { AccountProfile } from '../features/settings/preferences.ts'
 import { AUTH_ENABLED } from '../auth/msal.ts'
 import { formatBuildStamp, useBuildStamp } from './buildStamp.ts'
+import { getFilamentUsage, getFilaments } from '../features/filaments/service.ts'
+import { ownedByColor, ticksToInventory } from '../features/filaments/model/types.ts'
+import { stockOf } from '../../lib/contracts/filamentStock.ts'
 
 interface NavItem {
   to: string
@@ -34,6 +37,8 @@ interface NavItem {
   /** `/` matches every route without it, so Home would always read as active. */
   end?: boolean
   adminOnly?: boolean
+  /** A count to show on the row, e.g. colours to reorder. Hidden at zero. */
+  badge?: number
 }
 
 const NAV: NavItem[] = [
@@ -49,6 +54,12 @@ const NAV: NavItem[] = [
   { to: '/settings', label: 'Settings', icon: TuneRoundedIcon },
   { to: '/admin', label: 'Admin', icon: AdminPanelSettingsRoundedIcon, adminOnly: true },
 ]
+
+/** Read by a screen reader, drawn nowhere: the badge itself is only a number. */
+const visuallyHidden = {
+  position: 'absolute', width: 1, height: 1, p: 0, m: '-1px',
+  overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0,
+} as const
 
 const SIDEBAR_WIDTH = 260
 const SIDEBAR_WIDTH_COLLAPSED = 76
@@ -105,6 +116,26 @@ export function AppShell() {
     return () => { cancelled = true }
   }, [])
 
+  // How many colours need reordering, for administrators -- the only accounts
+  // that can see printer stock. Counted on load and again whenever you leave
+  // the Filaments page, since that is where the counts behind it change. A
+  // failure is silent: a missing badge is not worth an error in the shell.
+  const [reorderCount, setReorderCount] = useState(0)
+  const onFilaments = pathname === '/filaments'
+  useEffect(() => {
+    if (role !== 'admin' || onFilaments) return
+    let cancelled = false
+    void Promise.all([getFilaments(), getFilamentUsage()])
+      .then(([ticks, usage]) => {
+        if (cancelled) return
+        const totals = ownedByColor(ticksToInventory(ticks))
+        setReorderCount(stockOf(usage?.ams ?? null, key => totals.get(key) ?? 0)
+          .filter(entry => entry.status === 'reorder').length)
+      })
+      .catch(() => { if (!cancelled) setReorderCount(0) })
+    return () => { cancelled = true }
+  }, [role, onFilaments])
+
   // A permanent sidebar and a temporary drawer are never mounted at once, so
   // there is exactly one `navigation` landmark named "Sections" on the page.
   useEffect(() => {
@@ -119,7 +150,9 @@ export function AppShell() {
     })
   }, [])
 
-  const items = NAV.filter(item => !item.adminOnly || role === 'admin')
+  const items = NAV
+    .filter(item => !item.adminOnly || role === 'admin')
+    .map(item => (item.to === '/filaments' ? { ...item, badge: reorderCount } : item))
   const signOut = () => {
     // Redirect, matching how signing in works: ending the session only in this
     // browser would leave the next sign-in silently reusing the same account.
@@ -378,7 +411,15 @@ function SidebarBody({
                 },
               }}
             >
-              <Icon />
+              <Badge
+                color="warning"
+                badgeContent={item.badge}
+                invisible={!item.badge}
+                overlap="circular"
+                slotProps={{ badge: { 'aria-hidden': true } as object }}
+              >
+                <Icon />
+              </Badge>
               <Box
                 component="span"
                 sx={{
@@ -388,6 +429,11 @@ function SidebarBody({
                 }}
               >
                 {item.label}
+                {item.badge ? (
+                  <Box component="span" sx={visuallyHidden}>
+                    {`, ${item.badge} to reorder`}
+                  </Box>
+                ) : null}
               </Box>
             </Box>
           )
