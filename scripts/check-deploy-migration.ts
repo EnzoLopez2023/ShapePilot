@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
 import {
   MIGRATIONS,
+  MigrationError,
   codeLedger,
   migrate,
   readAppliedMigrations,
@@ -95,6 +96,12 @@ const ROLLBACK_COMPATIBLE_LEDGER = [
     name: 'tool trays',
     checksum: '8d1eb2e4d5fe39db42cf9aa731a9ec9748955e98a06e1030909393d2992fb361',
   },
+  {
+    ordinal: 11,
+    id: '012-element-statistics',
+    name: 'EL-ement statistics',
+    checksum: 'a365f8e40ade0f91a49b3248fe3f478a3d66c7cb24dd45e6af6c838a30d1318c',
+  },
 ] as const
 
 const REQUIRED_TABLES = [
@@ -104,6 +111,12 @@ const REQUIRED_TABLES = [
   'audit_events',
   'design_assets',
   'design_documents',
+  'element_statistics_connections',
+  'element_statistics_settings',
+  'element_statistics_sync_state',
+  'element_statistics_jobs',
+  'element_statistics_telemetry',
+  'element_statistics_events',
   'filament_inventory',
   'keycap_pocket_library',
   'keycap_project_photos',
@@ -274,16 +287,21 @@ export async function runMigrationCheck(options: Arguments): Promise<Record<stri
     'migration lineage changed; automatic image rollback needs a new compatibility fixture',
   )
 
-  const root = await mkdtemp(join(tmpdir(), 'shapepilot-migration-'))
+  const root = await mkdtemp(join(await realpath(tmpdir()), 'shapepilot-migration-'))
   const path = join(root, 'previous-release.db')
   let database: Database.Database | null = null
   try {
     database = new Database(path)
     applyConnectionPragmas(database, 2_000, path)
-    migrate(database, MIGRATIONS)
+    migrate(database, MIGRATIONS.slice(0, -1))
     const designId = seedRepresentativeData(database)
 
-    database.transaction(() => migrate(database as Database.Database, MIGRATIONS))()
+    const upgrade = database.transaction(() => migrate(database as Database.Database, MIGRATIONS))()
+    assert.deepEqual(upgrade.applied, [MIGRATIONS.at(-1)?.id])
+    assert.deepEqual(migrate(database, MIGRATIONS).applied, [])
+    assert.throws(() => migrate(database as Database.Database, MIGRATIONS.slice(0, -1)),
+      (error: unknown) => error instanceof MigrationError && error.code === 'SCHEMA_AHEAD_OF_CODE',
+      'additive data compatibility must not bypass the old image schema-ahead refusal')
     assertCandidate(database, designId)
     assertPriorReleaseReads(database, designId)
     await assertSnapshotGuardArmed(root)

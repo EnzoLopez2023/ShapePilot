@@ -217,8 +217,8 @@ There is no recurring off-host backup or paid-monitor requirement. Existing
 data and backup stores are left untouched.
 
 `KEY_VAULT_URI` must be
-`https://kv-shapepilot-prod.vault.azure.net/`. The only declared secret setting
-is `AZURE_OPENAI_API_KEY`, and its App Service value must remain the versionless
+`https://kv-shapepilot-prod.vault.azure.net/`. The legacy `AZURE_OPENAI_API_KEY`
+setting's App Service value must remain the versionless
 Key Vault reference to secret `AZURE-OPENAI-API-KEY`; the workflow never reads,
 prints, or uploads the secret value.
 
@@ -235,9 +235,27 @@ Creating the secret would be the wrong fix. It would replace a keyless
 managed-identity flow with a long-lived key that grants full access to the
 Foundry account and has to be rotated by hand — the posture `.env.example`
 explicitly disclaims and the one Microsoft's own Foundry guidance recommends
-against for production. The setting is retained only because the deploy job
-asserts the app-settings map exactly; removing it means editing that
+against for production. The setting is retained because deployment preflight
+requires this reference; removing it means editing that
 assertion, the table above, and the Web App out of band.
+
+### Optional household printer monitoring
+
+EL-ement Statistics uses the separate server-only
+`SHAPEPILOT_BAMBU_ACCESS_TOKEN` setting, supplied through the versionless
+`@Microsoft.KeyVault(SecretUri=https://kv-shapepilot-prod.vault.azure.net/secrets/SHAPEPILOT-BAMBU-ACCESS-TOKEN/)`
+reference. `SHAPEPILOT_BAMBU_REGION=global` selects the owner's configured global
+account. This is not a ShapePilot/Entra credential and is never a client build
+argument. Setup and rotation are owner-operated; the release workflow does not
+read the secret value or recreate this configuration.
+
+Deployment changes only the image. Its full-map app-settings fingerprint
+includes these optional settings, so activation and rollback must preserve
+their names, references, region and slot flags along with every existing setting.
+After deploying migration `012-element-statistics` through the guarded startup
+path, use authenticated **Admin -> EL-ement Statistics** to verify the connection,
+select the household printer and enable monitoring. A deployed page or a resolved
+Key Vault reference alone does not prove MQTT freshness or history recording.
 
 ### AI design assistant
 

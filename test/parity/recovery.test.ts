@@ -49,6 +49,16 @@ const waitForEntry = async (directory: string, prefix: string): Promise<string> 
   throw new Error(`timed out waiting for ${prefix} in ${directory}`)
 }
 
+const waitForStagedBytes = async (path: string, expected: Buffer): Promise<void> => {
+  // put creates its temporary before reading stdin. input.end() only queues
+  // bytes, so mutations must wait for the entire supplied payload to land.
+  for (let attempt = 0; attempt < 200; attempt++) {
+    if (readFileSync(path).equals(expected)) return
+    await new Promise((resolveWait) => setTimeout(resolveWait, 5))
+  }
+  throw new Error(`timed out waiting for copied artifact bytes in ${path}`)
+}
+
 const guardExit = (child: ReturnType<typeof spawn>): Promise<number | null> => {
   for (const stream of child.stdio) stream?.on('error', () => undefined)
   return new Promise((resolveExit, rejectExit) => {
@@ -355,6 +365,7 @@ describe('artifact store', () => {
     child.stdin.end(data)
     const staging = join(root, '.shapepilot-staging')
     const temporary = await waitForEntry(staging, '.shapepilot-tmp-')
+    await waitForStagedBytes(join(staging, temporary), data)
     const displaced = `${temporary}.displaced`
     renameSync(join(staging, temporary), join(staging, displaced))
     writeFileSync(join(staging, temporary), 'attacker bytes')
@@ -386,6 +397,7 @@ describe('artifact store', () => {
     child.stdin.end(data)
     const staging = join(root, '.shapepilot-staging')
     const temporary = await waitForEntry(staging, '.shapepilot-tmp-')
+    await waitForStagedBytes(join(staging, temporary), data)
     // The server rewriting the timestamp on close, which is what Azure Files
     // does and what the old stat-identity check could not survive.
     const moved = new Date(Date.now() + 120_000)
@@ -415,18 +427,31 @@ describe('artifact store', () => {
     if (!child.stdin || !control || !('end' in control)) {
       throw new Error('artifact guard did not expose its put pipes')
     }
-    child.stdin.end(data)
+    const stderr: Buffer[] = []
+    child.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk))
     const staging = join(root, '.shapepilot-staging')
     const temporary = await waitForEntry(staging, '.shapepilot-tmp-')
-    await waitForPath(join(staging, temporary))
+    const stagedPath = join(staging, temporary)
+    // Force the CI ordering: the name exists while the helper is still waiting
+    // for input. Existence alone would let the copy overwrite our mutation.
+    assert.equal(statSync(stagedPath).size, 0)
+    child.stdin.end(data)
+    await waitForStagedBytes(stagedPath, data)
     // Written through the same inode, so nothing about the file's identity
     // changes except what it says.
-    const fd = openSync(join(staging, temporary), constants.O_WRONLY)
-    writeSync(fd, Buffer.from('attacker bytes'), 0, data.byteLength, 0)
-    closeSync(fd)
+    const fd = openSync(stagedPath, constants.O_WRONLY)
+    try {
+      assert.equal(writeSync(fd, Buffer.from('attacker bytes'), 0, data.byteLength, 0),
+        data.byteLength)
+    } finally {
+      closeSync(fd)
+    }
+    assert.equal(readFileSync(stagedPath, 'utf8'), 'attacker bytes')
     control.end('C')
 
     assert.notEqual(await guardExitBounded(child), 0)
+    assert.match(Buffer.concat(stderr).toString('utf8'),
+      /the staged artifact object changed contents before publication/)
     assert.equal(existsSync(join(root, 'object.bin')), false)
   })
 

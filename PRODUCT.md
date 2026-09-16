@@ -36,6 +36,17 @@ committed code, and only the ticks are stored. It answers the question that
 comes before a design, not after it, and it is the natural source for the
 designers' own material choices once they want one.
 
+**EL-ement Statistics** extends Admin for the household printer. It monitors
+available Bambu printer and AMS reports without controls or video, keeps a
+durable ledger of available cloud jobs, and offers shared-scope charts, job
+detail, CSV and printable reports. The Bambu credential is server-held;
+configuration, statistics and exports are administrator-only, not a per-user
+connection flow. Account/region/printer identities keep histories distinct.
+Slice weights and durations remain explicitly estimates, failed/aborted jobs
+are not assumed to have consumed their whole estimates, and unavailable data
+stays unavailable. Cloud coverage is not a lifetime odometer. Monitoring does
+not reinterpret or decrement the Filaments ownership ticks.
+
 A person opens ShapePilot to lay something out, check whether the result can
 actually be printed or cut, and export a file their machine accepts. Everything
 downstream of that — geometry, validation, STL/3MF/SVG/DXF — happens in the

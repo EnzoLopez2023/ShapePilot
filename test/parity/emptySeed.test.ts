@@ -1,14 +1,13 @@
 import assert from 'node:assert/strict'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import {
   existsSync,
   lstatSync,
-  mkdtempSync,
+  mkdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs'
-import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import Database from 'better-sqlite3'
 import { afterEach, describe, test } from 'vitest'
@@ -17,12 +16,13 @@ import { openDatabase } from '../../lib/db/connection.ts'
 import { loadConfig } from '../../server/config.ts'
 import {
   EmptySeedError,
+  EMPTY_SEED_DOMAIN_TABLES,
   ensureProductionEmptySeed,
   isAcceptedEmptySeedFileMetadata,
   isAzureAppServicePersistentPath,
 } from '../../server/emptySeed.ts'
 import { validateProductionStorage } from '../../server/storage.ts'
-import { TEST_AUDIENCE, TEST_TENANT } from '../helpers/server.ts'
+import { TEST_AUDIENCE, TEST_ROOT, TEST_TENANT } from '../helpers/server.ts'
 
 const roots: string[] = []
 afterEach(() => {
@@ -47,7 +47,8 @@ const identity: BuildIdentity = {
 }
 
 const fixture = () => {
-  const root = mkdtempSync(join(tmpdir(), 'shapepilot-empty-seed-'))
+  const root = join(TEST_ROOT, `shapepilot-empty-seed-${randomUUID()}`)
+  mkdirSync(root, { recursive: true })
   roots.push(root)
   const config = loadConfig({
     NODE_ENV: 'production',
@@ -126,6 +127,22 @@ describe('one-time production empty seed', () => {
     assert.equal(marker.sourceSha, identity.commit)
     assert.equal(marker.buildId, identity.build)
 
+    const database = new Database(config.database.path, { readonly: true, fileMustExist: true })
+    try {
+      const tables = database.prepare<[], { name: string }>(`
+        SELECT name FROM sqlite_schema
+        WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+          AND name NOT IN ('schema_migrations', 'app_identity')
+        ORDER BY name`).all().map(({ name }) => name)
+      assert.deepEqual(tables, [...EMPTY_SEED_DOMAIN_TABLES].sort())
+      for (const table of EMPTY_SEED_DOMAIN_TABLES) {
+        assert.equal(database.prepare<[], { count: number }>(
+          `SELECT COUNT(*) AS count FROM "${table}"`).get()?.count, 0, table)
+      }
+    } finally {
+      database.close()
+    }
+
     const before = lstatSync(config.database.path)
     ensureProductionEmptySeed(config, identity, owner)
     const after = lstatSync(config.database.path)
@@ -197,6 +214,24 @@ describe('one-time production empty seed', () => {
     `).run(TEST_TENANT, '11111111-1111-1111-1111-111111111111', '{}')
     database.close()
 
+    assert.throws(
+      () => ensureProductionEmptySeed(config, identity, owner),
+      (error: unknown) =>
+        error instanceof EmptySeedError && error.code === 'EMPTY_SEED_NOT_EMPTY',
+    )
+  })
+
+  test('even a disabled monitoring settings row makes the seed nonempty', () => {
+    const { config, owner } = fixture()
+    ensureProductionEmptySeed(config, identity, owner)
+    const database = new Database(config.database.path)
+    try {
+      database.prepare(`
+        INSERT INTO element_statistics_settings (singleton, enabled, active_connection_id, updated_at)
+        VALUES (1, 0, NULL, NULL)`).run()
+    } finally {
+      database.close()
+    }
     assert.throws(
       () => ensureProductionEmptySeed(config, identity, owner),
       (error: unknown) =>

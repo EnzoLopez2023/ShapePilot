@@ -31,6 +31,7 @@ import { loadConfig } from './config.ts'
 import type { AppConfig } from './config.ts'
 import { validateProductionStorage } from './storage.ts'
 import { ensureProductionEmptySeed } from './emptySeed.ts'
+import { ElementMonitor } from './element/monitor.ts'
 
 const DRAIN_TIMEOUT_MS = 45_000
 
@@ -104,6 +105,9 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<Runni
   const database = openDatabase(config.database)
   const repos = createRepositories(database)
   recordSnapshot(repos, snapshot, identity.build)
+  const elementMonitor = new ElementMonitor({
+    repository: repos.elementStatistics, config: config.element,
+  })
 
   const app = createApp({
     config,
@@ -112,6 +116,7 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<Runni
     database: () => database,
     lifecycle: () => lifecycle,
     instanceId: randomUUID(),
+    elementMonitor,
   })
 
   const server = await new Promise<Server>((resolve, reject) => {
@@ -120,6 +125,19 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<Runni
   })
 
   lifecycle = 'ready'
+  // Starting the scheduler only reads local state. Remote backfill and MQTT
+  // work run outside readiness and are drained before the database closes.
+  try {
+    await elementMonitor.start()
+  } catch (error) {
+    try {
+      await elementMonitor.close()
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()))
+      database.close()
+    }
+    throw error
+  }
   const address = server.address()
   const port = typeof address === 'object' && address ? address.port : config.port
 
@@ -136,23 +154,27 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<Runni
 
   const close = async (): Promise<void> => {
     lifecycle = 'draining'
-    await new Promise<void>((resolve) => {
-      let settled = false
-      const finish = () => {
-        if (settled) return
-        settled = true
-        clearTimeout(timeout)
-        resolve()
-      }
-      const timeout = setTimeout(() => {
-        server.closeAllConnections()
-        finish()
-      }, DRAIN_TIMEOUT_MS)
-      timeout.unref()
-      server.close(finish)
-    })
-    database.close()
-    lifecycle = 'stopped'
+    try {
+      await elementMonitor.close()
+    } finally {
+      await new Promise<void>((resolve) => {
+        let settled = false
+        const finish = () => {
+          if (settled) return
+          settled = true
+          clearTimeout(timeout)
+          resolve()
+        }
+        const timeout = setTimeout(() => {
+          server.closeAllConnections()
+          finish()
+        }, DRAIN_TIMEOUT_MS)
+        timeout.unref()
+        server.close(finish)
+      })
+      database.close()
+      lifecycle = 'stopped'
+    }
   }
 
   return { server, config, database, port, close }

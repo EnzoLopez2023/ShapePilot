@@ -177,7 +177,7 @@ export function AppRoutes() {
             }
           />
           <Route
-            path="/admin"
+            path="/admin/*"
             element={
               <Suspense fallback={<LoadingState label="Loading admin…" />}>
                 <AdminPage />
