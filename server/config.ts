@@ -5,6 +5,7 @@
 // environment, and a missing required value must stop the process rather than
 // be defaulted into something insecure.
 import { dirname, isAbsolute, join, resolve } from 'node:path'
+import type { BambuRegion } from '../lib/contracts/elementStatistics.ts'
 
 export type NodeEnvironment = 'development' | 'test' | 'production'
 
@@ -52,12 +53,19 @@ export interface AppConfig {
   /** Serve the built SPA from this directory when it exists. */
   clientDir: string
   ai: AiConfig
+  element: ElementConfig
   /**
    * Where imported design assets live. Derived from the database's own
    * directory rather than configured, deliberately: it needs no new App Service
    * setting, and the deploy job asserts that settings map exactly.
    */
   assetStoreDir: string
+}
+
+export interface ElementConfig {
+  accessToken: string | null
+  region: BambuRegion
+  unresolvedSecret: boolean
 }
 
 /**
@@ -126,6 +134,23 @@ const aliased = (
  * one, because the setting looks populated.
  */
 const KEY_VAULT_REFERENCE = /^@Microsoft\.KeyVault\(/i
+
+function elementConfig(env: NodeJS.ProcessEnv): ElementConfig {
+  const region = env.SHAPEPILOT_BAMBU_REGION?.trim() || 'global'
+  if (region !== 'global' && region !== 'china') {
+    throw new ConfigError(
+      'CONFIG_INVALID', 'SHAPEPILOT_BAMBU_REGION must be global or china',
+    )
+  }
+  const raw = env.SHAPEPILOT_BAMBU_ACCESS_TOKEN?.trim() || null
+  const unresolvedSecret = raw !== null && KEY_VAULT_REFERENCE.test(raw)
+  if (raw && !unresolvedSecret && (raw.length > 8192 || /[^\x21-\x7e]/.test(raw))) {
+    throw new ConfigError(
+      'CONFIG_INVALID', 'SHAPEPILOT_BAMBU_ACCESS_TOKEN must be a single bearer token, without a prefix',
+    )
+  }
+  return { accessToken: unresolvedSecret ? null : raw, region, unresolvedSecret }
+}
 
 /**
  * The key path is a local-development convenience and nothing more. Production
@@ -353,6 +378,7 @@ export function loadConfig(
     recoveryWorkDir,
     clientDir: resolve(cwd, env.SHAPEPILOT_CLIENT_DIR?.trim() || 'dist/client'),
     ai: aiConfig(env, isProduction),
+    element: elementConfig(env),
     assetStoreDir: env.SHAPEPILOT_ASSET_DIR?.trim()
       ? absolutePath(env.SHAPEPILOT_ASSET_DIR.trim(), 'SHAPEPILOT_ASSET_DIR', cwd, isProduction)
       : join(dirname(databasePath), 'assets'),

@@ -3,8 +3,8 @@
 Approachable AI-assisted 2D/3D design, viewing, editing, and fabrication.
 
 Four designers, one shared document, so a design can move between them.
-Geometry, validation and every exported byte are produced in the browser; the
-server stores design parameters and nothing else.
+Geometry, validation and fabrication exports are produced in the browser.
+The server stores app data and the optional Admin printer-history ledger.
 
 | | |
 | --- | --- |
@@ -13,6 +13,7 @@ server stores design parameters and nothing else.
 | **Shaper Designer** | 2D design for the Shaper Origin: shapes, text, the five Origin cut types. Imports SVG, DXF, STL. |
 | **Bambu Designer** | Tinkercad-style 3D modelling for the Bambu Lab X2D: solids and holes resolved by grouping, align, mirror. Imports STL, OBJ, 3MF, SVG. |
 | **AI Imagination Playground** | Describe a part, refine it in conversation, then hand it to either designer. |
+| **EL-ement Statistics (Admin only)** | Read-only Bambu printer/AMS monitoring, durable cloud job history, filtered charts, CSV and printable reports for the household printer. |
 
 The two 3D designers evaluate booleans with [manifold-3d](https://github.com/elalish/manifold),
 which guarantees watertight output — a requirement for anything that will be
@@ -76,8 +77,10 @@ set the `VITE_*` values in `.env.example`.
 
 ## Environment
 
-Copy `.env.example` and fill it in. Nothing here is a secret; the app has no
-client secret and uses managed identity in production.
+Use `.env.example` for variable names. Entra has no client secret and Foundry
+uses managed identity in production. The optional Bambu access token is a
+secret: supply it only through server environment/secret-store configuration,
+never a `VITE_` variable or a committed environment file.
 
 | Variable | Required | Meaning |
 |---|---|---|
@@ -101,6 +104,94 @@ client secret and uses managed identity in production.
 | `VITE_AUTH_MODE` | no | `development` skips the sign-in gate in the SPA |
 | `VITE_AZURE_CLIENT_ID` / `VITE_AZURE_TENANT_ID` / `VITE_API_SCOPE` | for production Entra | Canonical build-time MSAL configuration |
 | `VITE_ENTRA_CLIENT_ID` / `VITE_ENTRA_TENANT_ID` | no | Development compatibility aliases |
+| `SHAPEPILOT_BAMBU_ACCESS_TOKEN` | optional, server only | Account owner's Bambu Cloud bearer token, supplied by the secret store; never stored in SQLite or returned to the browser |
+| `SHAPEPILOT_BAMBU_REGION` | no | `global` (default) or `china`, matching the Bambu account |
+
+## EL-ement Statistics setup
+
+Open **Admin -> EL-ement Statistics** (`/admin/el-ement-statistics`). This is a
+single household-printer connection shared only with ShapePilot administrators,
+not per-user Bambu onboarding. Every configuration, status, history and export
+API re-reads the caller's app-local admin role.
+
+1. The account owner obtains an access token through Bambu's regional cloud
+   login flow using a trusted credential-handling client. The community API
+   documents `POST /v1/user-service/user/login` and may require an email
+   verification code or additional account verification. ShapePilot does not
+   collect a Bambu password, bypass verification or access an OS keychain.
+   Transfer only the resulting `accessToken` directly into the server secret
+   store. Do not put login responses in a terminal transcript, shared logs or
+   source control.
+2. Supply `SHAPEPILOT_BAMBU_ACCESS_TOKEN` and, if needed,
+   `SHAPEPILOT_BAMBU_REGION`. A resolved secret-store reference is supported;
+   an unresolved Key Vault reference is shown as unavailable. Restart the
+   ShapePilot server after changing configuration. No token value is returned
+   by the Admin API or persisted to SQLite/backups.
+3. In **Household printer connection**, select **Verify connection**, choose
+   a bound printer, then **Enable monitoring**. Missing credentials, expired
+   or rejected credentials, an unbound printer and an account/region mismatch
+   have distinct recovery messages. Disabling monitoring stops automatic network
+   work without deleting history; verification remains an explicit admin action.
+
+Allow outbound connections to the selected region's fixed hosts:
+
+| Region | HTTPS API (TCP 443) | MQTT over TLS (TCP 8883) |
+| --- | --- | --- |
+| `global` | `api.bambulab.com` | `us.mqtt.bambulab.com` |
+| `china` | `api.bambulab.cn` | `cn.mqtt.bambulab.com` |
+
+Deploy through the existing guarded, one-worker SQLite startup path.
+Migration `012-element-statistics` adds the ledger tables; retain the required
+pre-migration snapshot and use the existing recovery procedure for rollback,
+rather than editing SQL or migration checksums manually.
+
+For rotation, replace the server-held token, restart ShapePilot and verify
+again. Do not rely on Bambu's currently unusable refresh-token endpoint. A
+different verified account/region/printer is a separate history partition;
+old records remain filterable. The connector makes allowlisted HTTPS requests
+and TLS MQTT **subscriptions only**. It does not send printer-control commands,
+request a camera/video stream, or use any retired app or relay.
+
+History backfills in bounded, checkpointed pages and refreshes every five
+minutes independently of browser lifetime. Recent, active and unknown-result
+jobs are rechecked; available history is rescanned daily. A manual rescan
+preserves the ledger. Live samples are coalesced to one per minute and kept for 30 days.
+Imported jobs and recorded state/error events are retained; a crash may lose
+the latest unflushed sampling interval. State-change bursts above 100 events
+per interval are coalesced and recorded as a gap.
+
+Reports share the same persisted filter scope across charts, job pages, CSV
+and printable output. Calendar dates are inclusive in the chosen IANA time
+zone. Shared links keep explicit date bounds; a saved relative preset is shown
+as a custom range once those dates are no longer relative. Material filters
+select whole jobs containing that material, so a multi-material job's totals
+include all of its materials. Runtime is attributed to its start-date bucket,
+not reported as day-by-day machine occupancy. Date/printer scopes exceeding
+50,000 jobs return an explicit limit error; use narrower date ranges to report
+longer ledgers in parts. No historical rows are deleted by this limit.
+
+**Measurement limits:** `costTime`, `weight` and `length` are full sliced-job
+estimates, including failed/aborted jobs. Status `3` does not reliably
+distinguish failure from cancellation. Status `1` remains unknown rather than
+being assumed active; unknown results remain eligible for refresh. Actual elapsed
+duration requires valid terminal start/end timestamps; active, placeholder and ambiguous timestamps
+remain unavailable. Unqualified length units remain unreported. Material
+mapping estimates may differ from whole-job estimates; they are not scaled
+to invent agreement. Fields omitted from a later cloud response retain their
+last reported values; explicit null or invalid values clear them. Elapsed
+runtime is recomputed from the merged terminal timestamps, never carried
+forward across invalidated dates or non-terminal results. A job's last-seen
+time is not a timestamp for each individual estimate. Nothing estimates actual
+extrusion, waste, financial costs or decrements Filaments ownership ticks.
+
+Cloud retention, completeness and local/SD-card coverage are **not guaranteed**.
+Coverage shows recorded bounds, undated jobs, partial scans, errors and the
+last successful sync; this is not a lifetime odometer. The integration uses
+community-observed [Bambu cloud HTTP](https://github.com/Doridian/OpenBambuAPI/blob/main/cloud-http.md)
+and [MQTT](https://github.com/Doridian/OpenBambuAPI/blob/main/mqtt.md) contracts,
+not a stable public API. Injected transport tests prove the implementation,
+**not authenticated connectivity**: the operator must verify the chosen
+account and printer after safe configuration before relying on live recording.
 
 ## Architecture in one screen
 

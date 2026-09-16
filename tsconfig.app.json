@@ -34,6 +34,7 @@
     "src",
     "lib/contracts",
     "test/ui",
+    "test/fixtures/elementStatistics.ts",
     "test/parity/referenceGeometry.test.ts",
     "scripts/icon-assets.ts",
     "vite.config.ts",

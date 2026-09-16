@@ -4,6 +4,9 @@
 // the contracts are async so the storage engine can change without a rewrite of
 // every route, and so nothing above this line can accidentally depend on
 // synchronous statement execution.
+import type { ElementStatisticsRepository } from './elementStatisticsContract.ts'
+
+export type { ElementStatisticsRepository } from './elementStatisticsContract.ts'
 
 /** The only authorization key in the app. */
 export interface Owner {
@@ -671,4 +674,5 @@ export interface Repositories {
   designDocuments: DesignDocumentRepository
   designAssets: DesignAssetRepository
   filaments: FilamentInventoryRepository
+  elementStatistics: ElementStatisticsRepository
 }

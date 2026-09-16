@@ -29,6 +29,8 @@ dependency-free type-and-validator modules that must agree across the wire:
   server validates every tick against it. Generated from
   `scripts/filament-source.json` by `npm run filaments:generate`; `check:filaments`
   in `npm run ci` proves the two are in step.
+- `elementStatistics.ts` — sanitized monitoring, history, filter and report
+  DTOs. Credentials and raw Bambu payloads are never part of this wire contract.
 
 Anything placed here must import nothing: no node, no DOM, no ApiError.
 
@@ -47,7 +49,7 @@ src/text/       glyph outlines, so text cuts as geometry rather than a font ref
 ## The client-side modelling boundary
 
 Everything about geometry happens in the browser. The server has no geometry
-code, no mesh code and no exporters, and it never will as long as this boundary
+code, no mesh code and no fabrication exporters, and it never will as long as this boundary
 holds.
 
 The pipeline is a stack of 2D polygon operations extruded straight up. There is
@@ -100,6 +102,75 @@ converts the server's `{ error: { code, message, details? } }` envelope into a
 typed `ApiRequestError`. Feature services never touch MSAL and never construct a
 base URL: the API is same-origin, proxied by Vite in development and served by
 Express in production.
+
+## Admin printer monitoring
+
+`/admin/el-ement-statistics` joins the existing Admin tabs. Its typed feature
+service talks only to `/api/admin/element-statistics/*`; the entire router
+(including discovery, configuration, sync, job detail, CSV and HTML reports)
+is behind authentication and a fresh database admin-role check. Responses are
+`no-store`. Reports are downloaded with the same authenticated HTTP boundary
+as JSON requests, not public links with credentials in their query strings.
+
+`server/element/` separates the read-only provider, delta normalization,
+server-lifetime monitor, resumable history synchronization, pure reporting
+and escaped exports. `bootstrap.ts` starts the monitor after constructing the
+app and drains its timers, subscriptions, in-flight HTTP and pending
+observations before closing the single database. App construction itself
+neither listens nor starts polling. Disabled/unconfigured monitoring produces
+no background traffic; explicit Admin verification is the only network
+operation allowed during setup.
+
+The provider allowlists regional Bambu HTTPS and TLS MQTT destinations,
+validates certificates and hostnames, bounds payloads and request durations,
+serializes/rate-limits cloud reads and backs off on transient errors. It
+subscribes to the selected printer's report topic and never publishes printer
+commands or consumes camera fields. Unknown states and omitted delta fields
+do not become success or zero. Individual field timestamps accompany merged
+snapshots, and job changes clear job-scoped stale values.
+
+`SHAPEPILOT_BAMBU_ACCESS_TOKEN` is loaded once from the server environment or a
+resolved secret-store reference. No token, LAN code, password, raw upstream
+object or refresh token is stored in SQLite, client storage or logs. Discovery
+gets the actual numeric account ID from Bambu preferences and strips device
+credentials from the bound-printer response. Selection is validated against
+that account; a region/account/printer-derived connection identity partitions
+the ledger. Credential rotation cannot silently mix accounts. No token-refresh
+promise is made; expiry requires replacement and server restart.
+
+`ElementStatisticsRepository` is an async boundary over the same SQLite
+connection. An append-only migration adds non-secret settings, connections,
+jobs, sync checkpoints, telemetry samples and events. A job page and its
+cursor checkpoint commit in one transaction; replayed pages cannot duplicate
+jobs or silently advance a stalled cursor. Import errors leave prior pages
+and history intact. Each pass is bounded; subsequent passes resume the
+checkpoint and re-read the head. Recent/active jobs are revisited and a daily
+full pass catches older changes still available from the cloud.
+
+Live updates are held in memory for the current-status API and sampled at
+most once per minute, with a final shutdown flush. Only telemetry samples
+expire (30 days); jobs and important recorded state/error events do not.
+Duplicate state reports are coalesced. A burst above 100 events in a sampling
+interval records a gap rather than creating unbounded writes. Cloud backfill
+cannot reconstruct missed live telemetry.
+
+Reports aggregate the persisted ledger, never request-time cloud history.
+The same filter predicate serves totals, date-grained charts, pagination and
+all exports. Dates use an explicit IANA time zone; missing values carry
+known/missing counts rather than zero-filled measurements. Terminal elapsed
+runtime is distinct from sliced duration, and completed-job estimated grams
+are distinct from failed/aborted full-job estimates. Unreported length units
+are not converted. Material filters select whole matching jobs; mapping
+weight discrepancies are retained and disclosed. Ingestion distinguishes
+omitted fields from explicit null/invalid values: only omission retains a
+previous fact, and elapsed duration is recomputed from merged terminal
+timestamps. Reports apply UTC bounds for the selected IANA calendar dates
+and printer in SQL before loading at most 50,001 candidates. Scopes above
+50,000 jobs return an explicit error instead of a truncated total; narrower
+dates allow older sections of a long ledger to remain reportable.
+CSV cells are formula-injection escaped, HTML is escaped with no external
+resources or scripts, and both include coverage and interpretation limits.
+See the setup and live-verification prerequisites in `README.md`.
 
 ## SQLite as the authority
 

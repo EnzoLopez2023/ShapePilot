@@ -59,19 +59,36 @@ export async function parseError(response: Response): Promise<ApiRequestError> {
   }
 }
 
-/** Every request is bounded, cancellable, and carries a fresh access token. */
-export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+async function tokenFor(signal: AbortSignal): Promise<string | null> {
+  signal.throwIfAborted()
+  let abort: () => void = () => {}
+  const cancelled = new Promise<never>((_resolve, reject) => {
+    abort = () => reject(new DOMException('Request cancelled.', 'AbortError'))
+    signal.addEventListener('abort', abort, { once: true })
+  })
+  try {
+    return await Promise.race([Promise.resolve().then(provider), cancelled])
+  } finally {
+    signal.removeEventListener('abort', abort)
+  }
+}
+
+async function request<T>(
+  path: string, options: RequestOptions, read: (response: Response) => Promise<T>,
+): Promise<T> {
   const controller = new AbortController()
   const budget = Math.min(options.timeoutMs ?? TIMEOUT_MS, MAX_TIMEOUT_MS)
   const timeout = setTimeout(() => controller.abort(), budget)
-  options.signal?.addEventListener('abort', () => controller.abort(), { once: true })
-
-  const headers: Record<string, string> = {}
-  const token = await provider()
-  if (token) headers.authorization = `Bearer ${token}`
-  if (options.body !== undefined) headers['content-type'] = 'application/json'
+  const abort = () => controller.abort()
+  if (options.signal?.aborted) abort()
+  options.signal?.addEventListener('abort', abort, { once: true })
 
   try {
+    const headers: Record<string, string> = {}
+    const token = await tokenFor(controller.signal)
+    if (token) headers.authorization = `Bearer ${token}`
+    if (options.body !== undefined) headers['content-type'] = 'application/json'
+    controller.signal.throwIfAborted()
     const response = await fetch(`/api${path}`, {
       method: options.method ?? 'GET',
       headers,
@@ -81,16 +98,29 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     })
 
     if (!response.ok) throw await parseError(response)
-    if (response.status === 204) return null as T
-    const text = await response.text()
-    return (text ? JSON.parse(text) : null) as T
+    return await read(response)
   } catch (error) {
     if (error instanceof ApiRequestError) throw error
-    if ((error as Error).name === 'AbortError') {
+    if (error instanceof Error && error.name === 'AbortError') {
       throw new ApiRequestError(0, 'timeout', 'The request timed out.')
     }
     throw new ApiRequestError(0, 'network_error', 'Could not reach the ShapePilot API.')
   } finally {
     clearTimeout(timeout)
+    options.signal?.removeEventListener('abort', abort)
   }
+}
+
+/** Every request is bounded, cancellable, and carries a fresh access token. */
+export function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  return request(path, options, async response => {
+    if (response.status === 204) return null as T
+    const text = await response.text()
+    return (text ? JSON.parse(text) : null) as T
+  })
+}
+
+/** Authenticated reports are downloaded, never put behind an anonymous URL. */
+export function apiBlobRequest(path: string, options: RequestOptions = {}): Promise<Blob> {
+  return request(path, options, response => response.blob())
 }

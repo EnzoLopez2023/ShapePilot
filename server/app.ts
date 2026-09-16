@@ -32,6 +32,8 @@ import { createSwitchTrayRouter } from './routes/switchTrays.ts'
 import { createToolTrayRouter } from './routes/toolTrays.ts'
 import { createSettingsRouter } from './routes/settings.ts'
 import { createVersionRouter } from './routes/version.ts'
+import { ElementMonitor } from './element/monitor.ts'
+import { createElementStatisticsRouter } from './routes/elementStatistics.ts'
 
 export interface CreateAppOptions {
   config: AppConfig
@@ -48,6 +50,7 @@ export interface CreateAppOptions {
   aiClient?: FoundryClient | null
   /** Injectable for tests; defaults to the filesystem store at config.assetStoreDir. */
   assetStore?: AssetStore
+  elementMonitor?: ElementMonitor
   logger?: (message: string, error: unknown) => void
 }
 
@@ -132,6 +135,12 @@ export function createApp(options: CreateAppOptions): Express {
   app.use('/api/settings', authenticated, createSettingsRouter(repos))
   app.use('/api/audit', authenticated, createAuditRouter(repos))
   app.use('/api/admin/audit', authenticated, adminOnly, createAuditAdminRouter(repos))
+  app.use('/api/admin/element-statistics', authenticated, adminOnly, createElementStatisticsRouter({
+    repos,
+    monitor: options.elementMonitor ?? new ElementMonitor({
+      repository: repos.elementStatistics, config: config.element, logger: options.logger,
+    }),
+  }))
   app.use('/api/admin', authenticated, adminOnly, createAdminRouter({
     repos,
     identity,

@@ -22,6 +22,7 @@ import type { TokenVerifier } from '../../server/auth/verifyToken.ts'
 import type { FoundryClient } from '../../server/ai/foundryClient.ts'
 import type { AssetStore } from '../../lib/assets/assetStore.ts'
 import { ApiError } from '../../server/errors/ApiError.ts'
+import { ElementMonitor } from '../../server/element/monitor.ts'
 
 export const TEST_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '.tmp')
 
@@ -113,6 +114,7 @@ export interface StartServerOptions {
   /** A throwaway store, so asset tests never touch a real artifact root. */
   assetStore?: AssetStore
   label?: string
+  elementMonitorFactory?: (repos: Repositories, config: AppConfig) => ElementMonitor
 }
 
 /**
@@ -125,6 +127,10 @@ export async function startTestServer(options: StartServerOptions = {}): Promise
     ...options.env,
     SHAPEPILOT_DB_PATH: temp.path,
   }))
+  const elementMonitor = options.elementMonitorFactory?.(temp.repos, config) ?? new ElementMonitor({
+    repository: temp.repos.elementStatistics, config: config.element, schedule: false,
+    logger: () => {},
+  })
 
   const app = createApp({
     config,
@@ -136,6 +142,7 @@ export async function startTestServer(options: StartServerOptions = {}): Promise
     aiClient: options.aiClient ?? null,
     ...(options.assetStore ? { assetStore: options.assetStore } : {}),
     logger: () => { /* suppressed in tests */ },
+    elementMonitor,
   })
 
   const server: Server = await new Promise((resolvePromise, reject) => {
@@ -162,6 +169,7 @@ export async function startTestServer(options: StartServerOptions = {}): Promise
       }
     },
     async close() {
+      await elementMonitor.close()
       await new Promise<void>((done) => server.close(() => done()))
       temp.cleanup()
     },
