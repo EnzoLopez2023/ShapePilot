@@ -463,16 +463,19 @@ export function createElementStatisticsRepository(db: SqliteDatabase): ElementSt
     VALUES (@connectionId, @occurredAt, @kind, @code, @message, @jobId, @replayKey)
     ON CONFLICT (replay_key) DO NOTHING`)
   const recordEvent = db.transaction((event: Omit<ElementEvent, 'id'>) => {
-    const previous = selectLatestEvent.get(event.connectionId)
-    // Only consecutive identical observations coalesce. A -> B -> A is a
-    // meaningful transition even in one minute; exact replays stay idempotent.
-    if (previous && minuteOf(previous.occurredAt) === minuteOf(event.occurredAt)
-      && previous.kind === event.kind && previous.code === event.code
-      && previous.message === event.message && previous.jobId === event.jobId) return
-    const replayKey = createHash('sha256').update(JSON.stringify([
+    const { occurrenceId, ...stored } = event
+    if (occurrenceId === undefined) {
+      const previous = selectLatestEvent.get(event.connectionId)
+      if (previous && minuteOf(previous.occurredAt) === minuteOf(event.occurredAt)
+        && previous.kind === event.kind && previous.code === event.code
+        && previous.message === event.message && previous.jobId === event.jobId) return
+    }
+    const replayParts = [
       event.connectionId, event.occurredAt, event.kind, event.code, event.message, event.jobId,
-    ])).digest('hex')
-    insertEvent.run({ ...event, replayKey })
+    ]
+    if (occurrenceId !== undefined) replayParts.push(occurrenceId)
+    const replayKey = createHash('sha256').update(JSON.stringify(replayParts)).digest('hex')
+    insertEvent.run({ ...stored, replayKey })
   })
 
   return {
@@ -585,6 +588,7 @@ export function createElementStatisticsRepository(db: SqliteDatabase): ElementSt
         code: requiredText(event.code, 128),
         message: requiredText(event.message, 1_000),
         jobId: event.jobId === null ? null : identifier(event.jobId),
+        ...(event.occurrenceId === undefined ? {} : { occurrenceId: identifier(event.occurrenceId) }),
       })
     },
     async listEvents(connectionId, requestedLimit, jobId) {

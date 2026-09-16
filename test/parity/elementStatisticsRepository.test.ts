@@ -713,6 +713,21 @@ describe('EL-ement durable repository', () => {
     assert.equal((await repo.listEvents(null, 2)).length, 2)
   })
 
+  test('queued occurrence identities preserve same-time transitions while retries remain idempotent', async () => {
+    const { repo } = await fixture()
+    const first = event({ occurrenceId: 'observation-a' })
+    const second = event({
+      occurrenceId: 'observation-b', kind: 'printer_error', code: 'HMS', message: 'Synthetic HMS fault.',
+    })
+    const third = event({ occurrenceId: 'observation-c' })
+    for (const observation of [first, second, third, first, second, third]) await repo.recordEvent(observation)
+    const events = await repo.listEvents('household-a', 10)
+    assert.equal(events.length, 3)
+    assert.deepEqual(events.map(item => item.message).reverse(), [first.message, second.message, third.message])
+    assert.equal(events.some(item => 'occurrenceId' in item), false)
+    await assert.rejects(repo.recordEvent(event({ occurrenceId: '' })), /identity/)
+  })
+
   test('foreign keys and validation refuse orphaned, malformed or reassigned identities', async () => {
     const { repo } = await fixture()
     await assert.rejects(repo.saveSettings({

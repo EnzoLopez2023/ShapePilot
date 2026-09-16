@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import type {
   ElementAccount, ElementConnection, ElementConnectionState, ElementEventInput,
   ElementProblem, ElementSnapshot, ElementStatus,
@@ -66,7 +66,9 @@ export class ElementMonitor {
   private snapshot: ElementSnapshot | null = null
   private snapshotConnectionId: string | null = null
   private pendingSnapshot: { connectionId: string; snapshot: ElementSnapshot } | null = null
-  private pendingEvents = new Map<string, ElementEventInput>()
+  private pendingEvents: ElementEventInput[] = []
+  private pendingEventGap: ElementEventInput | null = null
+  private lastQueuedEventKey: string | null = null
   private lastSampleAt = 0
   private lastDiscoveryAt: number | null = null
   private lastSelectionAt: number | null = null
@@ -413,28 +415,36 @@ export class ElementMonitor {
     const errorKey = JSON.stringify([snapshot.printError, snapshot.hms])
     if (errorKey !== this.lastPrinterError && (snapshot.printError !== null || snapshot.hms !== null)) {
       this.lastPrinterError = errorKey
+      const message = `Print error: ${snapshot.printError ?? 'unreported'}; HMS: ${
+        snapshot.hms === null ? 'unreported' : snapshot.hms.length === 0
+          ? 'no issues reported' : snapshot.hms.map(issue =>
+            issue.attribute === null ? issue.code : `${issue.code} (${issue.attribute})`).join(', ')
+      }.`
       this.queueEvent({
         connectionId, occurredAt: snapshot.receivedAt, kind: 'printer_error',
         code: snapshot.printError ?? 'hms_report', jobId: snapshot.jobId,
-        message: `Print error: ${snapshot.printError ?? 'unreported'}; HMS: ${
-          snapshot.hms === null ? 'unreported' : snapshot.hms.length === 0
-            ? 'no issues reported' : snapshot.hms.map(issue => issue.code).join(', ')
-        }.`,
-      })
+        message: message.length <= 1_000 ? message : `${message.slice(0, 970)}... [HMS details truncated]`,
+      }, errorKey)
     }
     this.scheduleSample()
   }
 
-  private queueEvent(event: ElementEventInput): void {
-    const key = JSON.stringify([event.kind, event.code, event.jobId, event.occurredAt.slice(0, 16)])
-    if (this.pendingEvents.size < MAX_EVENT_BUFFER || this.pendingEvents.has(key)) {
-      this.pendingEvents.set(key, event)
-    } else {
-      this.pendingEvents.set('overflow', {
+  private queueEvent(event: ElementEventInput, observationKey: string | null = null): void {
+    const key = JSON.stringify([
+      event.connectionId, event.kind, event.code, event.jobId, event.message,
+      event.occurredAt.slice(0, 16), observationKey,
+    ])
+    if (key === this.lastQueuedEventKey && (this.pendingEvents.length > 0 || this.pendingEventGap)) return
+    this.lastQueuedEventKey = key
+    if (this.pendingEvents.length < MAX_EVENT_BUFFER) {
+      this.pendingEvents.push({ ...event, occurrenceId: randomUUID() })
+    } else if (!this.pendingEventGap) {
+      this.pendingEventGap = {
+        occurrenceId: randomUUID(),
         connectionId: event.connectionId, occurredAt: event.occurredAt, kind: 'recording_gap',
         code: 'events_coalesced', jobId: null,
         message: 'More than 100 state changes arrived within a sampling interval. Additional transitions were coalesced; the latest snapshot was retained.',
-      })
+      }
     }
     this.scheduleSample()
   }
@@ -450,7 +460,7 @@ export class ElementMonitor {
         })
         .finally(() => {
           this.sampleWork = null
-          if (this.pendingSnapshot || this.pendingEvents.size > 0) this.scheduleSample()
+          if (this.pendingSnapshot || this.pendingEvents.length > 0 || this.pendingEventGap) this.scheduleSample()
         })
     }, Math.max(0, this.lastSampleAt + TELEMETRY_SAMPLE_MS - this.now()))
     this.sampleTimer.unref()
@@ -463,10 +473,17 @@ export class ElementMonitor {
       await this.repository.recordSnapshot(snapshot.connectionId, snapshot.snapshot)
       if (this.pendingSnapshot === snapshot) this.pendingSnapshot = null
     }
-    for (const [key, event] of this.pendingEvents) {
+    const batch = this.pendingEvents.slice()
+    const gap = this.pendingEventGap
+    for (const event of batch) {
       await this.repository.recordEvent(event)
-      if (this.pendingEvents.get(key) === event) this.pendingEvents.delete(key)
+      if (this.pendingEvents[0] === event) this.pendingEvents.shift()
     }
+    if (gap) {
+      await this.repository.recordEvent(gap)
+      if (this.pendingEventGap === gap) this.pendingEventGap = null
+    }
+    if (this.pendingEvents.length === 0 && !this.pendingEventGap) this.lastQueuedEventKey = null
     this.recordingProblem = null
   }
 

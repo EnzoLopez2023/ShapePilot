@@ -249,4 +249,79 @@ describe('server-lifetime household monitor', () => {
     expect(events.length).toBeLessThanOrEqual(101)
     expect(events.some(event => event.code === 'events_coalesced')).toBe(true)
   })
+
+  test.each([0, 10_000])('retains HMS fault and clear transitions with %i ms between observations', async interval => {
+    makeMonitor(providerStub())
+    await enable()
+    await monitor.requestSync()
+    await monitor.idle()
+    for (const hms of [[], [{ code: 'SYNTHETIC_HMS', attribute: '1' }], []]) {
+      callbacks!.onSnapshot({
+        ...syntheticElementSnapshot, receivedAt: new Date(now).toISOString(), printError: '0', hms,
+      })
+      now += interval
+    }
+    const connectionId = (await monitor.status()).settings.activeConnectionId!
+    await monitor.close()
+    const events = (await temp.repos.elementStatistics.listEvents(connectionId, 100))
+      .filter(event => event.kind === 'printer_error').reverse()
+    expect(events.map(event => event.message)).toEqual([
+      'Print error: 0; HMS: no issues reported.',
+      'Print error: 0; HMS: SYNTHETIC_HMS (1).',
+      'Print error: 0; HMS: no issues reported.',
+    ])
+    expect(events.every(event => !('occurrenceId' in event))).toBe(true)
+  })
+
+  test('large HMS summaries stay writable and still distinguish changes outside the displayed prefix', async () => {
+    makeMonitor(providerStub())
+    await enable()
+    await monitor.requestSync()
+    await monitor.idle()
+    const hms = Array.from({ length: 32 }, (_, index) => ({
+      code: `SYNTHETIC_${String(index).padStart(2, '0')}_${'X'.repeat(30)}`, attribute: '1',
+    }))
+    callbacks!.onSnapshot({ ...syntheticElementSnapshot, printError: '0', hms })
+    callbacks!.onSnapshot({
+      ...syntheticElementSnapshot, printError: '0',
+      hms: hms.map((issue, index) => index === hms.length - 1 ? { ...issue, attribute: '2' } : issue),
+    })
+    const connectionId = (await monitor.status()).settings.activeConnectionId!
+    await monitor.close()
+    const events = (await temp.repos.elementStatistics.listEvents(connectionId, 100))
+      .filter(event => event.kind === 'printer_error')
+    expect(events).toHaveLength(2)
+    expect(events.every(event => event.message.length <= 1_000)).toBe(true)
+    expect(events.every(event => event.message.endsWith('[HMS details truncated]'))).toBe(true)
+  })
+
+  test('a failed flush retries the same queued occurrence without losing or duplicating transitions', async () => {
+    makeMonitor(providerStub())
+    await enable()
+    await monitor.requestSync()
+    await monitor.idle()
+    callbacks!.onSnapshot({
+      ...syntheticElementSnapshot, printError: '0',
+      hms: [{ code: 'SYNTHETIC_HMS', attribute: null }],
+    })
+    callbacks!.onSnapshot({ ...syntheticElementSnapshot, printError: '0', hms: [] })
+    const connectionId = (await monitor.status()).settings.activeConnectionId!
+    const record = temp.repos.elementStatistics.recordEvent.bind(temp.repos.elementStatistics)
+    let fail = true
+    vi.spyOn(temp.repos.elementStatistics, 'recordEvent').mockImplementation(async event => {
+      await record(event)
+      if (fail && event.kind === 'printer_error') {
+        fail = false
+        throw new Error('Synthetic failure after committing an event')
+      }
+    })
+    await expect(monitor.configure({ enabled: false })).rejects.toThrow('Synthetic failure')
+    await monitor.configure({ enabled: false })
+    const events = (await temp.repos.elementStatistics.listEvents(connectionId, 100))
+      .filter(event => event.kind === 'printer_error').reverse()
+    expect(events.map(event => event.message)).toEqual([
+      'Print error: 0; HMS: SYNTHETIC_HMS.',
+      'Print error: 0; HMS: no issues reported.',
+    ])
+  })
 })

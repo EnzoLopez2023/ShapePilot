@@ -150,7 +150,9 @@ full pass catches older changes still available from the cloud.
 Live updates are held in memory for the current-status API and sampled at
 most once per minute, with a final shutdown flush. Only telemetry samples
 expire (30 days); jobs and important recorded state/error events do not.
-Duplicate state reports are coalesced. A burst above 100 events in a sampling
+Only consecutive duplicate observations are coalesced; fault/clear transitions
+remain ordered even within one sampling interval or receipt timestamp. Queued
+occurrences retain a retry identity without exposing it in event DTOs. A burst above 100 events in a sampling
 interval records a gap rather than creating unbounded writes. Cloud backfill
 cannot reconstruct missed live telemetry.
 

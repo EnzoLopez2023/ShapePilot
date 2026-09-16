@@ -167,6 +167,8 @@ export type ElementEventKind =
   | 'recording_gap'
 
 export interface ElementEventInput {
+  /** Ingestion-only retry identity for a distinct queued observation. */
+  occurrenceId?: string
   connectionId: string
   occurredAt: string
   kind: ElementEventKind
