@@ -28,9 +28,9 @@ describe('filament inventory validation', () => {
     assert.deepEqual(validateFilamentInventoryInput({ owned: [] }), [])
     assert.deepEqual(
       validateFilamentInventoryInput({
-        owned: [{ key: JADE_WHITE, variant: 'refill' }, { key: ABS_RED, variant: 'spool' }],
+        owned: [{ key: JADE_WHITE, variant: 'refill', quantity: 1 }, { key: ABS_RED, variant: 'spool', quantity: 1 }],
       }),
-      [{ key: JADE_WHITE, variant: 'refill' }, { key: ABS_RED, variant: 'spool' }],
+      [{ key: JADE_WHITE, variant: 'refill', quantity: 1 }, { key: ABS_RED, variant: 'spool', quantity: 1 }],
     )
   })
 
@@ -50,35 +50,49 @@ describe('filament inventory validation', () => {
     rejects({ owned: [7] }, 'owned[0]')
   })
 
-  test('requires both fields, and nothing else, on an entry', () => {
+  test('requires the fields, and nothing else, on an entry', () => {
     rejects({ owned: [{}] }, 'owned[0].key')
     rejects({ owned: [{ key: JADE_WHITE }] }, 'owned[0].variant')
-    rejects({ owned: [{ variant: 'spool' }] }, 'owned[0].key')
+    rejects({ owned: [{ variant: 'spool', quantity: 1 }] }, 'owned[0].key')
     rejects({ owned: [{ key: JADE_WHITE, variant: 'spool', grams: 1000 }] }, 'owned[0].grams')
   })
 
+  // Required rather than defaulted: the body replaces the whole inventory, so a
+  // client that predates counts would otherwise reset every count to 1.
+  test('requires a whole-number quantity from 1 to the limit', () => {
+    rejects({ owned: [{ key: JADE_WHITE, variant: 'spool' }] }, 'owned[0].quantity')
+    for (const quantity of [0, -1, 1.5, '2', null, LIMITS.maxQuantity + 1]) {
+      rejects({ owned: [{ key: JADE_WHITE, variant: 'spool', quantity }] }, 'owned[0].quantity')
+    }
+    for (const quantity of [1, 3, LIMITS.maxQuantity]) {
+      assert.equal(validateFilamentInventoryInput({
+        owned: [{ key: JADE_WHITE, variant: 'spool', quantity }],
+      })[0].quantity, quantity)
+    }
+  })
+
   test('requires the key to name a real filament', () => {
-    rejects({ owned: [{ key: '', variant: 'spool' }] }, 'owned[0].key')
-    rejects({ owned: [{ key: 42, variant: 'spool' }] }, 'owned[0].key')
-    rejects({ owned: [{ key: 'jade-white', variant: 'spool' }] }, 'owned[0].key')
+    rejects({ owned: [{ key: '', variant: 'spool', quantity: 1 }] }, 'owned[0].key')
+    rejects({ owned: [{ key: 42, variant: 'spool', quantity: 1 }] }, 'owned[0].key')
+    rejects({ owned: [{ key: 'jade-white', variant: 'spool', quantity: 1 }] }, 'owned[0].key')
     // The bare Bambu code is not the key; the path is.
-    rejects({ owned: [{ key: '10100', variant: 'spool' }] }, 'owned[0].key')
+    rejects({ owned: [{ key: '10100', variant: 'spool', quantity: 1 }] }, 'owned[0].key')
   })
 
   test('requires the variant to be one the line is actually sold in', () => {
     rejects({ owned: [{ key: JADE_WHITE, variant: 'bottle' }] }, 'owned[0].variant')
     rejects({ owned: [{ key: JADE_WHITE, variant: 7 }] }, 'owned[0].variant')
     // ABS ships on a reel only.
-    rejects({ owned: [{ key: ABS_RED, variant: 'refill' }] }, 'owned[0].variant')
+    rejects({ owned: [{ key: ABS_RED, variant: 'refill', quantity: 1 }] }, 'owned[0].variant')
   })
 
   test('refuses a duplicate pair rather than deduping it', () => {
     rejects({
-      owned: [{ key: JADE_WHITE, variant: 'spool' }, { key: JADE_WHITE, variant: 'spool' }],
+      owned: [{ key: JADE_WHITE, variant: 'spool', quantity: 1 }, { key: JADE_WHITE, variant: 'spool', quantity: 1 }],
     }, 'owned[1]')
     // The same filament in two different forms is not a duplicate.
     assert.equal(validateFilamentInventoryInput({
-      owned: [{ key: JADE_WHITE, variant: 'spool' }, { key: JADE_WHITE, variant: 'refill' }],
+      owned: [{ key: JADE_WHITE, variant: 'spool', quantity: 1 }, { key: JADE_WHITE, variant: 'refill', quantity: 1 }],
     }).length, 2)
   })
 
@@ -87,7 +101,7 @@ describe('filament inventory validation', () => {
       'the limit must not refuse an account that owns everything')
     rejects({
       owned: Array.from({ length: LIMITS.maxEntries + 1 },
-        () => ({ key: JADE_WHITE, variant: 'spool' })),
+        () => ({ key: JADE_WHITE, variant: 'spool', quantity: 1 })),
     }, 'owned')
   })
 })

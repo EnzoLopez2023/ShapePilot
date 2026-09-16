@@ -25,7 +25,10 @@ import type {
 import { ErrorState, LoadingState } from '../../components/LoadingState.tsx'
 import FilamentSection from './components/FilamentSection.tsx'
 import { createInventoryWriter, getFilaments } from './service.ts'
-import { setToTicks, tickId, ticksToSet } from './model/types.ts'
+import {
+  MAX_QUANTITY, inventoryToTicks, tickId, ticksToInventory, totalRolls,
+} from './model/types.ts'
+import type { Inventory } from './model/types.ts'
 
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : 'The inventory could not be reached.'
@@ -48,7 +51,7 @@ const VARIANTS_BY_KEY = new Map<string, readonly FilamentVariant[]>(
 
 const variantsOf = (key: string): readonly FilamentVariant[] => VARIANTS_BY_KEY.get(key) ?? []
 
-const countOwned = (section: Section, owned: ReadonlySet<string>): number =>
+const countOwned = (section: Section, owned: Inventory): number =>
   section.colors.reduce((total, color) => total + section.line.variants.reduce(
     (n, variant) => n + (owned.has(tickId(color.key, variant)) ? 1 : 0), 0), 0)
 
@@ -58,14 +61,14 @@ const countPairs = (sections: readonly Section[]): number => sections.reduce(
 const ALL_PAIRS = countPairs(SECTIONS)
 
 /** The discontinued colours this inventory has a tick on, by colour key. */
-const ownedDiscontinued = (owned: ReadonlySet<string>): Set<string> => new Set(
+const ownedDiscontinued = (owned: Inventory): Set<string> => new Set(
   FILAMENT_CATALOG
     .filter(color => color.discontinued
       && variantsOf(color.key).some(variant => owned.has(tickId(color.key, variant))))
     .map(color => color.key))
 
 export default function FilamentsPage() {
-  const [owned, setOwned] = useState<ReadonlySet<string> | null>(null)
+  const [owned, setOwned] = useState<Inventory | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [hideDiscontinued, setHideDiscontinued] = useState(true)
@@ -87,9 +90,9 @@ export default function FilamentsPage() {
     void getFilaments()
       .then(ticks => {
         if (cancelled) return
-        const set = ticksToSet(ticks)
-        setKept(ownedDiscontinued(set))
-        setOwned(set)
+        const inventory = ticksToInventory(ticks)
+        setKept(ownedDiscontinued(inventory))
+        setOwned(inventory)
       })
       .catch(error => { if (!cancelled) setLoadError(messageOf(error)) })
     return () => { cancelled = true }
@@ -97,15 +100,20 @@ export default function FilamentsPage() {
 
   useEffect(() => load(), [load])
 
-  const toggle = useCallback((key: string, variant: FilamentVariant, next: boolean) => {
+  /**
+   * Set how many of one filament in one form are owned. Zero removes the tick.
+   * Ticking a box is `1`, unticking is `0`, and the stepper is anything between.
+   */
+  const setQuantity = useCallback((key: string, variant: FilamentVariant, quantity: number) => {
     setOwned(previous => {
       if (!previous) return previous
-      const updated = new Set(previous)
-      if (next) updated.add(tickId(key, variant))
-      else updated.delete(tickId(key, variant))
-      // Queued, not awaited: the checkbox has already moved, and the writer
-      // coalesces so a fast run of ticks is not a fast run of requests.
-      void writerRef.current?.save(setToTicks(updated, FILAMENT_CATALOG, variantsOf))
+      const updated = new Map(previous)
+      const clamped = Math.max(0, Math.min(MAX_QUANTITY, Math.round(quantity)))
+      if (clamped === 0) updated.delete(tickId(key, variant))
+      else updated.set(tickId(key, variant), clamped)
+      // Queued, not awaited: the control has already moved, and the writer
+      // coalesces so a fast run of ticks or steps is not a fast run of requests.
+      void writerRef.current?.save(inventoryToTicks(updated, FILAMENT_CATALOG, variantsOf))
       return updated
     })
     setSaveError(null)
@@ -131,6 +139,7 @@ export default function FilamentsPage() {
     const shown = countPairs(sections)
     return {
       total: owned.size,
+      rolls: totalRolls(owned),
       shown,
       hidden: ALL_PAIRS - shown,
       perLine: sections.map(section =>
@@ -159,6 +168,7 @@ export default function FilamentsPage() {
         >
           <Typography variant="body2" color="text.secondary">
             {summary.total} of {summary.shown} owned
+            {summary.rolls > summary.total && <> ({summary.rolls} rolls)</>}
             {summary.hidden > 0 && <> · {summary.hidden} discontinued hidden</>}
             {summary.total > 0 && <> · {summary.perLine.join(' · ')}</>}
           </Typography>
@@ -200,7 +210,7 @@ export default function FilamentsPage() {
           line={section.line}
           colors={section.colors}
           owned={owned}
-          onToggle={toggle}
+          onQuantity={setQuantity}
         />
       ))}
     </Stack>

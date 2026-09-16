@@ -5,8 +5,9 @@
 // half-applied inventory is never a state the database can be in. That also
 // makes "own every colour in this line" one statement rather than thirty-two.
 //
-// Rows are only ever inserted and deleted, never updated -- a tick is not a
-// value that changes.
+// Rows are only ever inserted and deleted, never updated. A changed count is
+// the whole inventory re-sent, like any other edit, so there is still exactly
+// one write path and it is still atomic.
 import type { SqliteDatabase } from '../connection.ts'
 import type {
   FilamentInventoryEntry,
@@ -17,11 +18,13 @@ import type {
 interface EntryRow {
   filament_key: string
   variant: 'spool' | 'refill'
+  quantity: number
 }
 
 const rowToEntry = (row: EntryRow): FilamentInventoryEntry => ({
   key: row.filament_key,
   variant: row.variant,
+  quantity: row.quantity,
 })
 
 export function createFilamentInventoryRepository(
@@ -30,7 +33,7 @@ export function createFilamentInventoryRepository(
   // Ordered so the wire shape is stable: two identical inventories always read
   // back identically, which is what lets the client compare cheaply.
   const selectOwned = db.prepare<[string, string], EntryRow>(`
-    SELECT filament_key, variant
+    SELECT filament_key, variant, quantity
       FROM filament_inventory
      WHERE owner_tenant_id = ? AND owner_oid = ?
      ORDER BY filament_key, variant`)
@@ -39,14 +42,14 @@ export function createFilamentInventoryRepository(
     'DELETE FROM filament_inventory WHERE owner_tenant_id = ? AND owner_oid = ?')
 
   const insertEntry = db.prepare(`
-    INSERT INTO filament_inventory (owner_tenant_id, owner_oid, filament_key, variant)
-    VALUES (?, ?, ?, ?)`)
+    INSERT INTO filament_inventory (owner_tenant_id, owner_oid, filament_key, variant, quantity)
+    VALUES (?, ?, ?, ?, ?)`)
 
   const replaceTx = db.transaction(
     (owner: Owner, entries: readonly FilamentInventoryEntry[]) => {
       deleteOwned.run(owner.tenantId, owner.oid)
       for (const entry of entries) {
-        insertEntry.run(owner.tenantId, owner.oid, entry.key, entry.variant)
+        insertEntry.run(owner.tenantId, owner.oid, entry.key, entry.variant, entry.quantity)
       }
     })
 

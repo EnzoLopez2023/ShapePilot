@@ -649,6 +649,8 @@ export interface DesignAssetRepository {
 export interface FilamentInventoryEntry {
   key: string
   variant: 'spool' | 'refill'
+  /** How many are on the shelf. At least 1: owning none is an absent entry. */
+  quantity: number
 }
 
 export interface FilamentInventoryRepository {

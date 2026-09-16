@@ -108,6 +108,12 @@ const ROLLBACK_COMPATIBLE_LEDGER = [
     name: 'X2D maintenance calendar',
     checksum: '6aaf1f92a7a92d2422ed2ac097106fc0d8c4192805c707a3fdea3bc095d5354a',
   },
+  {
+    ordinal: 13,
+    id: '014-filament-quantity',
+    name: 'filament quantity',
+    checksum: '395ef9fb005cb97f0bef536bcead8354714239b087570b98dc15e795da8292a6',
+  },
 ] as const
 
 const REQUIRED_TABLES = [

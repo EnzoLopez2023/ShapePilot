@@ -22,7 +22,8 @@ import { TEST_ROOT } from '../helpers/server.ts'
 // of it -- later migrations are appended after 012 and must not be able to
 // change what 012 did. So every hash below is taken at a fixed DEPTH, and the
 // assertions about the *current* head derive from the migration list rather
-// than naming 012. Appending 013 should not require editing this file again.
+// than naming 012. Anything about table contents is compared at 012's depth
+// too, since a later migration may alter an older table on purpose.
 const PRIOR_DEPTH = 11
 const DEPTH = 12
 const PRIOR_SCHEMA_MARKER = 'c30b97aae3301d399298ab392ab03756ebf569a5336b12a79086b0a7b882ad30'
@@ -168,6 +169,29 @@ describe('012 EL-ement append-only migration', () => {
     } finally {
       prior.close()
     }
+    // Applying 012 alone must leave every older table and schema object exactly
+    // as it was. Asserted at 012's depth, because later migrations are free to
+    // change older tables on purpose (014 adds a column to filament_inventory)
+    // and that is not something 012 did.
+    const through012 = new Database(path)
+    try {
+      applyConnectionPragmas(through012, 2_000, path)
+      assert.deepEqual(migrate(through012, THROUGH_012()).applied, ['012-element-statistics'])
+      assert.deepEqual(readAppliedMigrations(through012).slice(0, PRIOR_DEPTH), ledger)
+      for (const expected of hashes) {
+        assert.deepEqual({
+          name: expected.name, ...canonicalTableHashFromDatabase(through012, expected.name),
+        }, expected, `${expected.name} data and declared columns are unchanged`)
+      }
+      const selectObject = through012.prepare<[string], { type: string; name: string; sql: string | null }>(
+        'SELECT type, name, sql FROM sqlite_schema WHERE name = ?')
+      for (const expected of objects) assert.deepEqual(selectObject.get(expected.name), expected)
+    } finally {
+      through012.close()
+    }
+
+    // Then the production open path carries it the rest of the way to the head
+    // without losing a row.
     const upgraded = openDatabase({ path, busyTimeoutMs: 2_000, createIfMissing: false })
     try {
       assert.equal(upgraded.identity.headMigration, headMigrationId())
@@ -175,13 +199,9 @@ describe('012 EL-ement append-only migration', () => {
       assert.equal(readAppliedMigrations(upgraded.handle)[DEPTH - 1].id, '012-element-statistics')
       assert.deepEqual(readAppliedMigrations(upgraded.handle).slice(0, PRIOR_DEPTH), ledger)
       for (const expected of hashes) {
-        assert.deepEqual({
-          name: expected.name, ...canonicalTableHashFromDatabase(upgraded.handle, expected.name),
-        }, expected, `${expected.name} data and declared columns are unchanged`)
+        assert.equal(canonicalTableHashFromDatabase(upgraded.handle, expected.name).rowCount,
+          expected.rowCount, `${expected.name} keeps every row`)
       }
-      const selectObject = upgraded.handle.prepare<[string], { type: string; name: string; sql: string | null }>(
-        'SELECT type, name, sql FROM sqlite_schema WHERE name = ?')
-      for (const expected of objects) assert.deepEqual(selectObject.get(expected.name), expected)
       assert.equal(upgraded.handle.prepare<[], { name: string }>(
         'SELECT name FROM keycap_tray_designs WHERE id = 7').get()?.name, 'Original keycap tray')
       assert.equal(upgraded.handle.pragma('journal_mode', { simple: true }), 'delete')

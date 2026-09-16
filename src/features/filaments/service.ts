@@ -25,7 +25,9 @@ export const getFilaments = () =>
 const putFilaments = (owned: readonly FilamentTick[]) =>
   apiRequest<InventoryResponse>(base, {
     method: 'PUT',
-    body: { owned: owned.map(tick => ({ key: tick.key, variant: tick.variant })) },
+    body: {
+      owned: owned.map(tick => ({ key: tick.key, variant: tick.variant, quantity: tick.quantity })),
+    },
   }).then(response => response.owned)
 
 export interface InventoryWriter {

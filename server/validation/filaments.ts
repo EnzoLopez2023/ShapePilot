@@ -4,7 +4,7 @@
 // server/validation/keycapProject.ts: each validator keeps bounds tuned to what
 // it validates, and unifying them is a refactor of heavily tested files rather
 // than part of this feature. This one is much the smallest -- an entry is two
-// strings, and both are drawn from a closed catalogue.
+// strings drawn from a closed catalogue, and a small count.
 //
 // The catalogue is what makes this validator possible at all. Because
 // lib/contracts/bambuFilaments.ts is committed code visible to the server, an
@@ -23,9 +23,11 @@ export const LIMITS = {
    * hostile payload could otherwise ask for an arbitrarily large transaction.
    */
   maxEntries: FILAMENT_PAIR_COUNT + 200,
+  /** Matches the column's CHECK. A count is stepped by hand; 999 is a typo. */
+  maxQuantity: 999,
 } as const
 
-const ENTRY_KEYS = ['key', 'variant'] as const
+const ENTRY_KEYS = ['key', 'variant', 'quantity'] as const
 
 const bad = (field: string, message: string): never => {
   throw new ApiError(400, 'bad_request', message, { field })
@@ -98,7 +100,22 @@ export function validateFilamentInventoryInput(body: unknown): FilamentInventory
     }
     seen.add(pair)
 
-    entries.push({ key: key as string, variant: variant as FilamentInventoryEntry['variant'] })
+    // Required, not defaulted. The body replaces the whole inventory, so a
+    // client that predates counts -- a page still cached by the service worker
+    // -- would otherwise reset every count to 1 on its next tick. Refusing it
+    // puts that page on its "not saved, reload" path instead.
+    const quantity = entry.quantity
+    if (typeof quantity !== 'number' || !Number.isInteger(quantity)
+      || quantity < 1 || quantity > LIMITS.maxQuantity) {
+      bad(`${field}.quantity`,
+        `${field}.quantity must be a whole number from 1 to ${LIMITS.maxQuantity}`)
+    }
+
+    entries.push({
+      key: key as string,
+      variant: variant as FilamentInventoryEntry['variant'],
+      quantity: quantity as number,
+    })
   })
 
   return entries

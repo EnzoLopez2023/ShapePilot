@@ -378,6 +378,22 @@ export const FILAMENT_INVENTORY_STATEMENTS: readonly string[] = [
 ]
 
 /**
+ * `quantity` on `filament_inventory` -- how many of a filament are on the shelf.
+ *
+ * A row still means "owned" and an absent row still means "not owned", so the
+ * count is never zero: unticking deletes the row, exactly as before. Bounded
+ * above because a count is typed and stepped by hand, and 999 spools of one
+ * colour is a typo, not an inventory.
+ *
+ * Additive with a default of 1, so every tick that exists before this
+ * migration reads back as the one spool it always meant.
+ */
+export const FILAMENT_QUANTITY_STATEMENTS: readonly string[] = [
+  `ALTER TABLE filament_inventory
+  ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity BETWEEN 1 AND 999)`,
+]
+
+/**
  * Switch trays: a plate a mechanical keyboard switch passes through, with posts
  * underneath so a stack of them lives in a Systainer.
  *

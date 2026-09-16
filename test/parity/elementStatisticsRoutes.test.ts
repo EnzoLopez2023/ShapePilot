@@ -118,7 +118,7 @@ describe('protected EL-ement Statistics API', () => {
     const discovered = await request<ElementAccount>('/discover', 'POST', {})
     expect(discovered.status).toBe(200)
     expect(discovered.body.accountId).toBe(syntheticElementAccount.accountId)
-    const owned = [{ key: filamentsOfLine('bambu-lab/pla/basic')[0].key, variant: 'spool' as const }]
+    const owned = [{ key: filamentsOfLine('bambu-lab/pla/basic')[0].key, variant: 'spool' as const, quantity: 1 }]
     await server.repos.filaments.replace({ tenantId: TEST_TENANT, oid: TEST_OID }, owned)
     await importHistory()
     const historyCalls = vi.mocked(provider.history).mock.calls.length

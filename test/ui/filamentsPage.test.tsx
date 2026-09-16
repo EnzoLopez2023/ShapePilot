@@ -25,10 +25,10 @@ const LISTED_PAIR_COUNT = FILAMENT_CATALOG.reduce(
 const showEverything = async (user: ReturnType<typeof userEvent.setup>) =>
   user.click(await screen.findByRole('switch', { name: 'Hide discontinued' }))
 
-interface PutBody { owned: { key: string; variant: string }[] }
+interface PutBody { owned: { key: string; variant: string; quantity: number }[] }
 
 let puts: PutBody[] = []
-let owned: { key: string; variant: string }[] = []
+let owned: { key: string; variant: string; quantity: number }[] = []
 let failLoad = false
 let failSave = false
 
@@ -111,7 +111,7 @@ test('a tick sends the whole inventory and survives a reload', async () => {
   await user.click(screen.getByLabelText('PLA Basic Jade White 10100, with spool'))
   await waitFor(() => { assert.ok(puts.length >= 1) })
   assert.deepEqual(puts.at(-1)?.owned, [
-    { key: 'bambu-lab/pla/basic/jade-white-10100', variant: 'spool' },
+    { key: 'bambu-lab/pla/basic/jade-white-10100', variant: 'spool', quantity: 1 },
   ])
 
   first.unmount()
@@ -134,7 +134,7 @@ test('unticking removes just that pair', async () => {
   await user.click(screen.getByLabelText('PLA Basic Jade White 10100, with spool'))
   await waitFor(() => {
     assert.deepEqual(puts.at(-1)?.owned, [
-      { key: 'bambu-lab/pla/basic/jade-white-10100', variant: 'refill' },
+      { key: 'bambu-lab/pla/basic/jade-white-10100', variant: 'refill', quantity: 1 },
     ])
   })
 })
@@ -201,7 +201,7 @@ test('hides discontinued colours until the switch is turned off', async () => {
 // The catalogue keeps dead SKUs because a spool outlives its listing. A tick
 // the filter hid would be a tick nobody could find, let alone correct.
 test('never hides a discontinued filament you own', async () => {
-  owned = [{ key: 'bambu-lab/petg/basic/blue-30600', variant: 'spool' }]
+  owned = [{ key: 'bambu-lab/petg/basic/blue-30600', variant: 'spool', quantity: 1 }]
   draw()
   await screen.findByRole('heading', { name: 'PETG Basic', level: 2 })
 
@@ -214,7 +214,7 @@ test('never hides a discontinued filament you own', async () => {
 // have meant to tick the other variant, or to put the tick straight back.
 test('an owned discontinued row stays put when its last tick is cleared', async () => {
   const user = userEvent.setup()
-  owned = [{ key: 'bambu-lab/petg/basic/blue-30600', variant: 'spool' }]
+  owned = [{ key: 'bambu-lab/petg/basic/blue-30600', variant: 'spool', quantity: 1 }]
   draw()
   await screen.findByRole('heading', { name: 'PETG Basic', level: 2 })
 
@@ -223,6 +223,71 @@ test('an owned discontinued row stays put when its last tick is cleared', async 
 
   const box = screen.getByLabelText('PETG Basic Blue 30600, with spool') as HTMLInputElement
   assert.equal(box.checked, false)
+})
+
+// A tick is one spool. The count sits beside it on every owned tick, so the way
+// to say "I have three of these" is on screen rather than behind a gesture.
+test('steps a count up and down, and sends it', async () => {
+  const user = userEvent.setup()
+  draw()
+  await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
+  const name = 'PLA Basic Jade White 10100, with spool'
+
+  // Nothing to count until it is owned.
+  assert.equal(screen.queryByRole('button', { name: new RegExp(`^${name}:`) }), null)
+  await user.click(screen.getByLabelText(name))
+  await user.click(await screen.findByRole('button', { name: `${name}: 1 spool. Change how many` }))
+
+  const stepper = await screen.findByRole('dialog', { name: `How many: ${name}` })
+  // Stops at one: going to none is unticking, which has its own control.
+  assert.equal((within(stepper).getByRole('button', { name: 'One fewer' }) as HTMLButtonElement)
+    .disabled, true)
+
+  await user.click(within(stepper).getByRole('button', { name: 'One more' }))
+  await user.click(within(stepper).getByRole('button', { name: 'One more' }))
+  await within(stepper).findByText('3 spools')
+  await waitFor(() => {
+    assert.deepEqual(puts.at(-1)?.owned, [
+      { key: 'bambu-lab/pla/basic/jade-white-10100', variant: 'spool', quantity: 3 },
+    ])
+  })
+
+  await user.click(within(stepper).getByRole('button', { name: 'One fewer' }))
+  await waitFor(() => { assert.equal(puts.at(-1)?.owned[0].quantity, 2) })
+  await user.keyboard('{Escape}')
+  assert.ok(await screen.findByRole('button', { name: `${name}: 2 spools. Change how many` }))
+})
+
+test('reads stored counts back, per form, and totals the rolls', async () => {
+  owned = [
+    { key: 'bambu-lab/pla/basic/jade-white-10100', variant: 'spool', quantity: 3 },
+    { key: 'bambu-lab/pla/basic/jade-white-10100', variant: 'refill', quantity: 2 },
+  ]
+  draw()
+  await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
+
+  assert.ok(screen.getByRole('button', {
+    name: 'PLA Basic Jade White 10100, with spool: 3 spools. Change how many',
+  }))
+  assert.ok(screen.getByRole('button', {
+    name: 'PLA Basic Jade White 10100, refill: 2 refills. Change how many',
+  }))
+  // Two ticks, five rolls on the shelf.
+  await screen.findByText(new RegExp(`^2 of ${LISTED_PAIR_COUNT} owned \\(5 rolls\\)`))
+})
+
+// Unticking is the only way to own none, and it forgets the count with it.
+test('unticking a counted filament removes it outright', async () => {
+  const user = userEvent.setup()
+  owned = [{ key: 'bambu-lab/pla/basic/black-10101', variant: 'spool', quantity: 4 }]
+  draw()
+  await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
+
+  await user.click(screen.getByLabelText('PLA Basic Black 10101, with spool'))
+  await waitFor(() => { assert.deepEqual(puts.at(-1)?.owned, []) })
+  assert.equal(screen.queryByRole('button', {
+    name: /^PLA Basic Black 10101, with spool:/,
+  }), null)
 })
 
 test('a failed load offers a retry that works', async () => {

@@ -18,7 +18,7 @@ const OTHER_TOKEN = 'other-token'
 const BASE = '/api/filaments'
 
 interface Inventory {
-  owned: { key: string; variant: string }[]
+  owned: { key: string; variant: string; quantity: number }[]
 }
 
 interface ErrorBody {
@@ -61,9 +61,9 @@ describe('filament inventory routes', () => {
 
     const saved = await put({
       owned: [
-        { key: JADE_WHITE, variant: 'spool' },
-        { key: JADE_WHITE, variant: 'refill' },
-        { key: ABS_RED, variant: 'spool' },
+        { key: JADE_WHITE, variant: 'spool', quantity: 1 },
+        { key: JADE_WHITE, variant: 'refill', quantity: 1 },
+        { key: ABS_RED, variant: 'spool', quantity: 1 },
       ],
     })
     assert.equal(saved.status, 200)
@@ -76,23 +76,23 @@ describe('filament inventory routes', () => {
   test('reads back in a stable order regardless of the order sent', async () => {
     const forward = await put({
       owned: [
-        { key: BLACK, variant: 'spool' },
-        { key: JADE_WHITE, variant: 'spool' },
+        { key: BLACK, variant: 'spool', quantity: 1 },
+        { key: JADE_WHITE, variant: 'spool', quantity: 1 },
       ],
     })
     const reversed = await put({
       owned: [
-        { key: JADE_WHITE, variant: 'spool' },
-        { key: BLACK, variant: 'spool' },
+        { key: JADE_WHITE, variant: 'spool', quantity: 1 },
+        { key: BLACK, variant: 'spool', quantity: 1 },
       ],
     })
     assert.deepEqual(reversed.body.owned, forward.body.owned)
   })
 
   test('replaces wholesale rather than merging', async () => {
-    await put({ owned: [{ key: JADE_WHITE, variant: 'spool' }, { key: BLACK, variant: 'spool' }] })
-    const narrowed = await put({ owned: [{ key: BLACK, variant: 'spool' }] })
-    assert.deepEqual(narrowed.body.owned, [{ key: BLACK, variant: 'spool' }])
+    await put({ owned: [{ key: JADE_WHITE, variant: 'spool', quantity: 1 }, { key: BLACK, variant: 'spool', quantity: 1 }] })
+    const narrowed = await put({ owned: [{ key: BLACK, variant: 'spool', quantity: 1 }] })
+    assert.deepEqual(narrowed.body.owned, [{ key: BLACK, variant: 'spool', quantity: 1 }])
 
     const emptied = await put({ owned: [] })
     assert.deepEqual(emptied.body.owned, [])
@@ -100,25 +100,54 @@ describe('filament inventory routes', () => {
   })
 
   test('is idempotent: the same body twice leaves the same inventory', async () => {
-    const body = { owned: [{ key: JADE_WHITE, variant: 'spool' }, { key: ABS_RED, variant: 'spool' }] }
+    const body = { owned: [{ key: JADE_WHITE, variant: 'spool', quantity: 1 }, { key: ABS_RED, variant: 'spool', quantity: 1 }] }
     const first = await put(body)
     const second = await put(body)
     assert.deepEqual(second.body.owned, first.body.owned)
   })
 
   test('scopes the inventory to its owner', async () => {
-    await put({ owned: [{ key: JADE_WHITE, variant: 'spool' }] })
+    await put({ owned: [{ key: JADE_WHITE, variant: 'spool', quantity: 1 }] })
     assert.deepEqual((await get(OTHER_TOKEN)).body.owned, [])
 
     // The other account writing its own inventory must not disturb this one.
-    await put({ owned: [{ key: ABS_RED, variant: 'spool' }] }, OTHER_TOKEN)
-    assert.deepEqual((await get()).body.owned, [{ key: JADE_WHITE, variant: 'spool' }])
-    assert.deepEqual((await get(OTHER_TOKEN)).body.owned, [{ key: ABS_RED, variant: 'spool' }])
+    await put({ owned: [{ key: ABS_RED, variant: 'spool', quantity: 1 }] }, OTHER_TOKEN)
+    assert.deepEqual((await get()).body.owned, [{ key: JADE_WHITE, variant: 'spool', quantity: 1 }])
+    assert.deepEqual((await get(OTHER_TOKEN)).body.owned, [{ key: ABS_RED, variant: 'spool', quantity: 1 }])
+  })
+
+  test('stores a count per filament and form, and a new count replaces the old', async () => {
+    const saved = await put({
+      owned: [
+        { key: JADE_WHITE, variant: 'spool', quantity: 3 },
+        { key: JADE_WHITE, variant: 'refill', quantity: 2 },
+        { key: BLACK, variant: 'spool', quantity: 1 },
+      ],
+    })
+    assert.equal(saved.status, 200)
+    const count = (owned: Inventory['owned'], key: string, variant: string) =>
+      owned.find(entry => entry.key === key && entry.variant === variant)?.quantity
+    assert.equal(count((await get()).body.owned, JADE_WHITE, 'spool'), 3)
+    assert.equal(count((await get()).body.owned, JADE_WHITE, 'refill'), 2)
+
+    await put({ owned: [{ key: JADE_WHITE, variant: 'spool', quantity: 1 }] })
+    assert.deepEqual((await get()).body.owned, [{ key: JADE_WHITE, variant: 'spool', quantity: 1 }])
+    await put({ owned: [] })
+  })
+
+  test('refuses an inventory without counts rather than resetting them', async () => {
+    await put({ owned: [{ key: BLACK, variant: 'spool', quantity: 4 }] })
+    const stale = await put<ErrorBody>({ owned: [{ key: BLACK, variant: 'spool' }] })
+    assert.equal(stale.status, 400)
+    assert.equal(stale.body.error?.details?.field, 'owned[0].quantity')
+    // The stored count survives the refused write.
+    assert.deepEqual((await get()).body.owned, [{ key: BLACK, variant: 'spool', quantity: 4 }])
+    await put({ owned: [] })
   })
 
   test('refuses a filament that is not in the catalogue', async () => {
     const response = await put<ErrorBody>({
-      owned: [{ key: 'bambu-lab/pla/basic/invented-99999', variant: 'spool' }],
+      owned: [{ key: 'bambu-lab/pla/basic/invented-99999', variant: 'spool', quantity: 1 }],
     })
     assert.equal(response.status, 400)
     assert.equal(response.body.error?.details?.field, 'owned[0].key')
@@ -127,7 +156,7 @@ describe('filament inventory routes', () => {
   // ABS is sold on a reel only. A refill of it describes a product that does
   // not exist, and the catalogue is what lets the server know that.
   test('refuses a variant the line is not sold in', async () => {
-    const response = await put<ErrorBody>({ owned: [{ key: ABS_RED, variant: 'refill' }] })
+    const response = await put<ErrorBody>({ owned: [{ key: ABS_RED, variant: 'refill', quantity: 1 }] })
     assert.equal(response.status, 400)
     assert.equal(response.body.error?.details?.field, 'owned[0].variant')
   })
@@ -135,8 +164,8 @@ describe('filament inventory routes', () => {
   test('refuses a repeated tick rather than quietly deduping it', async () => {
     const response = await put<ErrorBody>({
       owned: [
-        { key: JADE_WHITE, variant: 'spool' },
-        { key: JADE_WHITE, variant: 'spool' },
+        { key: JADE_WHITE, variant: 'spool', quantity: 1 },
+        { key: JADE_WHITE, variant: 'spool', quantity: 1 },
       ],
     })
     assert.equal(response.status, 400)
@@ -148,7 +177,7 @@ describe('filament inventory routes', () => {
       [{}, 'owned'],
       [{ owned: 'everything' }, 'owned'],
       [{ owned: [{ key: JADE_WHITE }] }, 'owned[0].variant'],
-      [{ owned: [{ variant: 'spool' }] }, 'owned[0].key'],
+      [{ owned: [{ variant: 'spool', quantity: 1 }] }, 'owned[0].key'],
       [{ owned: [{ key: JADE_WHITE, variant: 'spool', grams: 812 }] }, 'owned[0].grams'],
       [{ owned: [42] }, 'owned[0]'],
       [{ owned: [], note: 'hello' }, 'note'],
@@ -161,7 +190,7 @@ describe('filament inventory routes', () => {
 
   test('refuses an over-long inventory', async () => {
     const response = await put<ErrorBody>({
-      owned: Array.from({ length: 500 }, () => ({ key: JADE_WHITE, variant: 'spool' })),
+      owned: Array.from({ length: 500 }, () => ({ key: JADE_WHITE, variant: 'spool', quantity: 1 })),
     })
     assert.equal(response.status, 400)
     assert.equal(response.body.error?.details?.field, 'owned')
@@ -170,7 +199,7 @@ describe('filament inventory routes', () => {
   test('accepts the entire catalogue at once', async () => {
     // The realistic upper bound: every spool the catalogue lists. Proves the
     // limit is not set below what the page's own "own everything" can produce.
-    const owned = FILAMENT_CATALOG.map(color => ({ key: color.key, variant: 'spool' as const }))
+    const owned = FILAMENT_CATALOG.map(color => ({ key: color.key, variant: 'spool' as const, quantity: 1 }))
     const response = await put({ owned })
     assert.equal(response.status, 200)
     assert.equal(response.body.owned.length, FILAMENT_CATALOG.length)
