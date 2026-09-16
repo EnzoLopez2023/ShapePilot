@@ -40,6 +40,8 @@ export const EMPTY_SEED_DOMAIN_TABLES = [
   'keycap_tray_pockets',
   'legacy_import_rows',
   'legacy_import_runs',
+  'maintenance_events',
+  'maintenance_profile',
   'switch_tray_designs',
   'tool_tray_designs',
 ] as const

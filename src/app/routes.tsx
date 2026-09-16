@@ -18,6 +18,7 @@ const ShaperDesignerPage = lazy(() => import('../features/shaper-designer/Shaper
 const BambuDesignerPage = lazy(() => import('../features/bambu-designer/BambuDesignerPage.tsx'))
 const PlaygroundPage = lazy(() => import('../features/playground/PlaygroundPage.tsx'))
 const FilamentsPage = lazy(() => import('../features/filaments/FilamentsPage.tsx'))
+const MaintenancePage = lazy(() => import('../features/maintenance/MaintenancePage.tsx'))
 const SettingsPage = lazy(() => import('../features/settings/SettingsPage.tsx'))
 const AdminPage = lazy(() => import('../features/admin/AdminPage.tsx'))
 
@@ -165,6 +166,14 @@ export function AppRoutes() {
             element={
               <Suspense fallback={<LoadingState label="Loading your filaments…" />}>
                 <FilamentsPage />
+              </Suspense>
+            }
+          />
+          <Route
+            path="/maintenance"
+            element={
+              <Suspense fallback={<LoadingState label="Loading your maintenance log…" />}>
+                <MaintenancePage />
               </Suspense>
             }
           />

@@ -663,6 +663,48 @@ export interface FilamentInventoryRepository {
   ): Promise<FilamentInventoryEntry[]>
 }
 
+/**
+ * How the account works its X2D. Owner-scoped singleton: absent until the
+ * account says when the printer entered service, because every due date on the
+ * calendar is counted from that day and there is nothing sensible to guess.
+ */
+export interface MaintenanceProfile {
+  /** `YYYY-MM-DD`, the day the printer entered service. */
+  commissionedOn: string
+  usageTier: 'high' | 'regular' | 'low'
+  filamentWear: 'standard' | 'abrasive'
+  /** Rolls through the filament cutter since the blade was last checked. */
+  rollsUsed: number
+}
+
+/** One logged service. `taskKey` names a row in lib/contracts/x2dMaintenance.ts. */
+export interface MaintenanceEvent {
+  id: number
+  taskKey: string
+  /** `YYYY-MM-DD`. The day the work was done, which is not always today. */
+  performedOn: string
+  note: string | null
+  createdAt: string
+}
+
+export interface MaintenanceEventInput {
+  taskKey: string
+  performedOn: string
+  note?: string | null
+}
+
+export interface MaintenanceRepository {
+  /** Null until the account has told us when the printer entered service. */
+  readProfile(owner: Owner): Promise<MaintenanceProfile | null>
+  /** Create or replace the profile wholesale; it is four fields and one row. */
+  writeProfile(owner: Owner, profile: MaintenanceProfile): Promise<MaintenanceProfile>
+  /** Newest first, so the log reads as a log and the due dates are at the top. */
+  listEvents(owner: Owner): Promise<MaintenanceEvent[]>
+  logEvent(owner: Owner, input: MaintenanceEventInput): Promise<MaintenanceEvent>
+  /** Undo a mis-logged service. False when the row is absent or another owner's. */
+  deleteEvent(owner: Owner, id: number): Promise<boolean>
+}
+
 export interface Repositories {
   memberships: MembershipRepository
   settings: SettingsRepository
@@ -675,4 +717,5 @@ export interface Repositories {
   designAssets: DesignAssetRepository
   filaments: FilamentInventoryRepository
   elementStatistics: ElementStatisticsRepository
+  maintenance: MaintenanceRepository
 }

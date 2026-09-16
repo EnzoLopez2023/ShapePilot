@@ -28,6 +28,7 @@ import { createHealthRouter } from './routes/health.ts'
 import { createFilamentRouter } from './routes/filaments.ts'
 import { createKeycapProjectRouter } from './routes/keycapProjects.ts'
 import { createKeycapTrayRouter } from './routes/keycapTrays.ts'
+import { createMaintenanceRouter } from './routes/maintenance.ts'
 import { createSwitchTrayRouter } from './routes/switchTrays.ts'
 import { createToolTrayRouter } from './routes/toolTrays.ts'
 import { createSettingsRouter } from './routes/settings.ts'
@@ -132,6 +133,7 @@ export function createApp(options: CreateAppOptions): Express {
     createDesignAssetRouter({ repos, store, logger: options.logger }))
   app.use('/api/ai', authenticated, createAiRouter({ repos, client: aiClient, store }))
   app.use('/api/filaments', authenticated, createFilamentRouter(repos))
+  app.use('/api/maintenance', authenticated, createMaintenanceRouter(repos))
   app.use('/api/settings', authenticated, createSettingsRouter(repos))
   app.use('/api/audit', authenticated, createAuditRouter(repos))
   app.use('/api/admin/audit', authenticated, adminOnly, createAuditAdminRouter(repos))

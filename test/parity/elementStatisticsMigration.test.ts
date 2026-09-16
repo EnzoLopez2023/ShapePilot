@@ -11,18 +11,26 @@ import { afterEach, describe, test } from 'vitest'
 import { applyConnectionPragmas, openDatabase, openEphemeralDatabase } from '../../lib/db/connection.ts'
 import { IdentityError } from '../../lib/db/identity.ts'
 import {
-  MIGRATIONS, MigrationError, codeIdentity, codeLedger, migrate, migrationChecksum,
-  readAppliedMigrations, schemaIdentity,
+  MIGRATIONS, MigrationError, codeIdentity, codeLedger, headMigrationId, migrate,
+  migrationChecksum, readAppliedMigrations, schemaIdentity,
 } from '../../lib/db/migrate.ts'
 import { migration012 } from '../../lib/db/migrations/012-element-statistics.ts'
 import { canonicalTableHashFromDatabase } from '../../lib/legacy/canonicalTable.ts'
 import { TEST_ROOT } from '../helpers/server.ts'
 
+// This suite pins migration 012 in its own place in the ledger, not at the head
+// of it -- later migrations are appended after 012 and must not be able to
+// change what 012 did. So every hash below is taken at a fixed DEPTH, and the
+// assertions about the *current* head derive from the migration list rather
+// than naming 012. Appending 013 should not require editing this file again.
 const PRIOR_DEPTH = 11
+const DEPTH = 12
 const PRIOR_SCHEMA_MARKER = 'c30b97aae3301d399298ab392ab03756ebf569a5336b12a79086b0a7b882ad30'
 const PRIOR_SCHEMA_OBJECTS = '1e376a0e2e9aa01d7744bfa754fb2743fef5e3c0bb55e09818b05e26afb116ac'
-const CURRENT_SCHEMA_MARKER = '13efbd91dd3c4a739aba623d9591ce275ee13c85efbe4090f78616e24331191b'
-const CURRENT_SCHEMA_OBJECTS = '7a55db069f509a97c5c7a8e63f7803de8e92958a08b520a8afe944109ebaa819'
+const SCHEMA_MARKER_AT_012 = '13efbd91dd3c4a739aba623d9591ce275ee13c85efbe4090f78616e24331191b'
+const SCHEMA_OBJECTS_AT_012 = '7a55db069f509a97c5c7a8e63f7803de8e92958a08b520a8afe944109ebaa819'
+/** Every migration up to and including 012, whatever has been appended since. */
+const THROUGH_012 = () => MIGRATIONS.slice(0, DEPTH)
 const MIGRATION_CHECKSUM = 'a365f8e40ade0f91a49b3248fe3f478a3d66c7cb24dd45e6af6c838a30d1318c'
 const EMPTY_TABLE_HASHES = {
   element_statistics_connections: '9ca718f052347c31f15fc0d8990ac6d7cb3e77a16330006714d68dc2ca15f07a',
@@ -117,17 +125,19 @@ describe('012 EL-ement append-only migration', () => {
   })
 
   test('pins the previous lineage, appended migration, catalog and empty domain table hashes', () => {
-    assert.equal(MIGRATIONS.length, 12)
-    assert.equal(MIGRATIONS.at(-1), migration012)
-    assert.deepEqual(codeLedger().at(-1), {
+    assert.ok(MIGRATIONS.length >= DEPTH)
+    assert.equal(MIGRATIONS[DEPTH - 1], migration012)
+    assert.deepEqual(codeLedger(THROUGH_012()).at(-1), {
       ordinal: 11, id: '012-element-statistics', name: 'EL-ement statistics', checksum: MIGRATION_CHECKSUM,
     })
+    // 012 stays ordinal 11 in the full ledger too: appending never reorders.
+    assert.deepEqual(codeLedger()[DEPTH - 1], codeLedger(THROUGH_012()).at(-1))
     assert.equal(schemaIdentity(MIGRATIONS.slice(0, PRIOR_DEPTH)), PRIOR_SCHEMA_MARKER)
     assert.equal(codeIdentity(MIGRATIONS.slice(0, PRIOR_DEPTH)).schemaObjectsSha256, PRIOR_SCHEMA_OBJECTS)
-    assert.equal(schemaIdentity(), CURRENT_SCHEMA_MARKER)
+    assert.equal(schemaIdentity(THROUGH_012()), SCHEMA_MARKER_AT_012)
+    assert.equal(codeIdentity(THROUGH_012()).schemaObjectsSha256, SCHEMA_OBJECTS_AT_012)
     const database = openEphemeralDatabase()
     try {
-      assert.equal(database.identity.schemaObjectsSha256, CURRENT_SCHEMA_OBJECTS)
       for (const [table, expected] of Object.entries(EMPTY_TABLE_HASHES)) {
         const actual = canonicalTableHashFromDatabase(database.handle, table)
         assert.equal(actual.rowCount, 0, `${table} must have no initial row`)
@@ -160,7 +170,9 @@ describe('012 EL-ement append-only migration', () => {
     }
     const upgraded = openDatabase({ path, busyTimeoutMs: 2_000, createIfMissing: false })
     try {
-      assert.equal(upgraded.identity.headMigration, '012-element-statistics')
+      assert.equal(upgraded.identity.headMigration, headMigrationId())
+      // 012 is applied, and sits where it always sat.
+      assert.equal(readAppliedMigrations(upgraded.handle)[DEPTH - 1].id, '012-element-statistics')
       assert.deepEqual(readAppliedMigrations(upgraded.handle).slice(0, PRIOR_DEPTH), ledger)
       for (const expected of hashes) {
         assert.deepEqual({
@@ -179,7 +191,7 @@ describe('012 EL-ement append-only migration', () => {
     }
     const reopened = openDatabase({ path, busyTimeoutMs: 2_000, createIfMissing: false })
     try {
-      assert.equal(reopened.identity.schemaMarker, CURRENT_SCHEMA_MARKER)
+      assert.equal(reopened.identity.schemaMarker, schemaIdentity())
       assert.deepEqual(migrate(reopened.handle).applied, [])
       assert.equal(reopened.handle.prepare<[], { name: string }>(
         'SELECT name FROM tool_tray_designs').get()?.name, 'Original tool tray')
@@ -205,24 +217,41 @@ describe('012 EL-ement append-only migration', () => {
       assert.deepEqual(domainHashes(database), hashes)
       assert.equal(database.prepare<[], { count: number }>(`
         SELECT COUNT(*) AS count FROM sqlite_schema WHERE name LIKE 'element_statistics_%'`).get()?.count, 0)
-      assert.deepEqual(migrate(database).applied, ['012-element-statistics'])
+      assert.deepEqual(
+        migrate(database).applied,
+        MIGRATIONS.slice(PRIOR_DEPTH).map(migration => migration.id))
     } finally {
       database.close()
     }
   })
 
   test('edited 012 statements and an old image are rejected rather than bypassing compatibility safeguards', () => {
-    const database = openEphemeralDatabase()
+    // Against a database that stops at 012, so the checksum mismatch is what
+    // refuses the edit. On a database carrying later migrations the shorter
+    // list would be refused as schema-ahead-of-code first, and this test would
+    // stop proving anything about editing 012 itself.
+    const path = fixturePath()
+    const database = new Database(path)
     try {
+      applyConnectionPragmas(database, 2_000, path)
+      migrate(database, THROUGH_012())
+
       const edited = { ...migration012, statements: [...migration012.statements, 'SELECT 1'] }
       assert.notEqual(migrationChecksum(edited), MIGRATION_CHECKSUM)
-      assert.throws(() => migrate(database.handle, [...MIGRATIONS.slice(0, PRIOR_DEPTH), edited]),
+      assert.throws(() => migrate(database, [...MIGRATIONS.slice(0, PRIOR_DEPTH), edited]),
         (error: unknown) => error instanceof MigrationError && error.code === 'MIGRATION_CHECKSUM_MISMATCH')
-      assert.throws(() => migrate(database.handle, MIGRATIONS.slice(0, PRIOR_DEPTH)),
+      assert.throws(() => migrate(database, MIGRATIONS.slice(0, PRIOR_DEPTH)),
         (error: unknown) => error instanceof MigrationError && error.code === 'SCHEMA_AHEAD_OF_CODE')
-      assert.equal(database.identity.schemaMarker, CURRENT_SCHEMA_MARKER)
     } finally {
       database.close()
+    }
+
+    // And an image shipping the whole lineage still recognises it as its own.
+    const current = openEphemeralDatabase()
+    try {
+      assert.equal(current.identity.schemaMarker, schemaIdentity())
+    } finally {
+      current.close()
     }
   })
 

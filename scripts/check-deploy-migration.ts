@@ -102,6 +102,12 @@ const ROLLBACK_COMPATIBLE_LEDGER = [
     name: 'EL-ement statistics',
     checksum: 'a365f8e40ade0f91a49b3248fe3f478a3d66c7cb24dd45e6af6c838a30d1318c',
   },
+  {
+    ordinal: 12,
+    id: '013-x2d-maintenance',
+    name: 'X2D maintenance calendar',
+    checksum: '6aaf1f92a7a92d2422ed2ac097106fc0d8c4192805c707a3fdea3bc095d5354a',
+  },
 ] as const
 
 const REQUIRED_TABLES = [
@@ -118,6 +124,8 @@ const REQUIRED_TABLES = [
   'element_statistics_telemetry',
   'element_statistics_events',
   'filament_inventory',
+  'maintenance_events',
+  'maintenance_profile',
   'keycap_pocket_library',
   'keycap_project_photos',
   'keycap_projects',

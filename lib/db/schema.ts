@@ -448,6 +448,55 @@ export const TOOL_TRAY_STATEMENTS: readonly string[] = [
   ON tool_tray_designs (owner_tenant_id, owner_oid, updated_at DESC)`,
 ]
 
+/**
+ * X2D maintenance: when the printer was serviced, and how it is worked.
+ *
+ * Two tables, because the account is telling us two different kinds of thing.
+ *
+ *   `maintenance_profile`  one row per account -- when the printer entered
+ *                          service, how hard it is worked, and how many rolls
+ *                          have gone through the cutter. The tier and the wear
+ *                          rate are what turn Bambu's tiered intervals into
+ *                          actual dates, so they are settings, not history.
+ *
+ *   `maintenance_events`   one row per job done, append-only in spirit. Kept as
+ *                          history rather than as a "last done" column on the
+ *                          task, because a service record whose earlier entries
+ *                          are overwritten by the latest one is not a record.
+ *                          Due dates read the newest row per task; the rest is
+ *                          the log you scroll back through.
+ *
+ * `task_key` is a key from lib/contracts/x2dMaintenance.ts. The database holds
+ * it as an opaque string and the route is what proves it names a real task --
+ * the same arrangement `filament_inventory.filament_key` already uses.
+ */
+export const X2D_MAINTENANCE_STATEMENTS: readonly string[] = [
+  `CREATE TABLE maintenance_profile (
+  owner_tenant_id TEXT    NOT NULL,
+  owner_oid       TEXT    NOT NULL,
+  commissioned_on TEXT    NOT NULL CHECK (commissioned_on LIKE '____-__-__'),
+  usage_tier      TEXT    NOT NULL CHECK (usage_tier IN ('high', 'regular', 'low')),
+  filament_wear   TEXT    NOT NULL CHECK (filament_wear IN ('standard', 'abrasive')),
+  rolls_used      INTEGER NOT NULL DEFAULT 0 CHECK (rolls_used >= 0),
+  created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (owner_tenant_id, owner_oid)
+)`,
+  `CREATE TABLE maintenance_events (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_tenant_id TEXT    NOT NULL,
+  owner_oid       TEXT    NOT NULL,
+  task_key        TEXT    NOT NULL,
+  performed_on    TEXT    NOT NULL CHECK (performed_on LIKE '____-__-__'),
+  note            TEXT,
+  created_at      TEXT    NOT NULL DEFAULT (datetime('now'))
+)`,
+  // Due-date reads ask for the newest event of one task; the log asks for the
+  // newest events of every task. Both are this index, read in the same order.
+  `CREATE INDEX idx_maintenance_events_owner
+  ON maintenance_events (owner_tenant_id, owner_oid, task_key, performed_on DESC, id DESC)`,
+]
+
 /** Tables ShapePilot owns and reconciles. Order is the reconciliation order. */
 export const OWNED_LEGACY_TABLES = [
   'keycap_tray_designs',
