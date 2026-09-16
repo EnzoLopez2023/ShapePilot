@@ -145,19 +145,19 @@ describe('read-only Bambu HTTP transport', () => {
     )
   })
 
-  it('uses deviceId, the last task ID as after, and a bounded limit without unrelated endpoints', async () => {
+  it('uses deviceId, an offset and a bounded limit without unrelated endpoints', async () => {
     const { provider, fetch } = makeProvider()
-    const page = await provider.history(serial, '200', 20)
-    expect(page.nextCursor).toBe('100')
+    await provider.history(serial, '200', 20)
     const url = new URL(fetch.mock.calls[0][0])
     expect(url.pathname).toBe('/v1/user-service/my/tasks')
-    expect(Object.fromEntries(url.searchParams)).toEqual({ deviceId: serial, after: '200', limit: '20' })
+    // Bambu ignores `after`; `offset` is what pages (verified live 2026-09-16).
+    expect(Object.fromEntries(url.searchParams)).toEqual({ deviceId: serial, offset: '200', limit: '20' })
     expect(fetch.mock.calls[0][1].method).toBe('GET')
   })
 
   it.each([
     ['../serial', null, 20], [serial, '../cursor', 20], [serial, null, 0],
-    [serial, null, 101], [serial, null, 2.5],
+    [serial, null, 101], [serial, null, 2.5], [serial, '1220177551', 20],
   ] as const)('rejects invalid history inputs before network access (%s)', async (id, cursor, limit) => {
     const { provider, fetch } = makeProvider()
     await expect(provider.history(id, cursor, limit)).rejects.toBeInstanceOf(BambuProviderError)

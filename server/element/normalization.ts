@@ -12,6 +12,22 @@ type SnapshotField = Exclude<keyof ElementSnapshot, 'receivedAt' | 'fieldUpdated
 export const BAMBU_MAX_PAYLOAD_BYTES = 2 * 1024 * 1024
 export const BAMBU_MAX_HISTORY_LIMIT = 100
 
+/**
+ * History pages by `offset`. Verified against the live API on 2026-09-16:
+ * `after` and `before` are ignored outright (each returns the newest page
+ * again), `offset=20&limit=20` returns the next twenty older tasks, and `limit`
+ * is honoured up to at least 100 (500 silently falls back to 20). A cursor is
+ * therefore the offset of the next page, never a task ID.
+ */
+export const BAMBU_MAX_HISTORY_OFFSET = 1_000_000
+
+/** The offset a cursor names, or null when it is not a sane offset. */
+export function historyOffset(cursor: string): number | null {
+  if (!/^\d{1,7}$/.test(cursor)) return null
+  const offset = Number(cursor)
+  return offset <= BAMBU_MAX_HISTORY_OFFSET ? offset : null
+}
+
 export function isBambuObject(value: unknown): value is ObjectValue {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
@@ -218,7 +234,8 @@ function normalizeJob(value: ObjectValue, now: number): ElementJobInput {
 export function normalizeBambuHistory(
   payload: unknown, printerId: string, cursor: string | null, limit: number, now = Date.now(),
 ): ElementHistoryPage {
-  if (!bambuIdentifier(printerId, 'printer') || (cursor !== null && !bambuIdentifier(cursor, 'task'))) {
+  const offset = cursor === null ? 0 : historyOffset(cursor)
+  if (!bambuIdentifier(printerId, 'printer') || offset === null) {
     throw new BambuProviderError('invalid_identifier')
   }
   if (!Number.isInteger(limit) || limit < 1 || limit > BAMBU_MAX_HISTORY_LIMIT) throw new BambuProviderError('invalid_request')
@@ -234,12 +251,15 @@ export function normalizeBambuHistory(
     if (bambuIdentifier(hit.deviceId, 'printer') !== printerId) throw new BambuProviderError('history_wrong_device')
     const job = normalizeJob(hit, now)
     if (seen.has(job.id)) throw new BambuProviderError('history_duplicate')
-    if (job.id === cursor) throw new BambuProviderError('history_cursor_loop')
     seen.add(job.id)
     return job
   })
-  // A short page or a changing `total` is not proof of exhaustion.
-  return { jobs, nextCursor: jobs.at(-1)?.id ?? null, total }
+  // The next page starts where this one ended. Bambu's `total` says whether
+  // there is one; without a total, only a full page implies more. Upstream
+  // cursor fields are never trusted -- the offset is computed here.
+  const end = offset + jobs.length
+  const more = jobs.length > 0 && (total !== null ? end < total : jobs.length === limit)
+  return { jobs, nextCursor: more && end <= BAMBU_MAX_HISTORY_OFFSET ? String(end) : null, total }
 }
 
 function emptySnapshot(receivedAt: string): ElementSnapshot {

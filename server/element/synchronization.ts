@@ -4,6 +4,7 @@ import type {
 } from '../../lib/contracts/elementStatistics.ts'
 import type { ElementStatisticsRepository } from '../../lib/db/repositories/elementStatisticsContract.ts'
 import { ApiError } from '../errors/ApiError.ts'
+import { historyOffset } from './normalization.ts'
 import type { BambuProvider } from './provider.ts'
 
 export const HISTORY_PAGE_SIZE = 50
@@ -36,10 +37,13 @@ function pageProgress(page: ElementHistoryPage, cursor: string | null, seen: str
   const fingerprint = createHash('sha256').update([...ids].sort().join('\0')).digest('hex')
   const marker = `page:${fingerprint}`
   const cursorMarker = `cursor:${page.nextCursor ?? 'end'}`
+  // Cursors are offsets, so a page that advances ends further along than it
+  // began. A page seen before, or a next offset not past this one, means Bambu
+  // served the same slice again -- as it did when it ignored `after`.
+  const from = cursor === null ? 0 : historyOffset(cursor)
+  const to = page.nextCursor === null ? null : historyOffset(page.nextCursor)
   if (seen.includes(marker) || (page.nextCursor !== null && (
-    page.nextCursor === cursor || seen.includes(cursorMarker)
-    || (cursor !== null && /^\d+$/.test(cursor) && /^\d+$/.test(page.nextCursor)
-      && BigInt(page.nextCursor) >= BigInt(cursor))
+    seen.includes(cursorMarker) || from === null || to === null || to <= from
   ))) {
     throw new ApiError(
       502, 'history_replayed',
@@ -63,6 +67,19 @@ export async function synchronizeHistory(options: SynchronizationOptions): Promi
     signal.throwIfAborted()
     state.remoteTotal = page.total ?? state.remoteTotal
     await repository.commitPage(connectionId, page.jobs, isoNow(), state)
+  }
+
+  // A cursor saved before history paged by offset is a task ID, which no page
+  // can resume from. Start that walk again from the newest page: commits are
+  // idempotent, so re-reading what is already recorded costs requests, not data.
+  if (state.backfillCursor !== null && historyOffset(state.backfillCursor) === null) {
+    state = {
+      ...state, backfillComplete: false, backfillCursor: null,
+      backfillStartedAt: isoNow(), backfillPages: 0, backfillSeenCursors: [],
+    }
+  }
+  if (state.refreshCursor !== null && historyOffset(state.refreshCursor) === null) {
+    state = { ...state, refreshCursor: null, refreshSeenCursors: [] }
   }
 
   if (state.backfillComplete && (

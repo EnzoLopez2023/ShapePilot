@@ -181,21 +181,34 @@ describe('Bambu history semantics', () => {
     })
   })
 
-  it('paginates with the last task ID, not totals, lengths or arbitrary upstream cursors', () => {
-    const page = normalizeBambuHistory({ hits: [baseJob], total: 1, nextCursor: 'secret-url' }, printer, null, 20, now)
-    expect(page.nextCursor).toBe('123')
-    expect(normalizeBambuHistory({ hits: [], total: 999 }, printer, '123', 20, now)).toEqual({
+  // Verified against the live API: `after`/`before` are ignored, `offset` pages.
+  it('pages by offset, ending at Bambu\'s total, and never trusts an upstream cursor', () => {
+    const page = normalizeBambuHistory({ hits: [baseJob], total: 3, nextCursor: 'secret-url' }, printer, null, 1, now)
+    expect(page.nextCursor).toBe('1')
+    expect(normalizeBambuHistory({ hits: [{ ...baseJob, id: '122' }], total: 3 }, printer, '1', 1, now).nextCursor).toBe('2')
+    expect(normalizeBambuHistory({ hits: [{ ...baseJob, id: '121' }], total: 3 }, printer, '2', 1, now).nextCursor).toBeNull()
+    expect(normalizeBambuHistory({ hits: [], total: 999 }, printer, '50', 20, now)).toEqual({
       jobs: [], total: 999, nextCursor: null,
     })
   })
 
-  it('surfaces wrong-device, duplicate IDs and cursor replays instead of silently dropping records', () => {
+  it('without a total, only a full page implies another', () => {
+    expect(normalizeBambuHistory({ hits: [baseJob] }, printer, null, 1, now).nextCursor).toBe('1')
+    expect(normalizeBambuHistory({ hits: [baseJob] }, printer, null, 20, now).nextCursor).toBeNull()
+  })
+
+  it('refuses a cursor that is not an offset, such as a task ID saved before offsets', () => {
+    for (const cursor of ['1220177551', '-1', '1.5', 'abc']) {
+      expect(() => normalizeBambuHistory({ hits: [] }, printer, cursor, 20, now))
+        .toThrow(expect.objectContaining({ code: 'invalid_identifier' }))
+    }
+  })
+
+  it('surfaces wrong-device and duplicate IDs instead of silently dropping records', () => {
     expect(() => normalizeBambuHistory({ hits: [{ ...baseJob, deviceId: 'OTHER' }] }, printer, null, 20, now))
       .toThrow(expect.objectContaining({ code: 'history_wrong_device' }))
     expect(() => normalizeBambuHistory({ hits: [baseJob, { ...baseJob, id: '123' }] }, printer, null, 20, now))
       .toThrow(expect.objectContaining({ code: 'history_duplicate' }))
-    expect(() => normalizeBambuHistory({ hits: [baseJob] }, printer, '123', 20, now))
-      .toThrow(expect.objectContaining({ code: 'history_cursor_loop' }))
   })
 
   it.each([{ hits: {} }, { hits: [null] }, { hits: [baseJob], total: -1 }, { hits: [baseJob], total: {} }])(

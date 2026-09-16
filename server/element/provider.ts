@@ -10,7 +10,7 @@ import type { BambuProviderErrorCode } from './bambuProviderErrors.ts'
 import { createBambuHttpsTransport } from './bambuHttpTransport.ts'
 import type { BambuFetch } from './bambuHttpTransport.ts'
 import {
-  assertBoundedBambuPayload, BAMBU_MAX_HISTORY_LIMIT, BAMBU_MAX_PAYLOAD_BYTES, bambuIdentifier,
+  assertBoundedBambuPayload, BAMBU_MAX_HISTORY_LIMIT, BAMBU_MAX_PAYLOAD_BYTES, bambuIdentifier, historyOffset,
   bambuReportTime, isBambuObject, mergeBambuSnapshot, normalizeBambuAccount, normalizeBambuHistory,
 } from './normalization.ts'
 
@@ -340,13 +340,14 @@ export function createBambuProvider(config: BambuProviderConfig, options: BambuP
 
   const history = async (printerId: string, cursor: string | null, limit: number, signal?: AbortSignal): Promise<ElementHistoryPage> => {
     available()
-    if (!bambuIdentifier(printerId, 'printer') || (cursor !== null && !bambuIdentifier(cursor, 'task'))) {
+    if (!bambuIdentifier(printerId, 'printer') || (cursor !== null && historyOffset(cursor) === null)) {
       throw new BambuProviderError('invalid_identifier')
     }
     if (!Number.isInteger(limit) || limit < 1 || limit > BAMBU_MAX_HISTORY_LIMIT) throw new BambuProviderError('invalid_request')
     if (accountId !== null && !printers.has(printerId)) throw new BambuProviderError('printer_not_bound')
+    // Offset paging: Bambu ignores `after`/`before` (see historyOffset).
     const query: Record<string, string> = { deviceId: printerId, limit: String(limit) }
-    if (cursor !== null) query.after = cursor
+    if (cursor !== null) query.offset = cursor
     const payload = await requestJson('/v1/user-service/my/tasks', query, signal)
     return sanitized(normalizeBambuHistory(payload, printerId, cursor, limit, now()))
   }
