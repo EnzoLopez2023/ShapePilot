@@ -421,6 +421,45 @@ export const FILAMENT_USAGE_MAPPING_STATEMENTS: readonly string[] = [
 ]
 
 /**
+ * Web Push: where to reach an account, and what it has already been told.
+ *
+ *   `push_subscriptions`       one row per browser that turned reminders on. The
+ *                              endpoint is the push service's URL for that one
+ *                              browser and is unique on its own; the two keys
+ *                              are what the payload is encrypted to. A push
+ *                              service answering 404 or 410 means the browser
+ *                              is gone, and the row is deleted.
+ *
+ *   `filament_reorder_alerts`  one row per colour an account has been told to
+ *                              reorder and that still needs it. The row is what
+ *                              stops the ten-minute check repeating itself; it
+ *                              is deleted when the colour stops needing a
+ *                              reorder, which re-arms it for next time.
+ */
+export const PUSH_STATEMENTS: readonly string[] = [
+  `CREATE TABLE push_subscriptions (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_tenant_id TEXT    NOT NULL,
+  owner_oid       TEXT    NOT NULL,
+  endpoint        TEXT    NOT NULL UNIQUE CHECK (endpoint LIKE 'https://%'),
+  p256dh          TEXT    NOT NULL,
+  auth            TEXT    NOT NULL,
+  user_agent      TEXT,
+  created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+  last_sent_at    TEXT
+)`,
+  `CREATE INDEX idx_push_subscriptions_owner
+  ON push_subscriptions (owner_tenant_id, owner_oid)`,
+  `CREATE TABLE filament_reorder_alerts (
+  owner_tenant_id TEXT NOT NULL,
+  owner_oid       TEXT NOT NULL,
+  filament_key    TEXT NOT NULL,
+  notified_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (owner_tenant_id, owner_oid, filament_key)
+)`,
+]
+
+/**
  * Switch trays: a plate a mechanical keyboard switch passes through, with posts
  * underneath so a stack of them lives in a Systainer.
  *

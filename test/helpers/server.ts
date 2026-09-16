@@ -23,6 +23,7 @@ import type { FoundryClient } from '../../server/ai/foundryClient.ts'
 import type { AssetStore } from '../../lib/assets/assetStore.ts'
 import { ApiError } from '../../server/errors/ApiError.ts'
 import { ElementMonitor } from '../../server/element/monitor.ts'
+import type { PushSender } from '../../server/notifications/reorderAlerts.ts'
 
 export const TEST_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '.tmp')
 
@@ -115,6 +116,8 @@ export interface StartServerOptions {
   assetStore?: AssetStore
   label?: string
   elementMonitorFactory?: (repos: Repositories, config: AppConfig) => ElementMonitor
+  /** A fake push service, so no suite ever reaches a real one. Null means "not configured". */
+  pushSender?: PushSender | null
 }
 
 /**
@@ -143,6 +146,7 @@ export async function startTestServer(options: StartServerOptions = {}): Promise
     ...(options.assetStore ? { assetStore: options.assetStore } : {}),
     logger: () => { /* suppressed in tests */ },
     elementMonitor,
+    pushSender: options.pushSender ?? null,
   })
 
   const server: Server = await new Promise((resolvePromise, reject) => {

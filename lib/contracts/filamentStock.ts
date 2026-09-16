@@ -25,7 +25,9 @@
 // Pure and shared: the server matches slots, and the browser applies the rule
 // against the inventory it is editing, so stepping a count up clears a warning
 // the moment it is pressed.
-import { FILAMENT_CATALOG, FILAMENT_LINES } from './bambuFilaments.ts'
+import {
+  FILAMENT_CATALOG, FILAMENT_LINES, filamentByKey, filamentLineById,
+} from './bambuFilaments.ts'
 import type { ElementAmsSlot, ElementSnapshot } from './elementStatistics.ts'
 import { normalizeColor } from './filamentUsage.ts'
 
@@ -157,4 +159,12 @@ export const slotLabel = (slot: Pick<LoadedSlot, 'amsId' | 'slotId'>): string =>
   return Number.isInteger(ams) && Number.isInteger(tray)
     ? `AMS ${ams + 1} · slot ${tray + 1}`
     : `AMS ${slot.amsId} · slot ${slot.slotId}`
+}
+
+/** "PLA Basic · Blue 10601": what a person calls a catalogue colour. */
+export function colorLabel(key: string): string {
+  const color = filamentByKey(key)
+  if (!color) return key
+  const line = filamentLineById(color.line)
+  return `${line?.label ?? color.line} · ${color.name}${color.code ? ` ${color.code}` : ''}`
 }

@@ -717,6 +717,38 @@ export interface FilamentUsageMappingRepository {
   replace(owner: Owner, mappings: readonly FilamentUsageMapping[]): Promise<FilamentUsageMapping[]>
 }
 
+export interface PushSubscriptionInput {
+  endpoint: string
+  keys: { p256dh: string; auth: string }
+  userAgent?: string | null
+}
+
+export interface StoredPushSubscription extends PushSubscriptionInput {
+  owner: Owner
+  lastSentAt: string | null
+}
+
+export interface PushRepository {
+  /**
+   * Save a browser's subscription for this owner. An endpoint is one browser, so
+   * saving one another account already holds moves it: the browser now belongs
+   * to whoever signed in on it last.
+   */
+  subscribe(owner: Owner, input: PushSubscriptionInput): Promise<void>
+  /** Remove one of this owner's subscriptions. False if it was not theirs. */
+  unsubscribe(owner: Owner, endpoint: string): Promise<boolean>
+  /** Remove a subscription the push service says no longer exists. */
+  forget(endpoint: string): Promise<void>
+  listForOwner(owner: Owner): Promise<StoredPushSubscription[]>
+  /** Every owner with at least one subscription. */
+  listOwners(): Promise<Owner[]>
+  markSent(endpoint: string, at: string): Promise<void>
+  /** Colours this owner has already been told to reorder. */
+  alertedKeys(owner: Owner): Promise<string[]>
+  /** Record colours newly told about, and clear ones that no longer need it. */
+  updateAlerts(owner: Owner, add: readonly string[], clear: readonly string[]): Promise<void>
+}
+
 export interface Repositories {
   memberships: MembershipRepository
   settings: SettingsRepository
@@ -731,4 +763,5 @@ export interface Repositories {
   elementStatistics: ElementStatisticsRepository
   maintenance: MaintenanceRepository
   filamentUsageMappings: FilamentUsageMappingRepository
+  push: PushRepository
 }

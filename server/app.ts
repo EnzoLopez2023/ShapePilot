@@ -29,6 +29,9 @@ import { createFilamentRouter } from './routes/filaments.ts'
 import { createKeycapProjectRouter } from './routes/keycapProjects.ts'
 import { createKeycapTrayRouter } from './routes/keycapTrays.ts'
 import { createMaintenanceRouter } from './routes/maintenance.ts'
+import { createNotificationRouter } from './routes/notifications.ts'
+import { createWebPushSender } from './notifications/reorderAlerts.ts'
+import type { PushSender } from './notifications/reorderAlerts.ts'
 import { createSwitchTrayRouter } from './routes/switchTrays.ts'
 import { createToolTrayRouter } from './routes/toolTrays.ts'
 import { createSettingsRouter } from './routes/settings.ts'
@@ -52,6 +55,9 @@ export interface CreateAppOptions {
   /** Injectable for tests; defaults to the filesystem store at config.assetStoreDir. */
   assetStore?: AssetStore
   elementMonitor?: ElementMonitor
+  /** Injectable for tests; defaults to a Web Push sender built from config.push,
+   *  which is null when VAPID is not configured. */
+  pushSender?: PushSender | null
   logger?: (message: string, error: unknown) => void
 }
 
@@ -134,6 +140,11 @@ export function createApp(options: CreateAppOptions): Express {
   app.use('/api/ai', authenticated, createAiRouter({ repos, client: aiClient, store }))
   app.use('/api/filaments', authenticated, createFilamentRouter(repos))
   app.use('/api/maintenance', authenticated, createMaintenanceRouter(repos))
+  app.use('/api/notifications', authenticated, createNotificationRouter({
+    repos,
+    config: config.push,
+    sender: options.pushSender !== undefined ? options.pushSender : createWebPushSender(config.push),
+  }))
   app.use('/api/settings', authenticated, createSettingsRouter(repos))
   app.use('/api/audit', authenticated, createAuditRouter(repos))
   app.use('/api/admin/audit', authenticated, adminOnly, createAuditAdminRouter(repos))

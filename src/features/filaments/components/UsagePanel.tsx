@@ -21,6 +21,7 @@ import type {
 } from '../../../../lib/contracts/filamentUsage.ts'
 import { colorLabel, formatGrams, sourceLabel } from '../model/usage.ts'
 import { Swatch } from './Swatch.tsx'
+import ReminderControl from './ReminderControl.tsx'
 
 export interface UsagePanelProps {
   usage: FilamentUsage
@@ -194,6 +195,8 @@ export default function UsagePanel({ usage, busy, onMappings }: UsagePanelProps)
           </Stack>
         </Box>
       )}
+
+      <ReminderControl />
     </Paper>
   )
 }

@@ -1,5 +1,6 @@
 // Presentation helpers for print usage.
-import { filamentByKey, filamentLineById } from '../../../../lib/contracts/bambuFilaments.ts'
+// Shared with the server, which writes the same labels into push notifications.
+export { colorLabel } from '../../../../lib/contracts/filamentStock.ts'
 import type { FilamentSource } from '../../../../lib/contracts/filamentUsage.ts'
 
 /**
@@ -10,14 +11,6 @@ import type { FilamentSource } from '../../../../lib/contracts/filamentUsage.ts'
 export function formatGrams(grams: number): string {
   if (grams >= 1000) return `${(grams / 1000).toFixed(grams >= 10_000 ? 0 : 1)} kg`
   return `${Math.round(grams)} g`
-}
-
-/** "PLA Basic · Blue 10601", for pickers and link lists. */
-export function colorLabel(key: string): string {
-  const color = filamentByKey(key)
-  if (!color) return key
-  const line = filamentLineById(color.line)
-  return `${line?.label ?? color.line} · ${color.name}${color.code ? ` ${color.code}` : ''}`
 }
 
 /** What a print reported, compactly: "PLA · GFA00 · #307FE2". */

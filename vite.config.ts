@@ -24,6 +24,8 @@ const pwa = VitePWA({
     icons: PWA_ICONS.map((icon) => ({ ...icon })),
   },
   workbox: {
+    // Web Push: the push and notificationclick handlers, served from public/.
+    importScripts: ['push-handler.js'],
     globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
     cleanupOutdatedCaches: true,
     clientsClaim: true,

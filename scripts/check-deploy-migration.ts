@@ -120,6 +120,12 @@ const ROLLBACK_COMPATIBLE_LEDGER = [
     name: 'filament usage mappings',
     checksum: '7a18b102737a0fca39567aebf7aadf14faa5b44fb797c2071bd81de117d7fd8b',
   },
+  {
+    ordinal: 15,
+    id: '016-push-notifications',
+    name: 'push notifications',
+    checksum: '1e1ce0c3aa940b6c5aa679b6d30a7a3d2bf6b480b62e27e0b48693d91d43081a',
+  },
 ] as const
 
 const REQUIRED_TABLES = [
@@ -137,8 +143,10 @@ const REQUIRED_TABLES = [
   'element_statistics_events',
   'filament_inventory',
   'filament_usage_mappings',
+  'filament_reorder_alerts',
   'maintenance_events',
   'maintenance_profile',
+  'push_subscriptions',
   'keycap_pocket_library',
   'keycap_project_photos',
   'keycap_projects',

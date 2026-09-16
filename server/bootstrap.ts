@@ -32,6 +32,9 @@ import type { AppConfig } from './config.ts'
 import { validateProductionStorage } from './storage.ts'
 import { ensureProductionEmptySeed } from './emptySeed.ts'
 import { ElementMonitor } from './element/monitor.ts'
+import {
+  checkReorderAlerts, createWebPushSender, scheduleReorderAlerts,
+} from './notifications/reorderAlerts.ts'
 
 const DRAIN_TIMEOUT_MS = 45_000
 
@@ -109,10 +112,17 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<Runni
     repository: repos.elementStatistics, config: config.element,
   })
 
+  // One sender for the routes and the scheduled check alike.
+  const pushSender = createWebPushSender(config.push)
+  if (config.push.unresolvedSecret) {
+    console.warn('ShapePilot push: SHAPEPILOT_VAPID_PRIVATE_KEY is an unresolved Key Vault reference; reminders are off.')
+  }
+
   const app = createApp({
     config,
     identity,
     repos,
+    pushSender,
     database: () => database,
     lifecycle: () => lifecycle,
     instanceId: randomUUID(),
@@ -138,6 +148,9 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<Runni
     }
     throw error
   }
+  const reorderAlerts = pushSender
+    ? scheduleReorderAlerts(() => checkReorderAlerts(repos, pushSender))
+    : null
   const address = server.address()
   const port = typeof address === 'object' && address ? address.port : config.port
 
@@ -155,6 +168,7 @@ export async function start(env: NodeJS.ProcessEnv = process.env): Promise<Runni
   const close = async (): Promise<void> => {
     lifecycle = 'draining'
     try {
+      await reorderAlerts?.close()
       await elementMonitor.close()
     } finally {
       await new Promise<void>((resolve) => {

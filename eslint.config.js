@@ -78,6 +78,11 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
   {
+    // Imported into the generated service worker; runs with worker globals.
+    files: ['public/push-handler.js'],
+    languageOptions: { globals: globals.serviceworker, sourceType: 'script' },
+  },
+  {
     files: ['vite.config.ts', 'eslint.config.js'],
     languageOptions: { globals: globals.node },
   },

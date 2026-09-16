@@ -33,6 +33,7 @@ export const EMPTY_SEED_DOMAIN_TABLES = [
   'element_statistics_events',
   'filament_inventory',
   'filament_usage_mappings',
+  'filament_reorder_alerts',
   'keycap_pocket_library',
   'keycap_project_photos',
   'keycap_projects',
@@ -43,6 +44,7 @@ export const EMPTY_SEED_DOMAIN_TABLES = [
   'legacy_import_runs',
   'maintenance_events',
   'maintenance_profile',
+  'push_subscriptions',
   'switch_tray_designs',
   'tool_tray_designs',
 ] as const

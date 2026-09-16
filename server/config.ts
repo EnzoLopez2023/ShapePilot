@@ -54,12 +54,31 @@ export interface AppConfig {
   clientDir: string
   ai: AiConfig
   element: ElementConfig
+  push: PushConfig
   /**
    * Where imported design assets live. Derived from the database's own
    * directory rather than configured, deliberately: it needs no new App Service
    * setting, and the deploy job asserts that settings map exactly.
    */
   assetStoreDir: string
+}
+
+/**
+ * Web Push (VAPID). Absent keys disable push rather than failing startup, the
+ * same way absent AI configuration disables the AI routes: reorder warnings
+ * still appear in the app, they just do not reach a lock screen.
+ *
+ * The private key is a secret and arrives as a Key Vault reference in
+ * production; the public key and subject are not secrets. An unresolved
+ * reference reads as "not configured", never as a key.
+ */
+export interface PushConfig {
+  enabled: boolean
+  publicKey: string | null
+  privateKey: string | null
+  /** `mailto:` or `https:` contact the push services may use. */
+  subject: string | null
+  unresolvedSecret: boolean
 }
 
 export interface ElementConfig {
@@ -134,6 +153,40 @@ const aliased = (
  * one, because the setting looks populated.
  */
 const KEY_VAULT_REFERENCE = /^@Microsoft\.KeyVault\(/i
+
+/** Base64url with no padding, as VAPID keys are written. */
+const BASE64URL = /^[A-Za-z0-9_-]+$/
+
+function pushConfig(env: NodeJS.ProcessEnv): PushConfig {
+  const publicKey = env.SHAPEPILOT_VAPID_PUBLIC_KEY?.trim() || null
+  const rawPrivate = env.SHAPEPILOT_VAPID_PRIVATE_KEY?.trim() || null
+  const subject = env.SHAPEPILOT_VAPID_SUBJECT?.trim() || null
+  const unresolvedSecret = rawPrivate !== null && KEY_VAULT_REFERENCE.test(rawPrivate)
+  const privateKey = unresolvedSecret ? null : rawPrivate
+
+  // A P-256 public key is 65 bytes (87 base64url characters) and the private
+  // key 32 (43). Anything else is a paste error worth refusing at startup.
+  if (publicKey && (!BASE64URL.test(publicKey) || publicKey.length !== 87)) {
+    throw new ConfigError('CONFIG_INVALID', 'SHAPEPILOT_VAPID_PUBLIC_KEY must be a base64url P-256 public key')
+  }
+  if (privateKey && (!BASE64URL.test(privateKey) || privateKey.length !== 43)) {
+    throw new ConfigError('CONFIG_INVALID', 'SHAPEPILOT_VAPID_PRIVATE_KEY must be a base64url P-256 private key')
+  }
+  if (subject && !/^(mailto:[^\s@]+@[^\s@]+|https:\/\/\S+)$/.test(subject)) {
+    throw new ConfigError('CONFIG_INVALID', 'SHAPEPILOT_VAPID_SUBJECT must be a mailto: or https: URL')
+  }
+  // Half-configured is a mistake worth catching, unlike not configured at all.
+  // An unresolved Key Vault secret is neither: it is reported, not refused.
+  const present = [publicKey, rawPrivate, subject].filter(Boolean).length
+  if (present > 0 && present < 3) {
+    throw new ConfigError('CONFIG_INVALID',
+      'SHAPEPILOT_VAPID_PUBLIC_KEY, SHAPEPILOT_VAPID_PRIVATE_KEY and SHAPEPILOT_VAPID_SUBJECT must be set together')
+  }
+  return {
+    enabled: Boolean(publicKey && privateKey && subject),
+    publicKey, privateKey, subject, unresolvedSecret,
+  }
+}
 
 function elementConfig(env: NodeJS.ProcessEnv): ElementConfig {
   const region = env.SHAPEPILOT_BAMBU_REGION?.trim() || 'global'
@@ -379,6 +432,7 @@ export function loadConfig(
     clientDir: resolve(cwd, env.SHAPEPILOT_CLIENT_DIR?.trim() || 'dist/client'),
     ai: aiConfig(env, isProduction),
     element: elementConfig(env),
+    push: pushConfig(env),
     assetStoreDir: env.SHAPEPILOT_ASSET_DIR?.trim()
       ? absolutePath(env.SHAPEPILOT_ASSET_DIR.trim(), 'SHAPEPILOT_ASSET_DIR', cwd, isProduction)
       : join(dirname(databasePath), 'assets'),
