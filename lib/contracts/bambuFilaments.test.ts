@@ -12,9 +12,9 @@ import {
 
 const lineId = (id: string) => id
 
-test('holds the five Bambu lines at their captured sizes', () => {
-  assert.equal(FILAMENT_LINES.length, 5)
-  assert.equal(FILAMENT_CATALOG.length, 108)
+test('holds the six Bambu lines at their captured sizes', () => {
+  assert.equal(FILAMENT_LINES.length, 6)
+  assert.equal(FILAMENT_CATALOG.length, 122)
   const counts = Object.fromEntries(
     FILAMENT_LINES.map(l => [`${l.brand}/${l.material}/${l.type}`, filamentsOfLine(
       `${l.brand}/${l.material}/${l.type}`).length]))
@@ -22,6 +22,7 @@ test('holds the five Bambu lines at their captured sizes', () => {
     'bambu-lab/pla/basic': 32,
     'bambu-lab/pla/matte': 25,
     'bambu-lab/petg/basic': 28,
+    'bambu-lab/petg/hf': 14,
     'bambu-lab/pla/wood': 6,
     'bambu-lab/abs/basic': 17,
   })
@@ -69,11 +70,12 @@ test('every colour carries one or two uppercase hexes', () => {
   }
 })
 
-test('offers refills only on the two PLA lines that have them', () => {
+test('offers refills only on the lines Bambu sells them for', () => {
   const refillable = FILAMENT_LINES
     .filter(l => l.variants.includes('refill'))
     .map(l => `${l.brand}/${l.material}/${l.type}`)
-  assert.deepEqual(refillable.sort(), ['bambu-lab/pla/basic', 'bambu-lab/pla/matte'])
+  assert.deepEqual(
+    refillable.sort(), ['bambu-lab/petg/hf', 'bambu-lab/pla/basic', 'bambu-lab/pla/matte'])
   for (const line of FILAMENT_LINES) {
     assert.ok(line.variants.includes('spool'), `${line.label} cannot be bought on a reel`)
   }
@@ -96,7 +98,7 @@ test('lookups resolve, and the pair count bounds a full tick set', () => {
   assert.equal(filamentByKey(known.key), known)
   assert.equal(filamentByKey('no/such/filament/key'), undefined)
   assert.equal(filamentLineById('no/such/line'), undefined)
-  // 32 + 25 PLA lines carry two variants each; the other 51 carry one.
-  assert.equal(FILAMENT_PAIR_COUNT, (32 + 25) * 2 + 28 + 6 + 17)
-  assert.equal(FILAMENT_PAIR_COUNT, 165)
+  // PLA Basic, PLA Matte and PETG HF carry two variants each; the other 51 carry one.
+  assert.equal(FILAMENT_PAIR_COUNT, (32 + 25 + 14) * 2 + 28 + 6 + 17)
+  assert.equal(FILAMENT_PAIR_COUNT, 193)
 })

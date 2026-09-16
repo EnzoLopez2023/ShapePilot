@@ -3,6 +3,7 @@
     { "brand": "bambu-lab", "brandLabel": "Bambu Lab", "material": "pla", "type": "basic", "label": "PLA Basic", "variants": ["spool", "refill"] },
     { "brand": "bambu-lab", "brandLabel": "Bambu Lab", "material": "pla", "type": "matte", "label": "PLA Matte", "variants": ["spool", "refill"] },
     { "brand": "bambu-lab", "brandLabel": "Bambu Lab", "material": "petg", "type": "basic", "label": "PETG Basic", "variants": ["spool"] },
+    { "brand": "bambu-lab", "brandLabel": "Bambu Lab", "material": "petg", "type": "hf", "label": "PETG HF", "variants": ["spool", "refill"] },
     { "brand": "bambu-lab", "brandLabel": "Bambu Lab", "material": "pla", "type": "wood", "label": "PLA Wood", "variants": ["spool"] },
     { "brand": "bambu-lab", "brandLabel": "Bambu Lab", "material": "abs", "type": "basic", "label": "ABS", "variants": ["spool"] }
   ],
@@ -97,6 +98,22 @@
       { "name": "White", "code": "30106", "hexes": ["#FFFFFF"] },
       { "name": "Yellow", "code": "30400", "hexes": ["#FCE300"], "discontinued": true },
       { "name": "Yellow", "code": "30402", "hexes": ["#FCE300"] }
+    ],
+    "bambu-lab/petg/hf": [
+      { "name": "Black", "code": "33102", "hexes": ["#000000"] },
+      { "name": "Blue", "code": "33600", "hexes": ["#002E96"] },
+      { "name": "Cream", "code": "33401", "hexes": ["#F9DFB9"] },
+      { "name": "Dark Gray", "code": "33103", "hexes": ["#515151"] },
+      { "name": "Forest Green", "code": "33502", "hexes": ["#39541A"] },
+      { "name": "Gray", "code": "33101", "hexes": ["#ADB1B2"] },
+      { "name": "Green", "code": "33500", "hexes": ["#00AE42"] },
+      { "name": "Lake Blue", "code": "33601", "hexes": ["#1F79E5"] },
+      { "name": "Lime Green", "code": "33501", "hexes": ["#6EE53C"] },
+      { "name": "Orange", "code": "33300", "hexes": ["#F75403"] },
+      { "name": "Peanut Brown", "code": "33801", "hexes": ["#875718"] },
+      { "name": "Red", "code": "33200", "hexes": ["#EB3A3A"] },
+      { "name": "White", "code": "33100", "hexes": ["#FFFFFF"] },
+      { "name": "Yellow", "code": "33400", "hexes": ["#FFD00B"] }
     ],
     "bambu-lab/pla/wood": [
       { "name": "Black Walnut", "code": "13107", "hexes": ["#4F3F24"] },

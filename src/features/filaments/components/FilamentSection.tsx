@@ -177,7 +177,7 @@ export default function FilamentSection({
                 slotProps={{
                   input: {
                     // Every checkbox names itself in full. A column heading
-                    // cannot name a grid cell, and 165 checkboxes called
+                    // cannot name a grid cell, and 193 checkboxes called
                     // "checkbox" is not a page anyone can use by ear.
                     'aria-label': `${line.label} ${color.name}`
                       + `${color.code ? ` ${color.code}` : ''}, ${VARIANT_SPOKEN[variant]}`,

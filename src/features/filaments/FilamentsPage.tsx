@@ -1,7 +1,7 @@
 // What this workbench can print in today.
 //
 // The catalogue is compiled in; only the ticks travel. A tick is the commit --
-// there is no Save button, because a dirty-guard over 165 checkboxes is
+// there is no Save button, because a dirty-guard over 193 checkboxes is
 // friction nobody wants and a checkbox that does not mean anything until you
 // press something else is a checkbox that lies.
 //
@@ -169,7 +169,7 @@ export default function FilamentsPage() {
                 size="small"
                 checked={hideDiscontinued}
                 onChange={event => hide(event.target.checked)}
-                // A toggle, not one more of the 165 checkboxes below it: said
+                // A toggle, not one more of the 193 checkboxes below it: said
                 // as "switch, on" rather than "checkbox, checked".
                 slotProps={{ input: { role: 'switch' } }}
               />

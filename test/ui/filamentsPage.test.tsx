@@ -68,12 +68,12 @@ test('renders one h1 and a section per product line', async () => {
   await screen.findByRole('heading', { name: 'Filaments', level: 1 })
   assert.equal(screen.getAllByRole('heading', { level: 1 }).length, 1)
 
-  for (const label of ['PLA Basic', 'PLA Matte', 'PETG Basic', 'PLA Wood', 'ABS']) {
+  for (const label of ['PLA Basic', 'PLA Matte', 'PETG Basic', 'PETG HF', 'PLA Wood', 'ABS']) {
     await screen.findByRole('heading', { name: label, level: 2 })
   }
 })
 
-// A column heading cannot name a grid cell, so each of the 165 checkboxes has
+// A column heading cannot name a grid cell, so each of the 193 checkboxes has
 // to name itself. A duplicate name means two of them are indistinguishable by
 // ear, which is the failure this page is most prone to.
 test('gives every checkbox a unique accessible name', async () => {
