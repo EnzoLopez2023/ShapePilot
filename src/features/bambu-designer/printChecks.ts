@@ -3,7 +3,10 @@
 // never touch the document.
 import type { Mesh } from '../../geometry/mesh.ts'
 import { checkManifold } from '../../geometry/mesh.ts'
-import type { PrinterProfile } from '../../model/document.ts'
+import type { PrinterProfile, Triple } from '../../model/document.ts'
+import {
+  OVERHANG_DEGREES, TIPPY_RATIO, averageThicknessMm, surfaceReport, tippiness,
+} from './surfaces.ts'
 
 export type Severity = 'error' | 'warning'
 
@@ -14,6 +17,8 @@ export interface PrintIssue {
   severity: Severity
   message: string
   fix?: PrintFix
+  /** Where in the model it is, when that can be pointed at. */
+  at?: Triple
 }
 
 export function checkPrint(mesh: Mesh | null, machine: PrinterProfile): PrintIssue[] {
@@ -56,6 +61,48 @@ export function checkPrint(mesh: Mesh | null, machine: PrinterProfile): PrintIss
       message: `The thinnest overall dimension is ${smallest.toFixed(2)} mm, under two`
         + ` ${machine.nozzleDiameterMm} mm extrusions. Features this fine may not print.`,
     })
+  }
+
+  const surfaces = surfaceReport(mesh)
+
+  if (surfaces.overhangArea > 0) {
+    issues.push({
+      severity: 'warning',
+      message: `About ${Math.round(surfaces.overhangArea)} mm² of the model faces downwards more`
+        + ` steeply than ${OVERHANG_DEGREES}° without touching the plate. It will need supports,`
+        + ' or turning over.',
+      ...(surfaces.overhangAt ? { at: surfaces.overhangAt } : {}),
+    })
+  }
+
+  // Averaged over the whole surface, so it is named as an average: a thin rib
+  // on a thick body does not move it, and a distance field is what would find
+  // that. Plate-like parts are exactly where the average is meaningful.
+  const thickness = averageThicknessMm(surfaces)
+  const twoWalls = machine.nozzleDiameterMm * 2
+  if (thickness !== null && thickness < twoWalls) {
+    issues.push({
+      severity: 'warning',
+      message: `Averaged over its surface the model is ${thickness.toFixed(2)} mm thick, under two`
+        + ` ${machine.nozzleDiameterMm} mm walls. Thin areas may come out hollow or be skipped.`,
+    })
+  }
+
+  if (surfaces.footprintArea === 0) {
+    issues.push({
+      severity: 'warning',
+      message: 'Nothing in the model lies flat on the build plate, so it has very little to stick'
+        + ' to. Rest a face on the plate, or expect supports.',
+    })
+  } else {
+    const ratio = tippiness(size[2], surfaces.footprintArea)
+    if (ratio !== null && ratio > TIPPY_RATIO) {
+      issues.push({
+        severity: 'warning',
+        message: `At ${size[2].toFixed(0)} mm tall on a ${Math.round(surfaces.footprintArea)} mm²`
+          + ' footprint this is tall and narrow; a brim will help it stay put.',
+      })
+    }
   }
 
   const report = checkManifold(mesh)

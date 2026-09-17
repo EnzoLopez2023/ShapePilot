@@ -98,12 +98,16 @@ for effort. Tick items off here as they land.
 - [ ] Print-test the fastener sizes and adjust the clearance table.
 
 ### Better print checks
-- [ ] Minimum wall thickness: sample ray casts through the mesh and flag walls
-      under 2 × nozzle diameter, with the location highlighted in the viewport.
-- [ ] Overhang check: flag downward faces steeper than 45° not touching the plate;
-      tint them in the viewport.
-- [ ] Small-contact-area warning (first-layer footprint vs height → tipping risk).
-- [ ] Make each issue clickable to select/frame the responsible region.
+- [x] Overhang check: downward faces steeper than 45° that miss the plate, in mm²,
+      measured per triangle on the finished model.
+- [x] Small-contact-area warning: nothing flat on the plate at all, or a model
+      tall and narrow over its footprint (height / √footprint > 4).
+- [x] Average wall thickness (2V/A), reported as an average.
+- [x] An issue with a position offers "Select the part", matched back by bounds
+      because the checks run on the union, which has no object identity left.
+- [ ] Minimum wall thickness, not just the average: a thin rib on a thick body
+      does not move 2V/A. Needs a distance field or ray casts through the mesh.
+- [ ] Tint the offending faces in the viewport rather than only selecting the part.
 
 ## AI Playground
 

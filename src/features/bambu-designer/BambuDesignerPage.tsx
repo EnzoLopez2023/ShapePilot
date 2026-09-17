@@ -57,7 +57,7 @@ import type { MetricSize } from './hardware.ts'
 import { createFastenerCutter } from './hardware.ts'
 import type { SolidPaletteKind } from './components/solidEntries.ts'
 import {
-  alignDeltas, combinedBounds, dropToPlateDeltas, meshBounds, mirrorTransform,
+  alignDeltas, combinedBounds, dropToPlateDeltas, meshBounds, mirrorTransform, objectAtPoint,
 } from './align.ts'
 import type { AlignEdge, Axis, Bounds } from './align.ts'
 import { checkPrint, worstSeverity } from './printChecks.ts'
@@ -340,6 +340,12 @@ export default function BambuDesignerPage() {
         return { ...o, transform: { ...o.transform, position: position as Triple } }
       }),
     }))
+  }, [bounds, doc])
+
+  /** Select the part a print issue was found in, so it can be seen and fixed. */
+  const showIssue = useCallback((at: Triple) => {
+    const id = objectAtPoint(bounds, at)
+    if (id) doc.setSelection([id])
   }, [bounds, doc])
 
   const mirror = useCallback((axis: Axis) => {
@@ -788,6 +794,13 @@ export default function BambuDesignerPage() {
                           onClick={() => dropToPlate('model')} sx={{ mt: 0.5 }}
                         >
                           Drop to plate
+                        </Button>
+                      )}
+                      {issue.at && (
+                        <Button
+                          size="small" onClick={() => showIssue(issue.at!)} sx={{ mt: 0.5 }}
+                        >
+                          Select the part
                         </Button>
                       )}
                     </Box>

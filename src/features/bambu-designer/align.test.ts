@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 import type { Bounds } from './align.ts'
-import { dropToPlateDeltas } from './align.ts'
+import { dropToPlateDeltas, objectAtPoint } from './align.ts'
 
 const box = (minZ: number, maxZ: number): Bounds => ({ min: [0, 0, minZ], max: [10, 10, maxZ] })
 
@@ -28,4 +28,15 @@ test('together, a model already on the plate does not move', () => {
 
 test('ids without measured bounds are skipped', () => {
   assert.equal(dropToPlateDeltas(new Map(), ['unbuilt']).size, 0)
+})
+
+test('a point picks the part it falls in, and otherwise the nearest one', () => {
+  const bounds = new Map([
+    ['left', { min: [0, 0, 0], max: [10, 10, 10] } as Bounds],
+    ['right', { min: [50, 0, 0], max: [60, 10, 10] } as Bounds],
+  ])
+  assert.equal(objectAtPoint(bounds, [5, 5, 5]), 'left')
+  assert.equal(objectAtPoint(bounds, [55, 5, 5]), 'right')
+  assert.equal(objectAtPoint(bounds, [48, 5, 5]), 'right')
+  assert.equal(objectAtPoint(new Map(), [0, 0, 0]), null)
 })

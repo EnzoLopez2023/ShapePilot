@@ -111,3 +111,25 @@ export function dropToPlateDeltas(
   }
   return deltas
 }
+
+/**
+ * The object a point falls in, or the nearest one. Print issues are found on
+ * the union of the scene, which has no object identity left in it, so a
+ * reported position is matched back to a part by its bounds.
+ */
+export function objectAtPoint(
+  bounds: ReadonlyMap<string, Bounds>,
+  point: Triple,
+): string | null {
+  let nearest: string | null = null
+  let best = Infinity
+  for (const [id, b] of bounds) {
+    const dx = Math.max(b.min[0] - point[0], 0, point[0] - b.max[0])
+    const dy = Math.max(b.min[1] - point[1], 0, point[1] - b.max[1])
+    const dz = Math.max(b.min[2] - point[2], 0, point[2] - b.max[2])
+    const distance = dx * dx + dy * dy + dz * dz
+    if (distance < best) { best = distance; nearest = id }
+    if (distance === 0) break
+  }
+  return nearest
+}
