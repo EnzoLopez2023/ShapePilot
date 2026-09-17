@@ -58,17 +58,18 @@ for effort. Tick items off here as they land.
 ## Bambu Designer — features
 
 ### Per-part filament from the AMS
-- [ ] Add an optional `filament` field on scene objects: `{ amsSlot: number }`
-      (client type, server validation in `server/validation/designDocument.ts`,
-      and payload round-trip).
-- [ ] Inspector: "Filament" select listing the AMS slots from the latest AMS
-      report (colour swatch + name), plus "Auto".
-- [ ] Viewport: when a slot is set, colour the part with that spool's hex.
-- [ ] 3MF export: use the part's slot as its extruder; fall back to today's
-      order-based numbering only for "Auto".
-- [ ] Warn when two differently-coloured parts share a slot, or a slot is empty.
-- [ ] Graceful state when the AMS report is unavailable (non-admin, no connection).
-- [ ] Tests: export assigns chosen slots; validation accepts/rejects the field.
+- [x] Optional `filamentSlot` (1-16) on scene objects, validated server-side and
+      carried through AI merges.
+- [x] "Filament" select for a selected top-level solid: Auto, or an AMS tray
+      (A1-D4) with swatch, product and remaining %, from the last AMS report.
+- [x] Choosing a tray paints the part in that spool's colour.
+- [x] 3MF export: a chosen tray is the part's extruder; Auto parts take the lowest
+      numbers nobody chose.
+- [x] Warn when differently-coloured parts share a tray, or a chosen tray is empty.
+- [x] Without an AMS report (non-admin, no connection) trays are offered by number.
+- [x] Tests: tray numbering, extruder assignment, warnings, validation, export.
+- [ ] Verify with a real export in Bambu Studio that a synced AMS list maps
+      extruder N to tray N (the tooltip tells the user to sync).
 
 ### Weight, cost and stock estimate
 - [ ] Expose `report.volume` from `checkManifold` alongside the print issues.

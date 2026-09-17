@@ -11,7 +11,7 @@
 // exactly what it was shown and could have written:
 // - an object it was never shown, or an import, is kept where it was;
 // - a part it returns unchanged is the original object, not a rebuild of it;
-// - a part it changes is rebuilt, keeping the original's colour and lock;
+// - a part it changes is rebuilt, keeping the original's colour, filament and lock;
 // - a part it was shown and left out is removed.
 import type { BooleanNode, PartNode, ShapeProgram } from '../../lib/contracts/shapeProgram.ts'
 import { isBooleanNode, walkProgram } from '../../lib/contracts/shapeProgram.ts'
@@ -58,6 +58,7 @@ export function mergeProposal(
       ...rebuilt,
       ...(collides ? { id: newId() } : {}),
       ...(prior?.color !== undefined ? { color: prior.color } : {}),
+      ...(prior?.filamentSlot !== undefined ? { filamentSlot: prior.filamentSlot } : {}),
       ...(prior ? { locked: prior.locked } : {}),
       mode,
     }

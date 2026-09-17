@@ -41,6 +41,12 @@ export interface SceneObjectBase {
   locked: boolean
   /** CSS hex. Presentation only -- never reaches an exporter. */
   color?: string
+  /**
+   * Bambu only. The filament number this part prints in, 1-16, as Bambu Studio
+   * numbers a filament list synced to the AMS (A1-A4 are 1-4, B1 is 5). Absent
+   * is Auto. See src/features/bambu-designer/amsTrays.ts.
+   */
+  filamentSlot?: number
   /** Shaper only. The 3D sub-apps carry it through untouched. */
   cut?: CutSpec
 }

@@ -39,6 +39,7 @@ export const LIMITS = {
   maxContoursPerObject: 256,
   maxPointsPerContour: 20_000,
   maxChatTurns: 500,
+  maxFilamentSlot: 16,
   chatTextMaxLength: 8_000,
   /** Any coordinate or dimension, millimetres. */
   maxCoordMm: 100_000,
@@ -166,7 +167,7 @@ function validateCut(value: unknown, field: string): Record<string, unknown> | u
   return cut
 }
 
-const BASE_KEYS = ['id', 'name', 'transform', 'mode', 'visible', 'locked', 'color', 'cut', 'type']
+const BASE_KEYS = ['id', 'name', 'transform', 'mode', 'visible', 'locked', 'color', 'filamentSlot', 'cut', 'type']
 const SHAPE_PARAM_KEYS =
   ['widthMm', 'heightMm', 'radiusMm', 'radiusYMm', 'sides', 'cornerRadiusMm'] as const
 const SOLID_PARAM_KEYS = [
@@ -218,6 +219,11 @@ function validateObject(value: unknown, field: string, depth: number, state: Wal
 
   const color = optionalString(raw.color, `${field}.color`, LIMITS.colorMaxLength)
   if (color !== undefined) base.color = color
+  // Four AMS units of four trays, as Bambu Studio numbers a synced list.
+  const filamentSlot = optionalNumber(raw.filamentSlot, `${field}.filamentSlot`, {
+    min: 1, max: LIMITS.maxFilamentSlot, integer: true,
+  })
+  if (filamentSlot !== undefined) base.filamentSlot = filamentSlot
   const cut = validateCut(raw.cut, `${field}.cut`)
   if (cut !== undefined) base.cut = cut
 

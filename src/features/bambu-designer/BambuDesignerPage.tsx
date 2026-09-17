@@ -46,6 +46,9 @@ import { resolveAssets, storeImportedFile } from '../../import/assets.ts'
 import { mergeProposal } from '../../csg/mergeProposal.ts'
 import { PREVIEW_PART_ID, useProposalPreview } from '../../components/designer/useProposalPreview.ts'
 import SolidPalette from './components/SolidPalette.tsx'
+import FilamentSlotField from './components/FilamentSlotField.tsx'
+import { useAmsTrays } from './useAmsTrays.ts'
+import { assignExtruders, filamentWarnings } from './amsTrays.ts'
 import LibraryPalette from './components/LibraryPalette.tsx'
 import type { LibraryEntry } from './components/libraryEntries.ts'
 import type { SolidPaletteKind } from './components/solidEntries.ts'
@@ -125,6 +128,7 @@ export default function BambuDesignerPage() {
   const [saveAsOpen, setSaveAsOpen] = useState(false)
   const [textOutlines, setTextOutlines] = useState<Map<string, Ring[]>>(new Map())
   const [libraryBusy, setLibraryBusy] = useState<string | null>(null)
+  const ams = useAmsTrays()
   const [mirrorAnchor, setMirrorAnchor] = useState<HTMLElement | null>(null)
   const [shortcutsAnchor, setShortcutsAnchor] = useState<HTMLElement | null>(null)
   const shortcutsButton = useRef<HTMLButtonElement>(null)
@@ -187,6 +191,12 @@ export default function BambuDesignerPage() {
   const selectedObject = doc.selection.size === 1
     ? findObject(objects, [...doc.selection][0]) ?? null
     : null
+  // Only a top-level solid is its own body in the 3MF, so only it takes a tray.
+  const filamentTarget = selectedObject && selectedObject.mode === 'solid'
+    && objects.some(o => o.id === selectedObject.id)
+    ? selectedObject
+    : null
+  const trayWarnings = useMemo(() => filamentWarnings(objects, ams.trays), [objects, ams.trays])
 
   /** How big the selection actually came out. The panel can only ask a
    *  parametric shape its dimensions; a mesh or a group has to be measured. */
@@ -378,12 +388,17 @@ export default function BambuDesignerPage() {
       } else {
         // Evaluated per object, not through evaluateProgram: that unions the
         // parts, and a body fused into its neighbour can never be given its own
-        // filament again. Slots run 1, 2, 3... so a logo dropped onto a model
-        // arrives ready to print in an accent colour.
+        // filament again. A part keeps the tray chosen for it; the rest number
+        // 1, 2, 3... around those, so a logo dropped onto a model still arrives
+        // ready to print in an accent colour.
+        const byId = new Map(objects.map(o => [o.id, o]))
+        const extruders = assignExtruders(
+          program.parts.map(node => ({ filamentSlot: byId.get(node.id)?.filamentSlot })),
+          MAX_FILAMENTS)
         const parts = await Promise.all(program.parts.map(async (node, i) => ({
           mesh: await evaluateNode(node, { meshes }),
           name: node.name || `Part ${i + 1}`,
-          extruder: Math.min(i + 1, MAX_FILAMENTS),
+          extruder: extruders[i],
         })))
         triggerDownload(writeThreeMfParts(parts, doc.doc.name), `${name}.3mf`, 'model/3mf')
       }
@@ -663,6 +678,21 @@ export default function BambuDesignerPage() {
               measuredMm={selectedSizeMm}
               onPatch={patch => selectedObject && doc.updateObject(selectedObject.id, patch)}
             />
+            {filamentTarget && (
+              <FilamentSlotField
+                object={filamentTarget} ams={ams}
+                onPatch={patch => doc.updateObject(filamentTarget.id, patch)}
+              />
+            )}
+            {trayWarnings.length > 0 && (
+              <Alert severity="warning" variant="outlined">
+                <Stack spacing={0.5}>
+                  {trayWarnings.map(warning => (
+                    <Typography key={warning.message} variant="body2">{warning.message}</Typography>
+                  ))}
+                </Stack>
+              </Alert>
+            )}
 
             {detached.size > 0 && (
               <Alert severity="info" variant="outlined">

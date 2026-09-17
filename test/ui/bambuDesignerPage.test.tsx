@@ -408,3 +408,42 @@ test('save waits for something to save in a design that was never saved', async 
   await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeTruthy())
   expect(screen.getByRole('button', { name: 'Save' }).hasAttribute('disabled')).toBe(true)
 })
+
+test('a part set to an AMS tray exports on that filament; the rest fill in around it', async () => {
+  const user = userEvent.setup()
+  const blobs: Blob[] = []
+  const realCreateElement = document.createElement.bind(document)
+  const createSpy = vi.spyOn(document, 'createElement').mockImplementation((tag: string) => {
+    const element = realCreateElement(tag)
+    if (tag === 'a') vi.spyOn(element as HTMLAnchorElement, 'click').mockImplementation(() => {})
+    return element
+  })
+  const realCreateUrl = URL.createObjectURL
+  const realRevokeUrl = URL.revokeObjectURL
+  URL.createObjectURL =
+    ((blob: Blob) => { blobs.push(blob); return 'blob:stub' }) as typeof URL.createObjectURL
+  URL.revokeObjectURL = (() => {}) as typeof URL.revokeObjectURL
+
+  try {
+    renderPage()
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Box/ })).toBeTruthy())
+    await user.click(screen.getByRole('button', { name: /^Box/ }))
+    await user.click(screen.getByRole('button', { name: /^Cylinder/ }))
+
+    // The cylinder is selected. No AMS report in this run, so trays are by number.
+    await user.click(await screen.findByLabelText('Filament'))
+    await user.click(await screen.findByRole('option', { name: 'A3' }))
+
+    await user.click(screen.getByRole('button', { name: '3MF' }))
+    await waitFor(() => expect(blobs.length).toBe(1), { timeout: 20_000 })
+
+    const zip = unzipSync(new Uint8Array(await blobs[0].arrayBuffer()))
+    const cfg = strFromU8(zip['Metadata/model_settings.config'])
+    const extruders = [...cfg.matchAll(/<part [^>]*>[\s\S]*?key="extruder" value="(\d+)"/g)].map(m => m[1])
+    expect(extruders).toEqual(['1', '3'])
+  } finally {
+    URL.createObjectURL = realCreateUrl
+    URL.revokeObjectURL = realRevokeUrl
+    createSpy.mockRestore()
+  }
+})

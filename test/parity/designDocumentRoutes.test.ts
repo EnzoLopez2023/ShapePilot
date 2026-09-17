@@ -84,6 +84,13 @@ describe('design document routes', () => {
     assert.equal((got.body.machine as Record<string, unknown>).id, 'bambu-x2d')
   })
 
+  test('a part keeps the AMS tray it prints from', async () => {
+    const created = await create(docPayload({ objects: [solid('a', { filamentSlot: 7 })] }))
+    const read = await server.fetchJson<{ objects: { filamentSlot?: number }[] }>(
+      `${BASE}/${created.body.id}`, { token: OWNER_TOKEN })
+    assert.equal(read.body.objects[0].filamentSlot, 7)
+  })
+
   test('a nested group survives storage', async () => {
     const group = {
       id: 'g', name: 'Group', type: 'group', transform, mode: 'solid',
@@ -213,6 +220,9 @@ describe('design document routes', () => {
       [docPayload({ objects: [solid('a', { params: { widthMm: '10' } })] }), 'objects[0].params.widthMm'],
       [docPayload({ objects: [solid('a', { params: { widthMm: NaN } })] }), 'objects[0].params.widthMm'],
       [docPayload({ objects: [solid('a', { extra: 1 })] }), 'objects[0]'],
+      [docPayload({ objects: [solid('a', { filamentSlot: 0 })] }), 'objects[0].filamentSlot'],
+      [docPayload({ objects: [solid('a', { filamentSlot: 17 })] }), 'objects[0].filamentSlot'],
+      [docPayload({ objects: [solid('a', { filamentSlot: 1.5 })] }), 'objects[0].filamentSlot'],
       [docPayload({ objects: [solid('a', { transform: { ...transform, scale: [1, 0, 1] } })] }),
         'objects[0].transform.scale[1]'],
       [{ ...docPayload(), rogue: true }, 'body'],
