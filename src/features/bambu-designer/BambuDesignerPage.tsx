@@ -47,6 +47,8 @@ import { mergeProposal } from '../../csg/mergeProposal.ts'
 import { PREVIEW_PART_ID, useProposalPreview } from '../../components/designer/useProposalPreview.ts'
 import SolidPalette from './components/SolidPalette.tsx'
 import FilamentSlotField from './components/FilamentSlotField.tsx'
+import FilamentColorField from './components/FilamentColorField.tsx'
+import { useOwnedColors } from './useOwnedColors.ts'
 import PrintHistory from './components/PrintHistory.tsx'
 import { useAmsTrays } from './useAmsTrays.ts'
 import { assignExtruders, filamentWarnings, trayLabel } from './amsTrays.ts'
@@ -135,6 +137,7 @@ export default function BambuDesignerPage() {
   const [textOutlines, setTextOutlines] = useState<Map<string, Ring[]>>(new Map())
   const [libraryBusy, setLibraryBusy] = useState<string | null>(null)
   const ams = useAmsTrays()
+  const ownedColors = useOwnedColors()
   const [fastener, setFastener] = useState<FastenerEntry | null>(null)
   const [mirrorAnchor, setMirrorAnchor] = useState<HTMLElement | null>(null)
   const [shortcutsAnchor, setShortcutsAnchor] = useState<HTMLElement | null>(null)
@@ -768,6 +771,12 @@ export default function BambuDesignerPage() {
               <FilamentSlotField
                 object={filamentTarget} ams={ams}
                 onPatch={patch => doc.updateObject(filamentTarget.id, patch)}
+              />
+            )}
+            {selectedObject && (
+              <FilamentColorField
+                object={selectedObject} colors={ownedColors}
+                onPatch={patch => doc.updateObject(selectedObject.id, patch)}
               />
             )}
             {trayWarnings.length > 0 && (

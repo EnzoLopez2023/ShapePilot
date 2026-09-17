@@ -80,6 +80,12 @@ beforeEach(() => {
       })
     }
     // Nothing was ever uploaded from this run, so the asset resolve misses.
+    // What the account owns, which is where a part's colour can come from.
+    if (url.includes('/api/filaments') && !url.includes('/usage')) {
+      return new Response(JSON.stringify({
+        owned: [{ key: 'bambu-lab/pla/basic/jade-white-10100', variant: 'spool', quantity: 1 }],
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }
     if (url.includes('/api/design-assets/')) return new Response(null, { status: 404 })
     // The design's print history, which the page reads once a design is saved.
     if (url.includes('/prints')) {
@@ -523,4 +529,19 @@ test('select all takes every unlocked top-level part', async () => {
   await waitFor(() => expect(screen.getAllByText(/2 selected/).length).toBeGreaterThan(0))
   // And with a selection of two, the multi-object tools come alive.
   expect(screen.getByRole('button', { name: 'Align X Centre' }).hasAttribute('disabled')).toBe(false)
+})
+
+test('a part can take a colour from the filaments you own', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(screen.getByRole('button', { name: /^Box/ })).toBeTruthy())
+  await user.click(screen.getByRole('button', { name: /^Box/ }))
+
+  const colour = await screen.findByLabelText('Colour')
+  await user.click(colour)
+  await user.click(await screen.findByRole('option', { name: /Jade White/ }))
+
+  // The catalogue's own hex reaches the object, so the viewport and a later
+  // AMS tray choice speak the same value.
+  expect((colour as HTMLInputElement).value).toMatch(/Jade White/)
 })

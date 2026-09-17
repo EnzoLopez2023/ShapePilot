@@ -135,9 +135,11 @@ for effort. Tick items off here as they land.
       with an account currency; nothing converts between currencies.
 - [x] Print usage shows what the filament cost, with unpriced grams named as
       unpriced rather than skipped.
-- [ ] "Use in design" action on a colour: sets colour + filament on the selected
-      part in the last-open designer (needs a small cross-page handoff, e.g.
-      session storage or a `?filament=` param).
+- [x] Use a filament in a design: the Bambu Designer's Colour field offers the
+      colours the account owns, matched by hex so a colour picked here and one
+      taken from an AMS tray are the same value. Done in the designer rather
+      than as a cross-page handoff from Filaments -- the designer is where a
+      part is selected, and a handoff would have had nothing to apply to.
 
 ## EL-ement Statistics
 
