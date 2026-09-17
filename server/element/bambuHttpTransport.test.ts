@@ -51,6 +51,20 @@ describe('default HTTPS transport with an injected native request mock', () => {
     } finally { await provider.close() }
   })
 
+  // The provider's own tests use a fake fetch, so only this suite exercises the
+  // real transport's parameter allowlist. Production learned that the hard way
+  // (2026-09-17): offset paging was refused here before a request was made.
+  it('sends an offset page request through the real transport allowlist', async () => {
+    reply('{"hits":[],"total":55}')
+    const provider = createBambuProvider({ accessToken: 'test-token', region: 'global' })
+    try {
+      await expect(provider.history('SERIAL123', '50', 50)).resolves.toEqual({ jobs: [], total: 55, nextCursor: null })
+      expect(request).toHaveBeenCalledTimes(1)
+      const url = vi.mocked(request).mock.calls[0][0] as URL
+      expect(Object.fromEntries(url.searchParams)).toEqual({ deviceId: 'SERIAL123', limit: '50', offset: '50' })
+    } finally { await provider.close() }
+  })
+
   it('does not follow redirects or return server error bodies or unrelated headers', async () => {
     const credential = 'must-not-return'
     reply(credential, 302, { location: `https://elsewhere.invalid/?token=${credential}`, 'set-cookie': credential, 'retry-after': '60' })
@@ -75,6 +89,7 @@ describe('default HTTPS transport with an injected native request mock', () => {
     'https://user:secret@api.bambulab.com/v1/user-service/my/tasks',
     'https://api.bambulab.com/v1/iot-service/api/user/print',
     'https://api.bambulab.com/v1/user-service/my/tasks?token=must-not-send',
+    'https://api.bambulab.com/v1/user-service/my/tasks?deviceId=SERIAL123&after=1220177551&limit=50',
     'not a URL with secret data',
   ])('refuses an unallowlisted transport URL before socket creation', async url => {
     const transport = createBambuHttpsTransport()

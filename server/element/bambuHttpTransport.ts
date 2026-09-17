@@ -30,7 +30,8 @@ export function createBambuHttpsTransport(): { fetch: BambuFetch; close(): void 
       if (parsed.protocol !== 'https:' || !['api.bambulab.com', 'api.bambulab.cn'].includes(parsed.hostname)
         || parsed.username || parsed.password || (parsed.port && parsed.port !== '443') || parsed.hash
         || !allowedPaths.includes(parsed.pathname)
-        || [...parsed.searchParams.keys()].some(key => !['deviceId', 'after', 'limit'].includes(key))) {
+        // History pages by `offset`; Bambu ignores `after`, so it is not sent.
+        || [...parsed.searchParams.keys()].some(key => !['deviceId', 'offset', 'limit'].includes(key))) {
         reject(new BambuProviderError('invalid_request'))
         return
       }
