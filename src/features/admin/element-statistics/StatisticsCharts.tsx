@@ -217,6 +217,32 @@ export default function StatisticsCharts({ report, status, onBucket, onMaterial 
               </Typography>}
             </Box>
           </Box>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography variant="h3" component="h4">When the printer runs</Typography>
+            <Typography variant="body2" color="text.secondary">
+              Jobs by the hour they started, in {report.filters.timeZone}. A job counts once, at
+              its start; this is not a measure of the hours it then occupied.
+            </Typography>
+            {report.hourOfDay.some(bucket => bucket.jobs > 0) ? (
+              <BarChart height={240} skipAnimation aria-label="Jobs by hour of day"
+                xAxis={[{
+                  scaleType: 'band',
+                  data: report.hourOfDay.map(bucket => `${String(bucket.hour).padStart(2, '0')}`),
+                  label: 'Hour',
+                }]}
+                yAxis={[{ min: 0, tickMinStep: 1, label: 'Jobs' }]}
+                series={[{
+                  id: 'hour-jobs', label: 'Jobs started',
+                  data: report.hourOfDay.map(bucket => bucket.jobs),
+                  color: theme.palette.primary.main,
+                }]}
+                grid={{ horizontal: true }} sx={chartSx} />
+            ) : (
+              <Typography color="text.secondary" sx={{ py: 3 }}>
+                No dated jobs in this scope, so there is no hour to report.
+              </Typography>
+            )}
+          </Box>
           <Accordion disableGutters sx={{ boxShadow: 'none', '&::before': { display: 'none' } }}>
             <AccordionSummary expandIcon={<ExpandMoreRoundedIcon />}
               id="element-chart-data-heading" aria-controls="element-chart-data">
@@ -254,6 +280,24 @@ export default function StatisticsCharts({ report, status, onBucket, onMaterial 
                           <Typography variant="body2">{measureCoverage(bucket.totals.actualDurationSeconds)}</Typography></TableCell>
                         <TableCell align="right">{duration(bucket.totals.estimatedDurationSeconds.value)}
                           <Typography variant="body2">{measureCoverage(bucket.totals.estimatedDurationSeconds)}</Typography></TableCell>
+                      </TableRow>
+                    ))}</TableBody>
+                  </Table>
+                </TableContainer>
+                <TableContainer tabIndex={0} aria-label="Hour of day chart data">
+                  <Table size="small" sx={{ minWidth: 420 }}>
+                    <TableHead><TableRow>
+                      <TableCell>Hour ({report.filters.timeZone})</TableCell>
+                      <TableCell align="right">Jobs started</TableCell>
+                      <TableCell align="right">Runtime started in that hour</TableCell>
+                    </TableRow></TableHead>
+                    <TableBody>{report.hourOfDay.filter(bucket => bucket.jobs > 0).map(bucket => (
+                      <TableRow key={bucket.hour}>
+                        <TableCell>{String(bucket.hour).padStart(2, '0')}:00</TableCell>
+                        <TableCell align="right">{bucket.jobs}</TableCell>
+                        <TableCell align="right">{duration(bucket.actualDurationSeconds.value)}
+                          <Typography variant="body2">{measureCoverage(bucket.actualDurationSeconds)}</Typography>
+                        </TableCell>
                       </TableRow>
                     ))}</TableBody>
                   </Table>

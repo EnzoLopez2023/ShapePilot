@@ -1,6 +1,6 @@
 import type {
   ElementConnection, ElementCoverage, ElementFilters, ElementGrain, ElementJob,
-  ElementJobResult, ElementMaterialSummary, ElementMeasure, ElementQuery,
+  ElementHourBucket, ElementJobResult, ElementMaterialSummary, ElementMeasure, ElementQuery,
   ElementReport, ElementTotals, ElementTrendBucket,
 } from '../../lib/contracts/elementStatistics.ts'
 import { elementElapsedSeconds } from '../../lib/contracts/elementStatistics.ts'
@@ -242,6 +242,20 @@ function calendarDate(instant: number | null, formatter: Intl.DateTimeFormat): s
   const day = parts.find(part => part.type === 'day')?.value
   const value = `${year}-${month}-${day}`
   return realDate(value, 1) ? value : null
+}
+
+/** The hour of the day a moment falls in, in the scope's zone. */
+function hourFormatter(zone: string): Intl.DateTimeFormat {
+  return new Intl.DateTimeFormat('en', {
+    timeZone: zone, numberingSystem: 'latn', hour: '2-digit', hourCycle: 'h23',
+  })
+}
+
+function zonedHour(instant: number | null, formatter: Intl.DateTimeFormat): number | null {
+  if (instant === null) return null
+  const value = formatter.formatToParts(instant).find(part => part.type === 'hour')?.value
+  const hour = Number(value)
+  return Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : null
 }
 
 function recordedNumber(value: number | null): number | null {
@@ -530,6 +544,20 @@ export function createElementReport(
     }
     addJob(bucket.totals, job, date !== null)
   }
+  // When the machine actually runs. Undated jobs have no hour and are left out
+  // rather than piled onto midnight.
+  const hours = hourFormatter(filters.timeZone)
+  const hourOfDay: ElementHourBucket[] = Array.from({ length: 24 }, (_, hour) => ({
+    hour, jobs: 0, actualDurationSeconds: measure(),
+  }))
+  for (const { job } of dated) {
+    const values = elementJobValues(job)
+    const hour = zonedHour(values.startedAt, hours)
+    if (hour === null) continue
+    hourOfDay[hour].jobs++
+    addMeasure(hourOfDay[hour].actualDurationSeconds, values.actualDurationSeconds)
+  }
+
   const materials = materialSummaries(filtered)
   const materialOptions = new Set<string>()
   for (const job of filteredElementJobs(jobs, { ...filters, material: null })) {
@@ -544,6 +572,7 @@ export function createElementReport(
     filters,
     totals,
     trend,
+    hourOfDay,
     materials: materials.rows,
     materialWeightDiscrepancyJobs: materials.discrepancies,
     connections: connections.filter(connection => filters.connectionId === null || connection.id === filters.connectionId),

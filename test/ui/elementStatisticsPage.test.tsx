@@ -92,6 +92,13 @@ function report(params: URLSearchParams): ElementReport {
   return {
     generatedAt: ELEMENT_TEST_NOW, filters, totals,
     trend: [{ key: '2026-09-14', from: '2026-09-14', to: '2026-09-14', totals }],
+    hourOfDay: Array.from({ length: 24 }, (_, hour) => ({
+      hour,
+      jobs: hour === 9 ? jobs.length : 0,
+      actualDurationSeconds: hour === 9
+        ? measure(jobs.map(job => job.actualDurationSeconds))
+        : measure([]),
+    })),
     materials: ['PLA', 'PETG'].filter(material => jobs.some(job => job.materials.some(item => item.material === material)))
       .map(material => ({
         material, jobs: 1,

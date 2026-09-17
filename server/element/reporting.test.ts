@@ -319,6 +319,29 @@ describe('honest totals, material accounting and raw-data preservation', () => {
     assert.equal(result.jobs.items[0].actualDurationSeconds, 900)
   })
 
+  test('jobs are counted by the hour they started, in the scope\'s time zone', () => {
+    const jobs = [
+      // Runtime is measured from the recorded start and end, never taken from a
+      // reported duration, so these carry both.
+      job('morning', { result: 'completed', startedAt: '2026-03-02T09:30:00Z', endedAt: '2026-03-02T09:40:00Z' }),
+      job('also-morning', { result: 'completed', startedAt: '2026-03-03T09:05:00Z', endedAt: '2026-03-03T09:10:00Z' }),
+      job('evening', { result: 'completed', startedAt: '2026-03-02T21:10:00Z' }),
+      job('undated', { result: 'completed' }),
+    ]
+    const utc = report(jobs, { timeZone: 'UTC' }).hourOfDay
+    assert.equal(utc.length, 24)
+    assert.equal(utc[9].jobs, 2)
+    assert.equal(utc[9].actualDurationSeconds.value, 900)
+    assert.equal(utc[21].jobs, 1)
+    // An undated job has no hour and is not piled onto midnight.
+    assert.equal(utc.reduce((sum, bucket) => sum + bucket.jobs, 0), 3)
+
+    // The same instants, read in another zone, land in other hours.
+    const zoned = report(jobs, { timeZone: 'America/New_York' }).hourOfDay
+    assert.equal(zoned[4].jobs, 2)
+    assert.equal(zoned[16].jobs, 1)
+  })
+
   test('a material carries its jobs by outcome, counting a job once per material', () => {
     const rows = report([
       job('a', { result: 'completed', materials: [usage('PLA', 10)] }),

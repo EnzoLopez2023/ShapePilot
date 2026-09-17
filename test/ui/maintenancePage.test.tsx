@@ -11,6 +11,7 @@ import assert from 'node:assert/strict'
 import { afterEach, beforeEach, test, vi } from 'vitest'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter } from 'react-router-dom'
 import MaintenancePage from '../../src/features/maintenance/MaintenancePage.tsx'
 import { ThemeModeProvider } from '../../src/theme/ThemeModeProvider.tsx'
 import { MAINTENANCE_TASKS } from '../../lib/contracts/x2dMaintenance.ts'
@@ -44,11 +45,20 @@ let posted: unknown[] = []
 let puts: unknown[] = []
 let deleted: number[] = []
 let failWrite = false
+/** The statistics report the runtime panel reads; null answers 403. */
+let runtimeReport: unknown = null
 let nextId = 100
 
 const stubFetch = () => vi.stubGlobal('fetch', vi.fn(async (url: unknown, init?: RequestInit) => {
   const path = String(url)
   const method = init?.method ?? 'GET'
+  // The printer's recorded runtime, which the page shows beside the schedule.
+  // 403 is the ordinary answer for an account that may not see the history.
+  if (path.includes('/api/admin/element-statistics/report')) {
+    return runtimeReport === null
+      ? Response.json({ error: { code: 'forbidden', message: 'No.' } }, { status: 403 })
+      : Response.json(runtimeReport)
+  }
   if (!path.includes('/api/maintenance')) throw new Error(`unexpected fetch ${path}`)
 
   if (method === 'GET') return Response.json({ profile, events })
@@ -79,8 +89,9 @@ const stubFetch = () => vi.stubGlobal('fetch', vi.fn(async (url: unknown, init?:
   return Response.json({ ok: true })
 }))
 
+// Inside a router, as the app always is: the page links to EL-ement Statistics.
 const draw = () => render(
-  <ThemeModeProvider><MaintenancePage /></ThemeModeProvider>,
+  <ThemeModeProvider><MemoryRouter><MaintenancePage /></MemoryRouter></ThemeModeProvider>,
 )
 
 /** A page that already has a profile, which is the normal case. */
@@ -97,6 +108,7 @@ const withProfile = (overrides: Partial<Profile> = {}) => {
 beforeEach(() => {
   vi.useFakeTimers({ shouldAdvanceTime: true })
   vi.setSystemTime(TODAY)
+  runtimeReport = null
   profile = null
   events = []
   posted = []
@@ -371,4 +383,32 @@ test('confirming the removal sends the delete and drops the entry', async () => 
 
   await waitFor(() => assert.deepEqual(deleted, [42]))
   await waitFor(() => assert.equal(screen.queryByText('Ran quiet afterwards'), null))
+})
+
+test('the printer\'s recorded printing time is shown beside the schedule', async () => {
+  profile = { commissionedOn: '2026-01-01', usageTier: 'regular', filamentWear: 'standard', rollsUsed: 0 }
+  runtimeReport = {
+    totals: {
+      jobs: 310,
+      actualDurationSeconds: { value: 511_200, known: 308, missing: 2 },
+    },
+  }
+  draw()
+
+  await screen.findByText('Recorded printing time')
+  // 511,200 seconds is 142 hours, and the two jobs without a usable pair of
+  // timestamps are named rather than counted as zero.
+  const panel = screen.getByText('Recorded printing time').closest('div')!
+  assert.ok(within(panel).getByText('142 hours'))
+  assert.ok(within(panel).getByText(/2 without a usable start and end/))
+  assert.ok(within(panel).getByText(/not an odometer/))
+})
+
+test('an account that may not see the printer history simply does not see the panel', async () => {
+  profile = { commissionedOn: '2026-01-01', usageTier: 'regular', filamentWear: 'standard', rollsUsed: 0 }
+  runtimeReport = null
+  draw()
+
+  await screen.findByRole('heading', { name: 'X2D maintenance', level: 1 })
+  await waitFor(() => assert.equal(screen.queryByText('Recorded printing time'), null))
 })

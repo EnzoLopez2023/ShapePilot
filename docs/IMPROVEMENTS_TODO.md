@@ -167,6 +167,10 @@ for effort. Tick items off here as they land.
 - [ ] Cost per print and per period in Statistics. Needs per-job colour
       attribution: a job reports material and colour, but the matcher works per
       colour across all history, so a per-job price needs that link first.
-- [ ] Printer runtime hours total, fed to `/maintenance` so intervals can be
-      hour-based as well as date-based.
-- [ ] Utilisation view: hours printing per day/week, and time-of-day heatmap.
+- [x] Recorded printing time on `/maintenance`: hours and job count from the
+      statistics report, named as recorded cloud history rather than an odometer.
+- [ ] Hour-based maintenance intervals, now that the hours are on the page. The
+      schedule model is date-based throughout, so this is a model change.
+- [x] Utilisation: jobs by hour of the day, aggregated server-side in the
+      scope's time zone, with the numeric equivalent in the chart-data table.
+      Undated jobs have no hour and are left out rather than piled on midnight.

@@ -24,6 +24,7 @@ import { MAINTENANCE_GROUPS } from '../../../lib/contracts/x2dMaintenance.ts'
 import { ErrorState, LoadingState } from '../../components/LoadingState.tsx'
 import { MonthCalendar } from './components/MonthCalendar.tsx'
 import { ProfilePanel } from './components/ProfilePanel.tsx'
+import RecordedRuntime from './components/RecordedRuntime.tsx'
 import { ServiceLog } from './components/ServiceLog.tsx'
 import { TaskCard } from './components/TaskCard.tsx'
 import { STATUS_STYLE, formatDay, formatMonth } from './components/statusStyle.ts'
@@ -146,6 +147,8 @@ export default function MaintenancePage() {
           <Typography variant="body2">{writeError}</Typography>
         </Alert>
       )}
+
+      <RecordedRuntime />
 
       <ProfilePanel
         profile={profile}

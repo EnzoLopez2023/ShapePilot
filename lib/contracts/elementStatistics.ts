@@ -262,6 +262,18 @@ export interface ElementTrendBucket {
   totals: ElementTotals
 }
 
+/**
+ * One hour of the day in the scope's time zone, over the whole filtered range.
+ * Jobs are counted at their start, and their whole runtime is attributed to
+ * that hour -- the same rule the trend uses, and not an occupancy measurement.
+ */
+export interface ElementHourBucket {
+  /** 0-23, in `filters.timeZone`. */
+  hour: number
+  jobs: number
+  actualDurationSeconds: ElementMeasure
+}
+
 export interface ElementMaterialSummary {
   material: string | null
   jobs: number
@@ -280,6 +292,8 @@ export interface ElementReport {
   filters: ElementFilters
   totals: ElementTotals
   trend: ElementTrendBucket[]
+  /** Always 24 entries, hour 0 first; empty hours are present and zero. */
+  hourOfDay: ElementHourBucket[]
   materials: ElementMaterialSummary[]
   materialWeightDiscrepancyJobs: number
   connections: ElementConnection[]
