@@ -7,9 +7,13 @@ import type { PrinterProfile } from '../../model/document.ts'
 
 export type Severity = 'error' | 'warning'
 
+/** A correction the page can offer beside the message. Never applied on its own. */
+export type PrintFix = 'drop-to-plate'
+
 export interface PrintIssue {
   severity: Severity
   message: string
+  fix?: PrintFix
 }
 
 export function checkPrint(mesh: Mesh | null, machine: PrinterProfile): PrintIssue[] {
@@ -41,6 +45,7 @@ export function checkPrint(mesh: Mesh | null, machine: PrinterProfile): PrintIss
     issues.push({
       severity: 'warning',
       message: `The model sits ${Math.abs(minZ).toFixed(1)} mm below the build plate; the slicer will drop it.`,
+      fix: 'drop-to-plate',
     })
   }
 

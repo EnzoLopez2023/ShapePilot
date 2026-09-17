@@ -81,3 +81,33 @@ export function mirrorTransform(
   }
   return { position, scale }
 }
+
+/**
+ * How far to move along Z to rest on the build plate. Measured from the
+ * evaluated mesh, so a rotated or imported part lands on its lowest point
+ * rather than its origin; anything already on the plate is left out.
+ *
+ * `together` moves the ids as one body by the same amount -- the whole model,
+ * where dropping each part on its own would pull an assembly apart. Otherwise
+ * each part drops by itself, as Tinkercad does for a selection.
+ */
+export function dropToPlateDeltas(
+  bounds: ReadonlyMap<string, Bounds>,
+  ids: Iterable<string>,
+  together = false,
+): Map<string, number> {
+  const measured = [...ids]
+    .map(id => [id, bounds.get(id)] as const)
+    .filter((e): e is readonly [string, Bounds] => Boolean(e[1]))
+  const deltas = new Map<string, number>()
+  if (together) {
+    const overall = combinedBounds(measured.map(([, b]) => b))
+    if (!overall || Math.abs(overall.min[2]) <= 1e-6) return deltas
+    for (const [id] of measured) deltas.set(id, -overall.min[2])
+    return deltas
+  }
+  for (const [id, b] of measured) {
+    if (Math.abs(b.min[2]) > 1e-6) deltas.set(id, -b.min[2])
+  }
+  return deltas
+}

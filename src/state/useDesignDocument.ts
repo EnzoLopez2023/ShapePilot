@@ -13,6 +13,8 @@ import {
 } from '../model/scene.ts'
 
 const HISTORY_LIMIT = 50
+/** How long after the last coalescing edit the next one still joins it. */
+const COALESCE_MS = 1_000
 
 export interface DesignDocumentApi {
   doc: DesignDocument
@@ -21,8 +23,12 @@ export interface DesignDocumentApi {
   canRedo: boolean
   /** Load: clears history and selection, resets `revision` to 0. */
   setDoc: (d: DesignDocument) => void
-  /** The only mutation choke point. Everything below is a wrapper over it. */
-  replace: (mutate: (d: DesignDocument) => DesignDocument) => void
+  /**
+   * The only mutation choke point. Everything below is a wrapper over it.
+   * Calls sharing a `coalesce` key in quick succession are one undo step, so a
+   * held arrow key is one nudge to take back rather than fifty.
+   */
+  replace: (mutate: (d: DesignDocument) => DesignDocument, coalesce?: string) => void
   addObject: (object: SceneObject) => string
   addObjects: (objects: SceneObject[]) => string[]
   updateObject: (id: string, patch: Partial<SceneObject>) => void
@@ -46,13 +52,22 @@ export function useDesignDocument(kind: DocumentKind, initial?: DesignDocument):
   const past = useRef<DesignDocument[]>([])
   const future = useRef<DesignDocument[]>([])
   const [, forceHistory] = useState(0)
+  const lastCoalesce = useRef<{ key: string; at: number } | null>(null)
 
   // Every mutation goes through here so history and the revision counter stay
   // in step. `revision` is what geometry useMemos key on -- deep-comparing the
   // object tree on every render would cost more than the counter it replaces.
-  const replace = useCallback((mutate: (d: DesignDocument) => DesignDocument) => {
+  const replace = useCallback((
+    mutate: (d: DesignDocument) => DesignDocument,
+    coalesce?: string,
+  ) => {
+    const now = Date.now()
+    const previous = lastCoalesce.current
+    const joins = coalesce !== undefined && previous?.key === coalesce
+      && now - previous.at < COALESCE_MS && past.current.length > 0
+    lastCoalesce.current = coalesce === undefined ? null : { key: coalesce, at: now }
     setDocState(prev => {
-      past.current = [...past.current.slice(-HISTORY_LIMIT + 1), prev]
+      if (!joins) past.current = [...past.current.slice(-HISTORY_LIMIT + 1), prev]
       future.current = []
       const next = mutate(prev)
       return { ...next, revision: prev.revision + 1 }
@@ -61,6 +76,7 @@ export function useDesignDocument(kind: DocumentKind, initial?: DesignDocument):
   }, [])
 
   const setDoc = useCallback((d: DesignDocument) => {
+    lastCoalesce.current = null
     past.current = []
     future.current = []
     setSelectionState(new Set())
@@ -161,6 +177,7 @@ export function useDesignDocument(kind: DocumentKind, initial?: DesignDocument):
   // Undo and redo *increment* revision rather than restoring the old value, so
   // the memo key stays monotonic and an undone edit still reads as unsaved.
   const undo = useCallback(() => {
+    lastCoalesce.current = null
     const prev = past.current.pop()
     if (!prev) return
     setDocState(cur => {
@@ -171,6 +188,7 @@ export function useDesignDocument(kind: DocumentKind, initial?: DesignDocument):
   }, [])
 
   const redo = useCallback(() => {
+    lastCoalesce.current = null
     const next = future.current.pop()
     if (!next) return
     setDocState(cur => {

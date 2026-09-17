@@ -261,7 +261,7 @@ export default function PlaygroundPage() {
             <Button size="small" onClick={() => setOpenDialog(true)}>Open</Button>
             <Button size="small" onClick={() => setSaveAsOpen(true)}>Save as</Button>
             <Button
-              size="small" variant="contained" disabled={lifecycle.busy || !objects.length}
+              size="small" variant="contained" disabled={lifecycle.busy || (!objects.length && !lifecycle.savedId)}
               // A never-saved design has no name but a default one, and writing
         // that default is how a shelf of "Untitled model" gets made. The
         // first save asks; every save after it just saves.

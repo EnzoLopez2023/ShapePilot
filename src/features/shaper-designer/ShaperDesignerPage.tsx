@@ -292,10 +292,12 @@ export default function ShaperDesignerPage() {
       <Button size="small" onClick={() => setOpenDialog(true)}>Open</Button>
       <Button size="small" onClick={() => setSaveAsOpen(true)}>Save as</Button>
       <Button
-        size="small" variant="contained" disabled={lifecycle.busy}
+        size="small" variant="contained" disabled={lifecycle.busy || (!objects.length && !lifecycle.savedId)}
         // A never-saved design has no name but a default one, and writing
         // that default is how a shelf of "Untitled model" gets made. The
-        // first save asks; every save after it just saves.
+        // first save asks; every save after it just saves. An empty design
+        // that was never saved has nothing to keep, but a saved one may have
+        // been emptied on purpose.
         onClick={() => (lifecycle.savedId ? void lifecycle.save() : setSaveAsOpen(true))}
       >
         {lifecycle.hasUnsavedChanges ? 'Save *' : 'Save'}

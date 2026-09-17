@@ -26,33 +26,34 @@ for effort. Tick items off here as they land.
 ## Bambu Designer — flow
 
 ### Drop to plate
-- [ ] Add `dropToPlate(ids)` in `align.ts`: per selected object, move Z by
+- [x] Add `dropToPlate(ids)` in `align.ts`: per selected object, move Z by
       `-bounds.min[2]`, as one history entry (same shape as `align`).
-- [ ] Toolbar button (icon + tooltip "Drop to plate (D)").
-- [ ] `D` key shortcut in the page's keydown handler (skip when typing).
-- [ ] With nothing selected, apply to every top-level object.
-- [ ] Add a "Drop to plate" action button to the "below the build plate" print
+- [x] Toolbar button (icon + tooltip "Drop to plate (D)").
+- [x] `D` key shortcut in the page's keydown handler (skip when typing).
+- [x] With nothing selected, move every object as one body (dropping each on its
+      own would pull an assembly apart); the print warning's fix does the same.
+- [x] Add a "Drop to plate" action button to the "below the build plate" print
       warning (`printChecks.ts` issue gains an optional `fix` id).
-- [ ] Unit test for `dropToPlate`; UI test for the shortcut.
+- [x] Unit test for `dropToPlate`; UI test for the shortcut.
 
 ### Arrow-key nudge
-- [ ] Arrow keys move the selection by the snap step in X/Y (1 mm when snap is Off).
-- [ ] Shift+arrow moves by 10× the step.
-- [ ] PageUp/PageDown (or Alt+↑/↓) nudge Z.
-- [ ] Hold repeated key presses to a single undo entry per burst (coalesce by
-      time window in `useDesignDocument`, or accept one entry per press — decide).
-- [ ] Skip locked objects.
-- [ ] UI test: arrow moves by snap, shift multiplies.
+- [x] Arrow keys move the selection by the snap step in X/Y (1 mm when snap is Off).
+- [x] Shift+arrow moves by 10× the step.
+- [x] PageUp/PageDown (or Alt+↑/↓) nudge Z.
+- [x] Hold repeated key presses to a single undo entry per burst (`replace` takes a
+      `coalesce` key; presses within 1 s on the same selection join).
+- [x] Skip locked objects.
+- [x] UI test: arrow moves by snap, shift multiplies.
 
 ### Mirror on every axis
-- [ ] Replace the single mirror button with a small menu or three buttons: X / Y / Z.
-- [ ] Keep `M` for X; add `Shift+M` for Y (or document the menu only).
-- [ ] Update tooltip text.
+- [x] Replace the single mirror button with a menu: X / Y / Z.
+- [x] `M` / `Shift+M` / `Option+M` mirror across X / Y / Z.
+- [x] Update tooltip text.
 
 ### Consistency
-- [ ] Disable Save when the scene is empty, matching the Playground (or enable it
-      in both — pick one and apply it to Shaper too).
-- [ ] Surface the keyboard shortcuts somewhere (tooltip list or a `?` popover).
+- [x] Save is disabled only for an empty design that was never saved, in all three
+      designers (a saved design may be emptied on purpose).
+- [x] Keyboard shortcuts popover (toolbar button, or `?`).
 
 ## Bambu Designer — features
 

@@ -255,6 +255,8 @@ test('renaming in the toolbar reaches the document, not just the field', async (
   renderPage()
   const field = await screen.findByLabelText('Design name')
   assert.equal((field as HTMLInputElement).value, 'Untitled model')
+  // Save waits for something to save in a design that was never saved.
+  await user.click(screen.getByRole('button', { name: /^Box/ }))
 
   await user.clear(field)
   await user.type(field, 'bench dog')
@@ -327,4 +329,82 @@ test('a 3MF export gives every object its own colourable part', async () => {
     URL.revokeObjectURL = realRevokeUrl
     createSpy.mockRestore()
   }
+})
+
+// DOM elements are compared with expect(), never node:assert: a failing assert
+// on a jsdom element inspects the whole window and exhausts memory.
+const positionX = () => Number((screen.getByLabelText('X') as HTMLInputElement).value)
+
+test('arrow keys nudge the selection by the snap step, Shift by ten', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(screen.getByRole('button', { name: /^Box/ })).toBeTruthy())
+  await user.click(screen.getByRole('button', { name: /^Box/ }))
+  await waitFor(() => expect(positionX()).toBe(0))
+
+  await user.keyboard('{ArrowRight}')
+  const step = positionX()
+  expect(step).toBeGreaterThan(0)
+
+  await user.keyboard('{Shift>}{ArrowRight}{/Shift}')
+  expect(positionX()).toBeCloseTo(step * 11)
+
+  await user.keyboard('{ArrowLeft}')
+  expect(positionX()).toBeCloseTo(step * 10)
+})
+
+test('a burst of nudges is one undo step', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(screen.getByRole('button', { name: /^Box/ })).toBeTruthy())
+  await user.click(screen.getByRole('button', { name: /^Box/ }))
+  await waitFor(() => expect(positionX()).toBe(0))
+
+  await user.keyboard('{ArrowRight}{ArrowRight}{ArrowRight}')
+  expect(positionX()).toBeGreaterThan(0)
+
+  await user.click(screen.getByRole('button', { name: 'Undo' }))
+  // Back to where the burst started, with the box still there.
+  expect(positionX()).toBe(0)
+  expect(screen.getAllByText(/1 object/).length).toBeGreaterThan(0)
+})
+
+test('a nudge leaves a focused text field alone', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(screen.getByRole('button', { name: /^Box/ })).toBeTruthy())
+  await user.click(screen.getByRole('button', { name: /^Box/ }))
+  await waitFor(() => expect(positionX()).toBe(0))
+
+  await user.click(screen.getByLabelText('Name'))
+  await user.keyboard('{ArrowRight}')
+  expect(positionX()).toBe(0)
+})
+
+test('mirror offers every axis', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(screen.getByRole('button', { name: /^Box/ })).toBeTruthy())
+  await user.click(screen.getByRole('button', { name: /^Box/ }))
+
+  await user.click(screen.getByRole('button', { name: 'Mirror' }))
+  const menu = await screen.findByRole('menu')
+  expect(within(menu).getAllByRole('menuitem').map(item => item.textContent))
+    .toEqual(['Mirror across X', 'Mirror across Y', 'Mirror across Z'])
+})
+
+test('? opens the keyboard shortcuts', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(screen.getByRole('button', { name: /^Box/ })).toBeTruthy())
+
+  await user.keyboard('?')
+  const list = await screen.findByLabelText('Keyboard shortcuts', { selector: 'dl' })
+  expect(within(list).getByText('Drop to the build plate')).toBeTruthy()
+})
+
+test('save waits for something to save in a design that was never saved', async () => {
+  renderPage()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeTruthy())
+  expect(screen.getByRole('button', { name: 'Save' }).hasAttribute('disabled')).toBe(true)
 })

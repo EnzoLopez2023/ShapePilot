@@ -1,7 +1,7 @@
 // Bambu Designer: a Tinkercad-style 3D modeller for the Bambu Lab X2D.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Alert, Box, Button, Divider, IconButton, MenuItem, Snackbar, Stack, TextField,
+  Alert, Box, Button, Divider, IconButton, Menu, MenuItem, Popover, Snackbar, Stack, TextField,
   ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material'
 import UndoRoundedIcon from '@mui/icons-material/UndoRounded'
@@ -12,6 +12,8 @@ import CallMergeRoundedIcon from '@mui/icons-material/CallMergeRounded'
 import CallSplitRoundedIcon from '@mui/icons-material/CallSplitRounded'
 import FlipRoundedIcon from '@mui/icons-material/FlipRounded'
 import ArchitectureRoundedIcon from '@mui/icons-material/ArchitectureRounded'
+import VerticalAlignBottomRoundedIcon from '@mui/icons-material/VerticalAlignBottomRounded'
+import KeyboardRoundedIcon from '@mui/icons-material/KeyboardRounded'
 import { useNavigate } from 'react-router-dom'
 
 import DesignerLayout from '../../components/designer/DesignerLayout.tsx'
@@ -29,7 +31,9 @@ import ImportButton from '../shaper-designer/components/ImportButton.tsx'
 import { BAMBU_IMPORT_FORMATS, importFile } from '../../import/index.ts'
 import type { ObjectMode, PrinterProfile, SceneObject, Triple } from '../../model/document.ts'
 import { BAMBU_X2D, PRINTER_PROFILES } from '../../model/machines.ts'
-import { IDENTITY_TRANSFORM, createSolid, createText, findObject, newId } from '../../model/scene.ts'
+import {
+  IDENTITY_TRANSFORM, createSolid, createText, findObject, newId, translateObjects,
+} from '../../model/scene.ts'
 import { useDesignDocument } from '../../state/useDesignDocument.ts'
 import { DEFAULT_FONT_ID, resolveTextOutlines } from '../../text/fonts.ts'
 import type { Ring } from '../../geometry/vec.ts'
@@ -45,7 +49,9 @@ import SolidPalette from './components/SolidPalette.tsx'
 import LibraryPalette from './components/LibraryPalette.tsx'
 import type { LibraryEntry } from './components/libraryEntries.ts'
 import type { SolidPaletteKind } from './components/solidEntries.ts'
-import { alignDeltas, combinedBounds, meshBounds, mirrorTransform } from './align.ts'
+import {
+  alignDeltas, combinedBounds, dropToPlateDeltas, meshBounds, mirrorTransform,
+} from './align.ts'
 import type { AlignEdge, Axis, Bounds } from './align.ts'
 import { checkPrint, worstSeverity } from './printChecks.ts'
 import { useSceneMeshes } from './useSceneMeshes.ts'
@@ -61,6 +67,34 @@ const EDGES: { edge: AlignEdge; label: string }[] = [
 /** One AMS holds four spools. Exports past the fourth object pile onto the last
  *  slot rather than naming a filament the printer has not got. */
 const MAX_FILAMENTS = 4
+
+/** Arrow-key nudge with snap off; Shift multiplies whatever the step is. */
+const FREE_NUDGE_MM = 1
+const SHIFT_NUDGE = 10
+
+const SHORTCUTS: readonly [string, string][] = [
+  ['⌘Z / ⇧⌘Z', 'Undo / redo'],
+  ['⌘D', 'Duplicate'],
+  ['Delete', 'Delete the selection'],
+  ['G', 'Group'],
+  ['M / ⇧M / ⌥M', 'Mirror across X / Y / Z'],
+  ['D', 'Drop to the build plate'],
+  ['← → ↑ ↓', 'Nudge by the snap step in X and Y'],
+  ['Page Up / Down', 'Nudge in Z'],
+  ['Shift + nudge', '10× the step'],
+  ['?', 'Show these shortcuts'],
+]
+
+/**
+ * A letter shortcut, by physical key where the event has one -- Option+M types
+ * µ, so `key` alone would miss it -- and by the typed letter where it does not,
+ * as with some remote keyboards and automation.
+ */
+const isLetter = (e: KeyboardEvent, letter: string): boolean =>
+  e.code === `Key${letter.toUpperCase()}` || (!e.code && e.key.toLowerCase() === letter)
+
+/** Keys a focused control already uses, so the designer must not take them. */
+const OWNS_KEYS = 'input, textarea, [contenteditable="true"], [role="combobox"], [role="listbox"], [role="menu"], [role="slider"]'
 
 export default function BambuDesignerPage() {
   const navigate = useNavigate()
@@ -91,6 +125,9 @@ export default function BambuDesignerPage() {
   const [saveAsOpen, setSaveAsOpen] = useState(false)
   const [textOutlines, setTextOutlines] = useState<Map<string, Ring[]>>(new Map())
   const [libraryBusy, setLibraryBusy] = useState<string | null>(null)
+  const [mirrorAnchor, setMirrorAnchor] = useState<HTMLElement | null>(null)
+  const [shortcutsAnchor, setShortcutsAnchor] = useState<HTMLElement | null>(null)
+  const shortcutsButton = useRef<HTMLButtonElement>(null)
 
   const objects = doc.doc.objects
   const machine = (doc.doc.machine?.kind === 'printer' ? doc.doc.machine : BAMBU_X2D) as PrinterProfile
@@ -244,10 +281,45 @@ export default function BambuDesignerPage() {
     }))
   }, [bounds, doc])
 
+  /**
+   * With a selection, each selected part drops on its own. With none -- and from
+   * the print warning, which is about the whole model -- everything moves as one
+   * body, so an assembly keeps its shape. Locked parts never move.
+   */
+  const dropToPlate = useCallback((scope: 'auto' | 'model' = 'auto') => {
+    const selected = scope === 'auto' && doc.selection.size > 0
+    const ids = (selected ? [...doc.selection] : objects.map(o => o.id))
+      .filter(id => !findObject(objects, id)?.locked)
+    const deltas = dropToPlateDeltas(bounds, ids, !selected)
+    if (!deltas.size) return
+    doc.replace(d => ({
+      ...d,
+      objects: d.objects.map(o => {
+        const delta = deltas.get(o.id)
+        if (delta === undefined) return o
+        const [x, y, z] = o.transform.position
+        return { ...o, transform: { ...o.transform, position: [x, y, z + delta] as Triple } }
+      }),
+    }))
+  }, [bounds, doc, objects])
+
+  const nudge = useCallback((axis: Axis, direction: 1 | -1, large: boolean) => {
+    const ids = [...doc.selection].filter(id => !findObject(objects, id)?.locked)
+    if (!ids.length) return
+    const step = (snapMm || FREE_NUDGE_MM) * (large ? SHIFT_NUDGE : 1) * direction
+    const delta: [number, number, number] = [0, 0, 0]
+    delta[axis] = step
+    doc.replace(
+      d => ({ ...d, objects: translateObjects(d.objects, new Set(ids), ...delta) }),
+      // One undo step per burst of key presses on the same selection.
+      `nudge:${ids.join(',')}`,
+    )
+  }, [doc, objects, snapMm])
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null
-      if (target && ['INPUT', 'TEXTAREA'].includes(target.tagName)) return
+      if (target?.closest?.(OWNS_KEYS)) return
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (doc.selection.size) { e.preventDefault(); void removeSelected() }
         return
@@ -262,13 +334,33 @@ export default function BambuDesignerPage() {
         doc.duplicateObjects(doc.selection)
         return
       }
+      if (e.metaKey || e.ctrlKey) return
+
+      const arrows: Record<string, [Axis, 1 | -1]> = {
+        ArrowLeft: [0, -1], ArrowRight: [0, 1], ArrowUp: [1, 1], ArrowDown: [1, -1],
+        PageUp: [2, 1], PageDown: [2, -1],
+      }
+      const arrow = arrows[e.key]
+      if (arrow) {
+        if (!doc.selection.size) return
+        // Held, not just pressed: without this the page scrolls as well.
+        e.preventDefault()
+        nudge(arrow[0], arrow[1], e.shiftKey)
+        return
+      }
+      if (e.key === '?') {
+        setShortcutsAnchor(shortcutsButton.current)
+        return
+      }
+
       // Tinkercad's single-key tools.
-      if (e.key.toLowerCase() === 'g' && doc.selection.size > 1) doc.groupObjects(doc.selection)
-      if (e.key.toLowerCase() === 'm') mirror(0)
+      if (isLetter(e, 'g') && doc.selection.size > 1) doc.groupObjects(doc.selection)
+      if (isLetter(e, 'm')) mirror(e.altKey ? 2 : e.shiftKey ? 1 : 0)
+      if (isLetter(e, 'd') && !e.shiftKey && !e.altKey) dropToPlate()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [doc, removeSelected, mirror])
+  }, [doc, removeSelected, mirror, nudge, dropToPlate])
 
   const exportMesh = useCallback(async (format: 'stl' | '3mf') => {
     const program = programFromScene(objects, { textOutlines })
@@ -349,11 +441,25 @@ export default function BambuDesignerPage() {
           onClick={() => selectedObject && doc.ungroupObject(selectedObject.id)}
         ><CallSplitRoundedIcon fontSize="small" /></IconButton>
       </span></Tooltip>
-      <Tooltip title="Mirror across X (M)" describeChild><span>
+      <Tooltip title="Mirror (M, ⇧M, ⌥M)" describeChild><span>
         <IconButton
-          size="small" aria-label="Mirror across X" disabled={!doc.selection.size}
-          onClick={() => mirror(0)}
+          size="small" aria-label="Mirror" disabled={!doc.selection.size}
+          aria-haspopup="menu" aria-expanded={Boolean(mirrorAnchor)}
+          onClick={e => setMirrorAnchor(e.currentTarget)}
         ><FlipRoundedIcon fontSize="small" /></IconButton>
+      </span></Tooltip>
+      <Menu anchorEl={mirrorAnchor} open={Boolean(mirrorAnchor)} onClose={() => setMirrorAnchor(null)}>
+        {AXES.map(({ axis, label }) => (
+          <MenuItem key={axis} onClick={() => { setMirrorAnchor(null); mirror(axis) }}>
+            Mirror across {label}
+          </MenuItem>
+        ))}
+      </Menu>
+      <Tooltip title={doc.selection.size ? 'Drop selection to plate (D)' : 'Drop everything to plate (D)'} describeChild><span>
+        <IconButton
+          size="small" aria-label="Drop to plate" disabled={!objects.length}
+          onClick={() => dropToPlate()}
+        ><VerticalAlignBottomRoundedIcon fontSize="small" /></IconButton>
       </span></Tooltip>
       <Tooltip title="Delete" describeChild><span>
         <IconButton
@@ -400,6 +506,29 @@ export default function BambuDesignerPage() {
         <ToggleButton value aria-label="Inches">in</ToggleButton>
       </ToggleButtonGroup>
       <Button size="small" onClick={() => setFitToken(t => t + 1)}>Fit</Button>
+      <Tooltip title="Keyboard shortcuts (?)" describeChild>
+        <IconButton
+          ref={shortcutsButton} size="small" aria-label="Keyboard shortcuts"
+          onClick={e => setShortcutsAnchor(e.currentTarget)}
+        ><KeyboardRoundedIcon fontSize="small" /></IconButton>
+      </Tooltip>
+      <Popover
+        open={Boolean(shortcutsAnchor)} anchorEl={shortcutsAnchor}
+        onClose={() => setShortcutsAnchor(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+      >
+        <Box
+          component="dl" aria-label="Keyboard shortcuts"
+          sx={{ m: 0, p: 2, display: 'grid', gridTemplateColumns: 'auto 1fr', columnGap: 2, rowGap: 0.75 }}
+        >
+          {SHORTCUTS.map(([keys, action]) => (
+            <Box key={keys} sx={{ display: 'contents' }}>
+              <Typography component="dt" variant="body2" sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{keys}</Typography>
+              <Typography component="dd" variant="body2" sx={{ m: 0, color: 'text.secondary' }}>{action}</Typography>
+            </Box>
+          ))}
+        </Box>
+      </Popover>
 
       <Box sx={{ flex: 1 }} />
 
@@ -427,10 +556,12 @@ export default function BambuDesignerPage() {
       <Button size="small" onClick={() => setOpenDialog(true)}>Open</Button>
       <Button size="small" onClick={() => setSaveAsOpen(true)}>Save as</Button>
       <Button
-        size="small" variant="contained" disabled={lifecycle.busy}
+        size="small" variant="contained" disabled={lifecycle.busy || (!objects.length && !lifecycle.savedId)}
         // A never-saved design has no name but a default one, and writing
         // that default is how a shelf of "Untitled model" gets made. The
-        // first save asks; every save after it just saves.
+        // first save asks; every save after it just saves. An empty design
+        // that was never saved has nothing to keep, but a saved one may have
+        // been emptied on purpose.
         onClick={() => (lifecycle.savedId ? void lifecycle.save() : setSaveAsOpen(true))}
       >
         {lifecycle.hasUnsavedChanges ? 'Save *' : 'Save'}
@@ -551,7 +682,17 @@ export default function BambuDesignerPage() {
               <Alert severity={severity} variant="outlined">
                 <Stack spacing={0.5}>
                   {issues.map((issue, i) => (
-                    <Typography key={i} variant="body2">{issue.message}</Typography>
+                    <Box key={i}>
+                      <Typography variant="body2">{issue.message}</Typography>
+                      {issue.fix === 'drop-to-plate' && (
+                        <Button
+                          size="small" startIcon={<VerticalAlignBottomRoundedIcon />}
+                          onClick={() => dropToPlate('model')} sx={{ mt: 0.5 }}
+                        >
+                          Drop to plate
+                        </Button>
+                      )}
+                    </Box>
                   ))}
                 </Stack>
               </Alert>
