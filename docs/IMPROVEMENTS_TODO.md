@@ -135,9 +135,9 @@ for effort. Tick items off here as they land.
 ## EL-ement Statistics
 
 ### Flow
-- [ ] Make filter changes consistent with chart clicks: either apply the form live
-      (debounced for search) or show an "Unapplied changes" state on the Apply
-      button while the draft differs from the URL.
+- [x] The scope form says "Not applied yet" while it differs from what the page
+      is showing, and the Apply button reads "Filters applied" and is disabled
+      when there is nothing to apply.
 - [ ] Keep the scroll position when a chart click re-filters.
 
 ### Features

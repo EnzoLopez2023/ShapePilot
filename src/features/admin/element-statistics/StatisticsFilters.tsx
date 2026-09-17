@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
-import { Alert, Box, Button, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material'
+import { Alert, Box, Button, Chip, MenuItem, Paper, Stack, TextField, Typography } from '@mui/material'
 import type { ElementConnection, ElementFilters } from '../../../../lib/contracts/elementStatistics.ts'
 import { presetDates, resultLabels } from './format.ts'
 
@@ -18,6 +18,16 @@ export default function StatisticsFilters({ filters, range, connections, materia
   const [preset, setPreset] = useState(range)
   const [error, setError] = useState<string | null>(null)
   const change = (values: Partial<ElementFilters>) => setDraft(previous => ({ ...previous, ...values }))
+  // A chart click applies at once while this form waits for Apply, so the form
+  // says out loud when what it shows is not what the page is showing.
+  const pending = useMemo(() => {
+    if (preset !== range) return true
+    const dates = preset === 'custom'
+      ? { from: draft.from, to: draft.to }
+      : presetDates(preset, draft.timeZone)
+    const wanted: ElementFilters = { ...draft, ...dates }
+    return (Object.keys(wanted) as (keyof ElementFilters)[]).some(key => wanted[key] !== filters[key])
+  }, [draft, filters, preset, range])
   const submit = (event: FormEvent) => {
     event.preventDefault()
     try {
@@ -42,7 +52,10 @@ export default function StatisticsFilters({ filters, range, connections, materia
   return (
     <Paper component="section" aria-labelledby="statistics-filters-heading" sx={{ p: 2 }}>
       <Stack component="form" onSubmit={submit} spacing={2}>
-        <Typography id="statistics-filters-heading" variant="h2" component="h3">History scope</Typography>
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap' }}>
+          <Typography id="statistics-filters-heading" variant="h2" component="h3">History scope</Typography>
+          {pending && <Chip size="small" color="warning" variant="outlined" label="Not applied yet" />}
+        </Stack>
         <Box sx={{ display: 'grid', gap: 2, gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', lg: 'repeat(4, 1fr)' } }}>
           <TextField select size="small" label="Date range" value={preset}
             onChange={event => setPreset(event.target.value)}>
@@ -108,10 +121,14 @@ export default function StatisticsFilters({ filters, range, connections, materia
         </Box>
         {error && <Alert severity="error">{error}</Alert>}
         <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', alignItems: 'center' }}>
-          <Button type="submit" variant="contained">Apply filters</Button>
+          <Button type="submit" variant="contained" disabled={!pending}>
+            {pending ? 'Apply filters' : 'Filters applied'}
+          </Button>
           <Button onClick={onReset}>Reset filters</Button>
           <Typography variant="body2" color="text.secondary">
-            One scope for charts, jobs and exports. Material filters select whole jobs.
+            {pending
+              ? 'These changes are not in the charts or the ledger yet.'
+              : 'One scope for charts, jobs and exports. Material filters select whole jobs.'}
           </Typography>
         </Stack>
       </Stack>

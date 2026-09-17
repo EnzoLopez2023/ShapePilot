@@ -313,3 +313,25 @@ test('CSV downloads use the current filters and include more than the visible-pa
   expect(click).toHaveBeenCalled()
   expect(calls.some(call => call.path.includes('/export/jobs.csv?') && call.path.includes('result=failed_or_aborted'))).toBe(true)
 })
+
+test('an edited scope says it is not applied until Apply is pressed', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await screen.findByRole('heading', { name: 'Job history (2)' })
+  // Nothing edited: the button has nothing to do, and says so.
+  expect(screen.getByRole('button', { name: 'Filters applied' }).hasAttribute('disabled')).toBe(true)
+  expect(screen.queryByText('Not applied yet')).toBeNull()
+
+  await user.click(screen.getByRole('combobox', { name: 'Job result' }))
+  await user.click(screen.getByRole('option', { name: 'Failed or aborted' }))
+
+  // A chart click applies at once, so an edited form must not look applied.
+  await screen.findByText('Not applied yet')
+  expect(screen.getByText('These changes are not in the charts or the ledger yet.')).toBeTruthy()
+  await screen.findByRole('heading', { name: 'Job history (2)' })
+
+  await user.click(screen.getByRole('button', { name: 'Apply filters' }))
+
+  await screen.findByRole('heading', { name: 'Job history (1)' })
+  await waitFor(() => expect(screen.queryByText('Not applied yet')).toBeNull())
+})
