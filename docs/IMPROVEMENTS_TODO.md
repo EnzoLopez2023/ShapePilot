@@ -51,6 +51,8 @@ for effort. Tick items off here as they land.
 - [x] Update tooltip text.
 
 ### Consistency
+- [ ] Select all (⌘A) in the designers; there is no way to select every object
+      without clicking each one.
 - [x] Save is disabled only for an empty design that was never saved, in all three
       designers (a saved design may be emptied on purpose).
 - [x] Keyboard shortcuts popover (toolbar button, or `?`).
@@ -80,15 +82,20 @@ for effort. Tick items off here as they land.
 - [ ] Optional cost line once filament prices exist (see Filaments → price per kg).
 
 ### Parts library
-- [ ] Parametric library entries (generated, not STL): make `LibraryEntry` a
-      union of file-backed and generator-backed parts.
-- [ ] Screw clearance hole (M2/M2.5/M3/M4/M5), as a hole object.
-- [ ] Countersunk and counterbored screw holes.
-- [ ] Heat-set insert pocket (M2/M3/M4 with the common insert dimensions).
-- [ ] Hex nut trap (M3/M4).
-- [ ] Gridfinity base unit (1×1, parametric N×M).
-- [ ] Skådis hook / peg (reuse `src/geometry/skadis.ts`).
-- [ ] Group the library palette by category once it has more than a handful.
+- [x] The palette takes generated parts as well as files, grouped by category.
+- [x] Screw clearance holes, countersunk and counterbored (M2-M5), from ISO sizes
+      plus print clearance. Each is a hole group that cuts as one shape.
+- [x] Heat-set insert pockets (M2-M5, brass inserts, blind from the top).
+- [x] Hex nut traps (M2-M5, from the bottom; an extruded hexagon, because the
+      kernel and the AI contract both require at least 8 segments on a cylinder).
+- [x] A size/thickness dialog: with a part selected the cutter is sized to it and
+      lands in its middle, ready to nudge and group.
+- [ ] Gridfinity base unit — deferred. The profile is two 45° chamfers with
+      rounded corners, and the scene has no loft or chamfer primitive; a stacked
+      approximation would not seat in a real baseplate. Needs a new primitive.
+- [ ] Skådis hook / peg — deferred. `src/geometry/skadis.ts` draws the board, not
+      a hook, and the hook's fit needs test prints to settle.
+- [ ] Print-test the fastener sizes and adjust the clearance table.
 
 ### Better print checks
 - [ ] Minimum wall thickness: sample ray casts through the mesh and flag walls

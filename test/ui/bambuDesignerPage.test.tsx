@@ -447,3 +447,35 @@ test('a part set to an AMS tray exports on that filament; the rest fill in aroun
     createSpy.mockRestore()
   }
 })
+
+test('a hardware cutter asks for its size and lands as one hole', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(screen.getByRole('button', { name: /^Countersunk screw hole/ })).toBeTruthy())
+
+  await user.click(screen.getByRole('button', { name: /^Countersunk screw hole/ }))
+  const dialog = within(await screen.findByRole('dialog'))
+  await user.click(dialog.getByLabelText('Size'))
+  await user.click(await screen.findByRole('option', { name: 'M4' }))
+  await user.clear(dialog.getByLabelText('Material thickness'))
+  await user.type(dialog.getByLabelText('Material thickness'), '8')
+  await user.click(dialog.getByRole('button', { name: 'Add' }))
+
+  const tree = await screen.findByRole('list', { name: 'Objects' })
+  await waitFor(() => expect(within(tree).getByText(/M4 countersunk screw hole/)).toBeTruthy())
+  // The tree marks a hole with a trailing " · hole" after its description.
+  expect(within(tree).getByText(/· hole$/)).toBeTruthy()
+  expect(screen.getAllByText(/1 object/).length).toBeGreaterThan(0)
+})
+
+test('a thickness of zero cannot be added', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(screen.getByRole('button', { name: /^Heat-set insert pocket/ })).toBeTruthy())
+
+  await user.click(screen.getByRole('button', { name: /^Heat-set insert pocket/ }))
+  const dialog = within(await screen.findByRole('dialog'))
+  await user.clear(dialog.getByLabelText('Material thickness'))
+  await user.type(dialog.getByLabelText('Material thickness'), '0')
+  expect(dialog.getByRole('button', { name: 'Add' }).hasAttribute('disabled')).toBe(true)
+})

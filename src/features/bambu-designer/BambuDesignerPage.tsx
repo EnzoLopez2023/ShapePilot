@@ -51,7 +51,10 @@ import { useAmsTrays } from './useAmsTrays.ts'
 import { assignExtruders, filamentWarnings, trayLabel } from './amsTrays.ts'
 import { SPOOL_GRAMS, densityOf, formatGrams, printedGrams } from './estimate.ts'
 import LibraryPalette from './components/LibraryPalette.tsx'
-import type { LibraryEntry } from './components/libraryEntries.ts'
+import type { FastenerEntry, FileEntry, LibraryEntry } from './components/libraryEntries.ts'
+import FastenerDialog from './components/FastenerDialog.tsx'
+import type { MetricSize } from './hardware.ts'
+import { createFastenerCutter } from './hardware.ts'
 import type { SolidPaletteKind } from './components/solidEntries.ts'
 import {
   alignDeltas, combinedBounds, dropToPlateDeltas, meshBounds, mirrorTransform,
@@ -130,6 +133,7 @@ export default function BambuDesignerPage() {
   const [textOutlines, setTextOutlines] = useState<Map<string, Ring[]>>(new Map())
   const [libraryBusy, setLibraryBusy] = useState<string | null>(null)
   const ams = useAmsTrays()
+  const [fastener, setFastener] = useState<FastenerEntry | null>(null)
   const [mirrorAnchor, setMirrorAnchor] = useState<HTMLElement | null>(null)
   const [shortcutsAnchor, setShortcutsAnchor] = useState<HTMLElement | null>(null)
   const shortcutsButton = useRef<HTMLButtonElement>(null)
@@ -250,7 +254,7 @@ export default function BambuDesignerPage() {
   /** A ready-made part joins the scene as an ordinary imported object: the
    *  bytes go to the asset store and the document keeps only the hash, exactly
    *  as if the file had been picked from disk. */
-  const addLibraryPart = useCallback(async (entry: LibraryEntry) => {
+  const addLibraryFile = useCallback(async (entry: FileEntry) => {
     setLibraryBusy(entry.id)
     try {
       const response = await fetch(entry.url)
@@ -281,6 +285,35 @@ export default function BambuDesignerPage() {
       setLibraryBusy(null)
     }
   }, [addMode, doc, lifecycle])
+
+  const addLibraryPart = useCallback((entry: LibraryEntry) => {
+    if (entry.kind === 'fastener') setFastener(entry)
+    else void addLibraryFile(entry)
+  }, [addLibraryFile])
+
+  /** The one top-level part a cutter would be sized to and placed in. */
+  const fastenerTarget = useMemo(() => {
+    if (!selectedObject || selectedObject.mode !== 'solid') return null
+    if (!objects.some(o => o.id === selectedObject.id)) return null
+    const b = bounds.get(selectedObject.id)
+    return b ? { object: selectedObject, bounds: b } : null
+  }, [selectedObject, objects, bounds])
+
+  const addFastener = useCallback((size: MetricSize, thicknessMm: number) => {
+    if (!fastener) return
+    const cutter = createFastenerCutter(fastener.fastener, size, thicknessMm)
+    const b = fastenerTarget?.bounds
+    doc.addObject(b
+      ? {
+        ...cutter,
+        transform: {
+          ...cutter.transform,
+          position: [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, b.min[2]],
+        },
+      }
+      : cutter)
+    setFastener(null)
+  }, [doc, fastener, fastenerTarget])
 
   const removeSelected = useCallback(async () => {
     if (!doc.selection.size) return
@@ -630,7 +663,7 @@ export default function BambuDesignerPage() {
             <SolidPalette mode={addMode} onModeChange={setAddMode} onAdd={addSolid} />
             <Divider />
             <Typography variant="h3">Parts</Typography>
-            <LibraryPalette busyId={libraryBusy} onAdd={entry => void addLibraryPart(entry)} />
+            <LibraryPalette busyId={libraryBusy} onAdd={addLibraryPart} />
             <Divider />
             <Typography variant="h3">Align</Typography>
             <Stack spacing={0.5}>
@@ -800,6 +833,15 @@ export default function BambuDesignerPage() {
         }
       />
 
+      <FastenerDialog
+        entry={fastener}
+        target={fastenerTarget && {
+          name: fastenerTarget.object.name,
+          thicknessMm: fastenerTarget.bounds.max[2] - fastenerTarget.bounds.min[2],
+        }}
+        onAdd={addFastener}
+        onClose={() => setFastener(null)}
+      />
       <OpenDocumentDialog
         open={openDialog}
         documents={lifecycle.documents}
