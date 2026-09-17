@@ -1,6 +1,8 @@
 // The design-document API client. Thin wrappers over apiRequest, like every
 // other feature service: no MSAL here, no base URL, no retries.
 import { apiRequest } from './http.ts'
+import { ApiRequestError } from './errors.ts'
+import type { DesignPrintHistory } from '../../lib/contracts/designPrints.ts'
 import type { DesignDocument, DocumentKind, SceneObject } from '../model/document.ts'
 
 const base = '/design-documents'
@@ -43,7 +45,18 @@ export const updateDocument = (id: string, d: DesignDocument) =>
 export const cloneDocument = (id: string, name?: string, kind?: DocumentKind) =>
   apiRequest<{ id: string }>(`${base}/${id}/clone`, { method: 'POST', body: { name, kind } })
 
+/**
+ * What this design has printed, per the household printer's history. `null`
+ * when this account may not see that history, which is an ordinary state: the
+ * designer simply shows nothing.
+ */
+export const getDocumentPrints = (id: string) =>
+  apiRequest<DesignPrintHistory>(`${base}/${id}/prints`).catch(error => {
+    if (error instanceof ApiRequestError && error.status === 403) return null
+    throw error
+  })
+
 export const deleteDocument = (id: string) =>
   apiRequest<{ ok: true }>(`${base}/${id}`, { method: 'DELETE' })
 
-export type { DesignDocument, DocumentKind, SceneObject }
+export type { DesignDocument, DesignPrintHistory, DocumentKind, SceneObject }

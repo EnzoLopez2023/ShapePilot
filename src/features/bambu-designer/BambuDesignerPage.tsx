@@ -47,6 +47,7 @@ import { mergeProposal } from '../../csg/mergeProposal.ts'
 import { PREVIEW_PART_ID, useProposalPreview } from '../../components/designer/useProposalPreview.ts'
 import SolidPalette from './components/SolidPalette.tsx'
 import FilamentSlotField from './components/FilamentSlotField.tsx'
+import PrintHistory from './components/PrintHistory.tsx'
 import { useAmsTrays } from './useAmsTrays.ts'
 import { assignExtruders, filamentWarnings, trayLabel } from './amsTrays.ts'
 import { SPOOL_GRAMS, densityOf, formatGrams, printedGrams } from './estimate.ts'
@@ -745,6 +746,9 @@ export default function BambuDesignerPage() {
         right={
           <Stack spacing={1.5}>
             <Typography variant="h3">Properties</Typography>
+            {lifecycle.savedId && (
+              <PrintHistory documentId={lifecycle.savedId} />
+            )}
             <Inspector
               object={selectedObject}
               selectionCount={doc.selection.size}

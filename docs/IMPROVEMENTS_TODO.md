@@ -152,8 +152,10 @@ for effort. Tick items off here as they land.
       matches a saved design (normalised to letters and digits, with the
       slicer's plate number and extension stripped). An ambiguous match offers
       nothing, and the wording says it is a name match, not provenance.
-- [ ] On a design, show its print history (count, success rate, last printed,
-      average grams) — endpoint that queries the ledger by title match.
+- [x] On a design, show its print history: `GET /api/design-documents/:id/prints`
+      (administrator-only, like the rest of the printer's history) matches job
+      titles to the design name, and the Bambu Designer shows prints, failures,
+      last printed and average grams, worded as a name match.
 - [ ] Embed the design id in 3MF metadata on export, so matching stops depending
       on titles (check whether Bambu cloud returns it).
 - [x] Success rate by material: each material row carries its jobs by outcome

@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict'
 import { afterAll, beforeAll, describe, test } from 'vitest'
 import {
-  OTHER_OID, startTestServer, stubVerifier, validClaims,
+  OTHER_OID, TEST_OID, startTestServer, stubVerifier, validClaims,
 } from '../helpers/server.ts'
 import type { TestServer } from '../helpers/server.ts'
 
@@ -196,6 +196,12 @@ describe('design document routes', () => {
     })).status, 404)
   })
 
+  test('print history is the printer\'s history, so it is administrator-only', async () => {
+    const created = await create(docPayload({ name: 'Bench dog' }))
+    const denied = await server.fetchJson(`${BASE}/${created.body.id}/prints`, { token: OWNER_TOKEN })
+    assert.equal(denied.status, 403)
+  })
+
   test('an unknown or non-numeric id is a 404, not a crash', async () => {
     for (const id of ['999999', 'abc', '../../etc/passwd', '1e3', '-1']) {
       const got = await server.fetchJson(`${BASE}/${encodeURIComponent(id)}`, { token: OWNER_TOKEN })
@@ -260,5 +266,37 @@ describe('design document routes', () => {
       method: 'POST', token: OWNER_TOKEN, body: JSON.stringify(docPayload({ objects: [node] })),
     })
     assert.equal(res.status, 400)
+  })
+})
+
+// The history itself, for an account that may see the printer's records.
+describe('design print history', () => {
+  let server: TestServer
+
+  beforeAll(async () => {
+    server = await startTestServer({
+      label: 'design-prints',
+      env: { SHAPEPILOT_ADMIN_OIDS: TEST_OID },
+      verifier: stubVerifier({ [OWNER_TOKEN]: validClaims() }),
+    })
+  })
+
+  afterAll(async () => { await server.close() })
+
+  test('a design with nothing recorded reports no prints rather than failing', async () => {
+    const created = await server.fetchJson<{ id: string }>(BASE, {
+      method: 'POST', token: OWNER_TOKEN, body: JSON.stringify(docPayload({ name: 'Bench dog' })),
+    })
+    const history = await server.fetchJson<{ prints: number; averageGrams: number | null }>(
+      `${BASE}/${created.body.id}/prints`, { token: OWNER_TOKEN })
+    assert.equal(history.status, 200)
+    assert.equal(history.body.prints, 0)
+    // No estimate is null, never a zero standing in for one.
+    assert.equal(history.body.averageGrams, null)
+  })
+
+  test('a design that does not exist has no history to report', async () => {
+    const missing = await server.fetchJson(`${BASE}/999999/prints`, { token: OWNER_TOKEN })
+    assert.equal(missing.status, 404)
   })
 })

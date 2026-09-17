@@ -15,6 +15,9 @@ import { ownerOf } from '../auth/requireAuth.ts'
 import {
   validateCloneRequest, validateDesignDocumentInput, validateKindQuery,
 } from '../validation/designDocument.ts'
+import { requireRole } from '../auth/requireRole.ts'
+import { designPrintHistory } from '../../lib/contracts/designPrints.ts'
+import { REPORT_JOB_LIMIT } from '../element/synchronization.ts'
 
 type Handler = (req: Request, res: Response) => Promise<void>
 
@@ -69,6 +72,23 @@ export function createDesignDocumentRouter(repos: Repositories): Router {
       notes: record.notes ?? undefined,
       revision: 0,
     })
+  }))
+
+  /**
+   * What this design has printed, as far as the printer's own history can say.
+   * The match is the job title against the design's name -- nothing in a cloud
+   * record names a design -- so the client says it is a name match.
+   *
+   * Gated like the rest of the printer's history: it is household data about
+   * one machine, not something a design owns. An account that may not see the
+   * statistics gets 403 and the designer simply shows nothing.
+   */
+  router.get('/:id/prints', requireRole('admin', repos.memberships), asyncRoute(async (req, res) => {
+    const owner = ownerOf(req)
+    const document = await designDocuments.get(owner, pathId(req.params.id))
+    if (!document) throw new ApiError(404, 'not_found', 'That design does not exist.')
+    const jobs = await repos.elementStatistics.listJobs(null, REPORT_JOB_LIMIT)
+    res.json(designPrintHistory(document.name, jobs))
   }))
 
   router.post('/', asyncRoute(async (req, res) => {
