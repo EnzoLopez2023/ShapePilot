@@ -95,10 +95,17 @@ function booleanObject(node: BooleanNode): SceneObject | null {
   const children: SceneObject[] = []
   node.children.forEach((child, index) => {
     const object = nodeObject(child)
-    if (!object) return
-    const hole = node.op === 'difference' && index > 0
-    children.push(hole ? { ...object, mode: 'hole' } : object)
+    if (object) children.push({ ...object, mode: childMode(node, index) })
   })
+  return groupObject(node, children)
+}
+
+/** A difference's first child is material and the rest are holes. */
+export const childMode = (parent: BooleanNode, index: number): 'solid' | 'hole' =>
+  parent.op === 'difference' && index > 0 ? 'hole' : 'solid'
+
+/** The group a boolean node lands as, around children already converted. */
+export function groupObject(node: BooleanNode, children: SceneObject[]): SceneObject | null {
   if (!children.length) return null
 
   // An intersection has no scene equivalent -- a group unions its solids -- so

@@ -15,7 +15,7 @@ import ViewInArRoundedIcon from '@mui/icons-material/ViewInArRounded'
 import { useNavigate } from 'react-router-dom'
 
 import AiPanel from '../../components/designer/AiPanel.tsx'
-import { summarise, useAiDesigner } from '../../components/designer/useAiDesigner.ts'
+import { appendChat, useAiDesigner } from '../../components/designer/useAiDesigner.ts'
 import { OpenDocumentDialog, SaveAsDialog } from '../../components/designer/DocumentDialogs.tsx'
 import DocumentNameField from '../../components/designer/DocumentNameField.tsx'
 import { useDocumentLifecycle } from '../../components/designer/useDocumentLifecycle.ts'
@@ -29,7 +29,7 @@ import { compileObject } from '../../geometry/sceneShapes.ts'
 import { evaluateProgram } from '../../csg/evaluate.ts'
 import { programFromScene } from '../../csg/fromScene.ts'
 import { resolveAssets } from '../../import/assets.ts'
-import { programToObjects } from '../../csg/toScene.ts'
+import { mergeProposal } from '../../csg/mergeProposal.ts'
 import { writePlainSvg } from '../../export/plainSvg.ts'
 import PhotoSourcePanel from './PhotoSourcePanel.tsx'
 import VectorPreview from './VectorPreview.tsx'
@@ -58,7 +58,7 @@ export default function PlaygroundPage() {
   const navigate = useNavigate()
   const doc = useDesignDocument('playground')
   const lifecycle = useDocumentLifecycle({ kind: 'playground', doc: doc.doc, setDoc: doc.setDoc })
-  const assistant = useAiDesigner('playground')
+  const assistant = useAiDesigner('playground', doc.doc.chat)
   const trace = useVectorTrace()
 
   const [fitToken, setFitToken] = useState(0)
@@ -102,17 +102,19 @@ export default function PlaygroundPage() {
       .filter(s => s.polygons.length),
     [twoD, objects, textOutlines])
 
-  // A proposal is rendered as a ghost beside the current model, so the change
-  // is visible before it is accepted rather than after.
+  // A proposal is previewed as the scene it would leave behind -- merged, so an
+  // import or a hidden part the assistant could not touch is in the picture.
   const proposal = assistant.proposal
   const previewToken = useRef(0)
   useEffect(() => {
     const run = ++previewToken.current
     if (!proposal) { setPreviewMesh(null); return }
-    void evaluateProgram(proposal.program)
+    const merged = mergeProposal(objects, proposal.sent, proposal.program)
+    void resolveAssets(merged)
+      .then(({ meshes }) => evaluateProgram(programFromScene(merged, { textOutlines }), { meshes }))
       .then(mesh => { if (run === previewToken.current) setPreviewMesh(mesh) })
       .catch(() => { if (run === previewToken.current) setPreviewMesh(null) })
-  }, [proposal])
+  }, [proposal, objects, textOutlines])
 
   const viewportParts = useMemo<ViewportPart[]>(() => {
     if (previewMesh) {
@@ -134,22 +136,14 @@ export default function PlaygroundPage() {
   const applyProposal = useCallback(() => {
     const pending = assistant.proposal
     if (!pending) return
-    const next = programToObjects(pending.program)
+    const turns = assistant.accept()
     // One replace call: the geometry and the transcript land together, so the
-    // whole turn is a single undo step. The transcript is taken from the hook
-    // rather than accumulated here, so there is one source of truth for it.
-    const transcript: ChatTurn[] = [
-      ...assistant.turns,
-      {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        text: pending.notes,
-        at: new Date().toISOString(),
-        summary: summarise(pending.diff),
-      },
-    ]
-    doc.replace(d => ({ ...d, objects: next, chat: transcript }))
-    assistant.accept()
+    // whole turn is a single undo step.
+    doc.replace(d => ({
+      ...d,
+      objects: mergeProposal(d.objects, pending.sent, pending.program),
+      chat: appendChat(d.chat, turns),
+    }))
     setFitToken(t => t + 1)
   }, [assistant, doc])
 
@@ -159,8 +153,7 @@ export default function PlaygroundPage() {
     const next = vectorDrawingToPathObjects(pending.drawing)
     // Same shape as applyProposal: geometry and transcript land in one replace,
     // so the whole trace is a single undo step.
-    const transcript: ChatTurn[] = [
-      ...assistant.turns,
+    const turns: ChatTurn[] = [
       {
         id: crypto.randomUUID(), role: 'user',
         text: 'Trace this photo to vector', at: new Date().toISOString(),
@@ -171,11 +164,10 @@ export default function PlaygroundPage() {
         summary: `traced ${next.length} ${next.length === 1 ? 'path' : 'paths'} from a photo`,
       },
     ]
-    doc.replace(d => ({ ...d, objects: next, chat: transcript }))
-    assistant.setTurns(transcript)
+    doc.replace(d => ({ ...d, objects: next, chat: appendChat(d.chat, turns) }))
     trace.discard()
     setFitToken(t => t + 1)
-  }, [trace, assistant, doc])
+  }, [trace, doc])
 
   const exportSvg = useCallback(() => {
     if (!canvasShapes.length) {

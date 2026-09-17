@@ -20,7 +20,7 @@ import DocumentNameField from '../../components/designer/DocumentNameField.tsx'
 import Inspector from '../../components/designer/Inspector.tsx'
 import ObjectTree from '../../components/designer/ObjectTree.tsx'
 import AiPanel from '../../components/designer/AiPanel.tsx'
-import { useAiDesigner } from '../../components/designer/useAiDesigner.ts'
+import { appendChat, useAiDesigner } from '../../components/designer/useAiDesigner.ts'
 import { useDocumentLifecycle } from '../../components/designer/useDocumentLifecycle.ts'
 import Viewport3D from '../../components/viewport3d/Viewport3D.tsx'
 import type { GizmoMode, ViewportPart } from '../../components/viewport3d/Viewport3D.tsx'
@@ -39,7 +39,7 @@ import { writeThreeMfParts } from '../../export/threemf.ts'
 import { evaluateNode, evaluateProgram } from '../../csg/evaluate.ts'
 import { programFromScene } from '../../csg/fromScene.ts'
 import { resolveAssets, storeImportedFile } from '../../import/assets.ts'
-import { programToObjects } from '../../csg/toScene.ts'
+import { mergeProposal } from '../../csg/mergeProposal.ts'
 import SolidPalette from './components/SolidPalette.tsx'
 import LibraryPalette from './components/LibraryPalette.tsx'
 import type { LibraryEntry } from './components/libraryEntries.ts'
@@ -66,7 +66,7 @@ export default function BambuDesignerPage() {
   const confirm = useConfirm()
   const doc = useDesignDocument('bambu')
   const lifecycle = useDocumentLifecycle({ kind: 'bambu', doc: doc.doc, setDoc: doc.setDoc })
-  const assistant = useAiDesigner('bambu')
+  const assistant = useAiDesigner('bambu', doc.doc.chat)
 
   const [imperial, setImperial] = useState(false)
   const [snapMm, setSnapMm] = useState(1)
@@ -294,11 +294,16 @@ export default function BambuDesignerPage() {
   }, [objects, textOutlines, doc.doc.name, lifecycle])
 
   const applyProposal = useCallback(() => {
-    if (!assistant.proposal) return
-    const added = programToObjects(assistant.proposal.program)
-    // One replace call, so the whole turn is a single undo step.
-    doc.replace(d => ({ ...d, objects: added }))
-    assistant.accept()
+    const pending = assistant.proposal
+    if (!pending) return
+    const turns = assistant.accept()
+    // One replace call: the geometry and the transcript land together, so the
+    // whole turn is a single undo step.
+    doc.replace(d => ({
+      ...d,
+      objects: mergeProposal(d.objects, pending.sent, pending.program),
+      chat: appendChat(d.chat, turns),
+    }))
   }, [assistant, doc])
 
   const toolbar = (

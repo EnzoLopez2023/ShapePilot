@@ -67,13 +67,23 @@ const shapeResponse = {
   usage: { inputTokens: 10, outputTokens: 20, totalTokens: 30 },
 }
 
+/** A design saved after two turns: the conversation belongs to it. */
+const savedIdea = {
+  id: 'saved-idea', kind: 'playground', name: 'Phone stand', revision: 0,
+  objects: [],
+  chat: [
+    { id: 't1', role: 'user', text: 'A stand for my phone', at: '2026-09-01T10:00:00Z' },
+    { id: 't2', role: 'assistant', text: 'Made a 70 mm stand.', at: '2026-09-01T10:00:05Z', summary: 'added stand' },
+  ],
+}
+
 let aiAvailable = true
 let shapeCalls: unknown[] = []
 
-const renderPage = () => render(
+const renderPage = (path = '/playground') => render(
   <ThemeModeProvider initialPreference="light">
     <ConfirmDialogProvider>
-      <MemoryRouter><PlaygroundPage /></MemoryRouter>
+      <MemoryRouter initialEntries={[path]}><PlaygroundPage /></MemoryRouter>
     </ConfirmDialogProvider>
   </ThemeModeProvider>,
 )
@@ -106,6 +116,7 @@ beforeEach(() => {
       return json(vectorResponse)
     }
     if (url.includes('/api/design-assets/')) return json({ ok: true })
+    if (url.includes('/api/design-documents/saved-idea')) return json(savedIdea)
     if (url.includes('/api/design-documents')) return json([])
     return json({ ok: true })
   })
@@ -279,4 +290,52 @@ test('discarding a trace leaves the document untouched', async () => {
   assert.equal(screen.queryByText('Proposed drawing'), null)
   assert.equal(screen.queryByRole('list', { name: 'Objects' }), null)
   await waitFor(() => expect(screen.getByText('Nothing here yet')).toBeTruthy())
+})
+
+test('opening a saved design brings its conversation back and sends it as history', async () => {
+  const user = userEvent.setup()
+  renderPage('/playground?open=saved-idea')
+
+  // The transcript was saved with the design but never read back, so a
+  // reopened idea showed an empty conversation and the model lost the thread.
+  await waitFor(() => expect(screen.getByText('Made a 70 mm stand.')).toBeTruthy())
+  assert.ok(screen.getByText('A stand for my phone'))
+
+  await user.type(screen.getByLabelText(/Describe what you want/), 'make it taller')
+  await user.click(screen.getByRole('button', { name: /Send/ }))
+  await waitFor(() => expect(shapeCalls.length).toBe(1))
+  const call = shapeCalls[0] as { history: { text: string }[] }
+  assert.deepEqual(call.history.map(t => t.text), ['A stand for my phone', 'Made a 70 mm stand.'])
+})
+
+test('undo takes back the turn along with the geometry it made', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(
+    screen.getByRole('button', { name: /phone stand for my iPhone/ })).toBeTruthy())
+  await user.click(screen.getByRole('button', { name: /phone stand for my iPhone/ }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Apply' })).toBeTruthy())
+  await user.click(screen.getByRole('button', { name: 'Apply' }))
+  await waitFor(() => expect(screen.getByText(shapeResponse.notes)).toBeTruthy())
+
+  await user.click(screen.getByRole('button', { name: 'Undo' }))
+
+  await waitFor(() => expect(screen.queryByText(shapeResponse.notes)).toBeNull())
+  assert.equal(screen.queryByRole('list', { name: 'Objects' }), null)
+})
+
+test('discarding a proposal drops its question from the conversation', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(
+    screen.getByRole('button', { name: /phone stand for my iPhone/ })).toBeTruthy())
+  await user.click(screen.getByRole('button', { name: /phone stand for my iPhone/ }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Discard' })).toBeTruthy())
+
+  await user.click(screen.getByRole('button', { name: 'Discard' }))
+
+  await user.type(screen.getByLabelText(/Describe what you want/), 'a cable clip')
+  await user.click(screen.getByRole('button', { name: /Send/ }))
+  await waitFor(() => expect(shapeCalls.length).toBe(2))
+  assert.deepEqual((shapeCalls[1] as { history: unknown[] }).history, [])
 })

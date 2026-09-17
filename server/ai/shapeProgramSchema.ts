@@ -163,6 +163,10 @@ You are MODIFYING an existing program, which is given to you as JSON.
   editable: change its heightMm or transform, or wrap it in a 'difference' or
   'union' (under a NEW id) to cut into it or build onto it. Never invent points
   to stand in for one; points you emit for it are discarded.
+- A part with op 'mesh' is an imported model. You cannot emit that op, so leave
+  it out of your answer: it is kept exactly where it is, and leaving it out
+  does not delete it. Do not rebuild it from primitives; position new parts
+  around it using its transform.
 - In 'notes', say specifically what you added, changed or removed, naming the
   part ids, so the change can be reviewed before it is applied.`
 

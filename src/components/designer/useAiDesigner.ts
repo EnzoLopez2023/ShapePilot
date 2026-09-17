@@ -3,7 +3,13 @@
 // docs/ARCHITECTURE.md sets the rule this hook exists to enforce: the assistant
 // proposes, it never mutates. A turn produces a pending proposal; applying it is
 // a separate, explicit act that lands as exactly one undo step.
-import { useCallback, useEffect, useState } from 'react'
+//
+// The transcript is the document's, not this hook's. It is passed in and the
+// turns an Apply adds are handed back for the page to write in that same undo
+// step -- so opening a design restores its conversation, undo takes a turn back
+// with the geometry it made, and there is no second copy to drift. Only the
+// question still waiting on its answer lives here.
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ShapeProgram } from '../../../lib/contracts/shapeProgram.ts'
 import { validateShapeProgram, walkProgram } from '../../../lib/contracts/shapeProgram.ts'
 import type { ChatTurn } from '../../model/document.ts'
@@ -13,6 +19,8 @@ import { errorMessage } from '../../services/errors.ts'
 
 export interface Proposal {
   program: ShapeProgram
+  /** The program the question was asked about; what the proposal merges into. */
+  sent: ShapeProgram | null
   notes: string
   /** What changed against the program that was sent, for review before applying. */
   diff: ProgramDiff
@@ -29,12 +37,12 @@ export interface AiDesigner {
   busy: boolean
   error: string | null
   proposal: Proposal | null
-  turns: ChatTurn[]
+  /** The saved transcript, plus the question awaiting an answer. */
+  turns: readonly ChatTurn[]
   send: (prompt: string, current: ShapeProgram | null) => Promise<void>
   discard: () => void
-  /** Records the applied turn in the transcript and clears the proposal. */
-  accept: () => void
-  setTurns: (turns: ChatTurn[]) => void
+  /** Clears the proposal and returns the turns to append to the document. */
+  accept: () => ChatTurn[]
   setError: (message: string | null) => void
 }
 
@@ -59,7 +67,9 @@ export function diffPrograms(before: ShapeProgram | null, after: ShapeProgram): 
   const removed: string[] = []
   if (before) {
     for (const node of walkProgram(before.parts)) {
-      if (!seen.has(node.id)) removed.push(node.name)
+      // An import cannot be written back by the model, so its absence from the
+      // answer is not a removal; mergeProposal keeps it.
+      if (!seen.has(node.id) && node.op !== 'mesh') removed.push(node.name)
     }
   }
   return { added, removed, modified }
@@ -73,12 +83,25 @@ export function summarise(diff: ProgramDiff): string {
   return parts.length ? parts.join('; ') : 'no change'
 }
 
-export function useAiDesigner(context: 'playground' | 'bambu'): AiDesigner {
+/** The server refuses a document with more turns than this. */
+const MAX_CHAT_TURNS = 500
+
+/** Appends to a document's transcript, dropping the oldest turns past the cap. */
+export const appendChat = (
+  chat: readonly ChatTurn[] | undefined, added: readonly ChatTurn[],
+): ChatTurn[] => [...(chat ?? []), ...added].slice(-MAX_CHAT_TURNS)
+
+export function useAiDesigner(
+  context: 'playground' | 'bambu',
+  transcript: readonly ChatTurn[] | undefined,
+): AiDesigner {
   const [available, setAvailable] = useState<boolean | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [proposal, setProposal] = useState<Proposal | null>(null)
-  const [turns, setTurns] = useState<ChatTurn[]>([])
+  const [asked, setAsked] = useState<ChatTurn | null>(null)
+  const saved = useMemo(() => transcript ?? [], [transcript])
+  const turns = useMemo(() => (asked ? [...saved, asked] : saved), [saved, asked])
 
   useEffect(() => {
     let cancelled = false
@@ -93,45 +116,54 @@ export function useAiDesigner(context: 'playground' | 'bambu'): AiDesigner {
   const send = useCallback(async (prompt: string, current: ShapeProgram | null) => {
     setBusy(true)
     setError(null)
-    const asked: ChatTurn = {
-      id: newId(), role: 'user', text: prompt, at: new Date().toISOString(),
-    }
-    setTurns(prev => [...prev, asked])
+    setAsked({ id: newId(), role: 'user', text: prompt, at: new Date().toISOString() })
     try {
       const response = await ai.requestShape({
         prompt,
         program: current,
         context,
-        history: turns.map(t => ({ role: t.role, text: t.text })),
+        history: saved.map(t => ({ role: t.role, text: t.text })),
       })
       // Validated again here: the server checked it, but the browser is what
       // hands it to the kernel, and this is the last point before that.
       const program = validateShapeProgram(response.program)
-      setProposal({ program, notes: response.notes, diff: diffPrograms(current, program) })
+      setProposal({
+        program, sent: current, notes: response.notes, diff: diffPrograms(current, program),
+      })
     } catch (cause) {
       setError(errorMessage(cause))
-      setTurns(prev => prev.filter(t => t.id !== asked.id))
+      setAsked(null)
     } finally {
       setBusy(false)
     }
-  }, [context, turns])
+  }, [context, saved])
 
-  const discard = useCallback(() => setProposal(null), [])
-
-  // Note the shape: the transcript is appended and the proposal cleared as two
-  // ordinary calls. Doing the append inside a setProposal updater would run it
-  // twice under StrictMode, which double-posted the assistant's reply.
-  const accept = useCallback(() => {
-    if (!proposal) return
-    setTurns(prev => [...prev, {
-      id: newId(),
-      role: 'assistant',
-      text: proposal.notes,
-      at: new Date().toISOString(),
-      summary: summarise(proposal.diff),
-    }])
+  // A discarded answer takes its question with it: the transcript records what
+  // shaped the design, and a stray question would be sent as history next turn.
+  const discard = useCallback(() => {
     setProposal(null)
-  }, [proposal])
+    setAsked(null)
+  }, [])
 
-  return { available, busy, error, proposal, turns, send, discard, accept, setTurns, setError }
+  // Pure over state, with no updater doing the work: an append inside a
+  // setState updater runs twice under StrictMode, which once double-posted the
+  // assistant's reply.
+  const accept = useCallback((): ChatTurn[] => {
+    if (!proposal) return []
+    const added: ChatTurn[] = [
+      ...(asked ? [asked] : []),
+      {
+        id: newId(),
+        role: 'assistant',
+        text: proposal.notes,
+        at: new Date().toISOString(),
+        summary: summarise(proposal.diff),
+      },
+    ]
+    setProposal(null)
+    setAsked(null)
+    return added
+  }, [proposal, asked])
+
+  return { available, busy, error, proposal, turns, send, discard, accept, setError }
 }

@@ -13,7 +13,7 @@ export interface AiPanelProps {
   busy: boolean
   error: string | null
   proposal: Proposal | null
-  turns: ChatTurn[]
+  turns: readonly ChatTurn[]
   placeholder: string
   onSend: (prompt: string) => void
   onApply: () => void
