@@ -34,6 +34,20 @@ const putFilaments = (owned: readonly FilamentTick[]) =>
     },
   }).then(response => response.owned)
 
+export interface FilamentPrice {
+  line: string
+  pricePerKg: number
+  currency: string
+}
+
+export const getFilamentPrices = () =>
+  apiRequest<{ prices: FilamentPrice[] }>(`${base}/prices`).then(response => response.prices)
+
+export const putFilamentPrices = (prices: readonly FilamentPrice[]) =>
+  apiRequest<{ prices: FilamentPrice[] }>(`${base}/prices`, {
+    method: 'PUT', body: { prices },
+  }).then(response => response.prices)
+
 export interface InventoryWriter {
   /** Queue the whole inventory. Resolves when this body, or a newer one, is stored. */
   save(owned: readonly FilamentTick[]): Promise<void>

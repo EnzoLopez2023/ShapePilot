@@ -215,3 +215,100 @@ describe('filament inventory routes', () => {
     assert.equal(write.status, 401)
   })
 })
+
+// What a kilogram of a line costs. Priced per line because Bambu prices a line,
+// and replaced wholesale like the inventory it sits beside.
+describe('filament price routes', () => {
+  let server: TestServer
+
+  beforeAll(async () => {
+    server = await startTestServer({
+      label: 'filament-prices',
+      verifier: stubVerifier({
+        [OWNER_TOKEN]: validClaims(),
+        [OTHER_TOKEN]: validClaims({ oid: OTHER_OID }),
+      }),
+    })
+  })
+
+  afterAll(async () => { await server.close() })
+
+  interface Prices {
+    prices: { line: string; pricePerKg: number; currency: string }[]
+  }
+
+  const PRICES = `${BASE}/prices`
+  const get = (token = OWNER_TOKEN) => server.fetchJson<Prices>(PRICES, { token })
+  const put = <T = Prices>(body: unknown, token = OWNER_TOKEN) =>
+    server.fetchJson<T>(PRICES, { method: 'PUT', token, body: JSON.stringify(body) })
+
+  test('starts unpriced and round-trips a price list', async () => {
+    assert.deepEqual((await get()).body.prices, [])
+
+    const written = await put({
+      prices: [
+        { line: 'bambu-lab/petg/hf', pricePerKg: 27.5, currency: 'eur' },
+        { line: 'bambu-lab/pla/basic', pricePerKg: 19.99, currency: 'EUR' },
+      ],
+    })
+    assert.equal(written.status, 200)
+    // Sorted by line and the currency upper-cased, so two identical price lists
+    // always read back identically.
+    assert.deepEqual(written.body.prices, [
+      { line: 'bambu-lab/petg/hf', pricePerKg: 27.5, currency: 'EUR' },
+      { line: 'bambu-lab/pla/basic', pricePerKg: 19.99, currency: 'EUR' },
+    ])
+    assert.deepEqual((await get()).body.prices, written.body.prices)
+  })
+
+  test('replaces wholesale, so an empty list unprices everything', async () => {
+    await put({ prices: [{ line: 'bambu-lab/pla/basic', pricePerKg: 20, currency: 'EUR' }] })
+    await put({ prices: [] })
+    assert.deepEqual((await get()).body.prices, [])
+  })
+
+  test('scopes prices to their owner', async () => {
+    await put({ prices: [{ line: 'bambu-lab/pla/basic', pricePerKg: 20, currency: 'EUR' }] })
+    assert.deepEqual((await get(OTHER_TOKEN)).body.prices, [])
+  })
+
+  test('refuses what cannot be a price, naming the field', async () => {
+    const cases: [unknown, string][] = [
+      [{ prices: [{ line: 'not/a/line', pricePerKg: 20, currency: 'EUR' }] }, 'prices[0].line'],
+      [{ prices: [{ line: 'bambu-lab/pla/basic', pricePerKg: 0, currency: 'EUR' }] }, 'prices[0].pricePerKg'],
+      [{ prices: [{ line: 'bambu-lab/pla/basic', pricePerKg: -5, currency: 'EUR' }] }, 'prices[0].pricePerKg'],
+      [{ prices: [{ line: 'bambu-lab/pla/basic', pricePerKg: 20, currency: 'euros' }] }, 'prices[0].currency'],
+      [{ prices: [{ line: 'bambu-lab/pla/basic', pricePerKg: 20 }] }, 'prices[0].currency'],
+      [{ prices: [{ line: 'bambu-lab/pla/basic', pricePerKg: 20, currency: 'EUR', extra: 1 }] }, 'prices[0].extra'],
+      [{ prices: 'lots' }, 'prices'],
+      [{ owned: [] }, 'owned'],
+    ]
+    for (const [body, field] of cases) {
+      const response = await put<ErrorBody>(body)
+      assert.equal(response.status, 400, JSON.stringify(body))
+      assert.equal(response.body.error?.details?.field, field)
+    }
+  })
+
+  test('refuses the same line priced twice rather than picking one', async () => {
+    const response = await put<ErrorBody>({
+      prices: [
+        { line: 'bambu-lab/pla/basic', pricePerKg: 20, currency: 'EUR' },
+        { line: 'bambu-lab/pla/basic', pricePerKg: 25, currency: 'EUR' },
+      ],
+    })
+    assert.equal(response.status, 400)
+    assert.equal(response.body.error?.details?.field, 'prices[1].line')
+  })
+
+  test('rounds to the cent, because a price is money', async () => {
+    const written = await put({
+      prices: [{ line: 'bambu-lab/pla/basic', pricePerKg: 19.999, currency: 'EUR' }],
+    })
+    assert.equal(written.body.prices[0].pricePerKg, 20)
+  })
+
+  test('requires authentication', async () => {
+    assert.equal((await server.fetchJson(PRICES)).status, 401)
+  })
+})

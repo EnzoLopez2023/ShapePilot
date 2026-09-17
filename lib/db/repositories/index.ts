@@ -5,6 +5,7 @@ import { createDesignAssetRepository } from './designAssets.ts'
 import { createDesignDocumentRepository } from './designDocuments.ts'
 import { createElementStatisticsRepository } from './elementStatistics.ts'
 import { createFilamentInventoryRepository } from './filaments.ts'
+import { createFilamentPriceRepository } from './filamentPrices.ts'
 import { createFilamentUsageMappingRepository } from './filamentUsageMappings.ts'
 import { createKeycapProjectRepository } from './keycapProjects.ts'
 import { createKeycapTrayRepository } from './keycapTrays.ts'
@@ -27,6 +28,7 @@ export const createRepositories = (database: AppDatabase): Repositories => ({
   designDocuments: createDesignDocumentRepository(database.handle),
   designAssets: createDesignAssetRepository(database.handle),
   filaments: createFilamentInventoryRepository(database.handle),
+  filamentPrices: createFilamentPriceRepository(database.handle),
   elementStatistics: createElementStatisticsRepository(database.handle),
   maintenance: createMaintenanceRepository(database.handle),
   filamentUsageMappings: createFilamentUsageMappingRepository(database.handle),

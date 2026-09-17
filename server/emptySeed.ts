@@ -32,6 +32,7 @@ export const EMPTY_SEED_DOMAIN_TABLES = [
   'element_statistics_telemetry',
   'element_statistics_events',
   'filament_inventory',
+  'filament_prices',
   'filament_usage_mappings',
   'filament_reorder_alerts',
   'keycap_pocket_library',

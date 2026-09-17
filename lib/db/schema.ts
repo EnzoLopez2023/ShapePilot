@@ -394,6 +394,35 @@ export const FILAMENT_QUANTITY_STATEMENTS: readonly string[] = [
 ]
 
 /**
+ * `filament_prices` -- what a kilogram of a line costs this account.
+ *
+ * Per line, not per colour: Bambu prices a line, and a spool of Jade White
+ * costs what a spool of Bambu Black costs. One row per priced line, and an
+ * absent row means "not priced", which is the honest default -- a cost figure
+ * invented from a guessed price is worse than no cost figure.
+ *
+ * `line_id` names a line in the committed catalogue, the way `filament_key`
+ * names a colour: the database cannot check it, the route can, and a line that
+ * leaves the catalogue leaves a harmless row rather than an unreadable table.
+ *
+ * The currency is stored per row and validated as an ISO 4217 code. It is the
+ * account's own; nothing here converts between currencies, and a mixed set is
+ * shown as the mixture it is rather than being summed into a fiction.
+ */
+export const FILAMENT_PRICE_STATEMENTS: readonly string[] = [
+  `CREATE TABLE filament_prices (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_tenant_id TEXT    NOT NULL,
+  owner_oid       TEXT    NOT NULL,
+  line_id         TEXT    NOT NULL,
+  price_per_kg    REAL    NOT NULL CHECK (price_per_kg > 0 AND price_per_kg <= 100000),
+  currency        TEXT    NOT NULL CHECK (length(currency) = 3),
+  updated_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+  UNIQUE (owner_tenant_id, owner_oid, line_id)
+)`,
+]
+
+/**
  * `filament_usage_mappings` -- what a recorded print's filament *is*.
  *
  * A print reports a material, a preset filament ID and an AMS colour, and most

@@ -16,7 +16,7 @@
 // cannot correct.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Alert, Box, FormControlLabel, InputAdornment, Stack, Switch, TextField, Typography,
+  Alert, Box, FormControlLabel, InputAdornment, MenuItem, Stack, Switch, TextField, Typography,
 } from '@mui/material'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import {
@@ -29,8 +29,10 @@ import { ErrorState, LoadingState } from '../../components/LoadingState.tsx'
 import FilamentSection from './components/FilamentSection.tsx'
 import UsagePanel from './components/UsagePanel.tsx'
 import {
-  createInventoryWriter, getFilamentUsage, getFilaments, putUsageMappings,
+  createInventoryWriter, getFilamentPrices, getFilamentUsage, getFilaments, putFilamentPrices,
+  putUsageMappings,
 } from './service.ts'
+import type { FilamentPrice } from './service.ts'
 import type {
   FilamentUsageMapping, FilamentUsageReport,
 } from '../../../lib/contracts/filamentUsage.ts'
@@ -40,6 +42,12 @@ import {
 import { stockOf } from '../../../lib/contracts/filamentStock.ts'
 import ReorderBanner from './components/ReorderBanner.tsx'
 import type { Inventory } from './model/types.ts'
+
+/**
+ * The currencies to price in. A short list rather than every ISO code: this is
+ * one household's shelf, and nothing here converts between them anyway.
+ */
+const CURRENCIES = ['EUR', 'USD', 'GBP', 'CHF', 'SEK', 'NOK', 'DKK', 'PLN', 'CAD', 'AUD'] as const
 
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : 'The inventory could not be reached.'
@@ -96,6 +104,11 @@ export default function FilamentsPage() {
   // instant you cleared its last tick would take with it the checkbox you were
   // in the middle of correcting.
   const [kept, setKept] = useState<ReadonlySet<string>>(() => new Set<string>())
+  // What a kilogram of each line costs, and the currency they are priced in.
+  // Absent until the account says; nothing here guesses a price or a currency.
+  const [prices, setPrices] = useState<FilamentPrice[]>([])
+  const [currency, setCurrency] = useState<string | null>(null)
+  const [priceError, setPriceError] = useState<string | null>(null)
 
   const writerRef = useRef<ReturnType<typeof createInventoryWriter> | null>(null)
   if (!writerRef.current) {
@@ -117,6 +130,13 @@ export default function FilamentsPage() {
     // Separate from the inventory on purpose. Usage is a second opinion on the
     // page, and the statistics history being unreachable must never stop
     // anyone ticking a spool.
+    void getFilamentPrices()
+      .then(stored => {
+        if (cancelled) return
+        setPrices(stored)
+        if (stored.length) setCurrency(stored[0].currency)
+      })
+      .catch(error => { if (!cancelled) setPriceError(messageOf(error)) })
     setUsageError(null)
     void getFilamentUsage()
       .then(result => { if (!cancelled) setUsage(result) })
@@ -144,6 +164,39 @@ export default function FilamentsPage() {
     })
     setSaveError(null)
   }, [])
+
+  /** Prices are replaced wholesale, like the inventory: edit one, send them all. */
+  const savePrices = useCallback((next: FilamentPrice[]) => {
+    setPrices(next)
+    setPriceError(null)
+    void putFilamentPrices(next)
+      .then(stored => {
+        setPrices(stored)
+        if (!stored.length) setCurrency(previous => previous)
+      })
+      .catch(error => setPriceError(messageOf(error)))
+  }, [])
+
+  const setLinePrice = useCallback((line: string, pricePerKg: number | null) => {
+    if (!currency) return
+    setPrices(previous => {
+      const next = previous.filter(price => price.line !== line)
+      if (pricePerKg !== null) next.push({ line, pricePerKg, currency })
+      const sorted = next.sort((a, b) => a.line < b.line ? -1 : a.line > b.line ? 1 : 0)
+      savePrices(sorted)
+      return sorted
+    })
+  }, [currency, savePrices])
+
+  const changeCurrency = useCallback((next: string) => {
+    setCurrency(next)
+    // Prices are amounts in one currency; re-stamping them is the only honest
+    // option short of converting, which nothing here does.
+    if (prices.length) savePrices(prices.map(price => ({ ...price, currency: next })))
+  }, [prices, savePrices])
+
+  const priceByLine = useMemo(
+    () => new Map(prices.map(price => [price.line, price.pricePerKg])), [prices])
 
   const saveMappings = useCallback((mappings: FilamentUsageMapping[]) => {
     setLinking(true)
@@ -252,6 +305,18 @@ export default function FilamentsPage() {
           </Typography>
           <Stack direction="row" sx={{ alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
           <TextField
+            select
+            size="small"
+            label="Prices in"
+            value={currency ?? ''}
+            onChange={event => changeCurrency(event.target.value)}
+            sx={{ width: 120 }}
+            slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
+          >
+            <MenuItem value="" disabled>Currency</MenuItem>
+            {CURRENCIES.map(code => <MenuItem key={code} value={code}>{code}</MenuItem>)}
+          </TextField>
+          <TextField
             size="small"
             label="Search colours"
             value={search}
@@ -311,6 +376,13 @@ export default function FilamentsPage() {
         </Alert>
       )}
 
+      {priceError && (
+        <Alert severity="warning">
+          <Typography variant="body2" sx={{ fontWeight: 600 }}>Prices not saved</Typography>
+          <Typography variant="body2">{priceError}</Typography>
+        </Alert>
+      )}
+
       {usageError && (
         <Alert severity="warning">
           <Typography variant="body2" sx={{ fontWeight: 600 }}>Print usage unavailable</Typography>
@@ -320,7 +392,9 @@ export default function FilamentsPage() {
 
       {owned && usage?.ams && <ReorderBanner stock={stock} receivedAt={usage.ams.receivedAt} />}
 
-      {owned && usage && <UsagePanel usage={usage} busy={linking} onMappings={saveMappings} />}
+      {owned && usage && (
+        <UsagePanel usage={usage} busy={linking} prices={prices} onMappings={saveMappings} />
+      )}
 
       {loadError && <ErrorState message={loadError} onRetry={load} />}
       {!loadError && !owned && <LoadingState label="Loading your filaments…" />}
@@ -340,6 +414,9 @@ export default function FilamentsPage() {
           onQuantity={setQuantity}
           usage={usageByKey}
           stock={usage?.ams ? stockByKey : undefined}
+          pricePerKg={priceByLine.get(section.id) ?? null}
+          currency={currency}
+          onPrice={value => setLinePrice(section.id, value)}
         />
       ))}
     </Stack>

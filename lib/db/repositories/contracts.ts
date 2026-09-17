@@ -654,6 +654,21 @@ export interface FilamentInventoryEntry {
   quantity: number
 }
 
+/** What a kilogram of one catalogue line costs this account. */
+export interface FilamentPrice {
+  /** `<brand>/<material>/<type>`, naming a line in the committed catalogue. */
+  line: string
+  pricePerKg: number
+  /** ISO 4217, upper case. Nothing converts between currencies. */
+  currency: string
+}
+
+export interface FilamentPriceRepository {
+  list(owner: Owner): Promise<FilamentPrice[]>
+  /** Replace every price, as the inventory beside it is replaced. */
+  replace(owner: Owner, prices: readonly FilamentPrice[]): Promise<FilamentPrice[]>
+}
+
 export interface FilamentInventoryRepository {
   list(owner: Owner): Promise<FilamentInventoryEntry[]>
   /**
@@ -760,6 +775,7 @@ export interface Repositories {
   designDocuments: DesignDocumentRepository
   designAssets: DesignAssetRepository
   filaments: FilamentInventoryRepository
+  filamentPrices: FilamentPriceRepository
   elementStatistics: ElementStatisticsRepository
   maintenance: MaintenanceRepository
   filamentUsageMappings: FilamentUsageMappingRepository

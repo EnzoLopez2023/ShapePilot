@@ -11,6 +11,7 @@ import type { Repositories } from '../../lib/db/repositories/contracts.ts'
 import { ownerOf } from '../auth/requireAuth.ts'
 import { validateFilamentInventoryInput } from '../validation/filaments.ts'
 import { validateFilamentUsageMappingsInput } from '../validation/filamentUsage.ts'
+import { validateFilamentPricesInput } from '../validation/filamentPrices.ts'
 import { requireRole } from '../auth/requireRole.ts'
 import { computeFilamentUsage } from '../../lib/contracts/filamentUsage.ts'
 import type { FilamentUsageReport } from '../../lib/contracts/filamentUsage.ts'
@@ -46,6 +47,33 @@ export function createFilamentRouter(repos: Repositories): Router {
         detail: { owned: owned.length },
       }).catch(() => { /* audit must never break a response */ })
       res.json({ owned })
+    })().catch(next)
+  })
+
+  router.get('/prices', (req, res, next) => {
+    void (async () => {
+      res.json({ prices: await repos.filamentPrices.list(ownerOf(req)) })
+    })().catch(next)
+  })
+
+  router.put('/prices', (req, res, next) => {
+    void (async () => {
+      const owner = ownerOf(req)
+      const prices = await repos.filamentPrices.replace(
+        owner, validateFilamentPricesInput(req.body))
+      void repos.audit.record({
+        owner,
+        category: 'filament',
+        action: 'prices_updated',
+        outcome: 'success',
+        httpMethod: req.method,
+        httpPath: req.path,
+        httpStatus: 200,
+        requestId: req.requestId ?? null,
+        // How many lines are priced, not what they cost.
+        detail: { priced: prices.length },
+      }).catch(() => { /* audit must never break a response */ })
+      res.json({ prices })
     })().catch(next)
   })
 

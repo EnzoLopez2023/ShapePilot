@@ -35,6 +35,8 @@ const showEverything = async (user: ReturnType<typeof userEvent.setup>) =>
 interface PutBody { owned: { key: string; variant: string; quantity: number }[] }
 
 let puts: PutBody[] = []
+let prices: { line: string; pricePerKg: number; currency: string }[] = []
+let pricePuts: { line: string; pricePerKg: number; currency: string }[][] = []
 let owned: { key: string; variant: string; quantity: number }[] = []
 let failLoad = false
 let failSave = false
@@ -52,6 +54,13 @@ let amsReportedAt = new Date().toISOString()
 const stubFetch = () => vi.stubGlobal('fetch', vi.fn(async (url: unknown, init?: RequestInit) => {
   const path = String(url)
   if (!path.includes('/api/filaments')) throw new Error(`unexpected fetch ${path}`)
+  if (path.includes('/api/filaments/prices')) {
+    if ((init?.method ?? 'GET') === 'PUT') {
+      prices = (JSON.parse(String(init?.body)) as { prices: typeof prices }).prices
+      pricePuts.push(prices)
+    }
+    return Response.json({ prices })
+  }
   if (path.includes('/api/filaments/usage')) {
     if (!admin) return Response.json({ error: { code: 'forbidden', message: 'No.' } }, { status: 403 })
     if ((init?.method ?? 'GET') === 'PUT') {
@@ -82,6 +91,8 @@ const draw = () => render(
 )
 
 beforeEach(() => {
+  prices = []
+  pricePuts = []
   puts = []
   owned = []
   failLoad = false
@@ -527,4 +538,41 @@ test('Owned only leaves just the ticked colours', async () => {
   // One colour, both of the forms PLA Basic is sold in; the ticked one is on.
   expect(screen.getAllByRole('checkbox').filter(box => (box as HTMLInputElement).checked))
     .toHaveLength(1)
+})
+
+test('a line can be priced once a currency is chosen, and the price is sent', async () => {
+  const user = userEvent.setup()
+  draw()
+  await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
+  // Nothing is priced in a currency nobody has chosen.
+  expect(screen.getAllByLabelText(/^Price per kg/)[0].hasAttribute('disabled')).toBe(true)
+
+  await user.click(screen.getByRole('combobox', { name: 'Prices in' }))
+  await user.click(await screen.findByRole('option', { name: 'EUR' }))
+
+  const field = screen.getByLabelText('Price per kg of PLA Basic')
+  await user.type(field, '24.99')
+  await user.tab()
+
+  await waitFor(() => expect(pricePuts.length).toBe(1))
+  expect(pricePuts[0]).toEqual([
+    { line: 'bambu-lab/pla/basic', pricePerKg: 24.99, currency: 'EUR' },
+  ])
+})
+
+test('usage is costed from the priced lines, and unpriced grams are said to be unpriced', async () => {
+  admin = true
+  jobs = [syntheticRecordedElementJob({
+    id: 'p1', result: 'completed',
+    materials: [{
+      material: 'PLA', filamentId: 'GFA00', color: '#FFFFFF', estimatedWeightGrams: 1000,
+      nozzleId: null, amsId: null, slotId: null,
+    }],
+  })]
+  prices = [{ line: 'bambu-lab/pla/basic', pricePerKg: 20, currency: 'EUR' }]
+  draw()
+
+  // 1 kg of a line priced at 20 a kilogram.
+  await screen.findByText(/of filament, from the/)
+  expect(screen.getByText(/€20\.00|20,00/)).toBeTruthy()
 })

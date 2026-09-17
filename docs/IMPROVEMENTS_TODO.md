@@ -79,7 +79,7 @@ for effort. Tick items off here as they land.
 - [x] "≈ N g" in the status bar, with a per-filament breakdown in its tooltip.
 - [x] Grams per filament, numbered the way the 3MF export numbers them.
 - [x] Warn when a tray's remaining % of a 1 kg spool is below what the model needs.
-- [ ] Optional cost line once filament prices exist (see Filaments → price per kg).
+- [ ] Cost line in the designer's weight estimate, now that prices exist.
 
 ### Parts library
 - [x] The palette takes generated parts as well as files, grouped by category.
@@ -131,7 +131,10 @@ for effort. Tick items off here as they land.
 - [x] Keyboard: `/` focuses search.
 - [x] Estimated grams remaining per loaded spool (AMS % of a 1 kg spool), in the
       stock note; `SPOOL_GRAMS` is shared with the designer's estimate.
-- [ ] Per-line price per kg (stored per account) to feed cost estimates.
+- [x] Price per kg per line, stored per account (`filament_prices`, migration 017)
+      with an account currency; nothing converts between currencies.
+- [x] Print usage shows what the filament cost, with unpriced grams named as
+      unpriced rather than skipped.
 - [ ] "Use in design" action on a colour: sets colour + filament on the selected
       part in the last-open designer (needs a small cross-page handoff, e.g.
       session storage or a `?filament=` param).
@@ -159,7 +162,9 @@ for effort. Tick items off here as they land.
       materials CSV too.
 - [ ] Success rate by model title — needs the design link above to group jobs by
       design first.
-- [ ] Cost per print and per period: grams × price per kg from Filaments.
+- [ ] Cost per print and per period in Statistics. Needs per-job colour
+      attribution: a job reports material and colour, but the matcher works per
+      colour across all history, so a per-job price needs that link first.
 - [ ] Printer runtime hours total, fed to `/maintenance` so intervals can be
       hour-based as well as date-based.
 - [ ] Utilisation view: hours printing per day/week, and time-of-day heatmap.

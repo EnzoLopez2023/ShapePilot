@@ -17,6 +17,7 @@ import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded'
 import type { FilamentColor, FilamentLine, FilamentVariant } from '../../../../lib/contracts/bambuFilaments.ts'
 import { MAX_QUANTITY, tickId } from '../model/types.ts'
 import { Swatch } from './Swatch.tsx'
+import PriceField from './PriceField.tsx'
 import type { Inventory } from '../model/types.ts'
 import type { FilamentUsageTotals } from '../../../../lib/contracts/filamentUsage.ts'
 import { formatGrams } from '../model/usage.ts'
@@ -33,6 +34,10 @@ export interface FilamentSectionProps {
   usage?: ReadonlyMap<string, FilamentUsageTotals>
   /** Colours loaded in the AMS, by key. Absent when this account cannot see it. */
   stock?: ReadonlyMap<string, ColorStock>
+  /** What a kilogram of this line costs, and the account's currency. */
+  pricePerKg: number | null
+  currency: string | null
+  onPrice: (pricePerKg: number | null) => void
 }
 
 const VARIANT_LABEL: Record<FilamentVariant, string> = {
@@ -103,7 +108,7 @@ function StockNote({ stock }: { stock: ColorStock }) {
 }
 
 export default function FilamentSection({
-  line, colors, owned, onQuantity, usage, stock,
+  line, colors, owned, onQuantity, usage, stock, pricePerKg, currency, onPrice,
 }: FilamentSectionProps) {
   const [stepping, setStepping] = useState<Stepping | null>(null)
   const steppingCount = stepping
@@ -123,9 +128,14 @@ export default function FilamentSection({
         <Typography variant="h2" component="h2" id={`line-${line.material}-${line.type}`}>
           {line.label}
         </Typography>
-        <Typography variant="body2" color="text.secondary">
-          {ownedCount} of {total}
-        </Typography>
+        <Stack direction="row" sx={{ alignItems: 'center', gap: 1.5 }}>
+          <PriceField
+            label={line.label} pricePerKg={pricePerKg} currency={currency} onPrice={onPrice}
+          />
+          <Typography variant="body2" color="text.secondary">
+            {ownedCount} of {total}
+          </Typography>
+        </Stack>
       </Stack>
 
       {/* Column headings. Not a <th>: the row is a grid, and each checkbox

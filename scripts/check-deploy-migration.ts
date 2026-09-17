@@ -126,6 +126,12 @@ const ROLLBACK_COMPATIBLE_LEDGER = [
     name: 'push notifications',
     checksum: '1e1ce0c3aa940b6c5aa679b6d30a7a3d2bf6b480b62e27e0b48693d91d43081a',
   },
+  {
+    ordinal: 16,
+    id: '017-filament-prices',
+    name: 'filament prices',
+    checksum: '435ddae65151d7351e450580c9be9fec3446ef1bfd03ff4225cd58317efb5933',
+  },
 ] as const
 
 const REQUIRED_TABLES = [
@@ -142,6 +148,7 @@ const REQUIRED_TABLES = [
   'element_statistics_telemetry',
   'element_statistics_events',
   'filament_inventory',
+  'filament_prices',
   'filament_usage_mappings',
   'filament_reorder_alerts',
   'maintenance_events',
