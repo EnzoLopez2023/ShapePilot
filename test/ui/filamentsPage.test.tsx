@@ -442,8 +442,9 @@ test('says to reorder a low loaded spool with no spare, and a spare clears it', 
   assert.match(banner.textContent ?? '', /PLA Basic · Cocoa Brown 10802 — 12% left in AMS 1 · slot 1, with no spare on the shelf/)
   // Gray is loaded but not low, so it is not in the banner.
   assert.doesNotMatch(banner.textContent ?? '', /Gray/)
-  await screen.findByText('AMS 12% · reorder')
-  await screen.findByText('AMS 62%')
+  // The note carries the grams that percentage is of a full spool.
+  await screen.findByText('AMS 12% · ≈120 g · reorder')
+  await screen.findByText('AMS 62% · ≈620 g')
 
   // One more Cocoa Brown on the shelf is a spare behind the loaded spool.
   const name = 'PLA Basic Cocoa Brown 10802, with spool'
@@ -452,7 +453,7 @@ test('says to reorder a low loaded spool with no spare, and a spare clears it', 
   await waitFor(() => {
     assert.equal(screen.queryByRole('status', { name: /Reorder soon/ }), null)
   })
-  await screen.findByText('AMS 12% · spare on shelf')
+  await screen.findByText('AMS 12% · ≈120 g · spare on shelf')
 })
 
 test('a low colour never ticked in the inventory says so', async () => {
@@ -472,4 +473,58 @@ test('an old reading says when it was taken; an unreported percentage never warn
   assert.match(banner.textContent ?? '', /last reading/)
   assert.doesNotMatch(banner.textContent ?? '', /Gray/)
   await screen.findByText('in AMS')
+})
+
+test('search narrows every line to the colours that match, and Escape clears it', async () => {
+  const user = userEvent.setup()
+  draw()
+  await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
+  const before = screen.getAllByRole('checkbox').length
+
+  await user.type(screen.getByLabelText('Search colours'), 'jade')
+
+  await waitFor(() => expect(screen.getAllByRole('checkbox').length).toBeLessThan(before))
+  for (const box of screen.getAllByRole('checkbox')) {
+    expect(box.getAttribute('aria-label')?.toLowerCase()).toContain('jade')
+  }
+
+  await user.keyboard('{Escape}')
+  await waitFor(() => expect(screen.getAllByRole('checkbox').length).toBe(before))
+})
+
+test('a search that matches nothing says so rather than showing an empty page', async () => {
+  const user = userEvent.setup()
+  draw()
+  await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
+
+  await user.type(screen.getByLabelText('Search colours'), 'zzzz')
+
+  await screen.findByText('No colour matches those filters.')
+  expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
+})
+
+test('"/" jumps to the search box', async () => {
+  const user = userEvent.setup()
+  draw()
+  await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
+
+  await user.keyboard('/')
+
+  expect(document.activeElement).toBe(screen.getByLabelText('Search colours'))
+  // And it is a shortcut, not a character: the field is still empty.
+  expect((screen.getByLabelText('Search colours') as HTMLInputElement).value).toBe('')
+})
+
+test('Owned only leaves just the ticked colours', async () => {
+  owned = [{ key: 'bambu-lab/pla/basic/jade-white-10100', variant: 'spool', quantity: 1 }]
+  const user = userEvent.setup()
+  draw()
+  await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
+
+  await user.click(await screen.findByRole('switch', { name: 'Owned only' }))
+
+  await waitFor(() => expect(screen.getAllByRole('checkbox')).toHaveLength(2))
+  // One colour, both of the forms PLA Basic is sold in; the ticked one is on.
+  expect(screen.getAllByRole('checkbox').filter(box => (box as HTMLInputElement).checked))
+    .toHaveLength(1)
 })

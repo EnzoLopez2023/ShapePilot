@@ -121,12 +121,11 @@ for effort. Tick items off here as they land.
 
 ## Filaments
 
-- [ ] Search box filtering colours by name across every line (debounced, clears
-      with Esc).
-- [ ] "Owned only" switch next to "Hide discontinued".
-- [ ] Keyboard: `/` focuses search.
-- [ ] Estimated grams remaining per loaded spool (AMS % × nominal spool weight),
-      shown in the stock note.
+- [x] Search box filtering colours by name and maker's code, cleared with Esc.
+- [x] "Owned only" switch next to "Hide discontinued", with an empty-result line.
+- [x] Keyboard: `/` focuses search.
+- [x] Estimated grams remaining per loaded spool (AMS % of a 1 kg spool), in the
+      stock note; `SPOOL_GRAMS` is shared with the designer's estimate.
 - [ ] Per-line price per kg (stored per account) to feed cost estimates.
 - [ ] "Use in design" action on a colour: sets colour + filament on the selected
       part in the last-open designer (needs a small cross-page handoff, e.g.

@@ -15,7 +15,10 @@
 // because a spool outlives its listing, and a tick you cannot see is a tick you
 // cannot correct.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Box, FormControlLabel, Stack, Switch, Typography } from '@mui/material'
+import {
+  Alert, Box, FormControlLabel, InputAdornment, Stack, Switch, TextField, Typography,
+} from '@mui/material'
+import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
 import {
   FILAMENT_CATALOG, FILAMENT_LINES, filamentsOfLine,
 } from '../../../lib/contracts/bambuFilaments.ts'
@@ -80,6 +83,9 @@ export default function FilamentsPage() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
   const [hideDiscontinued, setHideDiscontinued] = useState(true)
+  const [ownedOnly, setOwnedOnly] = useState(false)
+  const [search, setSearch] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
   // null: this account may not see usage, so the page shows without it.
   // undefined: not loaded yet, or it failed and `usageError` says why.
   const [usage, setUsage] = useState<FilamentUsageReport | null | undefined>(undefined)
@@ -168,15 +174,36 @@ export default function FilamentsPage() {
     setHideDiscontinued(next)
   }, [owned])
 
+  // `/` is the shorthand every list with a search box has; it must not steal
+  // the key from a field someone is already typing in.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (event.key !== '/' || target?.closest('input, textarea, [contenteditable="true"]')) return
+      event.preventDefault()
+      searchRef.current?.focus()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   const sections = useMemo(() => {
-    if (!hideDiscontinued) return SECTIONS
+    const needle = search.trim().toLowerCase()
+    const matches = (color: FilamentColor) =>
+      !needle
+      || color.name.toLowerCase().includes(needle)
+      || (color.code ?? '').toLowerCase().includes(needle)
     return SECTIONS
       .map(section => ({
         ...section,
-        colors: section.colors.filter(color => !color.discontinued || kept.has(color.key)),
+        colors: section.colors.filter(color =>
+          (!hideDiscontinued || !color.discontinued || kept.has(color.key))
+          && matches(color)
+          && (!ownedOnly || !owned
+            || section.line.variants.some(variant => owned.has(tickId(color.key, variant))))),
       }))
       .filter(section => section.colors.length > 0)
-  }, [hideDiscontinued, kept])
+  }, [hideDiscontinued, kept, search, ownedOnly, owned])
 
   const summary = useMemo(() => {
     if (!owned) return null
@@ -186,11 +213,14 @@ export default function FilamentsPage() {
       rolls: totalRolls(owned),
       shown,
       hidden: ALL_PAIRS - shown,
+      // "Discontinued hidden" is only true when that switch is the only filter
+      // on; a search or Owned only holds back rows of every kind.
+      filtered: Boolean(search.trim()) || ownedOnly,
       perLine: sections.map(section =>
         `${section.line.label} ${countOwned(section, owned)}/`
         + `${section.colors.length * section.line.variants.length}`),
     }
-  }, [owned, sections])
+  }, [owned, sections, search, ownedOnly])
 
   return (
     <Stack spacing={2} sx={{ p: { xs: 1.5, md: 2.5 }, maxWidth: 900, width: '100%' }}>
@@ -213,9 +243,44 @@ export default function FilamentsPage() {
           <Typography variant="body2" color="text.secondary">
             {summary.total} of {summary.shown} owned
             {summary.rolls > summary.total && <> ({summary.rolls} rolls)</>}
-            {summary.hidden > 0 && <> · {summary.hidden} discontinued hidden</>}
+            {summary.hidden > 0 && (
+              summary.filtered
+                ? <> · {summary.hidden} not shown</>
+                : <> · {summary.hidden} discontinued hidden</>
+            )}
             {summary.total > 0 && <> · {summary.perLine.join(' · ')}</>}
           </Typography>
+          <Stack direction="row" sx={{ alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+          <TextField
+            size="small"
+            label="Search colours"
+            value={search}
+            inputRef={searchRef}
+            onChange={event => setSearch(event.target.value)}
+            onKeyDown={event => { if (event.key === 'Escape') setSearch('') }}
+            sx={{ width: { xs: '100%', sm: 220 } }}
+            slotProps={{
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchRoundedIcon fontSize="small" />
+                  </InputAdornment>
+                ),
+              },
+            }}
+          />
+          <FormControlLabel
+            sx={{ mr: 0 }}
+            control={(
+              <Switch
+                size="small"
+                checked={ownedOnly}
+                onChange={event => setOwnedOnly(event.target.checked)}
+                slotProps={{ input: { role: 'switch' } }}
+              />
+            )}
+            label={<Typography variant="body2">Owned only</Typography>}
+          />
           <FormControlLabel
             sx={{ mr: 0 }}
             control={(
@@ -232,6 +297,7 @@ export default function FilamentsPage() {
               <Typography variant="body2">Hide discontinued</Typography>
             )}
           />
+          </Stack>
         </Stack>
       )}
 
@@ -258,6 +324,12 @@ export default function FilamentsPage() {
 
       {loadError && <ErrorState message={loadError} onRetry={load} />}
       {!loadError && !owned && <LoadingState label="Loading your filaments…" />}
+
+      {owned && sections.length === 0 && (
+        <Typography variant="body2" color="text.secondary">
+          No colour matches those filters.
+        </Typography>
+      )}
 
       {owned && sections.map(section => (
         <FilamentSection

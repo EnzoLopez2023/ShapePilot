@@ -7,6 +7,7 @@
 // whatever is left inside. Supports, brims and purge are not counted. It is a
 // guide for "will this spool do", not a slicer.
 import type { Mesh } from '../../geometry/mesh.ts'
+export { SPOOL_GRAMS } from '../../../lib/contracts/filamentStock.ts'
 
 /** g/cm³, for the materials the AMS reports. Unknown falls back to PLA. */
 export const DENSITY_G_PER_CM3: Readonly<Record<string, number>> = {
@@ -19,9 +20,6 @@ export const DENSITY_G_PER_CM3: Readonly<Record<string, number>> = {
   PA: 1.14,
   PVA: 1.23,
 }
-
-/** What a full Bambu spool or refill holds; the AMS reports a percentage of it. */
-export const SPOOL_GRAMS = 1000
 
 const SHELL_MM = 0.84
 const INFILL = 0.15

@@ -34,6 +34,9 @@ import { normalizeColor } from './filamentUsage.ts'
 /** At or below this, a loaded spool counts as running low. */
 export const LOW_PERCENT = 20
 
+/** What a full Bambu spool or refill holds. The AMS reports a percentage of it. */
+export const SPOOL_GRAMS = 1000
+
 export interface LoadedSlot {
   amsId: string
   slotId: string

@@ -21,6 +21,7 @@ import type { Inventory } from '../model/types.ts'
 import type { FilamentUsageTotals } from '../../../../lib/contracts/filamentUsage.ts'
 import { formatGrams } from '../model/usage.ts'
 import type { ColorStock } from '../../../../lib/contracts/filamentStock.ts'
+import { SPOOL_GRAMS } from '../../../../lib/contracts/filamentStock.ts'
 
 export interface FilamentSectionProps {
   line: FilamentLine
@@ -79,7 +80,11 @@ const columnsFor = (variants: readonly FilamentVariant[]) => ({
  * something about.
  */
 function StockNote({ stock }: { stock: ColorStock }) {
-  const percent = stock.lowestPercent === null ? 'in AMS' : `AMS ${stock.lowestPercent}%`
+  // The percentage is what the AMS measures; the grams are that share of a full
+  // spool, which is worth saying because grams are what a print is quoted in.
+  const percent = stock.lowestPercent === null
+    ? 'in AMS'
+    : `AMS ${stock.lowestPercent}% · ≈${Math.round((stock.lowestPercent / 100) * SPOOL_GRAMS)} g`
   if (stock.status === 'reorder') {
     return (
       <Typography
