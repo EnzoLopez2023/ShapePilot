@@ -82,6 +82,7 @@ const SHIFT_NUDGE = 10
 
 const SHORTCUTS: readonly [string, string][] = [
   ['⌘Z / ⇧⌘Z', 'Undo / redo'],
+  ['⌘A', 'Select every part'],
   ['⌘D', 'Duplicate'],
   ['Delete', 'Delete the selection'],
   ['G', 'Group'],
@@ -419,6 +420,13 @@ export default function BambuDesignerPage() {
         doc.duplicateObjects(doc.selection)
         return
       }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
+        // Top level only: that is what align, mirror and group act on, and
+        // selecting a group and its children at once means nothing to them.
+        e.preventDefault()
+        doc.setSelection(objects.filter(o => !o.locked).map(o => o.id))
+        return
+      }
       if (e.metaKey || e.ctrlKey) return
 
       const arrows: Record<string, [Axis, 1 | -1]> = {
@@ -445,7 +453,7 @@ export default function BambuDesignerPage() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [doc, removeSelected, mirror, nudge, dropToPlate])
+  }, [doc, objects, removeSelected, mirror, nudge, dropToPlate])
 
   const exportMesh = useCallback(async (format: 'stl' | '3mf') => {
     const program = programFromScene(objects, { textOutlines })

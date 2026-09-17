@@ -58,6 +58,12 @@ const renderPage = () => render(
 )
 
 beforeEach(() => {
+  // jsdom has no object-URL support, and triggerDownload revokes on a timer
+  // after a test has restored whatever it patched; without this the revoke
+  // lands on `undefined` and surfaces as an unhandled error.
+  if (typeof URL.revokeObjectURL !== 'function') {
+    URL.revokeObjectURL = (() => {}) as typeof URL.revokeObjectURL
+  }
   vi.stubGlobal('ResizeObserver', class {
     observe() {} unobserve() {} disconnect() {}
   })
@@ -75,6 +81,14 @@ beforeEach(() => {
     }
     // Nothing was ever uploaded from this run, so the asset resolve misses.
     if (url.includes('/api/design-assets/')) return new Response(null, { status: 404 })
+    // The design's print history, which the page reads once a design is saved.
+    if (url.includes('/prints')) {
+      return new Response(JSON.stringify({
+        prints: 0,
+        results: { completed: 0, failed_or_aborted: 0, active: 0, unknown: 0 },
+        lastPrintedAt: null, averageGrams: null, gramsKnown: 0,
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }
     if (url.includes('/api/design-documents')) {
       return new Response(JSON.stringify([]), {
         status: 200, headers: { 'content-type': 'application/json' },
@@ -195,6 +209,14 @@ test('the first save asks for a name instead of writing the default one', async 
         status: 200, headers: { 'content-type': 'application/json' },
       })
     }
+    // The design's print history, which the page reads once a design is saved.
+    if (url.includes('/prints')) {
+      return new Response(JSON.stringify({
+        prints: 0,
+        results: { completed: 0, failed_or_aborted: 0, active: 0, unknown: 0 },
+        lastPrintedAt: null, averageGrams: null, gramsKnown: 0,
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
+    }
     if (url.includes('/api/design-documents')) {
       return new Response(JSON.stringify([]), {
         status: 200, headers: { 'content-type': 'application/json' },
@@ -241,6 +263,14 @@ test('renaming in the toolbar reaches the document, not just the field', async (
       return new Response(JSON.stringify({ id: 'doc-1' }), {
         status: 200, headers: { 'content-type': 'application/json' },
       })
+    }
+    // The design's print history, which the page reads once a design is saved.
+    if (url.includes('/prints')) {
+      return new Response(JSON.stringify({
+        prints: 0,
+        results: { completed: 0, failed_or_aborted: 0, active: 0, unknown: 0 },
+        lastPrintedAt: null, averageGrams: null, gramsKnown: 0,
+      }), { status: 200, headers: { 'content-type': 'application/json' } })
     }
     if (url.includes('/api/design-documents')) {
       return new Response(JSON.stringify([]), {
@@ -478,4 +508,19 @@ test('a thickness of zero cannot be added', async () => {
   await user.clear(dialog.getByLabelText('Material thickness'))
   await user.type(dialog.getByLabelText('Material thickness'), '0')
   expect(dialog.getByRole('button', { name: 'Add' }).hasAttribute('disabled')).toBe(true)
+})
+
+test('select all takes every unlocked top-level part', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(screen.getByRole('button', { name: /^Box/ })).toBeTruthy())
+  await user.click(screen.getByRole('button', { name: /^Box/ }))
+  await user.click(screen.getByRole('button', { name: /^Cylinder/ }))
+  await waitFor(() => expect(screen.getAllByText(/1 selected/).length).toBeGreaterThan(0))
+
+  await user.keyboard('{Meta>}a{/Meta}')
+
+  await waitFor(() => expect(screen.getAllByText(/2 selected/).length).toBeGreaterThan(0))
+  // And with a selection of two, the multi-object tools come alive.
+  expect(screen.getByRole('button', { name: 'Align X Centre' }).hasAttribute('disabled')).toBe(false)
 })

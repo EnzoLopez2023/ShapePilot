@@ -56,7 +56,12 @@ export default function ElementStatisticsPage() {
   const [exportAnchor, setExportAnchor] = useState<HTMLElement | null>(null)
   const setupRef = useRef<HTMLDivElement>(null)
   const urls = useRef(new Map<string, ReturnType<typeof setTimeout>>())
-  const report = reportState?.key === requestKey ? reportState.report : null
+  // The report stays on screen while the next scope loads, even though it is
+  // the previous scope's: swapping it for a skeleton shortens the page, and a
+  // shorter page throws away where the reader was -- which is exactly what
+  // clicking a chart bar should preserve.
+  const report = reportState?.report ?? null
+  const stale = reportState !== null && reportState.key !== requestKey
   const syncRevision = status?.coverage.map(item =>
     `${item.connectionId}:${item.jobCount}:${item.sync.lastSuccessAt ?? ''}`,
   ).join('|') ?? ''
@@ -277,14 +282,16 @@ export default function ElementStatisticsPage() {
                   {totalRecorded > 0 && <Button onClick={reset}>Reset filters</Button>}
                 </Stack>
               </Paper>
-            ) : <>
-              <StatisticsCharts report={report} status={status} onBucket={bucket => {
-                if (bucket.from && bucket.to) applyFilters({ ...query.filters, from: bucket.from, to: bucket.to }, 'custom')
-              }} onMaterial={material => applyFilters({ ...query.filters, material: material ?? '__unreported__' })} />
-              <HistoryLedger report={report} onJob={openJob}
-                onPage={(page, pageSize) => update({ ...query, page, pageSize })}
-                onSort={sort => applyFilters({ ...query.filters, sort })} />
-            </>}
+            ) : (
+              <Stack spacing={2} aria-busy={stale || undefined} sx={{ opacity: stale ? 0.6 : 1 }}>
+                <StatisticsCharts report={report} status={status} onBucket={bucket => {
+                  if (bucket.from && bucket.to) applyFilters({ ...query.filters, from: bucket.from, to: bucket.to }, 'custom')
+                }} onMaterial={material => applyFilters({ ...query.filters, material: material ?? '__unreported__' })} />
+                <HistoryLedger report={report} onJob={openJob}
+                  onPage={(page, pageSize) => update({ ...query, page, pageSize })}
+                  onSort={sort => applyFilters({ ...query.filters, sort })} />
+              </Stack>
+            )}
       {status && <CoveragePanel status={status} report={report} busy={busy} onRescan={() => void sync(true)} />}
       {jobId && jobConnection && <JobDetail connectionId={jobConnection} jobId={jobId}
         timeZone={query.filters.timeZone} onClose={closeJob} />}

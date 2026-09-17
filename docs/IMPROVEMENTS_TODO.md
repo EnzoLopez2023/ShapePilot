@@ -51,8 +51,8 @@ for effort. Tick items off here as they land.
 - [x] Update tooltip text.
 
 ### Consistency
-- [ ] Select all (⌘A) in the designers; there is no way to select every object
-      without clicking each one.
+- [x] Select all (⌘A) in the Bambu Designer: every unlocked top-level part.
+- [ ] The same in the Shaper Designer, which has its own key handling.
 - [x] Save is disabled only for an empty design that was never saved, in all three
       designers (a saved design may be emptied on purpose).
 - [x] Keyboard shortcuts popover (toolbar button, or `?`).
@@ -145,7 +145,9 @@ for effort. Tick items off here as they land.
 - [x] The scope form says "Not applied yet" while it differs from what the page
       is showing, and the Apply button reads "Filters applied" and is disabled
       when there is nothing to apply.
-- [ ] Keep the scroll position when a chart click re-filters.
+- [x] Keep the scroll position when a chart click re-filters: the previous
+      report stays on screen, dimmed and `aria-busy`, while the next one loads,
+      instead of collapsing the page to a skeleton.
 
 ### Features
 - [x] Link jobs to designs: job detail offers "Open design" when the job title

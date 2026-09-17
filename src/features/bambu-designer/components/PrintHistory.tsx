@@ -28,7 +28,10 @@ export default function PrintHistory({ documentId }: { documentId: string }) {
     return () => { cancelled = true }
   }, [documentId])
 
-  if (!history || history.prints === 0) return null
+  // Shape-checked rather than trusted: this panel is decoration beside the
+  // design, and it must never be the reason the designer stops rendering.
+  if (!history || typeof history.prints !== 'number' || history.prints === 0) return null
+  if (typeof history.results !== 'object' || history.results === null) return null
   const { prints, results, lastPrintedAt, averageGrams } = history
 
   return (
