@@ -96,7 +96,10 @@ for effort. Tick items off here as they land.
       approximation would not seat in a real baseplate. Needs a new primitive.
 - [ ] Skådis hook / peg — deferred. `src/geometry/skadis.ts` draws the board, not
       a hook, and the hook's fit needs test prints to settle.
-- [ ] Print-test the fastener sizes and adjust the clearance table.
+- [ ] Print-test the fastener sizes and adjust the clearance table. The coupon
+      is `npm run coupon:fasteners` (models/fastener-coupon): one 10 mm plate,
+      every cutter, M3 and M4. Report tight/good/loose per feature, with a
+      measured hole diameter where it is off, and the material.
 
 ### Better print checks
 - [x] Overhang check: downward faces steeper than 45° that miss the plate, in mm²,

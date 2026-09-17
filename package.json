@@ -22,6 +22,7 @@
     "cheatsheet:render": "node scripts/render-cheat-sheet.ts",
     "calibration:build": "node scripts/build-calibration-sheet.ts",
     "rack:build": "node scripts/build-rack-stl.ts",
+    "coupon:fasteners": "vite-node scripts/build-fastener-coupon.ts",
     "rack:drawings": "node scripts/build-rack-drawings.ts",
     "calibration:render": "npm run calibration:build && node scripts/render-calibration-sheet.ts",
     "preview": "vite preview",
