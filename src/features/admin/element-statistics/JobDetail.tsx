@@ -1,13 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Stack, Table,
   TableBody, TableCell, TableContainer, TableHead, TableRow, Typography, useMediaQuery,
 } from '@mui/material'
 import { useTheme } from '@mui/material/styles'
+import { Link as RouterLink } from 'react-router-dom'
 import type { ElementJobDetail } from '../../../../lib/contracts/elementStatistics.ts'
 import { ErrorState, LoadingState } from '../../../components/LoadingState.tsx'
 import { errorMessage } from '../../../services/errors.ts'
 import { getElementJob } from './service.ts'
+import { listDocuments } from '../../../services/designDocuments.ts'
+import type { DocumentSummary } from '../../../services/designDocuments.ts'
+import { designPath, matchDesign } from './designLinks.ts'
 import { duration, grams, instant, length, resultLabels } from './format.ts'
 
 export default function JobDetail({ connectionId, jobId, timeZone, onClose }: {
@@ -18,6 +22,16 @@ export default function JobDetail({ connectionId, jobId, timeZone, onClose }: {
   const [detail, setDetail] = useState<ElementJobDetail | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [retry, setRetry] = useState(0)
+  // The saved designs, to put a recorded print back with the thing it came
+  // from. A failure here costs the link and nothing else.
+  const [documents, setDocuments] = useState<DocumentSummary[]>([])
+  useEffect(() => {
+    let cancelled = false
+    void listDocuments()
+      .then(found => { if (!cancelled) setDocuments(found) })
+      .catch(() => { /* no link is offered */ })
+    return () => { cancelled = true }
+  }, [])
   useEffect(() => {
     const controller = new AbortController()
     setDetail(null)
@@ -30,6 +44,7 @@ export default function JobDetail({ connectionId, jobId, timeZone, onClose }: {
     return () => controller.abort()
   }, [connectionId, jobId, retry])
   const job = detail?.job
+  const design = useMemo(() => matchDesign(job?.title, documents), [job?.title, documents])
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="md" fullScreen={fullScreen}
       aria-labelledby="element-job-heading">
@@ -58,6 +73,21 @@ export default function JobDetail({ connectionId, jobId, timeZone, onClose }: {
                   <Typography component="dt" color="text.secondary">First / last recorded (UTC)</Typography>
                   <Typography component="dd">{instant(job.firstSeenAt, 'UTC')} / {instant(job.lastSeenAt, 'UTC')}</Typography>
                 </Box>
+                {design && (
+                  <Alert
+                    severity="success"
+                    action={(
+                      <Button component={RouterLink} to={designPath(design.document)} size="small">
+                        Open design
+                      </Button>
+                    )}
+                  >
+                    {design.exact
+                      ? `This job's name matches your design "${design.document.name}".`
+                      : `This job's name contains your design "${design.document.name}".`}
+                    {' '}Names are all there is to go on, so check it is the one you mean.
+                  </Alert>
+                )}
                 <Alert severity="info">
                   Weight, length and sliced time describe the entire planned job, even when it failed
                   or was aborted. They do not measure actual extrusion, waste or a lifetime odometer.

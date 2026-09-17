@@ -125,7 +125,11 @@ const renderPage = (path = '/admin/el-ement-statistics?range=all&timeZone=UTC', 
   </ThemeProvider>,
 )
 
+/** What the account has saved; a recorded print is matched back to it by name. */
+let savedDesigns: unknown[] = []
+
 beforeEach(() => {
+  savedDesigns = []
   role = 'admin'
   offline = false
   configured = true
@@ -154,6 +158,7 @@ beforeEach(() => {
     if (url.pathname.includes('/jobs/')) return json({
       job: baseJobs.find(job => url.pathname.endsWith(`/${job.id}`)), connection: syntheticElementConnection, events: [],
     })
+    if (url.pathname === '/api/design-documents') return json(savedDesigns)
     if (url.pathname.endsWith('/discover')) return json(syntheticElementAccount)
     if (url.pathname.endsWith('/connection')) {
       enabled = body?.enabled === true
@@ -334,4 +339,39 @@ test('an edited scope says it is not applied until Apply is pressed', async () =
 
   await screen.findByRole('heading', { name: 'Job history (1)' })
   await waitFor(() => expect(screen.queryByText('Not applied yet')).toBeNull())
+})
+
+test('a recorded job links back to the design whose name it carries', async () => {
+  savedDesigns = [{
+    id: 'design-7', kind: 'bambu', name: 'Synthetic calibration plate', objectCount: 3,
+    createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-02T00:00:00Z',
+  }]
+  const user = userEvent.setup()
+  renderPage()
+  await screen.findByRole('heading', { name: 'Job history (2)' })
+
+  await user.click(screen.getByRole('button', { name: 'Synthetic calibration plate' }))
+
+  const dialog = within(await screen.findByRole('dialog'))
+  await waitFor(() => expect(dialog.getByRole('link', { name: 'Open design' })).toBeTruthy())
+  expect(dialog.getByRole('link', { name: 'Open design' }).getAttribute('href'))
+    .toBe('/bambu-designer?open=design-7')
+  // The claim is a name match, and says so rather than asserting provenance.
+  expect(dialog.getByText(/Names are all there is to go on/)).toBeTruthy()
+})
+
+test('a job whose name matches nothing offers no design link', async () => {
+  savedDesigns = [{
+    id: 'design-9', kind: 'bambu', name: 'Something else entirely', objectCount: 1,
+    createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-02T00:00:00Z',
+  }]
+  const user = userEvent.setup()
+  renderPage()
+  await screen.findByRole('heading', { name: 'Job history (2)' })
+
+  await user.click(screen.getByRole('button', { name: 'Synthetic calibration plate' }))
+
+  const dialog = within(await screen.findByRole('dialog'))
+  await dialog.findByText(/Reported material mapping/)
+  expect(dialog.queryByRole('link', { name: 'Open design' })).toBeNull()
 })

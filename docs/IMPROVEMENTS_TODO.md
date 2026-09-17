@@ -141,8 +141,10 @@ for effort. Tick items off here as they land.
 - [ ] Keep the scroll position when a chart click re-filters.
 
 ### Features
-- [ ] Link jobs to designs: match job title to saved document names (normalised
-      like `safeFilename`); show "Open design" in job detail.
+- [x] Link jobs to designs: job detail offers "Open design" when the job title
+      matches a saved design (normalised to letters and digits, with the
+      slicer's plate number and extension stripped). An ambiguous match offers
+      nothing, and the wording says it is a name match, not provenance.
 - [ ] On a design, show its print history (count, success rate, last printed,
       average grams) — endpoint that queries the ledger by title match.
 - [ ] Embed the design id in 3MF metadata on export, so matching stops depending
