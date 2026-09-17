@@ -48,7 +48,8 @@ import { PREVIEW_PART_ID, useProposalPreview } from '../../components/designer/u
 import SolidPalette from './components/SolidPalette.tsx'
 import FilamentSlotField from './components/FilamentSlotField.tsx'
 import { useAmsTrays } from './useAmsTrays.ts'
-import { assignExtruders, filamentWarnings } from './amsTrays.ts'
+import { assignExtruders, filamentWarnings, trayLabel } from './amsTrays.ts'
+import { SPOOL_GRAMS, densityOf, formatGrams, printedGrams } from './estimate.ts'
 import LibraryPalette from './components/LibraryPalette.tsx'
 import type { LibraryEntry } from './components/libraryEntries.ts'
 import type { SolidPaletteKind } from './components/solidEntries.ts'
@@ -196,7 +197,41 @@ export default function BambuDesignerPage() {
     && objects.some(o => o.id === selectedObject.id)
     ? selectedObject
     : null
-  const trayWarnings = useMemo(() => filamentWarnings(objects, ams.trays), [objects, ams.trays])
+
+  /**
+   * Grams per filament, grouped the way the 3MF export will number them. Each
+   * body is weighed on its own, so parts that overlap count the overlap twice;
+   * it errs heavy, which is the safe side for "will this spool do".
+   */
+  const usage = useMemo(() => {
+    const bodies = parts.filter(p => p.object.mode === 'solid')
+    const extruders = assignExtruders(bodies.map(p => p.object), MAX_FILAMENTS)
+    const bySlot = new Map<number, number>()
+    bodies.forEach((body, i) => {
+      const slot = extruders[i]
+      const tray = ams.trays?.find(t => t.slot === slot)
+      const grams = printedGrams(body.mesh, densityOf(tray?.material))
+      bySlot.set(slot, (bySlot.get(slot) ?? 0) + grams)
+    })
+    return [...bySlot].sort(([a], [b]) => a - b).map(([slot, grams]) => ({ slot, grams }))
+  }, [parts, ams.trays])
+  const totalGrams = usage.reduce((sum, u) => sum + u.grams, 0)
+
+  const trayWarnings = useMemo(() => {
+    const warnings = filamentWarnings(objects, ams.trays)
+    for (const { slot, grams } of usage) {
+      const tray = ams.trays?.find(t => t.slot === slot)
+      if (tray?.remainingPercent == null) continue
+      const left = (tray.remainingPercent / 100) * SPOOL_GRAMS
+      if (grams > left) {
+        warnings.push({
+          message: `Tray ${trayLabel(slot)} has about ${formatGrams(left)} left, and this model needs`
+            + ` roughly ${formatGrams(grams)} of it.`,
+        })
+      }
+    }
+    return warnings
+  }, [objects, ams.trays, usage])
 
   /** How big the selection actually came out. The panel can only ask a
    *  parametric shape its dimensions; a mesh or a group has to be measured. */
@@ -750,6 +785,16 @@ export default function BambuDesignerPage() {
             {previewMesh && 'Previewing a proposed change · '}
             {objects.length} {objects.length === 1 ? 'object' : 'objects'}
             {doc.selection.size > 0 && ` · ${doc.selection.size} selected`}
+            {totalGrams > 0 && (
+              <Tooltip title={
+                'A rough estimate: two walls and 15% infill, without supports or purge.'
+                + (usage.length > 1
+                  ? ` By filament: ${usage.map(u => `${trayLabel(u.slot)} ${formatGrams(u.grams)}`).join(', ')}.`
+                  : '')
+              }>
+                <span style={{ pointerEvents: 'auto' }}> · ≈ {formatGrams(totalGrams)}</span>
+              </Tooltip>
+            )}
             {evaluating && ' · building…'}
           </span>
         }

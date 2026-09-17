@@ -72,14 +72,12 @@ for effort. Tick items off here as they land.
       extruder N to tray N (the tooltip tells the user to sync).
 
 ### Weight, cost and stock estimate
-- [ ] Expose `report.volume` from `checkManifold` alongside the print issues.
-- [ ] Density table per material (PLA 1.24, PETG 1.27, ABS 1.04, ASA 1.07, TPU 1.21 g/cm³).
-- [ ] Show "≈ N g" in the status bar (solid volume, note that infill makes it an
-      upper bound; optionally apply a default 15% infill + wall estimate).
-- [ ] With per-part filaments: grams per slot.
-- [ ] Warn when a slot's AMS remaining % × spool weight is below the estimate
-      (reuse `lib/contracts/filamentStock.ts`).
-- [ ] Optional cost line once filament prices exist (see Statistics → cost).
+- [x] Estimate grams from volume and surface area (two 0.42 mm walls + 15% infill;
+      a 20 mm PLA cube comes out ~3.7 g), per material density from the tray.
+- [x] "≈ N g" in the status bar, with a per-filament breakdown in its tooltip.
+- [x] Grams per filament, numbered the way the 3MF export numbers them.
+- [x] Warn when a tray's remaining % of a 1 kg spool is below what the model needs.
+- [ ] Optional cost line once filament prices exist (see Filaments → price per kg).
 
 ### Parts library
 - [ ] Parametric library entries (generated, not STL): make `LibraryEntry` a
