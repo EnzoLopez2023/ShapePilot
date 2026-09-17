@@ -80,6 +80,12 @@ beforeEach(() => {
       })
     }
     // Nothing was ever uploaded from this run, so the asset resolve misses.
+    // What a kilogram costs; nothing is priced in these runs.
+    if (url.includes('/api/filaments/prices')) {
+      return new Response(JSON.stringify({ prices: [] }), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      })
+    }
     // What the account owns, which is where a part's colour can come from.
     if (url.includes('/api/filaments') && !url.includes('/usage')) {
       return new Response(JSON.stringify({

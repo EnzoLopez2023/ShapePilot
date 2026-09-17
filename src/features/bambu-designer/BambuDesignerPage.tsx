@@ -53,6 +53,10 @@ import PrintHistory from './components/PrintHistory.tsx'
 import { useAmsTrays } from './useAmsTrays.ts'
 import { assignExtruders, filamentWarnings, trayLabel } from './amsTrays.ts'
 import { SPOOL_GRAMS, densityOf, formatGrams, printedGrams } from './estimate.ts'
+import { overhangSurface } from './surfaces.ts'
+import { costOf, formatMoney } from '../filaments/model/cost.ts'
+import { getFilamentPrices } from '../filaments/service.ts'
+import type { FilamentPrice } from '../filaments/service.ts'
 import LibraryPalette from './components/LibraryPalette.tsx'
 import type { FastenerEntry, FileEntry, LibraryEntry } from './components/libraryEntries.ts'
 import FastenerDialog from './components/FastenerDialog.tsx'
@@ -77,6 +81,9 @@ const EDGES: { edge: AlignEdge; label: string }[] = [
 /** One AMS holds four spools. Exports past the fourth object pile onto the last
  *  slot rather than naming a filament the printer has not got. */
 const MAX_FILAMENTS = 4
+
+/** The overhang shell in the viewport; not an object, so it is never selected. */
+const OVERHANG_PART_ID = '__overhangs'
 
 /** Arrow-key nudge with snap off; Shift multiplies whatever the step is. */
 const FREE_NUDGE_MM = 1
@@ -138,9 +145,20 @@ export default function BambuDesignerPage() {
   const [libraryBusy, setLibraryBusy] = useState<string | null>(null)
   const ams = useAmsTrays()
   const ownedColors = useOwnedColors()
+  // What the filament costs, when the lines in the AMS are priced. Unpriced
+  // lines are left out of the money and named as unpriced, never guessed at.
+  const [prices, setPrices] = useState<FilamentPrice[]>([])
+  useEffect(() => {
+    let cancelled = false
+    void getFilamentPrices()
+      .then(stored => { if (!cancelled) setPrices(stored) })
+      .catch(() => { /* no prices, no cost line */ })
+    return () => { cancelled = true }
+  }, [])
   const [fastener, setFastener] = useState<FastenerEntry | null>(null)
   const [mirrorAnchor, setMirrorAnchor] = useState<HTMLElement | null>(null)
   const [shortcutsAnchor, setShortcutsAnchor] = useState<HTMLElement | null>(null)
+  const [showOverhangs, setShowOverhangs] = useState(false)
   const shortcutsButton = useRef<HTMLButtonElement>(null)
 
   const objects = doc.doc.objects
@@ -196,6 +214,20 @@ export default function BambuDesignerPage() {
   }, [objects, textOutlines])
 
   const issues = useMemo(() => checkPrint(wholeMesh, machine), [wholeMesh, machine])
+  // Drawn only when asked for: a permanently red underside would be noise on
+  // every model that needs supports and knows it.
+  const overhangs = useMemo(
+    () => (showOverhangs && wholeMesh ? overhangSurface(wholeMesh) : null),
+    [showOverhangs, wholeMesh])
+
+  /** The model, plus the overhang shell drawn over it when it is asked for. */
+  const drawnParts = useMemo<ViewportPart[]>(
+    () => (overhangs
+      ? [...viewportParts, {
+        id: OVERHANG_PART_ID, mesh: overhangs, mode: 'solid' as const, color: '#e5484d',
+      }]
+      : viewportParts),
+    [viewportParts, overhangs])
   const severity = worstSeverity(issues)
 
   const selectedObject = doc.selection.size === 1
@@ -225,6 +257,13 @@ export default function BambuDesignerPage() {
     return [...bySlot].sort(([a], [b]) => a - b).map(([slot, grams]) => ({ slot, grams }))
   }, [parts, ams.trays])
   const totalGrams = usage.reduce((sum, u) => sum + u.grams, 0)
+
+  const cost = useMemo(() => costOf(
+    usage.flatMap(({ slot, grams }) => {
+      const key = ams.trays?.find(tray => tray.slot === slot)?.key
+      return key ? [{ key, grams }] : []
+    }),
+    prices), [usage, ams.trays, prices])
 
   const trayWarnings = useMemo(() => {
     const warnings = filamentWarnings(objects, ams.trays)
@@ -716,7 +755,7 @@ export default function BambuDesignerPage() {
         }
         canvas={
           <Viewport3D
-            parts={viewportParts}
+            parts={drawnParts}
             selection={doc.selection}
             buildMm={machine.buildMm}
             innerBuildMm={machine.dualNozzleBuildMm}
@@ -725,7 +764,9 @@ export default function BambuDesignerPage() {
             imperial={imperial}
             fitToken={fitToken}
             onSelect={(id, additive) => {
-              if (id && id !== PREVIEW_PART_ID) doc.toggleSelection(id, additive)
+              if (id && id !== PREVIEW_PART_ID && id !== OVERHANG_PART_ID) {
+                doc.toggleSelection(id, additive)
+              }
               else doc.clearSelection()
             }}
             onTransform={(id, change) => {
@@ -824,6 +865,14 @@ export default function BambuDesignerPage() {
                           Select the part
                         </Button>
                       )}
+                      {issue.message.includes('faces downwards') && (
+                        <Button
+                          size="small" sx={{ mt: 0.5 }}
+                          onClick={() => setShowOverhangs(value => !value)}
+                        >
+                          {showOverhangs ? 'Hide overhangs' : 'Show overhangs'}
+                        </Button>
+                      )}
                     </Box>
                   ))}
                 </Stack>
@@ -858,8 +907,14 @@ export default function BambuDesignerPage() {
                 + (usage.length > 1
                   ? ` By filament: ${usage.map(u => `${trayLabel(u.slot)} ${formatGrams(u.grams)}`).join(', ')}.`
                   : '')
+                + (cost.unpricedGrams > 0
+                  ? ` ${formatGrams(cost.unpricedGrams)} is on filament with no price set.`
+                  : '')
               }>
-                <span style={{ pointerEvents: 'auto' }}> · ≈ {formatGrams(totalGrams)}</span>
+                <span style={{ pointerEvents: 'auto' }}>
+                  {' · ≈ '}{formatGrams(totalGrams)}
+                  {cost.amount !== null && <> · {formatMoney(cost.amount, cost.currency!)}</>}
+                </span>
               </Tooltip>
             )}
             {evaluating && ' · building…'}

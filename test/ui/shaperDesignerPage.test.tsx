@@ -218,3 +218,15 @@ test('a locked shape offers no frame to drag', async () => {
   await waitFor(() =>
     assert.equal(container.querySelectorAll('[aria-label="Resize"]').length, 0))
 })
+
+test('select all takes every unlocked object', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(screen.getByRole('button', { name: /Rectangle/ })).toBeTruthy())
+  await user.click(screen.getByRole('button', { name: /Rectangle/ }))
+  await user.click(screen.getByRole('button', { name: /Circle/ }))
+
+  await user.keyboard('{Meta>}a{/Meta}')
+
+  await waitFor(() => expect(screen.getAllByText(/2 selected/).length).toBeGreaterThan(0))
+})

@@ -5,8 +5,10 @@ import type { SceneObject } from '../../model/document.ts'
 import { createSolid } from '../../model/scene.ts'
 import { amsTrays, assignExtruders, filamentWarnings, trayLabel } from './amsTrays.ts'
 
-const loaded = (amsId: string, slotId: string, color = '#FF0000'): LoadedSlot => ({
-  amsId, slotId, key: null, material: 'PLA', subBrand: 'PLA Basic', color, remainingPercent: 80,
+const loaded = (
+  amsId: string, slotId: string, color = '#FF0000', key: string | null = null,
+): LoadedSlot => ({
+  amsId, slotId, key, material: 'PLA', subBrand: 'PLA Basic', color, remainingPercent: 80,
 })
 
 const stock = (slots: LoadedSlot[]): AmsStock => ({ receivedAt: '2026-09-17T10:00:00Z', slots })
@@ -65,4 +67,9 @@ test('holes and hidden parts print nothing, so they warn about nothing', () => {
     part('Ghost', { filamentSlot: 3, visible: false }),
   ]
   assert.deepEqual(filamentWarnings(objects, []), [])
+})
+
+test('a tray carries the catalogue colour it matched, which is what prices it', () => {
+  const [tray] = amsTrays(stock([loaded('0', '0', '#FFFFFF', 'bambu-lab/pla/basic/jade-white-10100')]))
+  assert.equal(tray.key, 'bambu-lab/pla/basic/jade-white-10100')
 })

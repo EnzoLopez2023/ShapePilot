@@ -41,7 +41,10 @@ export interface FilamentPrice {
 }
 
 export const getFilamentPrices = () =>
-  apiRequest<{ prices: FilamentPrice[] }>(`${base}/prices`).then(response => response.prices)
+  apiRequest<{ prices?: FilamentPrice[] }>(`${base}/prices`)
+    // Defaulted rather than trusted: an empty price list is a real answer, and
+    // callers multiply by it.
+    .then(response => response?.prices ?? [])
 
 export const putFilamentPrices = (prices: readonly FilamentPrice[]) =>
   apiRequest<{ prices: FilamentPrice[] }>(`${base}/prices`, {

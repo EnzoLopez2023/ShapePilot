@@ -152,11 +152,18 @@ export default function ShaperDesignerPage() {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
         e.preventDefault()
         doc.duplicateObjects(doc.selection)
+        return
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'a') {
+        // Top level and unlocked, as in the Bambu Designer: it is what the
+        // multi-object tools act on.
+        e.preventDefault()
+        doc.setSelection(objects.filter(o => !o.locked).map(o => o.id))
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [doc, removeSelected])
+  }, [doc, objects, removeSelected])
 
   const exportFile = useCallback((format: 'svg' | 'dxf') => {
     const drawing = sceneCutDrawing(doc.doc, compileOptions)

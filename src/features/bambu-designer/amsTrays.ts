@@ -17,6 +17,8 @@ const UNITS = MAX_FILAMENT_SLOT / TRAYS_PER_UNIT
 export interface AmsTray {
   /** 1-based, as Bambu Studio numbers filaments. */
   slot: number
+  /** The catalogue colour in the tray, when it matched one; else null. */
+  key: string | null
   /** Studio's own name for the tray, e.g. "A1". */
   label: string
   /** `#RRGGBB`, or '' when unreported. */
@@ -44,6 +46,7 @@ export function amsTrays(stock: AmsStock | null): AmsTray[] {
     const slot = unit * TRAYS_PER_UNIT + tray + 1
     trays.push({
       slot,
+      key: loaded.key,
       label: trayLabel(slot),
       color: loaded.color,
       material: loaded.material,

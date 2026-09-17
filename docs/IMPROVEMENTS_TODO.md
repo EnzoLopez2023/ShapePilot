@@ -52,7 +52,7 @@ for effort. Tick items off here as they land.
 
 ### Consistency
 - [x] Select all (⌘A) in the Bambu Designer: every unlocked top-level part.
-- [ ] The same in the Shaper Designer, which has its own key handling.
+- [x] The same in the Shaper Designer.
 - [x] Save is disabled only for an empty design that was never saved, in all three
       designers (a saved design may be emptied on purpose).
 - [x] Keyboard shortcuts popover (toolbar button, or `?`).
@@ -79,7 +79,8 @@ for effort. Tick items off here as they land.
 - [x] "≈ N g" in the status bar, with a per-filament breakdown in its tooltip.
 - [x] Grams per filament, numbered the way the 3MF export numbers them.
 - [x] Warn when a tray's remaining % of a 1 kg spool is below what the model needs.
-- [ ] Cost line in the designer's weight estimate, now that prices exist.
+- [x] Cost beside the weight estimate, from the priced line of each chosen AMS
+      tray; filament with no price is named in the tooltip, not guessed at.
 
 ### Parts library
 - [x] The palette takes generated parts as well as files, grouped by category.
@@ -107,7 +108,9 @@ for effort. Tick items off here as they land.
       because the checks run on the union, which has no object identity left.
 - [ ] Minimum wall thickness, not just the average: a thin rib on a thick body
       does not move 2V/A. Needs a distance field or ray casts through the mesh.
-- [ ] Tint the offending faces in the viewport rather than only selecting the part.
+- [x] "Show overhangs" draws the offending faces in the viewport, lifted clear of
+      the surface they came from. Off by default: a permanently red underside
+      would be noise on every model that needs supports and knows it.
 
 ## AI Playground
 

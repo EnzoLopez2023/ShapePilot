@@ -3,8 +3,12 @@ import { test } from 'vitest'
 import { evaluateNode, evaluateProgram } from '../../csg/evaluate.ts'
 import type { PartNode, ShapeProgram } from '../../../lib/contracts/shapeProgram.ts'
 import {
-  TIPPY_RATIO, averageThicknessMm, surfaceReport, tippiness,
+  TIPPY_RATIO, averageThicknessMm, overhangSurface, surfaceReport, tippiness,
 } from './surfaces.ts'
+import { measure } from './estimate.ts'
+
+/** The drawn shell's own area, measured the same way the report measures. */
+const surfaceArea = (mesh: Parameters<typeof measure>[0]): number => measure(mesh).area
 
 const transform = (position: [number, number, number] = [0, 0, 0]) =>
   ({ position, rotationDeg: [0, 0, 0] as [number, number, number], scale: [1, 1, 1] as [number, number, number] })
@@ -66,4 +70,22 @@ test('tippiness rises as the footprint shrinks under the same height', () => {
   assert.ok(tippiness(40, 81)! > TIPPY_RATIO)
   assert.equal(tippiness(40, 100), TIPPY_RATIO)
   assert.ok(tippiness(40, 10_000)! < TIPPY_RATIO)
+})
+
+test('the overhanging faces come back as their own shell, in front of the surface', async () => {
+  const mesh = await evaluateProgram(program([
+    box(10, 10, 20, [0, 0, 0], 'post'),
+    box(40, 40, 4, [0, 0, 20], 'shelf'),
+  ]))
+  const shell = overhangSurface(mesh)!
+  assert.ok(shell.triangleCount > 0)
+  // The same area the report measured, drawn rather than summed.
+  const area = surfaceArea(shell)
+  assert.ok(Math.abs(area - surfaceReport(mesh).overhangArea) < 1, `got ${area}`)
+  // Pushed clear of the surface it came from, so it is not fighting for pixels.
+  assert.ok(shell.bbox[2] < 20, `got ${shell.bbox[2]}`)
+})
+
+test('a model with nothing overhanging has no shell to draw', async () => {
+  assert.equal(overhangSurface(await evaluateNode(box(20, 20, 10))), null)
 })
