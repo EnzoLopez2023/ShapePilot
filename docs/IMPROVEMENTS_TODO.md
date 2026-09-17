@@ -107,17 +107,18 @@ for effort. Tick items off here as they land.
 
 ## AI Playground
 
-- [ ] "Extrude" action for a 2D traced design: thickness field + optional backing
-      plate (margin, thickness), producing solids in place so a traced logo
-      becomes a printable badge without a hand-off.
-- [ ] Before/after toggle while a proposal is up (or a translucent overlay of the
-      current model under the proposal).
-- [ ] Move print issues next to the viewport: a severity chip on the canvas that
-      opens the list, instead of the bottom of the left column.
-- [ ] Show the photo-trace panel based on `trace.available`, not on the shape
-      assistant being available.
-- [ ] Carry the per-part filament and weight estimate here once the Bambu
-      Designer has them (shared hook).
+- [x] "Extrude" for a traced drawing: thickness plus an optional backing plate
+      (margin, thickness), so a photographed logo becomes a badge in place. The
+      artwork stands on the plate rather than intersecting it.
+- [x] A 2D/3D switch for a flat design, since a trace is paths either way.
+- [x] Proposed/Current toggle while a proposal is up, resetting per proposal.
+- [x] Print issues moved to a chip on the viewport that opens the list.
+- [x] The photo panel follows the tracer's own availability. Note: today both it
+      and the shape assistant probe the same `/api/ai/status`, so an
+      unconfigured deployment still has neither -- this only stops the panel
+      following the wrong signal if they ever part company.
+- [ ] Carry the per-part filament and weight estimate here once the shared hook
+      exists (the Bambu Designer has them).
 
 ## Filaments
 

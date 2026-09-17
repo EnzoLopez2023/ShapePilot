@@ -6,15 +6,19 @@
 // a corner of the inspector.
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Alert, Box, Button, Divider, IconButton, Paper, Snackbar, Stack, Tooltip, Typography,
+  Alert, Box, Button, Chip, Divider, IconButton, Paper, Popover, Snackbar, Stack,
+  ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material'
 import UndoRoundedIcon from '@mui/icons-material/UndoRounded'
 import RedoRoundedIcon from '@mui/icons-material/RedoRounded'
 import ArchitectureRoundedIcon from '@mui/icons-material/ArchitectureRounded'
 import ViewInArRoundedIcon from '@mui/icons-material/ViewInArRounded'
+import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
+import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import { useNavigate } from 'react-router-dom'
 
 import AiPanel from '../../components/designer/AiPanel.tsx'
+import type { Proposal } from '../../components/designer/useAiDesigner.ts'
 import { appendChat, useAiDesigner } from '../../components/designer/useAiDesigner.ts'
 import { OpenDocumentDialog, SaveAsDialog } from '../../components/designer/DocumentDialogs.tsx'
 import DocumentNameField from '../../components/designer/DocumentNameField.tsx'
@@ -25,6 +29,9 @@ import type { ViewportPart } from '../../components/viewport3d/Viewport3D.tsx'
 import Canvas2D from '../../components/canvas2d/Canvas2D.tsx'
 import type { CanvasShape } from '../../components/canvas2d/Canvas2D.tsx'
 import { EmptyState } from '../../components/LoadingState.tsx'
+import ExtrudeDialog from './ExtrudeDialog.tsx'
+import type { BadgeOptions } from './extrude.ts'
+import { extrudeToBadge } from './extrude.ts'
 import { compileObject } from '../../geometry/sceneShapes.ts'
 import { evaluateProgram } from '../../csg/evaluate.ts'
 import { programFromScene } from '../../csg/fromScene.ts'
@@ -63,6 +70,14 @@ export default function PlaygroundPage() {
 
   const [fitToken, setFitToken] = useState(0)
   const [openDialog, setOpenDialog] = useState(false)
+  const [extrudeOpen, setExtrudeOpen] = useState(false)
+  // A traced drawing is flat until it is given depth. The switch is the user's,
+  // not the document's: a 3D look at flat paths is a legitimate thing to want.
+  const [threeD, setThreeD] = useState(false)
+  const [issuesOpen, setIssuesOpen] = useState<HTMLElement | null>(null)
+  // Which proposal the viewport is comparing against, so a new proposal always
+  // opens showing itself rather than inheriting the last toggle.
+  const [comparingFor, setComparingFor] = useState<Proposal | null>(null)
   const [saveAsOpen, setSaveAsOpen] = useState(false)
   const [textOutlines, setTextOutlines] = useState<Map<string, Ring[]>>(new Map())
 
@@ -70,7 +85,8 @@ export default function PlaygroundPage() {
 
   // A design traced from a photo is entirely 2D paths; that flips the whole
   // page from the 3D viewport to the 2D canvas and turns on the SVG export.
-  const twoD = objects.length > 0 && objects.every(o => o.type === 'path')
+  const flat = objects.length > 0 && objects.every(o => o.type === 'path')
+  const twoD = flat && !threeD
 
   useEffect(() => {
     let cancelled = false
@@ -103,9 +119,20 @@ export default function PlaygroundPage() {
 
   // A proposal is previewed as the scene it would leave behind.
   const previewMesh = useProposalPreview(assistant.proposal, objects, textOutlines)
+  const comparing = comparingFor !== null && comparingFor === assistant.proposal
+  // While a proposal is up, "Current" puts the model it would replace back in
+  // the viewport, so the change can be read rather than guessed at.
+  const showingPreview = Boolean(previewMesh) && !comparing
+
+  const extrude = useCallback((options: BadgeOptions) => {
+    doc.replace(d => ({ ...d, objects: extrudeToBadge(d.objects, options) }))
+    setExtrudeOpen(false)
+    setThreeD(true)
+    setFitToken(t => t + 1)
+  }, [doc])
 
   const viewportParts = useMemo<ViewportPart[]>(() => {
-    if (previewMesh) {
+    if (previewMesh && !comparing) {
       // While a proposal is up it is the thing to look at; showing both would
       // be two overlapping solids and no way to read either.
       return [{ id: PREVIEW_PART_ID, mesh: previewMesh, mode: 'solid' }]
@@ -114,10 +141,10 @@ export default function PlaygroundPage() {
       id: p.object.id, mesh: p.mesh, mode: p.object.mode, color: p.object.color,
       origin: p.object.transform.position,
     }))
-  }, [previewMesh, parts])
+  }, [previewMesh, comparing, parts])
 
   const wholeMesh = useMemo(
-    () => (previewMesh ? null : parts.length ? parts[0].mesh : null), [previewMesh, parts])
+    () => (showingPreview ? null : parts.length ? parts[0].mesh : null), [showingPreview, parts])
   const issues = useMemo(() => checkPrint(wholeMesh, BAMBU_X2D), [wholeMesh])
   const severity = worstSeverity(issues)
 
@@ -228,6 +255,26 @@ export default function PlaygroundPage() {
               </IconButton>
             </span></Tooltip>
             <Button size="small" onClick={() => setFitToken(t => t + 1)}>Fit</Button>
+            {flat && (
+              <>
+                <Button
+                  size="small" startIcon={<LayersRoundedIcon />}
+                  onClick={() => setExtrudeOpen(true)}
+                >
+                  Extrude
+                </Button>
+                <ToggleButtonGroup
+                  size="small" exclusive value={threeD}
+                  onChange={(_event, value: boolean | null) => {
+                    if (value !== null) { setThreeD(value); setFitToken(t => t + 1) }
+                  }}
+                  aria-label="View"
+                >
+                  <ToggleButton value={false} aria-label="Flat view">2D</ToggleButton>
+                  <ToggleButton value aria-label="Solid view">3D</ToggleButton>
+                </ToggleButtonGroup>
+              </>
+            )}
 
             <Box sx={{ flex: 1 }} />
 
@@ -319,7 +366,7 @@ export default function PlaygroundPage() {
                 </Stack>
               )}
 
-              {assistant.available !== false && (
+              {trace.available !== false && (
                 <>
                   <Divider />
                   <PhotoSourcePanel
@@ -353,15 +400,6 @@ export default function PlaygroundPage() {
                 </>
               )}
 
-              {severity && (
-                <Alert severity={severity} variant="outlined">
-                  <Stack spacing={0.5}>
-                    {issues.map((issue, i) => (
-                      <Typography key={i} variant="body2">{issue.message}</Typography>
-                    ))}
-                  </Stack>
-                </Alert>
-              )}
             </Stack>
           </Paper>
 
@@ -438,6 +476,45 @@ export default function PlaygroundPage() {
                 />
               </Box>
             )}
+            {severity && !trace.proposal && (
+              <>
+                <Chip
+                  size="small"
+                  color={severity === 'error' ? 'error' : 'warning'}
+                  variant="outlined"
+                  icon={<WarningAmberRoundedIcon />}
+                  label={issues.length === 1 ? '1 print issue' : `${issues.length} print issues`}
+                  onClick={event => setIssuesOpen(event.currentTarget)}
+                  aria-haspopup="dialog"
+                  sx={{ position: 'absolute', top: 10, right: 12, bgcolor: 'background.paper' }}
+                />
+                <Popover
+                  open={Boolean(issuesOpen)} anchorEl={issuesOpen}
+                  onClose={() => setIssuesOpen(null)}
+                  anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                  transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                >
+                  <Stack spacing={0.5} sx={{ p: 2, maxWidth: 360 }} aria-label="Print issues">
+                    {issues.map((issue, i) => (
+                      <Typography key={i} variant="body2">{issue.message}</Typography>
+                    ))}
+                  </Stack>
+                </Popover>
+              </>
+            )}
+            {previewMesh && (
+              <ToggleButtonGroup
+                size="small" exclusive value={comparing}
+                onChange={(_event, value: boolean | null) => {
+                  if (value !== null) setComparingFor(value ? assistant.proposal : null)
+                }}
+                aria-label="Compare the proposal"
+                sx={{ position: 'absolute', top: 10, left: 12, bgcolor: 'background.paper' }}
+              >
+                <ToggleButton value={false} aria-label="Proposed">Proposed</ToggleButton>
+                <ToggleButton value aria-label="Current" disabled={!objects.length}>Current</ToggleButton>
+              </ToggleButtonGroup>
+            )}
             {!trace.proposal && (
               <Stack
                 aria-live="polite"
@@ -447,7 +524,7 @@ export default function PlaygroundPage() {
                 }}
               >
                 <span>
-                  {previewMesh
+                  {showingPreview
                     ? 'Previewing a proposed change'
                     : twoD
                       ? `${objects.length} ${objects.length === 1 ? 'path' : 'paths'} · 2D`
@@ -460,6 +537,11 @@ export default function PlaygroundPage() {
         </Box>
       </Box>
 
+      <ExtrudeDialog
+        open={extrudeOpen}
+        onExtrude={extrude}
+        onClose={() => setExtrudeOpen(false)}
+      />
       <OpenDocumentDialog
         open={openDialog}
         documents={lifecycle.documents}

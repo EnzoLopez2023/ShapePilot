@@ -380,3 +380,55 @@ test('a reply that lands after switching designs is ignored', async () => {
   expect(screen.queryByText('Proposed change')).toBeNull()
   expect(screen.getByRole('button', { name: /phone stand for my iPhone/ })).toBeTruthy()
 })
+
+test('a traced drawing can be given thickness and a plate, which switches to 3D', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Add a photo' })).toBeTruthy())
+  await traceAPhoto(user)
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Apply' })).toBeTruthy())
+  await user.click(screen.getByRole('button', { name: 'Apply' }))
+  await screen.findByTestId('canvas2d')
+
+  await user.click(screen.getByRole('button', { name: /Extrude/ }))
+  const dialog = within(await screen.findByRole('dialog'))
+  await user.clear(dialog.getByLabelText('Artwork thickness'))
+  await user.type(dialog.getByLabelText('Artwork thickness'), '3')
+  await user.click(dialog.getByRole('button', { name: 'Extrude' }))
+
+  // The plate joins the traced path, and the flat canvas gives way to 3D.
+  const tree = await screen.findByRole('list', { name: 'Objects' })
+  await waitFor(() => expect(within(tree).getByText('Backing plate')).toBeTruthy())
+  await waitFor(() => expect(screen.queryByTestId('canvas2d')).toBeNull())
+  expect(screen.getByTestId('viewport')).toBeTruthy()
+})
+
+test('a proposal can be compared against the model it would replace', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(
+    screen.getByRole('button', { name: /phone stand for my iPhone/ })).toBeTruthy())
+  await user.click(screen.getByRole('button', { name: /phone stand for my iPhone/ }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Apply' })).toBeTruthy())
+  await user.click(screen.getByRole('button', { name: 'Apply' }))
+
+  await user.type(screen.getByLabelText(/Describe what you want/), 'add a hole')
+  await user.click(screen.getByRole('button', { name: /Send/ }))
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Current' })).toBeTruthy())
+
+  // It opens on the proposal; Current puts the existing model back.
+  expect(screen.getByRole('button', { name: 'Proposed' }).getAttribute('aria-pressed')).toBe('true')
+  await user.click(screen.getByRole('button', { name: 'Current' }))
+  expect(screen.getByRole('button', { name: 'Current' }).getAttribute('aria-pressed')).toBe('true')
+})
+
+test('the photo panel follows the tracer, which today shares one AI status', async () => {
+  aiAvailable = false
+  renderPage()
+  // Both the shape assistant and the tracer probe /api/ai/status, so an
+  // unconfigured deployment has neither. The panel now reads the tracer's own
+  // availability, so the two can part company without the panel following the
+  // wrong one.
+  await waitFor(() => expect(screen.getByText(/not configured for this deployment/)).toBeTruthy())
+  await waitFor(() => expect(screen.queryByRole('button', { name: 'Add a photo' })).toBeNull())
+})
