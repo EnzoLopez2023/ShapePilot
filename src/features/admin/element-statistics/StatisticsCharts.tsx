@@ -7,7 +7,7 @@ import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import { BarChart } from '@mui/x-charts/BarChart'
 import { LineChart } from '@mui/x-charts/LineChart'
 import type {
-  ElementMeasure, ElementReport, ElementStatus, ElementTrendBucket,
+  ElementMaterialSummary, ElementMeasure, ElementReport, ElementStatus, ElementTrendBucket,
 } from '../../../../lib/contracts/elementStatistics.ts'
 import { duration, grams, instant, measureCoverage, number } from './format.ts'
 
@@ -81,6 +81,18 @@ interface Props {
   status: ElementStatus | null
   onBucket(bucket: ElementTrendBucket): void
   onMaterial(material: string | null): void
+}
+
+/**
+ * Completed as a share of the jobs that settled either way. Small samples say
+ * nothing worth reading, so a rate under five settled jobs is withheld rather
+ * than printed as "100%".
+ */
+const MIN_SETTLED = 5
+function settledRate(row: ElementMaterialSummary): string {
+  const settled = row.results.completed + row.results.failed_or_aborted
+  if (settled < MIN_SETTLED) return `${settled} settled`
+  return `${Math.round((row.results.completed / settled) * 100)}%`
 }
 
 export default function StatisticsCharts({ report, status, onBucket, onMaterial }: Props) {
@@ -246,10 +258,18 @@ export default function StatisticsCharts({ report, status, onBucket, onMaterial 
                     ))}</TableBody>
                   </Table>
                 </TableContainer>
+                <Typography variant="body2" color="text.secondary">
+                  A job counts under every material it reported, so these columns can sum past the
+                  job total. The rate is completed jobs as a share of the settled ones -- active and
+                  unknown jobs are not counted either way, and a rate is withheld below five.
+                </Typography>
                 <TableContainer tabIndex={0} aria-label="Material chart data">
-                  <Table size="small" sx={{ minWidth: 640 }}>
+                  <Table size="small" sx={{ minWidth: 820 }}>
                     <TableHead><TableRow>
                       <TableCell>Material</TableCell><TableCell align="right">Jobs</TableCell>
+                      <TableCell align="right">Completed</TableCell>
+                      <TableCell align="right">Failed / aborted</TableCell>
+                      <TableCell align="right">Completed of settled</TableCell>
                       <TableCell align="right">Completed estimate</TableCell>
                       <TableCell align="right">Failed / aborted estimate</TableCell>
                       <TableCell align="right">Active / unknown estimate</TableCell>
@@ -261,6 +281,9 @@ export default function StatisticsCharts({ report, status, onBucket, onMaterial 
                           {item.material ?? 'Unreported material'}
                         </Button></TableCell>
                         <TableCell align="right">{item.jobs}</TableCell>
+                        <TableCell align="right">{item.results.completed}</TableCell>
+                        <TableCell align="right">{item.results.failed_or_aborted}</TableCell>
+                        <TableCell align="right">{settledRate(item)}</TableCell>
                         <MeasureCell value={item.completedWeightGrams} />
                         <MeasureCell value={item.failedOrAbortedWeightGrams} />
                         <MeasureCell value={item.otherWeightGrams} />

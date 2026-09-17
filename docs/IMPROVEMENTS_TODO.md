@@ -149,7 +149,12 @@ for effort. Tick items off here as they land.
       average grams) — endpoint that queries the ledger by title match.
 - [ ] Embed the design id in 3MF metadata on export, so matching stops depending
       on titles (check whether Bambu cloud returns it).
-- [ ] Success rate by material and by model title (table + small bar chart).
+- [x] Success rate by material: each material row carries its jobs by outcome
+      (server-side), and the table shows completed, failed and completed-of-
+      settled, withheld below five settled jobs. The counts are in the
+      materials CSV too.
+- [ ] Success rate by model title — needs the design link above to group jobs by
+      design first.
 - [ ] Cost per print and per period: grams × price per kg from Filaments.
 - [ ] Printer runtime hours total, fed to `/maintenance` so intervals can be
       hour-based as well as date-based.

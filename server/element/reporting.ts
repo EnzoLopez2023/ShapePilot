@@ -457,11 +457,15 @@ function materialSummaries(jobs: readonly ElementJob[]): {
       if (!row) {
         row = {
           material: usage.material, jobs: 0,
+          results: { completed: 0, failed_or_aborted: 0, active: 0, unknown: 0 },
           completedWeightGrams: measure(), failedOrAbortedWeightGrams: measure(), otherWeightGrams: measure(),
         }
         rows.set(usage.material, row)
       }
-      if (!seen.has(usage.material)) row.jobs++
+      if (!seen.has(usage.material)) {
+        row.jobs++
+        row.results[values.result]++
+      }
       seen.add(usage.material)
       addMeasure(weightMeasure(row, values.result), usage.estimatedWeightGrams)
     }

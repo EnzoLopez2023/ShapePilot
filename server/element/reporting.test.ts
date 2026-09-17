@@ -235,12 +235,14 @@ describe('honest totals, material accounting and raw-data preservation', () => {
     assert.equal(result.materialWeightDiscrepancyJobs, 1)
     assert.deepEqual(result.materials.find(row => row.material === 'PLA'), {
       material: 'PLA', jobs: 3,
+      results: { completed: 2, failed_or_aborted: 0, active: 1, unknown: 0 },
       completedWeightGrams: { value: 50, known: 3, missing: 0 },
       failedOrAbortedWeightGrams: { value: null, known: 0, missing: 0 },
       otherWeightGrams: { value: 80, known: 1, missing: 0 },
     })
     assert.deepEqual(result.materials.find(row => row.material === 'PETG'), {
       material: 'PETG', jobs: 2,
+      results: { completed: 1, failed_or_aborted: 1, active: 0, unknown: 0 },
       completedWeightGrams: { value: 30, known: 1, missing: 0 },
       failedOrAbortedWeightGrams: { value: 60, known: 1, missing: 0 },
       otherWeightGrams: { value: null, known: 0, missing: 0 },
@@ -315,6 +317,29 @@ describe('honest totals, material accounting and raw-data preservation', () => {
     assert.deepEqual(result.totals.actualDurationSeconds, { value: null, known: 0, missing: 1 })
     assert.equal(result.totals.estimatedDurationSeconds.value, 1200)
     assert.equal(result.jobs.items[0].actualDurationSeconds, 900)
+  })
+
+  test('a material carries its jobs by outcome, counting a job once per material', () => {
+    const rows = report([
+      job('a', { result: 'completed', materials: [usage('PLA', 10)] }),
+      job('b', { result: 'failed_or_aborted', materials: [usage('PLA', 20)] }),
+      // Two mappings of the same material are one job for that material.
+      job('c', { result: 'completed', materials: [usage('PLA', 5), usage('PLA', 5)] }),
+      // A multi-material job counts under each of them.
+      job('d', { result: 'completed', materials: [usage('PLA', 5), usage('PETG', 5)] }),
+      job('e', { result: 'active', materials: [usage('PETG', 5)] }),
+    ]).materials
+    const pla = rows.find(row => row.material === 'PLA')!
+    const petg = rows.find(row => row.material === 'PETG')!
+    assert.equal(pla.jobs, 4)
+    assert.deepEqual(pla.results, { completed: 3, failed_or_aborted: 1, active: 0, unknown: 0 })
+    assert.equal(petg.jobs, 2)
+    assert.deepEqual(petg.results, { completed: 1, failed_or_aborted: 0, active: 1, unknown: 0 })
+    // Outcomes account for exactly the jobs the row claims.
+    for (const row of rows) {
+      const counted = Object.values(row.results).reduce((sum, value) => sum + value, 0)
+      assert.equal(counted, row.jobs)
+    }
   })
 
   test.each([null, NaN, Infinity, -Infinity, -1])('invalid or missing numbers stay missing: %s', value => {

@@ -176,6 +176,12 @@ function materialMetricRecords(report: ElementReport): CsvRecord[] {
     const key = row.material ?? '__unreported__'
     return [
       metricRecord('materials', key, 'jobs', 'jobs', row.jobs),
+      // A job counts under every material it reported, so these can sum past
+      // the job total; they are what a per-material success rate reads from.
+      metricRecord('materials', key, 'completed_jobs', 'jobs', row.results.completed),
+      metricRecord('materials', key, 'failed_or_aborted_jobs', 'jobs', row.results.failed_or_aborted),
+      metricRecord('materials', key, 'active_jobs', 'jobs', row.results.active),
+      metricRecord('materials', key, 'unknown_jobs', 'jobs', row.results.unknown),
       ...MEASURES.filter(item =>
         item.key === 'completedWeightGrams' || item.key === 'failedOrAbortedWeightGrams' || item.key === 'otherWeightGrams')
         .map(({ key: field, metric, unit }) => {

@@ -265,6 +265,11 @@ export interface ElementTrendBucket {
 export interface ElementMaterialSummary {
   material: string | null
   jobs: number
+  /**
+   * The jobs above, by outcome. A job counts once per material it reported, so
+   * these sum to `jobs` -- and a multi-material job is counted under each.
+   */
+  results: Record<ElementJobResult, number>
   completedWeightGrams: ElementMeasure
   failedOrAbortedWeightGrams: ElementMeasure
   otherWeightGrams: ElementMeasure

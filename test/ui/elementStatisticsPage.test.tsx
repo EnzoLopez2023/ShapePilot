@@ -95,6 +95,11 @@ function report(params: URLSearchParams): ElementReport {
     materials: ['PLA', 'PETG'].filter(material => jobs.some(job => job.materials.some(item => item.material === material)))
       .map(material => ({
         material, jobs: 1,
+        results: {
+          completed: jobs.filter(job => job.result === 'completed' && job.materials[0].material === material).length,
+          failed_or_aborted: jobs.filter(job => job.result === 'failed_or_aborted' && job.materials[0].material === material).length,
+          active: 0, unknown: 0,
+        },
         completedWeightGrams: measure(jobs.filter(job => job.result === 'completed' && job.materials[0].material === material).map(job => job.estimatedWeightGrams)),
         failedOrAbortedWeightGrams: measure(jobs.filter(job => job.result === 'failed_or_aborted' && job.materials[0].material === material).map(job => job.estimatedWeightGrams)),
         otherWeightGrams: measure([]),
