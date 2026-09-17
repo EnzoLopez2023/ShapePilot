@@ -79,6 +79,8 @@ const savedIdea = {
 
 let aiAvailable = true
 let shapeCalls: unknown[] = []
+/** When set, the shape reply waits for this before it is sent. */
+let holdShapeReply: Promise<void> | null = null
 
 const renderPage = (path = '/playground') => render(
   <ThemeModeProvider initialPreference="light">
@@ -95,6 +97,7 @@ const realRevokeObjectURL = globalThis.URL.revokeObjectURL
 beforeEach(() => {
   aiAvailable = true
   shapeCalls = []
+  holdShapeReply = null
   vectorCalls = []
   globalThis.URL.createObjectURL = () => 'blob:mock'
   globalThis.URL.revokeObjectURL = () => {}
@@ -109,6 +112,7 @@ beforeEach(() => {
     if (url.includes('/api/ai/status')) return json({ available: aiAvailable })
     if (url.includes('/api/ai/shape')) {
       shapeCalls.push(JSON.parse(String(init?.body ?? '{}')))
+      if (holdShapeReply) await holdShapeReply
       return json(shapeResponse)
     }
     if (url.includes('/api/ai/vector')) {
@@ -338,4 +342,41 @@ test('discarding a proposal drops its question from the conversation', async () 
   await user.click(screen.getByRole('button', { name: /Send/ }))
   await waitFor(() => expect(shapeCalls.length).toBe(2))
   assert.deepEqual((shapeCalls[1] as { history: unknown[] }).history, [])
+})
+
+test('starting a new idea leaves a pending proposal behind', async () => {
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(
+    screen.getByRole('button', { name: /phone stand for my iPhone/ })).toBeTruthy())
+  await user.click(screen.getByRole('button', { name: /phone stand for my iPhone/ }))
+  await waitFor(() => expect(screen.getByText('Proposed change')).toBeTruthy())
+
+  await user.click(screen.getByRole('button', { name: 'New' }))
+
+  // Apply would otherwise merge a proposal about one design into another.
+  await waitFor(() => expect(screen.queryByText('Proposed change')).toBeNull())
+  expect(screen.queryByRole('button', { name: 'Apply' })).toBeNull()
+  // The question went with it. Its text is also an example prompt, which a
+  // blank design offers again, so look for the transcript's speaker label.
+  expect(screen.queryByText(/^You:/)).toBeNull()
+})
+
+test('a reply that lands after switching designs is ignored', async () => {
+  let release!: () => void
+  holdShapeReply = new Promise(resolve => { release = resolve })
+  const user = userEvent.setup()
+  renderPage()
+  await waitFor(() => expect(
+    screen.getByRole('button', { name: /phone stand for my iPhone/ })).toBeTruthy())
+  await user.click(screen.getByRole('button', { name: /phone stand for my iPhone/ }))
+  await waitFor(() => expect(shapeCalls.length).toBe(1))
+
+  await user.click(screen.getByRole('button', { name: 'New' }))
+  release()
+
+  // Give the stale reply every chance to land before asserting it did not.
+  await new Promise(resolve => setTimeout(resolve, 50))
+  expect(screen.queryByText('Proposed change')).toBeNull()
+  expect(screen.getByRole('button', { name: /phone stand for my iPhone/ })).toBeTruthy()
 })

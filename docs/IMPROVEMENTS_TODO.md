@@ -16,10 +16,10 @@ for effort. Tick items off here as they land.
 
 ## Follow-ups found while fixing those
 
-- [ ] Bambu Designer: preview a proposal in the viewport before Apply. The panel
+- [x] Bambu Designer: preview a proposal in the viewport before Apply. The panel
       says "Shown in the viewport as a preview" but only the Playground does it.
       Reuse the Playground's merged-preview effect.
-- [ ] Both: drop a pending question/proposal when a different document is opened
+- [x] Both: drop a pending question/proposal when a different document is opened
       or New is pressed, so an answer about one design cannot be applied to
       another.
 

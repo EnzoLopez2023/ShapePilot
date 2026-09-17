@@ -4,7 +4,7 @@
 // The layout is deliberately not the three-column workbench the other two use:
 // here the conversation is the tool, so it gets a column of its own rather than
 // a corner of the inspector.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Alert, Box, Button, Divider, IconButton, Paper, Snackbar, Stack, Tooltip, Typography,
 } from '@mui/material'
@@ -30,6 +30,7 @@ import { evaluateProgram } from '../../csg/evaluate.ts'
 import { programFromScene } from '../../csg/fromScene.ts'
 import { resolveAssets } from '../../import/assets.ts'
 import { mergeProposal } from '../../csg/mergeProposal.ts'
+import { PREVIEW_PART_ID, useProposalPreview } from '../../components/designer/useProposalPreview.ts'
 import { writePlainSvg } from '../../export/plainSvg.ts'
 import PhotoSourcePanel from './PhotoSourcePanel.tsx'
 import VectorPreview from './VectorPreview.tsx'
@@ -46,7 +47,6 @@ import { resolveTextOutlines } from '../../text/fonts.ts'
 import { findObject } from '../../model/scene.ts'
 import type { ChatTurn } from '../../model/document.ts'
 import type { Ring } from '../../geometry/vec.ts'
-import type { Mesh } from '../../geometry/mesh.ts'
 
 const EXAMPLES = [
   'I want a phone stand for my iPhone',
@@ -58,14 +58,13 @@ export default function PlaygroundPage() {
   const navigate = useNavigate()
   const doc = useDesignDocument('playground')
   const lifecycle = useDocumentLifecycle({ kind: 'playground', doc: doc.doc, setDoc: doc.setDoc })
-  const assistant = useAiDesigner('playground', doc.doc.chat)
+  const assistant = useAiDesigner('playground', doc.doc.chat, doc.doc.id)
   const trace = useVectorTrace()
 
   const [fitToken, setFitToken] = useState(0)
   const [openDialog, setOpenDialog] = useState(false)
   const [saveAsOpen, setSaveAsOpen] = useState(false)
   const [textOutlines, setTextOutlines] = useState<Map<string, Ring[]>>(new Map())
-  const [previewMesh, setPreviewMesh] = useState<Mesh | null>(null)
 
   const objects = doc.doc.objects
 
@@ -102,25 +101,14 @@ export default function PlaygroundPage() {
       .filter(s => s.polygons.length),
     [twoD, objects, textOutlines])
 
-  // A proposal is previewed as the scene it would leave behind -- merged, so an
-  // import or a hidden part the assistant could not touch is in the picture.
-  const proposal = assistant.proposal
-  const previewToken = useRef(0)
-  useEffect(() => {
-    const run = ++previewToken.current
-    if (!proposal) { setPreviewMesh(null); return }
-    const merged = mergeProposal(objects, proposal.sent, proposal.program)
-    void resolveAssets(merged)
-      .then(({ meshes }) => evaluateProgram(programFromScene(merged, { textOutlines }), { meshes }))
-      .then(mesh => { if (run === previewToken.current) setPreviewMesh(mesh) })
-      .catch(() => { if (run === previewToken.current) setPreviewMesh(null) })
-  }, [proposal, objects, textOutlines])
+  // A proposal is previewed as the scene it would leave behind.
+  const previewMesh = useProposalPreview(assistant.proposal, objects, textOutlines)
 
   const viewportParts = useMemo<ViewportPart[]>(() => {
     if (previewMesh) {
       // While a proposal is up it is the thing to look at; showing both would
       // be two overlapping solids and no way to read either.
-      return [{ id: '__preview', mesh: previewMesh, mode: 'solid' }]
+      return [{ id: PREVIEW_PART_ID, mesh: previewMesh, mode: 'solid' }]
     }
     return parts.map(p => ({
       id: p.object.id, mesh: p.mesh, mode: p.object.mode, color: p.object.color,
@@ -423,7 +411,7 @@ export default function PlaygroundPage() {
                 snapMm={1}
                 fitToken={fitToken}
                 onSelect={(id, additive) => {
-                  if (id && id !== '__preview') doc.toggleSelection(id, additive)
+                  if (id && id !== PREVIEW_PART_ID) doc.toggleSelection(id, additive)
                   else doc.clearSelection()
                 }}
                 onTransform={(id, change) => {

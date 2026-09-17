@@ -40,6 +40,7 @@ import { evaluateNode, evaluateProgram } from '../../csg/evaluate.ts'
 import { programFromScene } from '../../csg/fromScene.ts'
 import { resolveAssets, storeImportedFile } from '../../import/assets.ts'
 import { mergeProposal } from '../../csg/mergeProposal.ts'
+import { PREVIEW_PART_ID, useProposalPreview } from '../../components/designer/useProposalPreview.ts'
 import SolidPalette from './components/SolidPalette.tsx'
 import LibraryPalette from './components/LibraryPalette.tsx'
 import type { LibraryEntry } from './components/libraryEntries.ts'
@@ -66,7 +67,7 @@ export default function BambuDesignerPage() {
   const confirm = useConfirm()
   const doc = useDesignDocument('bambu')
   const lifecycle = useDocumentLifecycle({ kind: 'bambu', doc: doc.doc, setDoc: doc.setDoc })
-  const assistant = useAiDesigner('bambu', doc.doc.chat)
+  const assistant = useAiDesigner('bambu', doc.doc.chat, doc.doc.id)
 
   const [imperial, setImperial] = useState(false)
   const [snapMm, setSnapMm] = useState(1)
@@ -107,14 +108,20 @@ export default function BambuDesignerPage() {
 
   const { parts, evaluating, failures, detached } = useSceneMeshes(doc.doc, textOutlines)
 
+  // While a proposal is up, the scene it would leave behind is the thing to
+  // look at; drawing it over the current parts would be two overlapping solids.
+  const previewMesh = useProposalPreview(assistant.proposal, objects, textOutlines)
+
   const viewportParts = useMemo<ViewportPart[]>(
-    () => parts.map(p => ({
-      id: p.object.id, mesh: p.mesh, mode: p.object.mode, color: p.object.color,
-      // The gizmo pivots here, so a rotation or scale turns the part about the
-      // same point the document does.
-      origin: p.object.transform.position,
-    })),
-    [parts],
+    () => previewMesh
+      ? [{ id: PREVIEW_PART_ID, mesh: previewMesh, mode: 'solid' }]
+      : parts.map(p => ({
+        id: p.object.id, mesh: p.mesh, mode: p.object.mode, color: p.object.color,
+        // The gizmo pivots here, so a rotation or scale turns the part about the
+        // same point the document does.
+        origin: p.object.transform.position,
+      })),
+    [parts, previewMesh],
   )
 
   const bounds = useMemo(() => {
@@ -486,7 +493,7 @@ export default function BambuDesignerPage() {
             imperial={imperial}
             fitToken={fitToken}
             onSelect={(id, additive) => {
-              if (id) doc.toggleSelection(id, additive)
+              if (id && id !== PREVIEW_PART_ID) doc.toggleSelection(id, additive)
               else doc.clearSelection()
             }}
             onTransform={(id, change) => {
@@ -569,6 +576,7 @@ export default function BambuDesignerPage() {
         }
         status={
           <span>
+            {previewMesh && 'Previewing a proposed change · '}
             {objects.length} {objects.length === 1 ? 'object' : 'objects'}
             {doc.selection.size > 0 && ` · ${doc.selection.size} selected`}
             {evaluating && ' · building…'}

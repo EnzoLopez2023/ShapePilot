@@ -83,6 +83,15 @@ export function summarise(diff: ProgramDiff): string {
   return parts.length ? parts.join('; ') : 'no change'
 }
 
+/** One question and what came of it, for the document it was asked about. */
+interface Exchange {
+  documentId: string
+  asked: ChatTurn | null
+  proposal: Proposal | null
+  busy: boolean
+  error: string | null
+}
+
 /** The server refuses a document with more turns than this. */
 const MAX_CHAT_TURNS = 500
 
@@ -94,12 +103,22 @@ export const appendChat = (
 export function useAiDesigner(
   context: 'playground' | 'bambu',
   transcript: readonly ChatTurn[] | undefined,
+  /** The open document. A different one abandons whatever was being asked. */
+  documentId: string,
 ): AiDesigner {
   const [available, setAvailable] = useState<boolean | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [proposal, setProposal] = useState<Proposal | null>(null)
-  const [asked, setAsked] = useState<ChatTurn | null>(null)
+  const [exchange, setExchange] = useState<Exchange | null>(null)
+
+  // An answer belongs to the design it was asked about, so the exchange is
+  // tagged with it and only surfaces while that design is open. Opening another
+  // one, or starting fresh, leaves it behind -- otherwise Apply would merge a
+  // proposal about one design into a different one.
+  const current = exchange?.documentId === documentId ? exchange : null
+  const busy = current?.busy ?? false
+  const error = current?.error ?? null
+  const proposal = current?.proposal ?? null
+  const asked = current?.asked ?? null
+
   const saved = useMemo(() => transcript ?? [], [transcript])
   const turns = useMemo(() => (asked ? [...saved, asked] : saved), [saved, asked])
 
@@ -113,40 +132,51 @@ export function useAiDesigner(
     return () => { cancelled = true }
   }, [])
 
-  const send = useCallback(async (prompt: string, current: ShapeProgram | null) => {
-    setBusy(true)
-    setError(null)
-    setAsked({ id: newId(), role: 'user', text: prompt, at: new Date().toISOString() })
+  const send = useCallback(async (prompt: string, program: ShapeProgram | null) => {
+    const question: ChatTurn = {
+      id: newId(), role: 'user', text: prompt, at: new Date().toISOString(),
+    }
+    setExchange({ documentId, asked: question, proposal: null, busy: true, error: null })
+    // Only the exchange this call started may be updated by it: a newer
+    // question, or the design being switched, supersedes the reply.
+    const settle = (patch: Partial<Exchange>) => setExchange(previous =>
+      previous?.asked === question ? { ...previous, ...patch, busy: false } : previous)
     try {
       const response = await ai.requestShape({
         prompt,
-        program: current,
+        program,
         context,
         history: saved.map(t => ({ role: t.role, text: t.text })),
       })
       // Validated again here: the server checked it, but the browser is what
       // hands it to the kernel, and this is the last point before that.
-      const program = validateShapeProgram(response.program)
-      setProposal({
-        program, sent: current, notes: response.notes, diff: diffPrograms(current, program),
+      const validated = validateShapeProgram(response.program)
+      settle({
+        proposal: {
+          program: validated, sent: program, notes: response.notes,
+          diff: diffPrograms(program, validated),
+        },
       })
     } catch (cause) {
-      setError(errorMessage(cause))
-      setAsked(null)
-    } finally {
-      setBusy(false)
+      settle({ error: errorMessage(cause), asked: null })
     }
-  }, [context, saved])
+  }, [context, saved, documentId])
 
   // A discarded answer takes its question with it: the transcript records what
   // shaped the design, and a stray question would be sent as history next turn.
-  const discard = useCallback(() => {
-    setProposal(null)
-    setAsked(null)
-  }, [])
+  const discard = useCallback(() => setExchange(null), [])
 
-  // Pure over state, with no updater doing the work: an append inside a
-  // setState updater runs twice under StrictMode, which once double-posted the
+  const setError = useCallback((message: string | null) => {
+    setExchange(previous => {
+      if (previous?.documentId === documentId) return { ...previous, error: message }
+      return message === null
+        ? previous
+        : { documentId, asked: null, proposal: null, busy: false, error: message }
+    })
+  }, [documentId])
+
+  // Returns the turns rather than writing them: an append inside a setState
+  // updater runs twice under StrictMode, which once double-posted the
   // assistant's reply.
   const accept = useCallback((): ChatTurn[] => {
     if (!proposal) return []
@@ -160,8 +190,7 @@ export function useAiDesigner(
         summary: summarise(proposal.diff),
       },
     ]
-    setProposal(null)
-    setAsked(null)
+    setExchange(null)
     return added
   }, [proposal, asked])
 
