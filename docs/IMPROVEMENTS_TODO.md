@@ -73,9 +73,11 @@ for effort. Tick items off here as they land.
 - [x] Verified in Bambu Studio (2026-09-17, build 70): parts set to trays A1 and
       A3 arrived as filaments 1 and 3 with the AMS list synced, so the tray
       numbering in amsTrays.ts is the numbering Studio uses.
-- [ ] Still unverified: what Studio does with a tray the printer has not got
-      (a part set to B1 with one AMS connected) — clamp, empty filament, or
-      complaint. It decides whether to offer trays beyond the loaded units.
+- [x] Resolved (2026-09-17): a filament beyond the loaded trays is silently
+      remapped onto an existing one — a part on filament 5 with four trays was
+      mapped to A2 and took its colour, with no warning. So offering trays the
+      printer has not got would export and slice cleanly and print in the wrong
+      filament. The dropdown stays limited to loaded trays.
 
 ### Weight, cost and stock estimate
 - [x] Estimate grams from volume and surface area (two 0.42 mm walls + 15% infill;
