@@ -70,8 +70,12 @@ for effort. Tick items off here as they land.
 - [x] Warn when differently-coloured parts share a tray, or a chosen tray is empty.
 - [x] Without an AMS report (non-admin, no connection) trays are offered by number.
 - [x] Tests: tray numbering, extruder assignment, warnings, validation, export.
-- [ ] Verify with a real export in Bambu Studio that a synced AMS list maps
-      extruder N to tray N (the tooltip tells the user to sync).
+- [x] Verified in Bambu Studio (2026-09-17, build 70): parts set to trays A1 and
+      A3 arrived as filaments 1 and 3 with the AMS list synced, so the tray
+      numbering in amsTrays.ts is the numbering Studio uses.
+- [ ] Still unverified: what Studio does with a tray the printer has not got
+      (a part set to B1 with one AMS connected) — clamp, empty filament, or
+      complaint. It decides whether to offer trays beyond the loaded units.
 
 ### Weight, cost and stock estimate
 - [x] Estimate grams from volume and surface area (two 0.42 mm walls + 15% infill;
