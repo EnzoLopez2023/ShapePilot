@@ -37,6 +37,7 @@
     "test/fixtures/elementStatistics.ts",
     "test/parity/referenceGeometry.test.ts",
     "scripts/icon-assets.ts",
+    "scripts/build-fastener-coupon.ts",
     "vite.config.ts",
     "eslint.config.js"
   ]

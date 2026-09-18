@@ -45,6 +45,7 @@
     "test/fixtures"
   ],
   "exclude": [
-    "test/parity/referenceGeometry.test.ts"
+    "test/parity/referenceGeometry.test.ts",
+    "scripts/build-fastener-coupon.ts"
   ]
 }
