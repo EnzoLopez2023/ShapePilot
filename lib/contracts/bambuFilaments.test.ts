@@ -12,15 +12,18 @@ import {
 
 const lineId = (id: string) => id
 
-test('holds the six Bambu lines at their captured sizes', () => {
-  assert.equal(FILAMENT_LINES.length, 6)
-  assert.equal(FILAMENT_CATALOG.length, 122)
+test('holds the seven Bambu lines at their captured sizes', () => {
+  assert.equal(FILAMENT_LINES.length, 7)
+  assert.equal(FILAMENT_CATALOG.length, 123)
   const counts = Object.fromEntries(
     FILAMENT_LINES.map(l => [`${l.brand}/${l.material}/${l.type}`, filamentsOfLine(
       `${l.brand}/${l.material}/${l.type}`).length]))
   assert.deepEqual(counts, {
     'bambu-lab/pla/basic': 32,
     'bambu-lab/pla/matte': 25,
+    // Added by hand for one spool on the shelf: the gradients are multi-colour
+    // and were not in the original capture.
+    'bambu-lab/pla/basic-gradient': 1,
     'bambu-lab/petg/basic': 28,
     'bambu-lab/petg/hf': 14,
     'bambu-lab/pla/wood': 6,
@@ -98,7 +101,7 @@ test('lookups resolve, and the pair count bounds a full tick set', () => {
   assert.equal(filamentByKey(known.key), known)
   assert.equal(filamentByKey('no/such/filament/key'), undefined)
   assert.equal(filamentLineById('no/such/line'), undefined)
-  // PLA Basic, PLA Matte and PETG HF carry two variants each; the other 51 carry one.
-  assert.equal(FILAMENT_PAIR_COUNT, (32 + 25 + 14) * 2 + 28 + 6 + 17)
-  assert.equal(FILAMENT_PAIR_COUNT, 193)
+  // PLA Basic, PLA Matte and PETG HF carry two variants each; the other 52 carry one.
+  assert.equal(FILAMENT_PAIR_COUNT, (32 + 25 + 14) * 2 + 1 + 28 + 6 + 17)
+  assert.equal(FILAMENT_PAIR_COUNT, 194)
 })

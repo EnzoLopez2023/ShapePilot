@@ -54,6 +54,7 @@ export interface FilamentColor {
 export const FILAMENT_LINES: readonly FilamentLine[] = Object.freeze([
   { brand: 'bambu-lab', brandLabel: 'Bambu Lab', material: 'pla', type: 'basic', label: 'PLA Basic', variants: ['spool', 'refill'] },
   { brand: 'bambu-lab', brandLabel: 'Bambu Lab', material: 'pla', type: 'matte', label: 'PLA Matte', variants: ['spool', 'refill'] },
+  { brand: 'bambu-lab', brandLabel: 'Bambu Lab', material: 'pla', type: 'basic-gradient', label: 'PLA Basic Gradient', variants: ['spool'] },
   { brand: 'bambu-lab', brandLabel: 'Bambu Lab', material: 'petg', type: 'basic', label: 'PETG Basic', variants: ['spool'] },
   { brand: 'bambu-lab', brandLabel: 'Bambu Lab', material: 'petg', type: 'hf', label: 'PETG HF', variants: ['spool', 'refill'] },
   { brand: 'bambu-lab', brandLabel: 'Bambu Lab', material: 'pla', type: 'wood', label: 'PLA Wood', variants: ['spool'] },
@@ -121,6 +122,8 @@ export const FILAMENT_CATALOG: readonly FilamentColor[] = Object.freeze([
   { key: 'bambu-lab/pla/matte/scarlet-red-11200', line: 'bambu-lab/pla/matte', name: 'Scarlet Red', code: '11200', hexes: ['#DE4343'] },
   { key: 'bambu-lab/pla/matte/sky-blue-11603', line: 'bambu-lab/pla/matte', name: 'Sky Blue', code: '11603', hexes: ['#56B7E6'] },
   { key: 'bambu-lab/pla/matte/terracotta-11203', line: 'bambu-lab/pla/matte', name: 'Terracotta', code: '11203', hexes: ['#B15533'] },
+  // PLA Basic Gradient -- 1 colours
+  { key: 'bambu-lab/pla/basic-gradient/ocean-to-meadow-10902', line: 'bambu-lab/pla/basic-gradient', name: 'Ocean to Meadow', code: '10902', hexes: ['#307FE2', '#54FF9B'] },
   // PETG Basic -- 28 colours
   { key: 'bambu-lab/petg/basic/black-30101', line: 'bambu-lab/petg/basic', name: 'Black', code: '30101', hexes: ['#000000'], discontinued: true },
   { key: 'bambu-lab/petg/basic/black-30105', line: 'bambu-lab/petg/basic', name: 'Black', code: '30105', hexes: ['#000000'] },

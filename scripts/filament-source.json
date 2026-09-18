@@ -2,6 +2,7 @@
   "lines": [
     { "brand": "bambu-lab", "brandLabel": "Bambu Lab", "material": "pla", "type": "basic", "label": "PLA Basic", "variants": ["spool", "refill"] },
     { "brand": "bambu-lab", "brandLabel": "Bambu Lab", "material": "pla", "type": "matte", "label": "PLA Matte", "variants": ["spool", "refill"] },
+    { "brand": "bambu-lab", "brandLabel": "Bambu Lab", "material": "pla", "type": "basic-gradient", "label": "PLA Basic Gradient", "variants": ["spool"] },
     { "brand": "bambu-lab", "brandLabel": "Bambu Lab", "material": "petg", "type": "basic", "label": "PETG Basic", "variants": ["spool"] },
     { "brand": "bambu-lab", "brandLabel": "Bambu Lab", "material": "petg", "type": "hf", "label": "PETG HF", "variants": ["spool", "refill"] },
     { "brand": "bambu-lab", "brandLabel": "Bambu Lab", "material": "pla", "type": "wood", "label": "PLA Wood", "variants": ["spool"] },
@@ -68,6 +69,9 @@
       { "name": "Scarlet Red", "code": "11200", "hexes": ["#DE4343"] },
       { "name": "Sky Blue", "code": "11603", "hexes": ["#56B7E6"] },
       { "name": "Terracotta", "code": "11203", "hexes": ["#B15533"] }
+    ],
+    "bambu-lab/pla/basic-gradient": [
+      { "name": "Ocean to Meadow", "code": "10902", "hexes": ["#307FE2", "#54FF9B"] }
     ],
     "bambu-lab/petg/basic": [
       { "name": "Black", "code": "30101", "hexes": ["#000000"], "discontinued": true },

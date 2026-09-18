@@ -177,3 +177,11 @@ describe('computing usage', () => {
     assert.equal(usage.colors.find(color => color.key === JADE)?.grams, 0)
   })
 })
+
+test('a multi-colour spool is matched on the first colour it reports', () => {
+  // Real print history reported Ocean to Meadow (#307FE2 to #54FF9B) as #307FE2.
+  const matched = matchSource(normalizeSource({ material: 'PLA', filamentId: '', color: '#307FE2FF' }))
+  assert.equal(matched?.key, 'bambu-lab/pla/basic-gradient/ocean-to-meadow-10902')
+  // Its second colour is never what a spool reports, so it matches nothing.
+  assert.equal(matchSource(normalizeSource({ material: 'PLA', filamentId: '', color: '#54FF9B' })), null)
+})

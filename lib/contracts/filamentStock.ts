@@ -29,7 +29,7 @@ import {
   FILAMENT_CATALOG, FILAMENT_LINES, filamentByKey, filamentLineById,
 } from './bambuFilaments.ts'
 import type { ElementAmsSlot, ElementSnapshot } from './elementStatistics.ts'
-import { normalizeColor } from './filamentUsage.ts'
+import { normalizeColor, reportedHex } from './filamentUsage.ts'
 
 /** At or below this, a loaded spool counts as running low. */
 export const LOW_PERCENT = 20
@@ -69,8 +69,9 @@ export function matchAmsSlot(slot: Pick<ElementAmsSlot, 'subBrand' | 'color'>): 
   const line = LINE_BY_LABEL.get((slot.subBrand ?? '').trim().toUpperCase())
   const color = normalizeColor(slot.color)
   if (!line || !color) return null
+  // A multi-colour spool reports its first colour, as print history does.
   const matches = FILAMENT_CATALOG.filter(entry =>
-    entry.line === line && entry.hexes.length === 1 && entry.hexes[0] === color)
+    entry.line === line && reportedHex(entry) === color)
   if (matches.length === 1) return matches[0].key
   const current = matches.filter(entry => !entry.discontinued)
   return current.length === 1 ? current[0].key : null
