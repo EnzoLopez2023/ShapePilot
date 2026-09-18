@@ -380,6 +380,19 @@ base ring, local coords, origin (0,0), bbox w0×h0   (w0,h0 = UN-rotated extents
   fails says so and offers a reload rather than diverging in silence.
 - **Discontinued colours stay, dimmed and labelled.** A spool you own outlives
   its SKU, and a catalogue that drops it would quietly untick something real.
+- **The AMS is drawn as the AMS.** The one literal surface colour on the page:
+  the unit is a fixed dark grey in both themes because it is a picture of a
+  dark grey object, outlined with the page hairline so it still reads on the
+  dark ground. Each spool's filament is a disc that shrinks with the reported
+  percentage, so the picture answers "how full" before a number does; an
+  unreported amount is drawn full and faded rather than guessed. Empty trays
+  are drawn as gaps. Only the tray names sit on the drawing -- everything a
+  person reads is below it, on the page surface, in page type.
+- **Two kinds of row stand out, differently, and neither with the accent.** A
+  colour loaded in the AMS sits on a neutral `action.hover` band, bold, with its
+  tray named first in its note ("A2 · 62% · ≈620 g"). A colour printed with but
+  not loaded is bold only. Order stays the catalogue's: the AMS panel above is
+  the "what is loaded" view, so the lists do not also reshuffle to say it.
 
 ## Home
 

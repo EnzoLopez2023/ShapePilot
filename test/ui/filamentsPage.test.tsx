@@ -453,9 +453,9 @@ test('says to reorder a low loaded spool with no spare, and a spare clears it', 
   assert.match(banner.textContent ?? '', /PLA Basic · Cocoa Brown 10802 — 12% left in AMS 1 · slot 1, with no spare on the shelf/)
   // Gray is loaded but not low, so it is not in the banner.
   assert.doesNotMatch(banner.textContent ?? '', /Gray/)
-  // The note carries the grams that percentage is of a full spool.
-  await screen.findByText('AMS 12% · ≈120 g · reorder')
-  await screen.findByText('AMS 62% · ≈620 g')
+  // The row names the tray, then the grams that percentage is of a full spool.
+  await screen.findByText('A1 · 12% · ≈120 g · reorder')
+  await screen.findByText('A2 · 62% · ≈620 g')
 
   // One more Cocoa Brown on the shelf is a spare behind the loaded spool.
   const name = 'PLA Basic Cocoa Brown 10802, with spool'
@@ -464,7 +464,7 @@ test('says to reorder a low loaded spool with no spare, and a spare clears it', 
   await waitFor(() => {
     assert.equal(screen.queryByRole('status', { name: /Reorder soon/ }), null)
   })
-  await screen.findByText('AMS 12% · ≈120 g · spare on shelf')
+  await screen.findByText('A1 · 12% · ≈120 g · spare on shelf')
 })
 
 test('a low colour never ticked in the inventory says so', async () => {
@@ -483,7 +483,7 @@ test('an old reading says when it was taken; an unreported percentage never warn
   const banner = await screen.findByRole('status', { name: 'Reorder soon' })
   assert.match(banner.textContent ?? '', /last reading/)
   assert.doesNotMatch(banner.textContent ?? '', /Gray/)
-  await screen.findByText('in AMS')
+  await screen.findByText('In A2')
 })
 
 test('search narrows every line to the colours that match, and Escape clears it', async () => {
@@ -575,4 +575,53 @@ test('usage is costed from the priced lines, and unpriced grams are said to be u
   // 1 kg of a line priced at 20 a kilogram.
   await screen.findByText(/of filament, from the/)
   expect(screen.getByText(/€20\.00|20,00/)).toBeTruthy()
+})
+
+test('the AMS is drawn with every tray, and names what is in each', async () => {
+  admin = true
+  owned = [{ key: 'bambu-lab/pla/basic/cocoa-brown-10802', variant: 'spool', quantity: 2 }]
+  // Tray 3 is empty and the printer does not report it, as a real AMS does not.
+  amsSlots = [
+    loadedSlot('0', '#6F5034FF', 40),
+    // Assumed: the AMS names a gradient spool by its product line, as it does
+    // every other Bambu spool. Not yet seen from a real printer.
+    { ...loadedSlot('1', '#307FE2FF', 80), subBrand: 'PLA Basic Gradient' },
+    loadedSlot('3', '#8E9089FF', null),
+  ]
+  draw()
+
+  const panel = await screen.findByRole('region', { name: 'In the AMS' })
+  // One picture of the unit, described in full for anyone who cannot see it.
+  const unit = within(panel).getByRole('img', { name: /^AMS 1:/ })
+  const described = unit.getAttribute('aria-label') ?? ''
+  expect(described).toMatch(/A1: PLA Basic Cocoa Brown 10802, 40% · ≈400 g/)
+  expect(described).toMatch(/A3: empty/)
+  expect(described).toMatch(/A4: .*Amount not reported/)
+  // The gradient spool reports its first colour and is recognised by it.
+  expect(described).toMatch(/A2: PLA Basic Gradient Ocean to Meadow 10902/)
+  expect(within(panel).getByText('Empty')).toBeTruthy()
+})
+
+test('a loaded colour sits on a band and a colour printed with but not loaded is bold', async () => {
+  admin = true
+  owned = [
+    { key: 'bambu-lab/pla/basic/cocoa-brown-10802', variant: 'spool', quantity: 1 },
+    { key: 'bambu-lab/pla/basic/jade-white-10100', variant: 'spool', quantity: 1 },
+  ]
+  amsSlots = [loadedSlot('0', '#6F5034FF', 60)]
+  jobs = [syntheticRecordedElementJob({
+    id: 'jw', result: 'completed',
+    materials: [{
+      material: 'PLA', filamentId: 'GFA00', color: '#FFFFFF', estimatedWeightGrams: 40,
+      nozzleId: null, amsId: null, slotId: null,
+    }],
+  })]
+  draw()
+
+  const loadedRow = (await screen.findByLabelText('PLA Basic Cocoa Brown 10802, with spool'))
+    .closest('[data-state]')
+  expect(loadedRow?.getAttribute('data-state')).toBe('loaded')
+  const usedRow = (await screen.findByLabelText('PLA Basic Jade White 10100, with spool'))
+    .closest('[data-state]')
+  await waitFor(() => expect(usedRow?.getAttribute('data-state')).toBe('used'))
 })

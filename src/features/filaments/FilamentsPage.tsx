@@ -41,6 +41,7 @@ import {
 } from './model/types.ts'
 import { stockOf } from '../../../lib/contracts/filamentStock.ts'
 import ReorderBanner from './components/ReorderBanner.tsx'
+import AmsPanel from './components/AmsPanel.tsx'
 import type { Inventory } from './model/types.ts'
 
 /**
@@ -391,6 +392,8 @@ export default function FilamentsPage() {
       )}
 
       {owned && usage?.ams && <ReorderBanner stock={stock} receivedAt={usage.ams.receivedAt} />}
+
+      {owned && usage?.ams && <AmsPanel ams={usage.ams} stock={stockByKey} />}
 
       {owned && usage && (
         <UsagePanel usage={usage} busy={linking} prices={prices} onMappings={saveMappings} />

@@ -18,6 +18,7 @@ import type { FilamentColor, FilamentLine, FilamentVariant } from '../../../../l
 import { MAX_QUANTITY, tickId } from '../model/types.ts'
 import { Swatch } from './Swatch.tsx'
 import PriceField from './PriceField.tsx'
+import { trayName } from '../model/ams.ts'
 import type { Inventory } from '../model/types.ts'
 import type { FilamentUsageTotals } from '../../../../lib/contracts/filamentUsage.ts'
 import { formatGrams } from '../model/usage.ts'
@@ -85,11 +86,13 @@ const columnsFor = (variants: readonly FilamentVariant[]) => ({
  * something about.
  */
 function StockNote({ stock }: { stock: ColorStock }) {
-  // The percentage is what the AMS measures; the grams are that share of a full
-  // spool, which is worth saying because grams are what a print is quoted in.
+  // The tray first, as the printer names it, so the row says where the spool
+  // is. The percentage is what the AMS measures; the grams are that share of a
+  // full spool, worth saying because grams are what a print is quoted in.
+  const trays = stock.loaded.map(trayName).join(', ')
   const percent = stock.lowestPercent === null
-    ? 'in AMS'
-    : `AMS ${stock.lowestPercent}% · ≈${Math.round((stock.lowestPercent / 100) * SPOOL_GRAMS)} g`
+    ? `In ${trays}`
+    : `${trays} · ${stock.lowestPercent}% · ≈${Math.round((stock.lowestPercent / 100) * SPOOL_GRAMS)} g`
   if (stock.status === 'reorder') {
     return (
       <Typography
@@ -166,10 +169,19 @@ export default function FilamentSection({
         ))}
       </Box>
 
-      {colors.map(color => (
+      {colors.map(color => {
+        // Two kinds of row stand out, and they stand out differently: a colour
+        // loaded in the AMS sits on a neutral band with its tray named, and a
+        // colour printed with but not loaded has its name in bold. Neither
+        // uses the accent or tints the name -- colour lives in the swatch.
+        const loaded = stock?.has(color.key) ?? false
+        const used = Boolean(usage?.get(color.key)?.grams)
+        return (
         <Box
           key={color.key}
+          data-state={loaded ? 'loaded' : used ? 'used' : undefined}
           sx={{
+            ...(loaded ? { bgcolor: 'action.hover', mx: -1, px: 1 } : {}),
             display: 'grid',
             gridTemplateColumns: columns,
             gap: 1,
@@ -199,7 +211,9 @@ export default function FilamentSection({
             >
               {/* Never tinted with its own hex: half the catalogue would fall
                   through the contrast floor. */}
-              <Typography variant="body2">{color.name}</Typography>
+              <Typography variant="body2" sx={{ fontWeight: loaded || used ? 650 : undefined }}>
+                {color.name}
+              </Typography>
               <Stack direction="row" sx={{ gap: 1, alignItems: 'baseline' }}>
                 {color.code && (
                   <Typography variant="body2" color="text.secondary">{color.code}</Typography>
@@ -277,7 +291,8 @@ export default function FilamentSection({
             )
           })}
         </Box>
-      ))}
+        )
+      })}
 
       <Popover
         open={stepping !== null && steppingCount > 0}
