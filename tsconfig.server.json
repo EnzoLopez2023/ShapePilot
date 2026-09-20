@@ -38,6 +38,7 @@
     "src/geometry/mesh.ts",
     "src/geometry/triangulate.ts",
     "src/export/stl.ts",
+    "src/export/threemf.ts",
     "src/model/machines.ts",
     "src/model/document.ts",
     "test/helpers",
