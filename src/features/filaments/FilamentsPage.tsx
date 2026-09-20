@@ -16,9 +16,11 @@
 // cannot correct.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Alert, Box, FormControlLabel, InputAdornment, MenuItem, Stack, Switch, TextField, Typography,
+  Alert, Box, Button, FormControlLabel, InputAdornment, MenuItem, Stack, Switch, TextField,
+  Typography,
 } from '@mui/material'
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded'
+import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
 import {
   FILAMENT_CATALOG, FILAMENT_LINES, filamentsOfLine,
 } from '../../../lib/contracts/bambuFilaments.ts'
@@ -40,6 +42,9 @@ import {
   MAX_QUANTITY, inventoryToTicks, ownedByColor, tickId, ticksToInventory, totalRolls,
 } from './model/types.ts'
 import { stockOf } from '../../../lib/contracts/filamentStock.ts'
+import { labelSheet } from './model/labels.ts'
+import { XLSX_MIME, writeXlsx } from '../../export/xlsx.ts'
+import { triggerDownload } from '../../export/download.ts'
 import ReorderBanner from './components/ReorderBanner.tsx'
 import AmsPanel from './components/AmsPanel.tsx'
 import type { Inventory } from './model/types.ts'
@@ -259,6 +264,17 @@ export default function FilamentsPage() {
       .filter(section => section.colors.length > 0)
   }, [hideDiscontinued, kept, search, ownedOnly, owned])
 
+  // Exactly the rows on screen, so the filters above are what choose them:
+  // flip Owned only and the sheet is your shelf. The count is in the button
+  // rather than in a confirmation, because the answer to "how many labels is
+  // that" should be visible before the click, not after it.
+  const shownColors = useMemo(() => sections.flatMap(section => section.colors), [sections])
+
+  const exportLabels = useCallback(() => {
+    const rows = labelSheet(shownColors)
+    triggerDownload(writeXlsx(rows, 'Filaments'), 'filament-labels.xlsx', XLSX_MIME)
+  }, [shownColors])
+
   const summary = useMemo(() => {
     if (!owned) return null
     const shown = countPairs(sections)
@@ -335,6 +351,15 @@ export default function FilamentsPage() {
               },
             }}
           />
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<DownloadRoundedIcon />}
+            onClick={exportLabels}
+            disabled={shownColors.length === 0}
+          >
+            Label sheet ({shownColors.length})
+          </Button>
           <FormControlLabel
             sx={{ mr: 0 }}
             control={(

@@ -1,0 +1,124 @@
+﻿brand,line,colour,speed,temp,code,qr,hex,key
+Bambu Lab,ABS,Azure,200 mm/s,260 °C,40601,https://3dfilamentprofiles.com/filaments/bambu-lab/abs/basic,#489FDF,bambu-lab/abs/basic/azure-40601
+Bambu Lab,ABS,Bambu Green,200 mm/s,260 °C,40500,https://3dfilamentprofiles.com/filaments/bambu-lab/abs/basic,#00AE42,bambu-lab/abs/basic/bambu-green-40500
+Bambu Lab,ABS,Beige,200 mm/s,260 °C,40401,https://3dfilamentprofiles.com/filaments/bambu-lab/abs/basic,#DFD1A7,bambu-lab/abs/basic/beige-40401
+Bambu Lab,ABS,Black,200 mm/s,260 °C,40101,https://3dfilamentprofiles.com/filaments/bambu-lab/abs/basic,#000000,bambu-lab/abs/basic/black-40101
+Bambu Lab,ABS,Blue,200 mm/s,260 °C,40600,https://3dfilamentprofiles.com/filaments/bambu-lab/abs/basic,#0A2CA5,bambu-lab/abs/basic/blue-40600
+Bambu Lab,ABS,Grey,200 mm/s,260 °C,10103,https://3dfilamentprofiles.com/filaments/bambu-lab/abs/basic,#8E9089,bambu-lab/abs/basic/grey-10103
+Bambu Lab,ABS,Lavender,200 mm/s,260 °C,40701,https://3dfilamentprofiles.com/filaments/bambu-lab/abs/basic,#7248BD,bambu-lab/abs/basic/lavender-40701
+Bambu Lab,ABS,Mint,200 mm/s,260 °C,40501,https://3dfilamentprofiles.com/filaments/bambu-lab/abs/basic,#ADF4DC,bambu-lab/abs/basic/mint-40501
+Bambu Lab,ABS,Navy Blue,200 mm/s,260 °C,40602,https://3dfilamentprofiles.com/filaments/bambu-lab/abs/basic,#0C2340,bambu-lab/abs/basic/navy-blue-40602
+Bambu Lab,ABS,Olive,200 mm/s,260 °C,40502,https://3dfilamentprofiles.com/filaments/bambu-lab/abs/basic,#789D4A,bambu-lab/abs/basic/olive-40502
+Bambu Lab,ABS,Orange,200 mm/s,260 °C,40300,https://3dfilamentprofiles.com/filaments/bambu-lab/abs/basic,#FF6A13,bambu-lab/abs/basic/orange-40300
+Bambu Lab,ABS,Purple,200 mm/s,260 °C,40700,https://3dfilamentprofiles.com/filaments/bambu-lab/abs/basic,#AF1685,bambu-lab/abs/basic/purple-40700
+Bambu Lab,ABS,Red,200 mm/s,260 °C,40200,https://3dfilamentprofiles.com/filaments/bambu-lab/abs/basic,#D32941,bambu-lab/abs/basic/red-40200
+Bambu Lab,ABS,Silver,200 mm/s,260 °C,40102,https://3dfilamentprofiles.com/filaments/bambu-lab/abs/basic,#87909A,bambu-lab/abs/basic/silver-40102
+Bambu Lab,ABS,Tangerine Yellow,200 mm/s,260 °C,40402,https://3dfilamentprofiles.com/filaments/bambu-lab/abs/basic,#FFC72C,bambu-lab/abs/basic/tangerine-yellow-40402
+Bambu Lab,ABS,White,200 mm/s,260 °C,40100,https://3dfilamentprofiles.com/filaments/bambu-lab/abs/basic,#FFFFFF,bambu-lab/abs/basic/white-40100
+Bambu Lab,ABS,Yellow,200 mm/s,260 °C,40400,https://3dfilamentprofiles.com/filaments/bambu-lab/abs/basic,#FFFF20,bambu-lab/abs/basic/yellow-40400
+Bambu Lab,PETG Basic,Black,200 mm/s,255 °C,30101,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#000000,bambu-lab/petg/basic/black-30101
+Bambu Lab,PETG Basic,Black,200 mm/s,255 °C,30105,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#000000,bambu-lab/petg/basic/black-30105
+Bambu Lab,PETG Basic,Blue,200 mm/s,255 °C,30600,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#001489,bambu-lab/petg/basic/blue-30600
+Bambu Lab,PETG Basic,Blue Gray,200 mm/s,255 °C,30601,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#2E4F66,bambu-lab/petg/basic/blue-gray-30601
+Bambu Lab,PETG Basic,Dark Beige,200 mm/s,255 °C,30403,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#DBC8B6,bambu-lab/petg/basic/dark-beige-30403
+Bambu Lab,PETG Basic,Dark Brown,200 mm/s,255 °C,30800,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#4F2C1D,bambu-lab/petg/basic/dark-brown-30800
+Bambu Lab,PETG Basic,Gold,200 mm/s,255 °C,30401,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#F6D86A,bambu-lab/petg/basic/gold-30401
+Bambu Lab,PETG Basic,Gray,200 mm/s,255 °C,30102,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#ADB1B2,bambu-lab/petg/basic/gray-30102
+Bambu Lab,PETG Basic,Gray,200 mm/s,255 °C,30107,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#7F7E83,bambu-lab/petg/basic/gray-30107
+Bambu Lab,PETG Basic,Green,200 mm/s,255 °C,30500,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#009639,bambu-lab/petg/basic/green-30500
+Bambu Lab,PETG Basic,Green,200 mm/s,255 °C,30502,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#009639,bambu-lab/petg/basic/green-30502
+Bambu Lab,PETG Basic,Lake Blue,200 mm/s,255 °C,30602,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#0069B1,bambu-lab/petg/basic/lake-blue-30602
+Bambu Lab,PETG Basic,Lime Green,200 mm/s,255 °C,30501,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#7CD82B,bambu-lab/petg/basic/lime-green-30501
+Bambu Lab,PETG Basic,Misty Blue,200 mm/s,255 °C,30108,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#688197,bambu-lab/petg/basic/misty-blue-30108
+Bambu Lab,PETG Basic,Nature,200 mm/s,255 °C,30104,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#D7D7D7,bambu-lab/petg/basic/nature-30104
+Bambu Lab,PETG Basic,Navy Blue,200 mm/s,255 °C,30604,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#0086D6,bambu-lab/petg/basic/navy-blue-30604
+Bambu Lab,PETG Basic,Orange,200 mm/s,255 °C,30300,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#FF671F,bambu-lab/petg/basic/orange-30300
+Bambu Lab,PETG Basic,Orange,200 mm/s,255 °C,30301,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#FF671F,bambu-lab/petg/basic/orange-30301
+Bambu Lab,PETG Basic,Pine Green,200 mm/s,255 °C,30503,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#034638,bambu-lab/petg/basic/pine-green-30503
+Bambu Lab,PETG Basic,Purple,200 mm/s,255 °C,30700,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#9E007E,bambu-lab/petg/basic/purple-30700
+Bambu Lab,PETG Basic,Red,200 mm/s,255 °C,30200,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#D6001C,bambu-lab/petg/basic/red-30200
+Bambu Lab,PETG Basic,Red,200 mm/s,255 °C,30201,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#D6001C,bambu-lab/petg/basic/red-30201
+Bambu Lab,PETG Basic,Reflex Blue,200 mm/s,255 °C,30603,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#001489,bambu-lab/petg/basic/reflex-blue-30603
+Bambu Lab,PETG Basic,Translucent,200 mm/s,255 °C,30103,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#FFFFFF,bambu-lab/petg/basic/translucent-30103
+Bambu Lab,PETG Basic,White,200 mm/s,255 °C,30100,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#EDF0F2,bambu-lab/petg/basic/white-30100
+Bambu Lab,PETG Basic,White,200 mm/s,255 °C,30106,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#FFFFFF,bambu-lab/petg/basic/white-30106
+Bambu Lab,PETG Basic,Yellow,200 mm/s,255 °C,30400,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#FCE300,bambu-lab/petg/basic/yellow-30400
+Bambu Lab,PETG Basic,Yellow,200 mm/s,255 °C,30402,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/basic,#FCE300,bambu-lab/petg/basic/yellow-30402
+Bambu Lab,PETG HF,Black,200 mm/s,255 °C,33102,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/hf,#000000,bambu-lab/petg/hf/black-33102
+Bambu Lab,PETG HF,Blue,200 mm/s,255 °C,33600,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/hf,#002E96,bambu-lab/petg/hf/blue-33600
+Bambu Lab,PETG HF,Cream,200 mm/s,255 °C,33401,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/hf,#F9DFB9,bambu-lab/petg/hf/cream-33401
+Bambu Lab,PETG HF,Dark Gray,200 mm/s,255 °C,33103,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/hf,#515151,bambu-lab/petg/hf/dark-gray-33103
+Bambu Lab,PETG HF,Forest Green,200 mm/s,255 °C,33502,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/hf,#39541A,bambu-lab/petg/hf/forest-green-33502
+Bambu Lab,PETG HF,Gray,200 mm/s,255 °C,33101,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/hf,#ADB1B2,bambu-lab/petg/hf/gray-33101
+Bambu Lab,PETG HF,Green,200 mm/s,255 °C,33500,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/hf,#00AE42,bambu-lab/petg/hf/green-33500
+Bambu Lab,PETG HF,Lake Blue,200 mm/s,255 °C,33601,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/hf,#1F79E5,bambu-lab/petg/hf/lake-blue-33601
+Bambu Lab,PETG HF,Lime Green,200 mm/s,255 °C,33501,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/hf,#6EE53C,bambu-lab/petg/hf/lime-green-33501
+Bambu Lab,PETG HF,Orange,200 mm/s,255 °C,33300,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/hf,#F75403,bambu-lab/petg/hf/orange-33300
+Bambu Lab,PETG HF,Peanut Brown,200 mm/s,255 °C,33801,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/hf,#875718,bambu-lab/petg/hf/peanut-brown-33801
+Bambu Lab,PETG HF,Red,200 mm/s,255 °C,33200,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/hf,#EB3A3A,bambu-lab/petg/hf/red-33200
+Bambu Lab,PETG HF,White,200 mm/s,255 °C,33100,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/hf,#FFFFFF,bambu-lab/petg/hf/white-33100
+Bambu Lab,PETG HF,Yellow,200 mm/s,255 °C,33400,https://3dfilamentprofiles.com/filaments/bambu-lab/petg/hf,#FFD00B,bambu-lab/petg/hf/yellow-33400
+Bambu Lab,PLA Basic,Bambu Green,200 mm/s,220 °C,10501,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#00AE42,bambu-lab/pla/basic/bambu-green-10501
+Bambu Lab,PLA Basic,Beige,200 mm/s,220 °C,10201,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#F7E6DE,bambu-lab/pla/basic/beige-10201
+Bambu Lab,PLA Basic,Black,200 mm/s,220 °C,10101,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#000000,bambu-lab/pla/basic/black-10101
+Bambu Lab,PLA Basic,Blue,200 mm/s,220 °C,10600,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#0A2989,bambu-lab/pla/basic/blue-10600
+Bambu Lab,PLA Basic,Blue,200 mm/s,220 °C,10601,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#0A2989,bambu-lab/pla/basic/blue-10601
+Bambu Lab,PLA Basic,Blue Gray,200 mm/s,220 °C,10602,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#5B6579,bambu-lab/pla/basic/blue-gray-10602
+Bambu Lab,PLA Basic,Bright Green,200 mm/s,220 °C,10503,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#BECF00,bambu-lab/pla/basic/bright-green-10503
+Bambu Lab,PLA Basic,Bronze,200 mm/s,220 °C,10801,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#847D48,bambu-lab/pla/basic/bronze-10801
+Bambu Lab,PLA Basic,Brown,200 mm/s,220 °C,10800,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#9D432C,bambu-lab/pla/basic/brown-10800
+Bambu Lab,PLA Basic,Cobalt Blue,200 mm/s,220 °C,10604,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#0056B8,bambu-lab/pla/basic/cobalt-blue-10604
+Bambu Lab,PLA Basic,Cocoa Brown,200 mm/s,220 °C,10802,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#6F5034,bambu-lab/pla/basic/cocoa-brown-10802
+Bambu Lab,PLA Basic,Cyan,200 mm/s,220 °C,10603,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#0086D6,bambu-lab/pla/basic/cyan-10603
+Bambu Lab,PLA Basic,Dark Gray,200 mm/s,220 °C,10105,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#545454,bambu-lab/pla/basic/dark-gray-10105
+Bambu Lab,PLA Basic,Gold,200 mm/s,220 °C,10401,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#E4BD68,bambu-lab/pla/basic/gold-10401
+Bambu Lab,PLA Basic,Gray,200 mm/s,220 °C,10103,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#8E9089,bambu-lab/pla/basic/gray-10103
+Bambu Lab,PLA Basic,Green,200 mm/s,220 °C,10500,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#002914,bambu-lab/pla/basic/green-10500
+Bambu Lab,PLA Basic,Hot Pink,200 mm/s,220 °C,10204,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#F5547C,bambu-lab/pla/basic/hot-pink-10204
+Bambu Lab,PLA Basic,Indigo Purple,200 mm/s,220 °C,10701,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#482960,bambu-lab/pla/basic/indigo-purple-10701
+Bambu Lab,PLA Basic,Jade White,200 mm/s,220 °C,10100,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#FFFFFF,bambu-lab/pla/basic/jade-white-10100
+Bambu Lab,PLA Basic,Light Gray,200 mm/s,220 °C,10104,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#D1D3D5,bambu-lab/pla/basic/light-gray-10104
+Bambu Lab,PLA Basic,Magenta,200 mm/s,220 °C,10202,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#EC008C,bambu-lab/pla/basic/magenta-10202
+Bambu Lab,PLA Basic,Maroon Red,200 mm/s,220 °C,10205,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#9D2235,bambu-lab/pla/basic/maroon-red-10205
+Bambu Lab,PLA Basic,Mistletoe Green,200 mm/s,220 °C,10502,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#3F8E43,bambu-lab/pla/basic/mistletoe-green-10502
+Bambu Lab,PLA Basic,Orange,200 mm/s,220 °C,10300,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#FF6A13,bambu-lab/pla/basic/orange-10300
+Bambu Lab,PLA Basic,Pink,200 mm/s,220 °C,10203,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#F55A74,bambu-lab/pla/basic/pink-10203
+Bambu Lab,PLA Basic,Pumpkin Orange,200 mm/s,220 °C,10301,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#FF9016,bambu-lab/pla/basic/pumpkin-orange-10301
+Bambu Lab,PLA Basic,Purple,200 mm/s,220 °C,10700,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#5E43B7,bambu-lab/pla/basic/purple-10700
+Bambu Lab,PLA Basic,Red,200 mm/s,220 °C,10200,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#C12E1F,bambu-lab/pla/basic/red-10200
+Bambu Lab,PLA Basic,Silver,200 mm/s,220 °C,10102,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#A6A9AA,bambu-lab/pla/basic/silver-10102
+Bambu Lab,PLA Basic,Sunflower Yellow,200 mm/s,220 °C,10402,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#FEC600,bambu-lab/pla/basic/sunflower-yellow-10402
+Bambu Lab,PLA Basic,Turquoise,200 mm/s,220 °C,10605,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#00B1B7,bambu-lab/pla/basic/turquoise-10605
+Bambu Lab,PLA Basic,Yellow,200 mm/s,220 °C,10400,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic,#F4EE2A,bambu-lab/pla/basic/yellow-10400
+Bambu Lab,PLA Basic Gradient,Ocean to Meadow,200 mm/s,220 °C,10902,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/basic-gradient,#307FE2,bambu-lab/pla/basic-gradient/ocean-to-meadow-10902
+Bambu Lab,PLA Matte,Apple Green,200 mm/s,220 °C,11502,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/matte,#C2E189,bambu-lab/pla/matte/apple-green-11502
+Bambu Lab,PLA Matte,Ash Gray,200 mm/s,220 °C,11102,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/matte,#9B9EA0,bambu-lab/pla/matte/ash-gray-11102
+Bambu Lab,PLA Matte,Bone White,200 mm/s,220 °C,11103,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/matte,#CBC6B8,bambu-lab/pla/matte/bone-white-11103
+Bambu Lab,PLA Matte,Caramel,200 mm/s,220 °C,11803,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/matte,#AE835B,bambu-lab/pla/matte/caramel-11803
+Bambu Lab,PLA Matte,Charcoal,200 mm/s,220 °C,11101,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/matte,#000000,bambu-lab/pla/matte/charcoal-11101
+Bambu Lab,PLA Matte,Dark Blue,200 mm/s,220 °C,11602,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/matte,#042F56,bambu-lab/pla/matte/dark-blue-11602
+Bambu Lab,PLA Matte,Dark Brown,200 mm/s,220 °C,11801,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/matte,#7D6556,bambu-lab/pla/matte/dark-brown-11801
+Bambu Lab,PLA Matte,Dark Chocolate,200 mm/s,220 °C,11802,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/matte,#4D3324,bambu-lab/pla/matte/dark-chocolate-11802
+Bambu Lab,PLA Matte,Dark Green,200 mm/s,220 °C,11501,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/matte,#68724D,bambu-lab/pla/matte/dark-green-11501
+Bambu Lab,PLA Matte,Dark Red,200 mm/s,220 °C,11202,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/matte,#BB3D43,bambu-lab/pla/matte/dark-red-11202
+Bambu Lab,PLA Matte,Desert Tan,200 mm/s,220 °C,11401,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/matte,#E8DBB7,bambu-lab/pla/matte/desert-tan-11401
+Bambu Lab,PLA Matte,Grass Green,200 mm/s,220 °C,11500,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/matte,#61C680,bambu-lab/pla/matte/grass-green-11500
+Bambu Lab,PLA Matte,Ice Blue,200 mm/s,220 °C,11601,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/matte,#A3D8E1,bambu-lab/pla/matte/ice-blue-11601
+Bambu Lab,PLA Matte,Ivory White,200 mm/s,220 °C,11100,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/matte,#FFFFFF,bambu-lab/pla/matte/ivory-white-11100
+Bambu Lab,PLA Matte,Latte Brown,200 mm/s,220 °C,11800,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/matte,#D3B7A7,bambu-lab/pla/matte/latte-brown-11800
+Bambu Lab,PLA Matte,Lemon Yellow,200 mm/s,220 °C,11400,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/matte,#F7D959,bambu-lab/pla/matte/lemon-yellow-11400
+Bambu Lab,PLA Matte,Lilac Purple,200 mm/s,220 °C,11700,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/matte,#AE96D4,bambu-lab/pla/matte/lilac-purple-11700
+Bambu Lab,PLA Matte,Mandarin Orange,200 mm/s,220 °C,11300,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/matte,#F99963,bambu-lab/pla/matte/mandarin-orange-11300
+Bambu Lab,PLA Matte,Marine Blue,200 mm/s,220 °C,11600,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/matte,#0078BF,bambu-lab/pla/matte/marine-blue-11600
+Bambu Lab,PLA Matte,Nardo Gray,200 mm/s,220 °C,11104,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/matte,#757575,bambu-lab/pla/matte/nardo-gray-11104
+Bambu Lab,PLA Matte,Plum,200 mm/s,220 °C,11204,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/matte,#950051,bambu-lab/pla/matte/plum-11204
+Bambu Lab,PLA Matte,Sakura Pink,200 mm/s,220 °C,11201,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/matte,#E8AFCF,bambu-lab/pla/matte/sakura-pink-11201
+Bambu Lab,PLA Matte,Scarlet Red,200 mm/s,220 °C,11200,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/matte,#DE4343,bambu-lab/pla/matte/scarlet-red-11200
+Bambu Lab,PLA Matte,Sky Blue,200 mm/s,220 °C,11603,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/matte,#56B7E6,bambu-lab/pla/matte/sky-blue-11603
+Bambu Lab,PLA Matte,Terracotta,200 mm/s,220 °C,11203,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/matte,#B15533,bambu-lab/pla/matte/terracotta-11203
+Bambu Lab,PLA Wood,Black Walnut,200 mm/s,220 °C,13107,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/wood,#4F3F24,bambu-lab/pla/wood/black-walnut-13107
+Bambu Lab,PLA Wood,Classic Birch,200 mm/s,220 °C,13505,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/wood,#918669,bambu-lab/pla/wood/classic-birch-13505
+Bambu Lab,PLA Wood,Clay Brown,200 mm/s,220 °C,13801,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/wood,#995F11,bambu-lab/pla/wood/clay-brown-13801
+Bambu Lab,PLA Wood,Ochre Yellow,200 mm/s,220 °C,13403,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/wood,#C98935,bambu-lab/pla/wood/ochre-yellow-13403
+Bambu Lab,PLA Wood,Rosewood,200 mm/s,220 °C,13204,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/wood,#4C241C,bambu-lab/pla/wood/rosewood-13204
+Bambu Lab,PLA Wood,White Oak,200 mm/s,220 °C,13106,https://3dfilamentprofiles.com/filaments/bambu-lab/pla/wood,#D6CCA3,bambu-lab/pla/wood/white-oak-13106

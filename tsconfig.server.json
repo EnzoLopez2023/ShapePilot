@@ -39,6 +39,8 @@
     "src/geometry/triangulate.ts",
     "src/export/stl.ts",
     "src/export/threemf.ts",
+    "src/export/xlsx.ts",
+    "src/features/filaments/model/labels.ts",
     "src/model/machines.ts",
     "src/model/document.ts",
     "test/helpers",

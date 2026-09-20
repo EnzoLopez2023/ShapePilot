@@ -9,6 +9,7 @@ npm run rack:build              # models/rack
 npm run rack:build -- --coupon  # models/rack-coupon
 npm run rack:drawings           # the dimensioned sheets
 npm run swatch:build            # models/filament-swatch
+npm run swatch:labels           # the label sheet for those cards
 ```
 
 A change to `src/rack/config.ts` therefore shows up as a diff in this
@@ -34,6 +35,17 @@ number of rungs on the thickness ladder:
 ```
 npm run swatch:build -- --label 50x30
 ```
+
+`swatch:labels` writes `filament-labels.csv` and `.xlsx` beside it — one row
+per catalogue colour, columns in the order they read on the label, for the
+Niimbot app's Excel import. Filter with `--line`, `--brand` or `--keys`, and
+choose what the QR carries with `--qr profile|key|none`.
+
+The usual way to get a sheet is the **Label sheet** button on the Filaments
+page, which exports exactly the rows it is showing — so *Owned only* gives you
+your shelf. Both routes build the sheet from
+`src/features/filaments/model/labels.ts`, so they cannot drift; this script
+exists for the whole catalogue, a single line, and scripted runs.
 
 ## A note on size
 
