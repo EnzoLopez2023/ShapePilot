@@ -136,6 +136,17 @@ describe('allocateSet', () => {
     expect(both.oneUnit.left).toBe(4)
   })
 
+  test('an ISO Enter is found whatever size the set list wrote it as', () => {
+    // A photo reads it as spanning two rows, and may call it 1.25u or 1.5u; the
+    // palette cuts it as a 1.5u pocket on one row, sometimes turned.
+    const isoPocket = pocket(1.5, { shape: 'iso-enter' })
+    for (const written of [cap(1.5, 1, { heightUnits: 2 }), cap(1.25, 1, { heightUnits: 2 })]) {
+      const iso = [{ ...written, shape: 'iso-enter' as const }]
+      expect(allocateSet(iso, [isoPocket], PYTHON_SIZING).left).toBe(0)
+      expect(allocateSet(iso, [{ ...isoPocket, rotationDeg: 90 }], PYTHON_SIZING).left).toBe(0)
+    }
+  })
+
   test('an empty set and an empty tray are both simply zero', () => {
     expect(allocateSet([], TOP_TRAY, PYTHON_SIZING)).toMatchObject({ owned: 0, left: 0 })
     expect(allocateSet([cap(1, 5)], [], PYTHON_SIZING)).toMatchObject({ owned: 5, left: 5 })

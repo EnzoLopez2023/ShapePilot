@@ -54,8 +54,14 @@ export function effectiveSize(pocket: PocketShape): { units: number; heightUnits
     : { units: pocket.units, heightUnits: pocket.heightUnits }
 }
 
+/**
+ * An ISO Enter is one shape, whatever size it was written down as. A set list
+ * reads it as 1.5u across two rows; the tray's pocket is stored as 1.5u on one
+ * row with the L drawn by `shape`, and may be turned. Keying it by size would
+ * leave every ISO Enter homeless beside the pocket cut for it.
+ */
 const sizeKey = (units: number, heightUnits: number, shape?: string | null): string =>
-  `${+units.toFixed(2)}:${+heightUnits.toFixed(2)}:${shape === 'iso-enter' ? 'iso-enter' : 'rect'}`
+  shape === 'iso-enter' ? 'iso-enter' : `${+units.toFixed(2)}:${+heightUnits.toFixed(2)}:rect`
 
 /** A plain 1u cap: the only kind that shares a trough. */
 const isPlainOneUnit = (units: number, heightUnits: number, shape?: string | null): boolean =>
