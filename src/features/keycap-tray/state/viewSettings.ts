@@ -16,6 +16,7 @@
 import { booleanOr, createViewSettingsStore, numberIn } from '../../../state/viewSettingsStore.ts'
 import { isMaterialId } from '../model/materials.ts'
 import type { MaterialId } from '../model/materials.ts'
+import { capProfileOf } from '../model/capProfiles.ts'
 
 export type CanvasMode = '2d' | '3d'
 export type FabricationTarget = 'print' | 'cnc'
@@ -32,7 +33,20 @@ export interface ViewSettings {
   target: FabricationTarget
   /** Filament the print checks hold the tray to. Not part of the saved design. */
   material: MaterialId
+  /** Keycap profile the corner-post advice is sized for. Null = the project's. */
+  capProfile: string | null
+  /** Owned-filament catalogue keys each printed body is coloured in. */
+  colors: PartColors
 }
+
+/** The bodies a two-filament tray exports, each optionally in a filament you own. */
+export interface PartColors {
+  tray?: string
+  nameplate?: string
+  spacers?: string
+}
+
+export const PART_KEYS = ['tray', 'nameplate', 'spacers'] as const
 
 /** The toolbar's starting point for a tray nothing is remembered about. */
 export const DEFAULT_VIEW_SETTINGS: ViewSettings = {
@@ -47,6 +61,8 @@ export const DEFAULT_VIEW_SETTINGS: ViewSettings = {
   imperial: false,
   target: 'print',
   material: 'generic',
+  capProfile: null,
+  colors: {},
 }
 
 /** Snap steps offered in the View section: 0.5 mm through 5 mm in 0.5 mm
@@ -81,7 +97,22 @@ export function readViewSettings(raw: unknown, baseline: ViewSettings): ViewSett
     imperial: booleanOr(stored.imperial, baseline.imperial),
     target: isTarget(stored.target) ? stored.target : baseline.target,
     material: isMaterialId(stored.material) ? stored.material : baseline.material,
+    capProfile: typeof stored.capProfile === 'string' && capProfileOf(stored.capProfile)
+      ? stored.capProfile : baseline.capProfile,
+    colors: readColors(stored.colors),
   }
+}
+
+// A catalogue key is a short path; anything else is not ours.
+const isKey = (value: unknown): value is string =>
+  typeof value === 'string' && value.length > 0 && value.length <= 200
+
+function readColors(raw: unknown): PartColors {
+  if (typeof raw !== 'object' || raw === null) return {}
+  const stored = raw as Record<string, unknown>
+  const colors: PartColors = {}
+  for (const part of PART_KEYS) if (isKey(stored[part])) colors[part] = stored[part]
+  return colors
 }
 
 const store = createViewSettingsStore<ViewSettings>({

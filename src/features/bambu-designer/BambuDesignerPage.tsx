@@ -48,7 +48,7 @@ import { PREVIEW_PART_ID, useProposalPreview } from '../../components/designer/u
 import SolidPalette from './components/SolidPalette.tsx'
 import FilamentSlotField from './components/FilamentSlotField.tsx'
 import FilamentColorField from './components/FilamentColorField.tsx'
-import { useOwnedColors } from './useOwnedColors.ts'
+import { useOwnedColors } from '../filaments/useOwnedColors.ts'
 import PrintHistory from './components/PrintHistory.tsx'
 import { useAmsTrays } from './useAmsTrays.ts'
 import { assignExtruders, filamentWarnings, trayLabel } from './amsTrays.ts'

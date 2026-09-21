@@ -19,6 +19,9 @@ import { DEFAULT_FONT_ID, loadFont, traceTextPolys } from '../../text/fonts.ts'
 import type { MultiPolygon } from '../../geometry/vec.ts'
 import { validateDesign } from './geometry/validate.ts'
 import { materialOf } from './model/materials.ts'
+import { matchCapProfile } from './model/capProfiles.ts'
+import { useOwnedColors } from '../filaments/useOwnedColors.ts'
+import { useAmsTrays } from '../bambu-designer/useAmsTrays.ts'
 import {
   DEFAULT_VIEW_SETTINGS, forgetViewSettings, loadViewSettings, saveViewSettings,
 } from './state/viewSettings.ts'
@@ -140,12 +143,39 @@ export default function KeycapTrayPage() {
   const nameplateMesh = useMemo(
     () => buildNameplateMesh(design, nameplatePolys), [design, nameplatePolys])
   const cornerSpacersMesh = useMemo(() => buildCornerSpacersMesh(design), [design])
+  // The shelf and the AMS: a body painted in an owned colour previews in it,
+  // and prints from the AMS tray holding it when one does.
+  const ownedColors = useOwnedColors()
+  const ams = useAmsTrays()
+  const amsTrayFor = useCallback(
+    (key: string) => ams.trays?.find(tray => tray.key === key), [ams.trays])
+  const { colors } = settings
+  const hexOf = useCallback(
+    (key: string | undefined) => ownedColors.find(c => c.key === key)?.hexes[0], [ownedColors])
+  const slotOf = useCallback(
+    (key: string | undefined) => (key ? amsTrayFor(key)?.slot : undefined), [amsTrayFor])
   const extraParts = useMemo<ExtraPart[]>(() => {
     const parts: ExtraPart[] = []
-    if (nameplateMesh) parts.push({ mesh: nameplateMesh, suffix: 'nameplate', label: 'nameplate' })
-    if (cornerSpacersMesh) parts.push({ mesh: cornerSpacersMesh, suffix: 'spacers', label: 'corner spacers' })
+    if (nameplateMesh) {
+      parts.push({
+        mesh: nameplateMesh, suffix: 'nameplate', label: 'nameplate',
+        filamentSlot: slotOf(colors.nameplate),
+      })
+    }
+    if (cornerSpacersMesh) {
+      parts.push({
+        mesh: cornerSpacersMesh, suffix: 'spacers', label: 'corner spacers',
+        filamentSlot: slotOf(colors.spacers),
+      })
+    }
     return parts
-  }, [nameplateMesh, cornerSpacersMesh])
+  }, [nameplateMesh, cornerSpacersMesh, colors.nameplate, colors.spacers, slotOf])
+  const previewExtras = useMemo(() => extraParts.map(part => ({
+    mesh: part.mesh,
+    color: hexOf(part.suffix === 'nameplate' ? colors.nameplate : colors.spacers),
+  })), [extraParts, hexOf, colors.nameplate, colors.spacers])
+  // Only the trays the AMS reports: Studio silently remaps a higher number.
+  const maxSlot = ams.trays?.length ? Math.max(...ams.trays.map(tray => tray.slot)) : 4
   const bodyMesh = useMemo(
     () => (extraParts.length ? buildTrayMesh(design, { omitSeparateParts: true }) : mesh),
     [design, extraParts, mesh])
@@ -541,6 +571,7 @@ export default function KeycapTrayPage() {
           >
             <ExportPanel
               design={design} mesh={bodyMesh} extraParts={extraParts} issues={issues} fab={fab}
+              bodySlot={slotOf(colors.tray)} maxSlot={maxSlot}
               target={target} onTarget={next => patch({ target: next })}
             />
 
@@ -629,7 +660,11 @@ export default function KeycapTrayPage() {
             />
           ) : (
             <Suspense fallback={<LoadingState label="Loading the 3D viewer…" />}>
-              <TrayViewer3D mesh={mesh} label="the tray" />
+              {/* Split into its printed bodies, so each shows in its filament. */}
+              <TrayViewer3D
+                mesh={extraParts.length ? bodyMesh : mesh} color={hexOf(colors.tray)}
+                extras={previewExtras} label="the tray"
+              />
             </Suspense>
           )}
           <Typography
@@ -661,6 +696,11 @@ export default function KeycapTrayPage() {
                 otherTrays: project.coverage,
               }
               : undefined}
+            capProfile={settings.capProfile
+              ? { id: settings.capProfile, fromProject: false }
+              : { id: matchCapProfile(project?.capProfile)?.id, fromProject: true }}
+            ownedColors={ownedColors}
+            amsTrayFor={amsTrayFor}
           />
         </Paper>
       </Box>

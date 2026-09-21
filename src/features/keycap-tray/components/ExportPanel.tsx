@@ -14,6 +14,7 @@ import { writeThreeMf, writeThreeMfParts } from '../../../export/threemf.ts'
 import { writeShaperSvg } from '../export/svg.ts'
 import { writeDxf } from '../export/dxf.ts'
 import { safeFilename, triggerDownload } from '../../../export/download.ts'
+import { assignExtruders } from '../../bambu-designer/amsTrays.ts'
 
 /** A body split off the tray for a second filament -- the nameplate text, the
  *  corner spacers. `suffix` names the STL file, `label` the 3MF object. */
@@ -21,6 +22,8 @@ export interface ExtraPart {
   mesh: Mesh
   suffix: string
   label: string
+  /** AMS filament number this body prints in, when its colour is loaded. */
+  filamentSlot?: number
 }
 
 export interface ExportPanelProps {
@@ -31,6 +34,10 @@ export interface ExportPanelProps {
   /** Bodies split off for a second filament. When non-empty, STL exports as a
    *  zip and 3MF as a multi-object model. */
   extraParts: ExtraPart[]
+  /** AMS filament number the tray body prints in, when its colour is loaded. */
+  bodySlot?: number
+  /** Highest filament number an unassigned body may be given. */
+  maxSlot?: number
   issues: Issue[]
   fab: FabricationSettings
   /** Lifted so the toolbar can hide printer-only controls for the CNC target. */
@@ -48,7 +55,7 @@ const FORMATS: { id: string; label: string; target: Target; ext: string; mime: s
 // Lives in the header toolbar rather than a full side panel, so status is a
 // single icon with the detail in its tooltip instead of a stack of Alerts.
 export default function ExportPanel(
-  { design, mesh, extraParts, issues, fab, target, onTarget }: ExportPanelProps,
+  { design, mesh, extraParts, bodySlot, maxSlot = 4, issues, fab, target, onTarget }: ExportPanelProps,
 ) {
   const scoped = useMemo(() => issuesFor(issues, target), [issues, target])
   const errors = scoped.filter(i => i.severity === 'error')
@@ -103,12 +110,16 @@ export default function ExportPanel(
       }
     }
     if (id === '3mf') {
+      // A body whose colour is loaded in the AMS prints from that tray; the
+      // rest take the lowest numbers nobody chose, in order.
+      const extruders = assignExtruders(
+        [{ filamentSlot: bodySlot }, ...extraParts], maxSlot)
       triggerDownload(
         extraParts.length
           ? writeThreeMfParts([
-            { mesh, name: `${design.name} tray`, extruder: 1 },
+            { mesh, name: `${design.name} tray`, extruder: extruders[0] },
             ...extraParts.map((p, i) => (
-              { mesh: p.mesh, name: `${design.name} ${p.label}`, extruder: Math.min(i + 2, 4) })),
+              { mesh: p.mesh, name: `${design.name} ${p.label}`, extruder: extruders[i + 1] })),
           ], design.name)
           : writeThreeMf(mesh, design.name),
         name, fmt.mime)

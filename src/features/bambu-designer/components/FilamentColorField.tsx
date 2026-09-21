@@ -5,10 +5,9 @@
 // is the other half: the shelf. Picking a colour here is presentation -- it
 // never reaches an exporter -- but it is what makes a two-colour design legible
 // before it is sliced.
-import { Autocomplete, Stack, TextField, Typography } from '@mui/material'
-import { Swatch } from '../../filaments/components/Swatch.tsx'
 import type { SceneObject } from '../../../model/document.ts'
-import type { OwnedColor } from '../useOwnedColors.ts'
+import type { OwnedColor } from '../../filaments/useOwnedColors.ts'
+import OwnedColorSelect from '../../filaments/components/OwnedColorSelect.tsx'
 
 export default function FilamentColorField({ object, colors, onPatch }: {
   object: SceneObject
@@ -22,25 +21,11 @@ export default function FilamentColorField({ object, colors, onPatch }: {
     color => color.hexes[0].toUpperCase() === (object.color ?? '').toUpperCase()) ?? null
 
   return (
-    <Autocomplete<OwnedColor>
-      size="small"
-      options={[...colors]}
-      value={current}
-      onChange={(_event, choice) => onPatch({ color: choice?.hexes[0] })}
-      getOptionLabel={color => color.label}
-      isOptionEqualToValue={(a, b) => a.key === b.key}
-      renderOption={(props, color) => {
-        const { key, ...rest } = props as typeof props & { key: string }
-        return (
-          <Stack key={key} component="li" {...rest} direction="row" spacing={1} alignItems="center">
-            <Swatch hexes={color.hexes} />
-            <Typography variant="body2">{color.label}</Typography>
-          </Stack>
-        )
-      }}
-      renderInput={params => (
-        <TextField {...params} label="Colour" placeholder="From your filaments" />
-      )}
+    <OwnedColorSelect
+      label="Colour"
+      colors={colors}
+      value={current?.key ?? null}
+      onChange={choice => onPatch({ color: choice?.hexes[0] })}
     />
   )
 }

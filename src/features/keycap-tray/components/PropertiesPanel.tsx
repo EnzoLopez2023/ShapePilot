@@ -18,6 +18,11 @@ import LengthField from '../../../components/LengthField.tsx'
 import AngleField from '../../../components/AngleField.tsx'
 import HoverTooltip from '../../../components/HoverTooltip.tsx'
 import SetCoveragePanel from './SetCoveragePanel.tsx'
+import PostHeightGuide from './PostHeightGuide.tsx'
+import OwnedColorSelect from '../../filaments/components/OwnedColorSelect.tsx'
+import type { OwnedColor } from '../../filaments/useOwnedColors.ts'
+import type { AmsTray } from '../../bambu-designer/amsTrays.ts'
+import type { PartColors } from '../state/viewSettings.ts'
 import type { SetCoveragePanelProps } from './SetCoveragePanel.tsx'
 
 export interface PropertiesPanelProps {
@@ -36,13 +41,31 @@ export interface PropertiesPanelProps {
   onFab: (f: FabricationSettings) => void
   /** Absent when the tray belongs to no project, or the project has not loaded. */
   coverage?: Omit<SetCoveragePanelProps, 'pockets' | 'sizing'>
+  /** Keycap profile the post advice uses, and whether it came from the project. */
+  capProfile: { id?: string; fromProject: boolean }
+  /** Filaments on the shelf, for colouring the printed bodies. */
+  ownedColors: readonly OwnedColor[]
+  /** The AMS tray a catalogue colour is loaded in, if any. */
+  amsTrayFor: (key: string) => AmsTray | undefined
 }
 
 export default function PropertiesPanel(props: PropertiesPanelProps) {
   const {
     design, selected, fab, imperial, onImperial, view, onView,
-    onProfile, onSizing, onDesign, onPocket, onFab, coverage,
+    onProfile, onSizing, onDesign, onPocket, onFab, coverage, capProfile, ownedColors, amsTrayFor,
   } = props
+  const setColor = (part: keyof PartColors, key: string | undefined) =>
+    onView({ colors: { ...view.colors, [part]: key } })
+  const colorField = (part: keyof PartColors, label: string) => (
+    <OwnedColorSelect
+      label={label} colors={ownedColors} value={view.colors[part] ?? null}
+      onChange={choice => setColor(part, choice?.key)}
+      note={color => {
+        const tray = amsTrayFor(color.key)
+        return tray ? `in ${tray.label}` : null
+      }}
+    />
+  )
   const { snapMm, gridMm, showLabels, showPlate, showBuffer, bufferMm, target, material } = view
 
   const heading = (t: string) => (
@@ -277,6 +300,15 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
             </>
           )}
 
+          <Typography variant="subtitle2" component="h3">Post height guide</Typography>
+          <PostHeightGuide
+            design={design}
+            profileId={capProfile.id}
+            fromProject={capProfile.fromProject}
+            onProfile={id => onView({ capProfile: id })}
+            onDesign={onDesign}
+          />
+
           <Tooltip title="Raised text of the tray name on the floor, so the tray reads as its own in a drawer. Drag it on the layout canvas to place it clear of the pockets.">
             <FormControlLabel
               control={
@@ -316,6 +348,22 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
                   ? { ...d, nameplate: { ...d.nameplate, fontSizeMm: v } } : d))}
               />
             </Stack>
+          )}
+          {ownedColors.length > 0 && (
+            <>
+              <Tooltip title="Paints each printed body in a filament you own. A colour loaded in the AMS also sets which tray that body prints from in the 3MF; the rest take the next free filament numbers.">
+                <Typography variant="subtitle2" component="h3">Filament colours</Typography>
+              </Tooltip>
+              {colorField('tray', 'Tray')}
+              {design.nameplate && colorField('nameplate', 'Nameplate')}
+              {design.cornerSpacers && (design.cornerSpacers.separate
+                ? colorField('spacers', 'Corner posts')
+                : (
+                  <Typography variant="body2" color="text.secondary">
+                    Turn on Separate body to print the posts in their own colour.
+                  </Typography>
+                ))}
+            </>
           )}
           {(() => {
             const plan = planTiles(design, { plateWidthMm: fab.plateWidthMm, plateDepthMm: fab.plateDepthMm })

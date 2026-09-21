@@ -1,7 +1,7 @@
 // The filament colours on the shelf, for a part to be coloured with.
 import { useEffect, useMemo, useState } from 'react'
 import { filamentByKey, filamentLineById } from '../../../lib/contracts/bambuFilaments.ts'
-import { getFilaments } from '../filaments/service.ts'
+import { getFilaments } from './service.ts'
 
 export interface OwnedColor {
   key: string

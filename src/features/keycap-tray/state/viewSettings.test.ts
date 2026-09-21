@@ -20,6 +20,8 @@ const custom: ViewSettings = {
   imperial: true,
   target: 'cnc',
   material: 'petg',
+  capProfile: 'sa',
+  colors: { tray: 'bambu-lab/pla/basic/jade-white-10100', nameplate: 'bambu-lab/pla/basic/black-10101' },
 }
 
 describe('per-tray view settings', () => {
@@ -95,5 +97,12 @@ describe('per-tray view settings', () => {
     // And writing over it recovers.
     saveViewSettings('1', custom)
     expect(loadViewSettings('1', DEFAULT_VIEW_SETTINGS).view).toBe('3d')
+  })
+
+  test('a cap profile or part colour it does not recognise is dropped', () => {
+    const read = readViewSettings(
+      { capProfile: 'made-up', colors: { tray: 42, spacers: '', posts: 'x' } }, DEFAULT_VIEW_SETTINGS)
+    expect(read.capProfile).toBeNull()
+    expect(read.colors).toEqual({})
   })
 })
