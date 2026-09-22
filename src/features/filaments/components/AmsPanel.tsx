@@ -1,77 +1,27 @@
-// What is in the AMS right now, drawn as the AMS.
+// What is in the AMS right now, drawn the way Bambu Handy draws it.
 //
-// The body is a fixed dark grey in both themes, because it is a picture of a
-// dark grey object -- the one place on this page where a surface colour is
-// literal rather than a token. Everything that is information (names, amounts,
-// the reorder note) sits below the body on the page's own surface, in its own
-// type, so the drawing never carries text a person has to read against it
-// except the tray names the printer itself prints on the unit.
+// Each tray is a reel seen from the side, with the tray name printed on the
+// coil and the material above it on a bar of the filament's own colour. The
+// coil's height shrinks toward the hub with what the AMS reports is left, so
+// the picture answers "how full" before any number does; an unreported amount
+// is drawn full and faded, because the AMS said nothing.
 //
-// Each spool's filament is drawn as a disc that shrinks with what the AMS
-// reports is left, so the picture answers "how full" before any number does.
-// A spool whose remaining amount is unreported is drawn full and faded: the
-// AMS said nothing, and the drawing does not pretend otherwise.
-import { useId } from 'react'
-import { Box, Paper, Stack, Typography } from '@mui/material'
+// A tray whose colour is in the catalogue opens that colour's sheet, so the
+// quickest way to "I just loaded a new Jade White" is a tap on A2.
+import { Box, ButtonBase, Paper, Stack, Typography } from '@mui/material'
 import { filamentByKey } from '../../../../lib/contracts/bambuFilaments.ts'
 import { SPOOL_GRAMS } from '../../../../lib/contracts/filamentStock.ts'
 import type { AmsStock, ColorStock, LoadedSlot } from '../../../../lib/contracts/filamentStock.ts'
 import { colorLabel } from '../model/usage.ts'
 import type { AmsBay } from '../model/ams.ts'
 import { amsUnits } from '../model/ams.ts'
-
-/** The AMS 2 Pro's own plastics: literal colours, not theme tokens. */
-const BODY = '#1D2125'
-const WINDOW = '#262B30'
-const FLANGE = '#3A4046'
-const HUB = '#14171A'
-const PRINTED_TEXT = '#C9CED3'
+import { SpoolArt } from './SpoolArt.tsx'
+import { EASE_IOS } from '../../../theme/theme.ts'
 
 const hexesOf = (slot: LoadedSlot): string[] => {
   const color = slot.key ? filamentByKey(slot.key) : undefined
   if (color) return [...color.hexes]
   return slot.color ? [slot.color] : ['#8A9096']
-}
-
-function Spool({ slot }: { slot: LoadedSlot | null }) {
-  const gradientId = useId()
-  if (!slot) {
-    return (
-      <svg viewBox="0 0 100 100" width="100%" aria-hidden style={{ display: 'block' }}>
-        <circle cx="50" cy="50" r="44" fill="none" stroke={FLANGE} strokeWidth="2" strokeDasharray="5 5" />
-        <circle cx="50" cy="50" r="14" fill={HUB} stroke={FLANGE} strokeWidth="2" />
-      </svg>
-    )
-  }
-  const hexes = hexesOf(slot)
-  const known = slot.remainingPercent !== null
-  const share = known ? Math.max(0, Math.min(100, slot.remainingPercent!)) / 100 : 1
-  // Between the hub and the flange: an empty spool is just the hub.
-  const radius = 17 + 25 * share
-  const fill = hexes.length > 1 ? `url(#${gradientId})` : hexes[0]
-
-  return (
-    <svg viewBox="0 0 100 100" width="100%" aria-hidden style={{ display: 'block' }}>
-      {hexes.length > 1 && (
-        // A dual-colour filament is a 135° split of its two hexes, as the
-        // swatch draws it everywhere else on the page.
-        <defs>
-          <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="50%" stopColor={hexes[0]} />
-            <stop offset="50%" stopColor={hexes[1]} />
-          </linearGradient>
-        </defs>
-      )}
-      <circle cx="50" cy="50" r="46" fill={FLANGE} />
-      <circle
-        cx="50" cy="50" r={radius} fill={fill} opacity={known ? 1 : 0.55}
-        // The structural ring: white and near-black filaments vanish without it.
-        stroke="rgba(255,255,255,0.35)" strokeWidth="1"
-      />
-      <circle cx="50" cy="50" r="15" fill={HUB} />
-      <circle cx="50" cy="50" r="5" fill={FLANGE} />
-    </svg>
-  )
 }
 
 function describe(slot: LoadedSlot): { name: string; detail: string } {
@@ -91,27 +41,103 @@ function amount(slot: LoadedSlot): string {
   return `${slot.remainingPercent}% · ≈${grams} g`
 }
 
-function BayDetail({ bay, stock }: { bay: AmsBay; stock?: ColorStock }) {
-  if (!bay.slot) {
-    return <Typography variant="body2" color="text.secondary">Empty</Typography>
+function Bay({ bay, stock, onOpen }: { bay: AmsBay; stock?: ColorStock; onOpen?: (key: string) => void }) {
+  const slot = bay.slot
+  if (!slot) {
+    return (
+      <Stack sx={{ alignItems: 'center', gap: 0.75, py: 1 }}>
+        <Box sx={{ height: 4, width: 28, borderRadius: 2, bgcolor: 'divider', mt: 2.25 }} />
+        <Box
+          sx={{
+            width: 66, height: 72, borderRadius: '14px',
+            border: '1.5px dashed', borderColor: 'divider',
+            display: 'grid', placeItems: 'center',
+          }}
+        >
+          <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 650, fontSize: '0.75rem' }}>
+            {bay.label}
+          </Typography>
+        </Box>
+        <Typography variant="body2" color="text.secondary">Empty</Typography>
+      </Stack>
+    )
   }
-  const { name, detail } = describe(bay.slot)
-  return (
-    <Stack sx={{ minWidth: 0 }}>
-      <Typography variant="body2" sx={{ fontWeight: 650, overflowWrap: 'anywhere' }}>{name}</Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>{detail}</Typography>
-      <Typography
-        variant="body2"
-        sx={{
-          color: stock?.status === 'reorder' ? 'warning.main' : 'text.secondary',
-          fontWeight: stock?.status === 'reorder' ? 650 : undefined,
-        }}
-      >
-        {amount(bay.slot)}
-        {stock?.status === 'reorder' && ' · reorder'}
-        {stock?.status === 'covered' && ' · spare on shelf'}
+  const hexes = hexesOf(slot)
+  const { name, detail } = describe(slot)
+  const reorder = stock?.status === 'reorder'
+  const key = slot.key
+  // "Light Gray 10104" reads better as a name over its code in a column this narrow.
+  const code = key ? filamentByKey(key)?.code : undefined
+  const content = (
+    <Stack sx={{ alignItems: 'center', gap: 0.75, width: '100%', minWidth: 0 }}>
+      <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem', fontWeight: 600 }}>
+        {slot.material ?? '—'}
       </Typography>
+      <Box
+        aria-hidden
+        sx={{
+          height: 4, width: 28, borderRadius: 2,
+          background: hexes.length > 1 ? `linear-gradient(90deg, ${hexes[0]}, ${hexes[1]})` : hexes[0],
+          border: '1px solid', borderColor: 'divider',
+        }}
+      />
+      <Box className="bay-reel">
+        <SpoolArt
+          hexes={hexes}
+          size={80}
+          fill={slot.remainingPercent === null ? null : slot.remainingPercent / 100}
+          label={bay.label}
+        />
+      </Box>
+      <Box sx={{ textAlign: 'center', minWidth: 0, width: '100%' }}>
+        <Typography variant="body2" sx={{ fontWeight: 650, lineHeight: 1.3 }}>
+          {code ? name.slice(0, -code.length - 1) : name}
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem', lineHeight: 1.35 }}>
+          {code ? <>{code}<Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}> · {detail}</Box></> : detail}
+        </Typography>
+        <Typography
+          variant="body2"
+          sx={{
+            fontSize: '0.75rem', fontVariantNumeric: 'tabular-nums', mt: 0.25,
+            color: reorder ? 'warning.main' : 'text.secondary',
+            fontWeight: reorder ? 650 : undefined,
+          }}
+        >
+          {slot.remainingPercent === null ? 'Not reported' : (
+            <>
+              {slot.remainingPercent}%
+              <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+                {' '}· ≈{Math.round((slot.remainingPercent / 100) * SPOOL_GRAMS)} g
+              </Box>
+            </>
+          )}
+          {reorder && ' · reorder'}
+          {stock?.status === 'covered' && ' · spare on shelf'}
+        </Typography>
+      </Box>
     </Stack>
+  )
+  if (!key || !onOpen) return <Box sx={{ py: 1, minWidth: 0 }}>{content}</Box>
+  return (
+    <ButtonBase
+      onClick={() => onOpen(key)}
+      aria-label={`${bay.label}: ${detail} ${name}. Open`}
+      sx={{
+        py: 1, px: 0.5, borderRadius: '14px', minWidth: 0,
+        // Top-aligned, so one tray's wrapped note does not push its
+        // neighbours' reels down out of line.
+        display: 'flex', flexDirection: 'column', justifyContent: 'flex-start', alignItems: 'stretch',
+        transition: `background-color 0.2s ${EASE_IOS}`,
+        '&:hover': { bgcolor: 'action.hover' },
+        '& .bay-reel': { transition: `transform 0.35s ${EASE_IOS}` },
+        '@media (hover: hover) and (prefers-reduced-motion: no-preference)': {
+          '&:hover .bay-reel': { transform: 'translateY(-2px) rotate(-4deg)' },
+        },
+      }}
+    >
+      {content}
+    </ButtonBase>
   )
 }
 
@@ -133,79 +159,49 @@ export interface AmsPanelProps {
   ams: AmsStock
   /** Stock by catalogue key, for the reorder note under a loaded spool. */
   stock: ReadonlyMap<string, ColorStock>
+  /** Open a catalogue colour's sheet. */
+  onOpen?: (key: string) => void
 }
 
-export default function AmsPanel({ ams, stock }: AmsPanelProps) {
+export default function AmsPanel({ ams, stock, onOpen }: AmsPanelProps) {
   const units = amsUnits(ams)
   if (!units.length) return null
 
   return (
-    <Paper component="section" aria-labelledby="ams-heading" sx={{ p: 2 }}>
+    <Paper component="section" aria-labelledby="ams-heading" sx={{ p: { xs: 1.5, sm: 2 } }}>
       <Stack
         direction="row"
-        sx={{ alignItems: 'baseline', justifyContent: 'space-between', gap: 2, mb: 1.5, flexWrap: 'wrap' }}
+        sx={{ alignItems: 'baseline', justifyContent: 'space-between', gap: 2, mb: 1, flexWrap: 'wrap' }}
       >
         <Typography variant="h2" component="h2" id="ams-heading">In the AMS</Typography>
         <Typography variant="body2" color="text.secondary">
-          As the printer reported it, {formatTime(ams.receivedAt)}
+          Reported {formatTime(ams.receivedAt)}
         </Typography>
       </Stack>
 
-      <Stack spacing={2}>
+      <Stack spacing={1.5}>
         {units.map(unit => (
-          <Box key={unit.id} role="group" aria-label={unit.name}>
-            {units.length > 1 && (
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>{unit.name}</Typography>
-            )}
-            <Box
-              role="img"
-              aria-label={`${unit.name}: ${unit.bays.map(bayName).join('; ')}`}
-              sx={{
-                bgcolor: BODY, borderRadius: '14px', p: { xs: 1, sm: 1.5 },
-                // The page's own hairline, so the unit reads as an object on a
-                // dark ground that is nearly its own colour.
-                border: '1px solid', borderColor: 'divider',
-              }}
-            >
-              <Box
-                sx={{
-                  bgcolor: WINDOW,
-                  // The one radius, as everywhere else (DESIGN.md).
-                  borderRadius: '14px',
-                  // A faint top edge, as light catches the smoked lid.
-                  borderTop: '1px solid rgba(255,255,255,0.12)',
-                  display: 'grid',
-                  gridTemplateColumns: `repeat(${Math.max(unit.bays.length, 1)}, minmax(0, 1fr))`,
-                  gap: { xs: 1, sm: 2 },
-                  px: { xs: 1, sm: 2 },
-                  py: { xs: 1, sm: 1.5 },
-                }}
-              >
-                {unit.bays.map(bay => (
-                  <Stack key={bay.label} sx={{ alignItems: 'center', gap: 0.5 }}>
-                    <Box sx={{ width: '100%', maxWidth: 110 }}><Spool slot={bay.slot} /></Box>
-                    <Typography
-                      component="span"
-                      sx={{ color: PRINTED_TEXT, fontSize: '0.75rem', fontWeight: 650, letterSpacing: '0.04em' }}
-                    >
-                      {bay.label}
-                    </Typography>
-                  </Stack>
-                ))}
-              </Box>
-            </Box>
+          <Box
+            key={unit.id}
+            // The unit described in full, for anyone who cannot see the
+            // picture; each tray inside is also its own button.
+            role="group"
+            aria-label={`${unit.name}: ${unit.bays.map(bayName).join('; ')}`}
+            sx={{ borderRadius: '14px', border: '1px solid', borderColor: 'divider', p: { xs: 1, sm: 1.5 } }}
+          >
+            <Typography variant="body2" sx={{ fontWeight: 650, mb: 0.5, px: 0.5 }}>
+              {unit.name.replace(/^AMS (\d+)$/, (_, n: string) => `AMS-${String.fromCharCode(64 + Number(n))}`)}
+            </Typography>
             <Box
               sx={{
                 display: 'grid',
                 gridTemplateColumns: `repeat(${Math.max(unit.bays.length, 1)}, minmax(0, 1fr))`,
-                gap: { xs: 1, sm: 2 },
-                px: { xs: 1, sm: 2 },
-                pt: 1,
+                gap: { xs: 0.5, sm: 1.5 },
               }}
             >
               {unit.bays.map(bay => (
-                <BayDetail
-                  key={bay.label} bay={bay}
+                <Bay
+                  key={bay.label} bay={bay} onOpen={onOpen}
                   stock={bay.slot?.key ? stock.get(bay.slot.key) : undefined}
                 />
               ))}
@@ -213,11 +209,6 @@ export default function AmsPanel({ ams, stock }: AmsPanelProps) {
           </Box>
         ))}
       </Stack>
-
-      <Typography variant="body2" color="text.secondary" sx={{ mt: 1.5 }}>
-        Below, a loaded colour sits on a shaded row with its tray named; a colour you have printed
-        with that is not loaded has its name in bold.
-      </Typography>
     </Paper>
   )
 }

@@ -150,9 +150,12 @@ Two-layer rule.
    or `no-preference` regardless of the OS.
 
 Beyond MUI's own defaults for menus, dialogs and snackbars, authored motion
-exists in exactly one place: `src/features/home/home.css`. Every working
-surface stays still — a technical drawing must not move while it is being read,
-and that rule is unchanged where it was written.
+exists in two places: `src/features/home/home.css`, and the Filaments shelf's
+pointer responses (a reel tips on hover, the owned badge pops in, the sheet's
+reel settles when it steps). The Filaments page has no drawing to read, and each
+response is gated on `prefers-reduced-motion: no-preference`. Every surface
+with a technical drawing stays still — a drawing must not move while it is
+being read, and that rule is unchanged where it was written.
 
 The home page is the exception because it is the one screen whose job is to
 orient rather than to be worked in. Its motion is a single authored moment
@@ -347,52 +350,68 @@ base ring, local coords, origin (0,0), bbox w0×h0   (w0,h0 = UN-rotated extents
   rule as the design copilot. Rows it produced are marked until they are edited.
 
 ## Filaments
-
 - **A section per product line, not one grid of colours.** The obvious layout —
   colour names down the side, materials across the top — collapses on contact
   with the catalogue: PLA Matte shares no colour name with PLA Basic ("Charcoal"
   and "Ivory White" against "Black" and "Jade White"), and PLA Wood shares none
-  with anything. That grid is ~85 rows with one live checkbox each and six dead
-  cells. So each line is its own `Paper` with only the colours it actually has.
+  with anything. So each line is its own `Paper` with only the colours it has.
+- **A line is a shelf of reels, after Bambu Handy.** Each colour is one tile
+  (`ColorTile`): a side-view reel in its own colour, the name, the code. The
+  grid is `auto-fill` at `96px` (xs) / `116px` (sm+) so a phone gets three to a
+  row and a desk seven, and nothing scrolls sideways. The tile is a single
+  button that opens the colour's sheet; it carries no checkboxes.
+- **The reel is the one drawn object on the page.** `SpoolArt` draws it: grey
+  flanges for a spool, the bare coil capped with its own face for a refill, a
+  top-to-bottom shade so it reads as a cylinder, and a faint dark edge so Jade
+  White still exists on white. The coil's height shrinks toward the hub with
+  the share left; an unreported amount is drawn full and faded. The flanges and
+  hub are literal colours because they are a picture of plastic. A dual-colour
+  filament is a 135° split of its two hexes, as `Swatch` still draws it in the
+  usage panel and the colour pickers.
+- **The ticks live in the sheet.** `FilamentSheet` is a bottom sheet below
+  `sm` (slides up, grabber, top corners only) and a 460px dialog above it. It
+  shows the reel at size, the brand tag, the facts that exist (in the AMS,
+  printed, price), and one row per way the line is sold, each with its
+  checkbox and — once owned — its stepper. It steps through the colours that
+  were on screen when it opened (arrows, ← →), sampled then so a live filter
+  cannot move the next colour out from under it.
 - **The two-checkbox asymmetry is the catalogue's shape, not a layout choice.**
-  PLA Basic and PLA Matte are sold on a reel and as a refill; PETG, ABS and PLA
-  Wood only on a reel. Rows carry one checkbox per way the line is bought, so
-  the sections have different column counts on purpose. `variants` is data on
-  the line, so a brand that sells differently needs no new code.
-- **The swatch is a dot, and its ring is structural.** A 14px radius on an 18px
-  chip is already a circle, so it is drawn as one deliberately rather than
-  quietly introducing a second radius. The 1px `divider` ring is not decoration:
-  Jade White is `#FFFFFF` on a white surface and several darks are near-black on
-  the dark ground, and without the ring those swatches are simply absent. A
-  dual-colour filament is a 135° split of its two hexes.
+  PLA Basic, PLA Matte and PETG HF are sold on a reel and as a refill; the
+  rest only on a reel. `variants` is data on the line, so a brand that sells
+  differently needs no new code; a spool-only line says "spool only" in its
+  header.
 - **The colour name is never tinted with its own hex.** It is the one move this
   page invites and it would drop half the catalogue through the contrast floor.
-  Colour lives in the swatch; the name stays body text.
-- **Every checkbox names itself in full.** A column heading cannot name a grid
-  cell, and the page has 165 of them — `"PLA Basic Jade White 10100, with
-  spool"`, not `"checkbox"`. Uniqueness is asserted in the UI test, because it
-  is invisible until someone reads the page by ear.
-- **A tick is the commit.** No Save button: a dirty-guard over 165 checkboxes is
-  friction nobody wants, and a checkbox that means nothing until you press
-  something else is a checkbox that lies. Ticks apply optimistically and the
+  Colour lives in the reel; the name stays body text.
+- **Everything names itself in full.** A tile is "PLA Basic Jade White 10100,
+  owned: 2 spools, in A2, 62%"; a checkbox is "PLA Basic Jade White 10100, with
+  spool". Uniqueness of both is asserted in the UI test.
+- **A tick is the commit.** No Save button. Ticks apply optimistically and the
   whole inventory is queued; the writer coalesces so a fast run is at most two
   requests and the last one always describes what is on screen. A write that
   fails says so and offers a reload rather than diverging in silence.
-- **Discontinued colours stay, dimmed and labelled.** A spool you own outlives
-  its SKU, and a catalogue that drops it would quietly untick something real.
-- **The AMS is drawn as the AMS.** The one literal surface colour on the page:
-  the unit is a fixed dark grey in both themes because it is a picture of a
-  dark grey object, outlined with the page hairline so it still reads on the
-  dark ground. Each spool's filament is a disc that shrinks with the reported
-  percentage, so the picture answers "how full" before a number does; an
-  unreported amount is drawn full and faded rather than guessed. Empty trays
-  are drawn as gaps. Only the tray names sit on the drawing -- everything a
-  person reads is below it, on the page surface, in page type.
-- **Two kinds of row stand out, differently, and neither with the accent.** A
-  colour loaded in the AMS sits on a neutral `action.hover` band, bold, with its
-  tray named first in its note ("A2 · 62% · ≈620 g"). A colour printed with but
-  not loaded is bold only. Order stays the catalogue's: the AMS panel above is
-  the "what is loaded" view, so the lists do not also reshuffle to say it.
+- **Owned, loaded and printed-with read differently, and only the badge uses the
+  accent.** Owned: the tile sits on `action.selected` with an accent check
+  badge, and its foot says what you have ("2 spools · 346 g used"). Loaded: a
+  tray tag in the corner ("A1", `warning` when it needs reordering) and the
+  Handy library bar — the reel's own colour, as long as what is left. Printed
+  with: the name goes bold. Order stays the catalogue's.
+- **Filters are Handy's pills.** A sticky bar (flush to the scroll edge) holds
+  the search and three pills: Type, Status (owned, not owned, and — when the
+  account can see them — in the AMS and printed with) and Discontinued. A pill
+  that is filtering names its value and takes the selected wash. Prices and the
+  label sheet are words at a desk and icons on a phone.
+- **Discontinued colours stay hidden until asked for, except the ones you own.**
+  A spool outlives its SKU, and a filter that hid it would untick something
+  real by hiding it.
+- **Prices are one dialog, not a field per line.** A per-kilogram price per
+  line and one currency exist only so Print usage can turn grams into money.
+  They sit behind Prices, which says so; the line header shows a price once set.
+- **The AMS is drawn as Handy draws it.** A card per unit ("AMS-A"), each tray
+  a reel with its name printed on the coil and the material over a bar of the
+  filament's colour; below it the name, the code and what is left. A tray whose
+  colour is in the catalogue opens that colour's sheet. Empty trays are a
+  dashed gap.
 
 ## Home
 

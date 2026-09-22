@@ -1,350 +1,82 @@
-// One product line, as rows of colours you either own or do not.
+// One product line, as a shelf of reels.
 //
 // A section per line rather than one grid keyed on colour name, because the
 // names barely overlap: PLA Matte shares none of PLA Basic's names, and PLA
-// Wood shares none with anything. A union grid would have been ~85 rows with a
-// single live checkbox each and six dead cells.
+// Wood shares none with anything.
 //
-// The checkbox columns are fixed-width and the name takes what is left, so the
-// two-checkbox lines and the one-checkbox lines line up down the page and the
-// row never needs to scroll sideways.
-import { useState } from 'react'
-import {
-  Box, Button, Checkbox, IconButton, Paper, Popover, Stack, Typography,
-} from '@mui/material'
-import AddRoundedIcon from '@mui/icons-material/AddRounded'
-import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded'
-import type { FilamentColor, FilamentLine, FilamentVariant } from '../../../../lib/contracts/bambuFilaments.ts'
-import { MAX_QUANTITY, tickId } from '../model/types.ts'
-import { Swatch } from './Swatch.tsx'
-import PriceField from './PriceField.tsx'
-import { trayName } from '../model/ams.ts'
+// Each colour is a tile that opens its sheet; the spool and refill ticks live
+// there. The grid fills the width it has, so a phone gets three reels to a row
+// and a desk gets seven, and nothing ever scrolls sideways.
+import { Box, Paper, Stack, Typography } from '@mui/material'
+import type { FilamentColor, FilamentLine } from '../../../../lib/contracts/bambuFilaments.ts'
+import { tickId } from '../model/types.ts'
 import type { Inventory } from '../model/types.ts'
 import type { FilamentUsageTotals } from '../../../../lib/contracts/filamentUsage.ts'
-import { formatGrams } from '../model/usage.ts'
 import type { ColorStock } from '../../../../lib/contracts/filamentStock.ts'
-import { SPOOL_GRAMS } from '../../../../lib/contracts/filamentStock.ts'
+import { formatMoney } from '../model/cost.ts'
+import ColorTile from './ColorTile.tsx'
+import { quantitiesOf } from '../model/shelf.ts'
 
 export interface FilamentSectionProps {
+  id: string
   line: FilamentLine
   colors: readonly FilamentColor[]
   owned: Inventory
-  /** Set the count for one filament in one form; 0 removes the tick. */
-  onQuantity: (key: string, variant: FilamentVariant, quantity: number) => void
   /** Printed so far, by colour key. Absent when this account cannot see usage. */
   usage?: ReadonlyMap<string, FilamentUsageTotals>
   /** Colours loaded in the AMS, by key. Absent when this account cannot see it. */
   stock?: ReadonlyMap<string, ColorStock>
-  /** What a kilogram of this line costs, and the account's currency. */
   pricePerKg: number | null
   currency: string | null
-  onPrice: (pricePerKg: number | null) => void
-}
-
-const VARIANT_LABEL: Record<FilamentVariant, string> = {
-  spool: 'With spool',
-  refill: 'Refill',
-}
-
-/** What one of each form is called when counting them. */
-const VARIANT_NOUN: Record<FilamentVariant, readonly [string, string]> = {
-  spool: ['spool', 'spools'],
-  refill: ['refill', 'refills'],
-}
-
-const countOf = (variant: FilamentVariant, quantity: number): string =>
-  `${quantity} ${VARIANT_NOUN[variant][quantity === 1 ? 0 : 1]}`
-
-/** The stepper that is open, and what it is stepping. */
-interface Stepping {
-  anchor: HTMLElement
-  key: string
-  variant: FilamentVariant
-  /** The row's full spoken name, reused as the stepper's own label. */
-  name: string
-}
-
-/** Spoken form, for the checkbox's accessible name. */
-const VARIANT_SPOKEN: Record<FilamentVariant, string> = {
-  spool: 'with spool',
-  refill: 'refill',
-}
-
-// Narrower at xs so the colour name -- the thing you actually read the row by
-// -- keeps a usable share of a 375px screen.
-// Wide enough for the checkbox and, once ticked, the count beside it.
-const CHECKBOX_COLUMN = { xs: '76px', sm: '104px' } as const
-
-const columnsFor = (variants: readonly FilamentVariant[]) => ({
-  xs: `minmax(0, 1fr) ${variants.map(() => CHECKBOX_COLUMN.xs).join(' ')}`,
-  sm: `minmax(0, 1fr) ${variants.map(() => CHECKBOX_COLUMN.sm).join(' ')}`,
-})
-
-/**
- * What the AMS says about a loaded colour. Quiet while it is fine, and a warning
- * only when a low spool has nothing behind it -- the one case that needs doing
- * something about.
- */
-function StockNote({ stock }: { stock: ColorStock }) {
-  // The tray first, as the printer names it, so the row says where the spool
-  // is. The percentage is what the AMS measures; the grams are that share of a
-  // full spool, worth saying because grams are what a print is quoted in.
-  const trays = stock.loaded.map(trayName).join(', ')
-  const percent = stock.lowestPercent === null
-    ? `In ${trays}`
-    : `${trays} · ${stock.lowestPercent}% · ≈${Math.round((stock.lowestPercent / 100) * SPOOL_GRAMS)} g`
-  if (stock.status === 'reorder') {
-    return (
-      <Typography
-        variant="body2"
-        sx={{ whiteSpace: 'nowrap', color: 'warning.main', fontWeight: 650 }}
-      >
-        {percent} · reorder
-      </Typography>
-    )
-  }
-  return (
-    <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
-      {percent}{stock.status === 'covered' && <> · spare on shelf</>}
-    </Typography>
-  )
+  onOpen: (key: string) => void
 }
 
 export default function FilamentSection({
-  line, colors, owned, onQuantity, usage, stock, pricePerKg, currency, onPrice,
+  id, line, colors, owned, usage, stock, pricePerKg, currency, onOpen,
 }: FilamentSectionProps) {
-  const [stepping, setStepping] = useState<Stepping | null>(null)
-  const steppingCount = stepping
-    ? owned.get(tickId(stepping.key, stepping.variant)) ?? 0
-    : 0
-  const ownedCount = colors.reduce((total, color) => total + line.variants.reduce(
-    (n, variant) => n + (owned.has(tickId(color.key, variant)) ? 1 : 0), 0), 0)
-  const total = colors.length * line.variants.length
-  const columns = columnsFor(line.variants)
+  const headingId = `line-${line.material}-${line.type}`
+  const ownedColors = colors.filter(color =>
+    line.variants.some(variant => owned.has(tickId(color.key, variant)))).length
 
   return (
-    <Paper component="section" aria-labelledby={`line-${line.material}-${line.type}`} sx={{ p: 2 }}>
+    <Paper component="section" aria-labelledby={headingId} data-line={id} sx={{ p: { xs: 1.5, sm: 2 } }}>
       <Stack
         direction="row"
-        sx={{ alignItems: 'baseline', justifyContent: 'space-between', gap: 2, mb: 1.5 }}
+        sx={{ alignItems: 'baseline', justifyContent: 'space-between', gap: 2, mb: 1.5, flexWrap: 'wrap' }}
       >
-        <Typography variant="h2" component="h2" id={`line-${line.material}-${line.type}`}>
+        <Typography variant="h2" component="h2" id={headingId}>
           {line.label}
         </Typography>
-        <Stack direction="row" sx={{ alignItems: 'center', gap: 1.5 }}>
-          <PriceField
-            label={line.label} pricePerKg={pricePerKg} currency={currency} onPrice={onPrice}
-          />
-          <Typography variant="body2" color="text.secondary">
-            {ownedCount} of {total}
-          </Typography>
-        </Stack>
+        <Typography variant="body2" color="text.secondary" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+          {ownedColors > 0 && <><Box component="span" sx={{ color: 'text.primary', fontWeight: 650 }}>{ownedColors}</Box> owned · </>}
+          {colors.length} {colors.length === 1 ? 'colour' : 'colours'}
+          {line.variants.length === 1 && ' · spool only'}
+          {pricePerKg !== null && currency && <> · {formatMoney(pricePerKg, currency)}/kg</>}
+        </Typography>
       </Stack>
 
-      {/* Column headings. Not a <th>: the row is a grid, and each checkbox
-          carries its own full accessible name rather than leaning on a header
-          association a grid cannot express. */}
       <Box
         sx={{
           display: 'grid',
-          gridTemplateColumns: columns,
-          gap: 1,
-          alignItems: 'center',
-          pb: 0.75,
-          borderBottom: '1px solid',
-          borderColor: 'divider',
+          gridTemplateColumns: {
+            xs: 'repeat(auto-fill, minmax(96px, 1fr))',
+            sm: 'repeat(auto-fill, minmax(116px, 1fr))',
+          },
+          gap: { xs: 1, sm: 1.25 },
         }}
       >
-        <Box />
-        {line.variants.map(variant => (
-          <Typography
-            key={variant}
-            variant="body2"
-            color="text.secondary"
-            aria-hidden
-            sx={{ textAlign: 'center' }}
-          >
-            {VARIANT_LABEL[variant]}
-          </Typography>
+        {colors.map(color => (
+          <ColorTile
+            key={color.key}
+            line={line}
+            color={color}
+            quantities={quantitiesOf(owned, color.key)}
+            stock={stock?.get(color.key)}
+            usage={usage?.get(color.key)}
+            onOpen={() => onOpen(color.key)}
+          />
         ))}
       </Box>
-
-      {colors.map(color => {
-        // Two kinds of row stand out, and they stand out differently: a colour
-        // loaded in the AMS sits on a neutral band with its tray named, and a
-        // colour printed with but not loaded has its name in bold. Neither
-        // uses the accent or tints the name -- colour lives in the swatch.
-        const loaded = stock?.has(color.key) ?? false
-        const used = Boolean(usage?.get(color.key)?.grams)
-        return (
-        <Box
-          key={color.key}
-          data-state={loaded ? 'loaded' : used ? 'used' : undefined}
-          sx={{
-            ...(loaded ? { bgcolor: 'action.hover', mx: -1, px: 1 } : {}),
-            display: 'grid',
-            gridTemplateColumns: columns,
-            gap: 1,
-            alignItems: 'center',
-            minHeight: 40,
-            borderBottom: '1px solid',
-            borderColor: 'divider',
-            '&:last-of-type': { borderBottom: 'none' },
-          }}
-        >
-          {/* The name is what you read the row by, so it is never the thing
-              that gets squeezed. At xs the code and the discontinued note drop
-              to a second line rather than ellipsing the name away to "B..". */}
-          <Stack
-            direction="row"
-            sx={{ alignItems: 'center', gap: 1, minWidth: 0, py: 0.5 }}
-          >
-            <Swatch hexes={color.hexes} discontinued={color.discontinued} />
-            <Box
-              sx={{
-                minWidth: 0,
-                display: 'flex',
-                flexDirection: { xs: 'column', sm: 'row' },
-                alignItems: { xs: 'flex-start', sm: 'baseline' },
-                columnGap: 1,
-              }}
-            >
-              {/* Never tinted with its own hex: half the catalogue would fall
-                  through the contrast floor. */}
-              <Typography variant="body2" sx={{ fontWeight: loaded || used ? 650 : undefined }}>
-                {color.name}
-              </Typography>
-              <Stack direction="row" sx={{ gap: 1, alignItems: 'baseline' }}>
-                {color.code && (
-                  <Typography variant="body2" color="text.secondary">{color.code}</Typography>
-                )}
-                {color.discontinued && (
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ fontStyle: 'italic' }}
-                  >
-                    discontinued
-                  </Typography>
-                )}
-                {/* Per colour, not per variant: a print cannot tell a spool
-                    from a refill, only which colour went through the nozzle. */}
-                {usage?.get(color.key) && (
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    title={`${usage.get(color.key)!.prints} prints`}
-                    sx={{ whiteSpace: 'nowrap' }}
-                  >
-                    {formatGrams(usage.get(color.key)!.grams)} used
-                  </Typography>
-                )}
-                {stock?.get(color.key) && <StockNote stock={stock.get(color.key)!} />}
-              </Stack>
-            </Box>
-          </Stack>
-
-          {line.variants.map(variant => {
-            // Every control names itself in full. A column heading cannot
-            // name a grid cell, and 193 checkboxes called "checkbox" is not a
-            // page anyone can use by ear.
-            const name = `${line.label} ${color.name}`
-              + `${color.code ? ` ${color.code}` : ''}, ${VARIANT_SPOKEN[variant]}`
-            const quantity = owned.get(tickId(color.key, variant)) ?? 0
-            return (
-              <Box
-                key={variant}
-                sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center' }}
-              >
-                <Checkbox
-                  size="small"
-                  checked={quantity > 0}
-                  onChange={event => onQuantity(color.key, variant, event.target.checked ? 1 : 0)}
-                  slotProps={{ input: { 'aria-label': name } }}
-                  sx={{ p: 0.75 }}
-                />
-                {/* Shown on every owned tick, including a count of one, so the
-                    way to say "I have two of these" is always visible rather
-                    than hidden behind a long-press nobody would find. */}
-                {quantity > 0 && (
-                  <Button
-                    size="small"
-                    onClick={event => setStepping({
-                      anchor: event.currentTarget, key: color.key, variant, name,
-                    })}
-                    aria-label={`${name}: ${countOf(variant, quantity)}. Change how many`}
-                    aria-haspopup="dialog"
-                    sx={{
-                      minWidth: 0,
-                      px: 0.5,
-                      py: 0,
-                      fontSize: '0.75rem',
-                      fontVariantNumeric: 'tabular-nums',
-                      color: quantity > 1 ? 'text.primary' : 'text.secondary',
-                      fontWeight: quantity > 1 ? 650 : 400,
-                    }}
-                  >
-                    ×{quantity}
-                  </Button>
-                )}
-              </Box>
-            )
-          })}
-        </Box>
-        )
-      })}
-
-      <Popover
-        open={stepping !== null && steppingCount > 0}
-        anchorEl={stepping?.anchor}
-        onClose={() => setStepping(null)}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-        transformOrigin={{ vertical: 'top', horizontal: 'center' }}
-        slotProps={{
-          paper: {
-            role: 'dialog',
-            'aria-label': stepping ? `How many: ${stepping.name}` : undefined,
-            sx: { p: 1.5, borderRadius: '14px' },
-          },
-        }}
-      >
-        {stepping && (
-          <Stack spacing={1} sx={{ alignItems: 'center' }}>
-            <Typography variant="body2" color="text.secondary" sx={{ maxWidth: 220, textAlign: 'center' }}>
-              {stepping.name}
-            </Typography>
-            <Stack direction="row" sx={{ alignItems: 'center', gap: 1 }}>
-              {/* Stops at one. Going to none is unticking the box, which is a
-                  different decision and already has its own control. */}
-              <IconButton
-                size="small"
-                aria-label="One fewer"
-                disabled={steppingCount <= 1}
-                onClick={() => onQuantity(stepping.key, stepping.variant, steppingCount - 1)}
-              >
-                <RemoveRoundedIcon fontSize="small" />
-              </IconButton>
-              <Typography
-                aria-live="polite"
-                sx={{
-                  minWidth: 72, textAlign: 'center', fontWeight: 650,
-                  fontVariantNumeric: 'tabular-nums',
-                }}
-              >
-                {countOf(stepping.variant, steppingCount)}
-              </Typography>
-              <IconButton
-                size="small"
-                aria-label="One more"
-                disabled={steppingCount >= MAX_QUANTITY}
-                onClick={() => onQuantity(stepping.key, stepping.variant, steppingCount + 1)}
-              >
-                <AddRoundedIcon fontSize="small" />
-              </IconButton>
-            </Stack>
-          </Stack>
-        )}
-      </Popover>
     </Paper>
   )
 }
