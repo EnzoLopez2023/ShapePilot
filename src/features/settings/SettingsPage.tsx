@@ -9,12 +9,13 @@ import type { AccountProfile, AppPreferences } from './preferences.ts'
 import { useThemeMode } from '../../theme/ThemeModeProvider.tsx'
 import { ErrorState, LoadingState } from '../../components/LoadingState.tsx'
 import DesignerDefaultsPanel from './DesignerDefaultsPanel.tsx'
+import PalettePicker from './PalettePicker.tsx'
 import { errorMessage } from '../../services/errors.ts'
 
 const FIELD_WIDTH = 260
 
 export default function SettingsPage() {
-  const { preference, setPreference } = useThemeMode()
+  const { preference, setPreference, palette, setPalette } = useThemeMode()
   const { instance } = useMsal()
   const [preferences, setPreferences] = useState<AppPreferences | null>(null)
   const [profile, setProfile] = useState<AccountProfile | null>(null)
@@ -30,12 +31,13 @@ export default function SettingsPage() {
       setPreferences(result.preferences)
       setProfile(result.profile)
       setPreference(result.preferences.themeMode)
+      setPalette(result.preferences.themePalette)
     } catch (e) {
       setError(errorMessage(e))
     } finally {
       setLoading(false)
     }
-  }, [setPreference])
+  }, [setPreference, setPalette])
 
   useEffect(() => { void load() }, [load])
 
@@ -44,13 +46,14 @@ export default function SettingsPage() {
     const next = { ...preferences, ...patch }
     setPreferences(next)
     if (patch.themeMode) setPreference(patch.themeMode)
+    if (patch.themePalette) setPalette(patch.themePalette)
     try {
       await putPreferences(next)
       setSaved(true)
     } catch (e) {
       setError(errorMessage(e))
     }
-  }, [preferences, setPreference])
+  }, [preferences, setPreference, setPalette])
 
   if (loading) return <LoadingState label="Loading your settings…" />
   if (error && !preferences) return <ErrorState message={error} onRetry={() => void load()} />
@@ -72,6 +75,21 @@ export default function SettingsPage() {
             <MenuItem value="light">Light</MenuItem>
             <MenuItem value="dark">Dark</MenuItem>
           </TextField>
+
+          <Stack spacing={1}>
+            <Box>
+              <Typography id="palette-picker-label" variant="h3" component="h3">
+                Palette
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Every palette has a light and a dark version; the theme above picks which.
+              </Typography>
+            </Box>
+            <PalettePicker
+              value={preferences?.themePalette ?? palette}
+              onChange={next => void update({ themePalette: next })}
+            />
+          </Stack>
 
           <TextField
             select size="small" label="Default units" sx={{ width: FIELD_WIDTH }}

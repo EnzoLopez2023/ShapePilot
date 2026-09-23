@@ -5,6 +5,7 @@
 // every route, and so nothing above this line can accidentally depend on
 // synchronous statement execution.
 import type { FilamentUsageMapping } from '../../contracts/filamentUsage.ts'
+import type { ThemePaletteId } from '../../contracts/themePalettes.ts'
 import type { ElementStatisticsRepository } from './elementStatisticsContract.ts'
 
 export type { ElementStatisticsRepository } from './elementStatisticsContract.ts'
@@ -84,6 +85,7 @@ export interface DesignerDefaults {
 
 export interface AppPreferences {
   themeMode: 'light' | 'dark' | 'system'
+  themePalette: ThemePaletteId
   units: 'mm' | 'in'
   reducedMotion: 'system' | 'reduce' | 'no-preference'
   designerDefaults: DesignerDefaults

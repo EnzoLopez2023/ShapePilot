@@ -20,7 +20,7 @@ import Inventory2RoundedIcon from '@mui/icons-material/Inventory2Rounded'
 import BuildCircleRoundedIcon from '@mui/icons-material/BuildCircleRounded'
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded'
 import AdminPanelSettingsRoundedIcon from '@mui/icons-material/AdminPanelSettingsRounded'
-import { EASE_IOS, GLASS, SHADOW } from '../theme/theme.ts'
+import { EASE_IOS, glassFor, SHADOW } from '../theme/theme.ts'
 import { PageBackdrop } from '../components/PageBackdrop.tsx'
 import { getSettings } from '../features/settings/preferences.ts'
 import type { AccountProfile } from '../features/settings/preferences.ts'
@@ -93,7 +93,7 @@ export function AppShell() {
   const { instance } = useMsal()
   const { pathname } = useLocation()
   const backdrop = PAGE_BACKDROPS[pathname]
-  const glass = GLASS[theme.palette.mode]
+  const glass = glassFor(theme)
   const shadow = SHADOW[theme.palette.mode]
   // `defaultMatches: true` keeps the permanent sidebar (and its single
   // "Sections" landmark) present when `matchMedia` is unavailable, e.g. jsdom.
@@ -334,7 +334,7 @@ function SidebarBody({
   onNavigate?: () => void
 }) {
   const theme = useTheme()
-  const glass = GLASS[theme.palette.mode]
+  const glass = glassFor(theme)
   const stamp = useBuildStamp()
 
   return (

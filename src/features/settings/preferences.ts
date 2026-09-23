@@ -1,4 +1,5 @@
 import { apiRequest } from '../../services/http.ts'
+import type { ThemePaletteId } from '../../../lib/contracts/themePalettes.ts'
 
 export type ThemePreference = 'light' | 'dark' | 'system'
 
@@ -41,6 +42,7 @@ export interface DesignerDefaults {
 
 export interface AppPreferences {
   themeMode: ThemePreference
+  themePalette: ThemePaletteId
   units: 'mm' | 'in'
   reducedMotion: 'system' | 'reduce' | 'no-preference'
   designerDefaults: DesignerDefaults

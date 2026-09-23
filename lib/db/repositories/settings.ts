@@ -3,6 +3,7 @@ import type {
   AppPreferences, BambuDefaults, DesignerDefaults, KeycapTrayDefaults, SettingsRepository,
   ShaperDefaults,
 } from './contracts.ts'
+import { DEFAULT_THEME_PALETTE, isThemePaletteId } from '../../contracts/themePalettes.ts'
 
 /**
  * What each designer opens with out of the box. These are the values the
@@ -28,6 +29,7 @@ export const DEFAULT_DESIGNER_DEFAULTS: DesignerDefaults = {
 
 export const DEFAULT_PREFERENCES: AppPreferences = {
   themeMode: 'light',
+  themePalette: DEFAULT_THEME_PALETTE,
   units: 'mm',
   reducedMotion: 'system',
   designerDefaults: DEFAULT_DESIGNER_DEFAULTS,
@@ -103,6 +105,11 @@ export function normalizePreferences(value: unknown): AppPreferences {
     themeMode: THEME_MODES.has(raw.themeMode as AppPreferences['themeMode'])
       ? raw.themeMode as AppPreferences['themeMode']
       : DEFAULT_PREFERENCES.themeMode,
+    // A palette that has since been renamed or retired reads back as the
+    // default rather than as an id nothing can draw.
+    themePalette: isThemePaletteId(raw.themePalette)
+      ? raw.themePalette
+      : DEFAULT_PREFERENCES.themePalette,
     units: UNITS.has(raw.units as AppPreferences['units'])
       ? raw.units as AppPreferences['units']
       : DEFAULT_PREFERENCES.units,

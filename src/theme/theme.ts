@@ -11,42 +11,13 @@
 // Contrast targets: body text >= 7:1 on its surface, secondary text >= 4.5:1,
 // borders >= 3:1 against the surface they separate, and a 2px focus ring that
 // is visible in both modes.
-import { createTheme } from '@mui/material/styles'
+import { alpha, createTheme } from '@mui/material/styles'
 import type { Theme } from '@mui/material/styles'
 
-export type ThemeMode = 'light' | 'dark'
+import { DEFAULT_THEME_PALETTE, tokensFor } from './palettes.ts'
+import type { ThemeMode, ThemePaletteId } from './palettes.ts'
 
-const light = {
-  canvas: '#F2F1EE',
-  surface: '#FFFFFF',
-  surfaceSunken: '#E9E7E2',
-  border: '#C4C0B8',
-  borderStrong: '#8D887E',
-  text: '#1B1A18',
-  textMuted: '#565149',
-  accent: '#1F5C8B',
-  accentText: '#FFFFFF',
-  danger: '#9B2C2C',
-  warning: '#8A5A00',
-  success: '#1F6B45',
-}
-
-const dark = {
-  canvas: '#16171A',
-  surface: '#1E2024',
-  surfaceSunken: '#121316',
-  border: '#3A3E45',
-  borderStrong: '#5E646E',
-  text: '#EDEDEC',
-  textMuted: '#A9AEB6',
-  accent: '#79B6E4',
-  accentText: '#10161C',
-  danger: '#F09393',
-  warning: '#E3B457',
-  success: '#7FCBA1',
-}
-
-export const palettes = { light, dark } as const
+export type { ThemeMode, ThemePaletteId }
 
 /** One squircle radius, one border weight. iOS uses ~14px on cards and rows. */
 export const RADIUS = 14
@@ -57,9 +28,19 @@ export const EASE_IOS = 'cubic-bezier(0.32, 0.72, 0, 1)'
 
 /**
  * Frosted-glass tokens for app chrome only (sidebar, mobile bar). `backdrop`
- * needs the paired `-webkit-` value at the call site for Safari.
+ * needs the paired `-webkit-` value at the call site for Safari. The fill is
+ * the active palette's paper at the mode's opacity, so the glass takes the
+ * palette's tint; hover, active and border are neutral light overlays.
  */
-export const GLASS = {
+export function glassFor(theme: Theme) {
+  const mode = theme.palette.mode
+  return {
+    ...GLASS[mode],
+    fill: alpha(theme.palette.background.paper, mode === 'dark' ? 0.55 : 0.4),
+  }
+}
+
+const GLASS = {
   light: {
     fill: 'rgba(255, 255, 255, 0.4)',
     fillHover: 'rgba(255, 255, 255, 0.15)',
@@ -87,8 +68,10 @@ export const SHADOW = {
   dark: '0 12px 32px -14px rgba(0, 0, 0, 0.72), 0 4px 10px -6px rgba(0, 0, 0, 0.55)',
 } as const
 
-export function buildTheme(mode: ThemeMode): Theme {
-  const c = palettes[mode]
+export function buildTheme(
+  mode: ThemeMode, palette: ThemePaletteId = DEFAULT_THEME_PALETTE,
+): Theme {
+  const c = tokensFor(palette, mode)
   const shadow = SHADOW[mode]
 
   return createTheme({
@@ -134,10 +117,9 @@ export function buildTheme(mode: ThemeMode): Theme {
           // colour is unchanged; the gradients are near-invisible on content.
           body: {
             backgroundColor: c.canvas,
-            backgroundImage:
-              mode === 'dark'
-                ? 'radial-gradient(1200px 800px at 100% 0%, rgba(121,182,228,0.10), transparent 60%), radial-gradient(1000px 700px at 0% 100%, rgba(121,182,228,0.06), transparent 55%)'
-                : 'radial-gradient(1200px 800px at 100% 0%, rgba(31,92,139,0.10), transparent 60%), radial-gradient(1000px 700px at 0% 100%, rgba(31,92,139,0.05), transparent 55%)',
+            backgroundImage: `radial-gradient(1200px 800px at 100% 0%, ${
+              alpha(c.accent, 0.1)}, transparent 60%), radial-gradient(1000px 700px at 0% 100%, ${
+              alpha(c.accent, mode === 'dark' ? 0.06 : 0.05)}, transparent 55%)`,
             backgroundAttachment: 'fixed',
           },
           // Honour the OS setting globally rather than per component.
@@ -194,7 +176,7 @@ export function buildTheme(mode: ThemeMode): Theme {
             borderColor: c.border,
             paddingBlock: 4,
             '&.Mui-selected': {
-              backgroundColor: mode === 'dark' ? '#2A3138' : '#DCE7F0',
+              backgroundColor: c.selected,
               color: c.text,
             },
           },
@@ -220,7 +202,7 @@ export function buildTheme(mode: ThemeMode): Theme {
         defaultProps: { enterDelay: 400, describeChild: true },
         styleOverrides: {
           tooltip: {
-            backgroundColor: mode === 'dark' ? '#33383F' : '#2C2A26',
+            backgroundColor: c.tooltip,
             fontSize: '0.75rem',
             borderRadius: RADIUS,
             maxWidth: 320,

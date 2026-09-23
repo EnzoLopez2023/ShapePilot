@@ -30,7 +30,7 @@ let logoutCalls: unknown[] = []
 
 const settingsBody = () => ({
   preferences: {
-    themeMode: 'light', units: 'mm', reducedMotion: 'system',
+    themeMode: 'light', themePalette: 'workbench', units: 'mm', reducedMotion: 'system',
     designerDefaults: SHIPPED_DESIGNER_DEFAULTS,
   },
   profile: {

@@ -48,6 +48,18 @@ duplicated as CSS variables. The theme is rebuilt when the mode flips
 server `DEFAULT_PREFERENCES` both resolve to `light`; `system` and `dark` apply
 only once the user chooses them (in Settings or via the appearance store).
 
+The two tables below are **Workbench**, the default palette. Palette is a
+second axis beside the mode: Settings → Appearance offers 17 (ids in
+`lib/contracts/themePalettes.ts`, colours in `src/theme/palettes.ts`), and each
+has a light and a dark version. Workbench is spelled out token by token; every
+other palette is five seed colours (base, mid, soft, paper, accent) from which
+both modes are derived, with each text, accent and semantic token walked
+toward the palette's own ink until it clears the contrast targets above.
+`palettes.test.ts` holds every palette in both modes to those targets, so a
+new palette is one seed entry plus its id. Semantic colours (danger, warning,
+success) are shared across palettes: red has to mean red. Drawing colours on
+the 2D canvas and 3D viewport stay neutral in every palette.
+
 ### Palette — light
 
 | Token           | Value     | Role                                         |
@@ -90,7 +102,7 @@ only once the user chooses them (in Settings or via the appearance store).
 | `BORDER`   | `1`  | Every visible edge. Paper, AppBar, Alert, outlined controls all use the same 1px hairline. |
 | `SHADOW`   | see `theme.ts` | Two-layer card lift (ambient pool + contact shadow), per mode. Applied to every `MuiPaper` root and to the sidebar. |
 | `EASE_IOS` | `cubic-bezier(0.32, 0.72, 0, 1)` | Apple-style easing for chrome transitions (sidebar width, drawer, menus, hover fades). |
-| `GLASS`    | see `theme.ts` | Frosted-glass fill/hover/active/border/backdrop, per mode. Consumed only by `AppShell`. |
+| `GLASS`    | see `theme.ts` | Frosted-glass fill/hover/active/border/backdrop, per mode, via `glassFor(theme)`; the fill is tinted from the active palette's paper. Consumed only by `AppShell`. |
 
 Tooltip surface uses a separate ink independent of `surface`
 (`#2C2A26` light, `#33383F` dark) so it reads as an overlay, not a panel.

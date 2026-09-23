@@ -40,6 +40,7 @@ describe('designer defaults', () => {
     // must not become the keycap tray's snap.
     const preferences: AppPreferences = {
       themeMode: 'dark',
+      themePalette: 'dune',
       units: 'in',
       reducedMotion: 'system',
       designerDefaults: {
@@ -56,6 +57,7 @@ describe('designer defaults', () => {
     })
     assert.equal(saved.status, 200)
     assert.deepEqual(saved.body.preferences.designerDefaults, preferences.designerDefaults)
+    assert.equal(saved.body.preferences.themePalette, 'dune')
 
     const read = await server.fetchJson<{ preferences: AppPreferences }>('/api/settings', {
       token: TOKEN,
@@ -71,6 +73,12 @@ describe('designer defaults', () => {
     const older = normalizePreferences({ themeMode: 'dark', units: 'in' })
     assert.deepEqual(older.designerDefaults, DEFAULT_DESIGNER_DEFAULTS)
     assert.equal(older.themeMode, 'dark')
+    assert.equal(older.themePalette, 'workbench')
+  })
+
+  test('a palette nobody can draw any more reads back as the default', () => {
+    assert.equal(normalizePreferences({ themePalette: 'retired-palette' }).themePalette, 'workbench')
+    assert.equal(normalizePreferences({ themePalette: 'noir' }).themePalette, 'noir')
   })
 
   test('nonsense falls back field by field rather than wholesale', () => {
