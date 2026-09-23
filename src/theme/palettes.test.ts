@@ -35,11 +35,7 @@ for (const palette of PALETTES) {
     test(`${palette.id} ${mode}: the mode is really that mode`, () => {
       if (mode === 'dark') assert.ok(luminance(t.canvas) < 0.05, 'dark canvas is dark')
       else assert.ok(luminance(t.canvas) > 0.6, 'light canvas is light')
-      // Workbench's hand-tuned dark borderStrong predates this check (~2.6:1)
-      // and is left alone so choosing nothing changes nothing.
-      if (palette.id !== 'workbench') {
-        assert.ok(contrast(t.borderStrong, t.surface) >= 3, 'borderStrong separates')
-      }
+      assert.ok(contrast(t.borderStrong, t.surface) >= 3, 'borderStrong separates')
     })
   }
 }

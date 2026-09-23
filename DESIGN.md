@@ -85,7 +85,7 @@ the 2D canvas and 3D viewport stay neutral in every palette.
 | `surface`       | `#1E2024` | Paper: header, palette, inspector, dialogs   |
 | `surfaceSunken` | `#121316` | Recessed strip inside a surface              |
 | `border`        | `#3A3E45` | The one hairline. Also `divider`             |
-| `borderStrong`  | `#5E646E` | Outlined button edge; heavier separators     |
+| `borderStrong`  | `#686E78` | Outlined button edge; heavier separators     |
 | `text`          | `#EDEDEC` | Body and headings                            |
 | `textMuted`     | `#A9AEB6` | Secondary and helper copy                    |
 | `accent`        | `#79B6E4` | Active tool state and the primary action     |
