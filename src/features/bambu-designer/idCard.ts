@@ -10,9 +10,12 @@
 // recognises one by its size, so reopening the template on a saved card picks
 // up where it left off without a field the document validator would refuse.
 import type { Font } from 'opentype.js'
-import type { AssetRef, SceneObject, Triple } from '../../model/document.ts'
+import type { AssetRef, GroupObject, PathObject, SceneObject, Triple } from '../../model/document.ts'
 import { IDENTITY_TRANSFORM, createSolid, createText, newId } from '../../model/scene.ts'
 import { DEFAULT_FONT_ID, traceTextPolys } from '../../text/fonts.ts'
+import type { MultiPolygon } from '../../geometry/vec.ts'
+import type { CardIconId } from './cardIcons.ts'
+import { CARD_ICONS, iconOutline } from './cardIcons.ts'
 
 export type CardSizeId = 's76' | 'm'
 
@@ -44,6 +47,12 @@ export interface CardSpec {
   size: CardSizeId
   /** One text object per non-blank line, top to bottom. */
   lines: string[]
+  /**
+   * A drawing in place of the text: the logo on one side, what the case holds
+   * on the other. Null for a text card. The lines are kept, not cleared, so
+   * switching back finds them where they were.
+   */
+  icon: CardIconId | null
   /** The largest a line may be. A line too long for the card comes out smaller. */
   maxTextMm: number
   raiseMm: number
@@ -66,6 +75,7 @@ const MIN_TEXT_MM = 1
 export const DEFAULT_CARD_SPEC: CardSpec = {
   size: 's76',
   lines: [''],
+  icon: null,
   maxTextMm: 12,
   raiseMm: 0.4,
   logo: 'none',
@@ -193,6 +203,11 @@ export function layoutCard(
     })
   }
 
+  if (spec.icon) {
+    objects.push(iconGroup(spec, textW, innerH, [textCx, at[1], top]))
+    return { objects, lineSizesMm: [] }
+  }
+
   const lines = spec.lines.map(line => line.trim()).filter(Boolean)
   const metrics = lines.map(measure)
   const sizes = fitLines(metrics, textW, innerH, spec.maxTextMm)
@@ -217,6 +232,57 @@ export function layoutCard(
   })
 
   return { objects, lineSizesMm: sizes }
+}
+
+/** Named so `readCards` can tell which drawing a card carries. */
+const iconName = (id: CardIconId) => `${CARD_ICONS[id].label} icon`
+
+function outlineBounds(mp: MultiPolygon) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+  for (const poly of mp) for (const [x, y] of poly[0] ?? []) {
+    if (x < minX) minX = x; if (x > maxX) maxX = x
+    if (y < minY) minY = y; if (y > maxY) maxY = y
+  }
+  return { minX, minY, maxX, maxY }
+}
+
+/**
+ * The drawing as raised outlines, as large as fits `widthMm` × `depthMm` and
+ * centred there. One path object per separate piece of ink, grouped so the
+ * icon moves and prints as one part.
+ */
+function iconGroup(spec: CardSpec, widthMm: number, depthMm: number, at: Triple): GroupObject {
+  const id = spec.icon!
+  // Measure once at a nominal size, then redraw at the size that fits: the
+  // strokes scale with the drawing, so the line weight stays in proportion.
+  const probe = outlineBounds(iconOutline(id, 100))
+  const fit = Math.min(widthMm / (probe.maxX - probe.minX), depthMm / (probe.maxY - probe.minY))
+  const outline = iconOutline(id, 100 * fit)
+  const b = outlineBounds(outline)
+  const [cx, cy] = [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2]
+  const children: PathObject[] = outline.map((poly, i) => ({
+    id: newId(),
+    name: `${CARD_ICONS[id].label} ${i + 1}`,
+    type: 'path',
+    rings: poly.map(ring => ring.map(([x, y]) => [x - cx, y - cy] as [number, number])),
+    thicknessMm: spec.raiseMm,
+    transform: IDENTITY_TRANSFORM,
+    mode: 'solid',
+    visible: true,
+    locked: false,
+    ...paint(spec.raised),
+  }))
+  return {
+    id: newId(),
+    name: iconName(id),
+    type: 'group',
+    children,
+    transform: { ...IDENTITY_TRANSFORM, position: at },
+    mode: 'solid',
+    visible: true,
+    locked: false,
+    ...paint(spec.raised),
+  }
 }
 
 const near = (a: number, b: number, tolerance = 0.01) => Math.abs(a - b) <= tolerance
@@ -262,16 +328,25 @@ export function readCards(objects: readonly SceneObject[], logoFilename: string)
       o.type === 'imported' && o.mode === 'solid' && o.asset.filename === logoFilename
       && !claimed.has(o.id) && inside(o.transform.position, at, size))
 
-    const ids = [box.id, ...texts.map(t => t.id), ...(logo ? [logo.id] : [])]
+    const iconIds = Object.keys(CARD_ICONS) as CardIconId[]
+    const icon = objects.find((o): o is GroupObject =>
+      o.type === 'group' && o.mode === 'solid' && !claimed.has(o.id)
+      && iconIds.some(id => o.name === iconName(id))
+      && near(o.transform.position[2], top) && inside(o.transform.position, at, size))
+    const iconId = icon ? iconIds.find(id => icon.name === iconName(id)) ?? null : null
+    const iconPath = icon?.children.find((c): c is PathObject => c.type === 'path')
+
+    const ids = [box.id, ...texts.map(t => t.id), ...(logo ? [logo.id] : []), ...(icon ? [icon.id] : [])]
     ids.forEach(id => claimed.add(id))
-    const raisedFrom = texts[0] ?? logo
-    const raise = texts[0]?.thicknessMm ?? RAISE_OPTIONS[0]
+    const raisedFrom = texts[0] ?? icon ?? logo
+    const raise = texts[0]?.thicknessMm ?? iconPath?.thicknessMm ?? RAISE_OPTIONS[0]
     found.push({
       at,
       ids,
       spec: {
         size: sizeId,
         lines: texts.length ? texts.map(t => t.text) : [''],
+        icon: iconId,
         // The lines were fitted down from some larger cap; the largest is the
         // closest thing to it that survives.
         maxTextMm: texts.length ? Math.max(...texts.map(t => t.sizeMm)) : DEFAULT_CARD_SPEC.maxTextMm,

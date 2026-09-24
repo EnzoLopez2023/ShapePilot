@@ -129,3 +129,35 @@ test('readCards ignores a box that is not a card', () => {
   const box = objects[0] as Extract<SceneObject, { type: 'solid' }>
   assert.deepEqual(readCards([{ ...box, params: { ...box.params, widthMm: 57 } }], LOGO_FILE), [])
 })
+
+test('an icon card puts the drawing where the text would go, inside the margin', () => {
+  for (const icon of ['keycap', 'switch'] as const) {
+    const size = CARD_SIZES.s76
+    const { objects } = layoutCard(spec({ icon, logo: 'left', lines: ['ignored'] }), measure, logo, [10, 20, 0])
+    assert.equal(objects.filter(o => o.type === 'text').length, 0, 'an icon card carries no text')
+    const group = objects.find(o => o.type === 'group')
+    assert.ok(group && group.type === 'group', `${icon}: no icon group`)
+    const [gx, gy, gz] = group.transform.position
+    assert.equal(gz, size.heightMm, 'the icon stands on the card top')
+    // Right of the logo, and wholly inside the card's margin.
+    assert.ok(gx > 10, `${icon} should sit right of centre, opposite the logo`)
+    for (const child of group.children) {
+      assert.equal(child.type, 'path')
+      if (child.type !== 'path') continue
+      assert.equal(child.thicknessMm, DEFAULT_CARD_SPEC.raiseMm)
+      for (const [x, y] of child.rings[0]) {
+        assert.ok(gx + x <= 10 + size.widthMm / 2 - CARD_MARGIN_MM + 1e-6, `${icon} runs past the right margin`)
+        assert.ok(Math.abs(gy + y - 20) <= size.depthMm / 2 - CARD_MARGIN_MM + 1e-6, `${icon} runs past the margin`)
+      }
+    }
+  }
+})
+
+test('an icon card reads back as the same card', () => {
+  const made = layoutCard(spec({ icon: 'switch', logo: 'left', raiseMm: 0.8 }), measure, logo, [0, 0, 0]).objects
+  const [found] = readCards(made, LOGO_FILE)
+  assert.equal(found.spec.icon, 'switch')
+  assert.equal(found.spec.logo, 'left')
+  assert.equal(found.spec.raiseMm, 0.8)
+  assert.equal(found.ids.length, made.length)
+})

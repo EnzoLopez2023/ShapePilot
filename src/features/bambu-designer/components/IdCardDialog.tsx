@@ -4,7 +4,7 @@
 import { useMemo, useState } from 'react'
 import {
   Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton,
-  InputAdornment, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography,
+  InputAdornment, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography, useTheme,
 } from '@mui/material'
 import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
@@ -13,6 +13,8 @@ import type { OwnedColor } from '../../filaments/useOwnedColors.ts'
 import type { AmsTrayState } from '../useAmsTrays.ts'
 import type { CardPaint, CardSizeId, CardSpec, LogoBounds, LogoPlacement, MeasureText } from '../idCard.ts'
 import { CARD_SIZES, RAISE_OPTIONS, layoutCard } from '../idCard.ts'
+import type { CardIconId } from '../cardIcons.ts'
+import { CARD_ICONS, iconSvg } from '../cardIcons.ts'
 import FilamentSlotField from './FilamentSlotField.tsx'
 import FilamentColorField from './FilamentColorField.tsx'
 
@@ -54,11 +56,14 @@ function IdCardForm({ initial, kit, ams, colors, busy, onApply, onClose }:
   // A line added from the button is where the typing goes next.
   const [focusLine, setFocusLine] = useState(0)
   const patch = (next: Partial<CardSpec>) => setSpec(current => ({ ...current, ...next }))
+  // The switch hides its back edges behind faces painted in the paper colour.
+  const paper = useTheme().palette.background.paper
 
   const maxValue = Number(maxText)
   const maxValid = Number.isFinite(maxValue) && maxValue >= 1 && maxValue <= 50
   const hasText = spec.lines.some(line => line.trim())
   const hasLogo = spec.logo !== 'none'
+  const showing: CardIconId | 'text' = spec.icon ?? 'text'
 
   // The same layout the card will be built from, with a stand-in for the logo
   // file: only its shape matters to where the text can go.
@@ -94,7 +99,7 @@ function IdCardForm({ initial, kit, ams, colors, busy, onApply, onClose }:
     )
   }
 
-  const canApply = Boolean(kit) && maxValid && (hasText || hasLogo) && !busy
+  const canApply = Boolean(kit) && maxValid && (hasText || hasLogo || Boolean(spec.icon)) && !busy
 
   return (
     <form onSubmit={event => { event.preventDefault(); if (canApply) onApply({ ...spec, maxTextMm: maxValue }) }}>
@@ -115,7 +120,28 @@ function IdCardForm({ initial, kit, ams, colors, busy, onApply, onClose }:
             ))}
           </ToggleButtonGroup>
 
-          <Stack spacing={1}>
+          <Stack spacing={0.5}>
+            <Typography variant="subtitle2">Show</Typography>
+            <ToggleButtonGroup
+              size="small" exclusive fullWidth value={showing} aria-label="Show"
+              onChange={(_e, value: CardIconId | 'text' | null) =>
+                value && patch({ icon: value === 'text' ? null : value })}
+            >
+              <ToggleButton value="text">Text</ToggleButton>
+              {(Object.keys(CARD_ICONS) as CardIconId[]).map(id => (
+                <ToggleButton key={id} value={id} aria-label={CARD_ICONS[id].label} sx={{ gap: 0.75 }}>
+                  <svg
+                    viewBox="0 0 100 100" width={22} height={22} aria-hidden
+                    // Built from constants in cardIcons.ts, never from input.
+                    dangerouslySetInnerHTML={{ __html: iconSvg(id, 'currentColor', paper) }}
+                  />
+                  {CARD_ICONS[id].label}
+                </ToggleButton>
+              ))}
+            </ToggleButtonGroup>
+          </Stack>
+
+          {!spec.icon && <Stack spacing={1}>
             {spec.lines.map((line, index) => {
               const size = sizes?.[index]
               return (
@@ -145,9 +171,9 @@ function IdCardForm({ initial, kit, ams, colors, busy, onApply, onClose }:
                 Add line
               </Button>
             )}
-          </Stack>
+          </Stack>}
 
-          <TextField
+          {!spec.icon && <TextField
             size="small" label="Largest text size" value={maxText}
             onChange={event => setMaxText(event.target.value)}
             error={!maxValid}
@@ -156,7 +182,7 @@ function IdCardForm({ initial, kit, ams, colors, busy, onApply, onClose }:
               htmlInput: { inputMode: 'decimal' },
               input: { endAdornment: <InputAdornment position="end">mm</InputAdornment> },
             }}
-          />
+          />}
 
           <Stack spacing={0.5}>
             <Typography variant="subtitle2">Raised by</Typography>
@@ -181,7 +207,7 @@ function IdCardForm({ initial, kit, ams, colors, busy, onApply, onClose }:
           </Stack>
 
           {paintFields('Card', 'card')}
-          {paintFields('Text and logo', 'raised')}
+          {paintFields(spec.icon ? 'Icon and logo' : 'Text and logo', 'raised')}
           <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
             {ams.trays === null ? 'No AMS report available, so trays are shown by number. ' : ''}
             Sync the filament list to the AMS in Bambu Studio so the numbers line up.
