@@ -14,6 +14,7 @@ import FlipRoundedIcon from '@mui/icons-material/FlipRounded'
 import ArchitectureRoundedIcon from '@mui/icons-material/ArchitectureRounded'
 import VerticalAlignBottomRoundedIcon from '@mui/icons-material/VerticalAlignBottomRounded'
 import KeyboardRoundedIcon from '@mui/icons-material/KeyboardRounded'
+import BadgeRoundedIcon from '@mui/icons-material/BadgeRounded'
 import { useNavigate } from 'react-router-dom'
 
 import DesignerLayout from '../../components/designer/DesignerLayout.tsx'
@@ -35,7 +36,7 @@ import {
   IDENTITY_TRANSFORM, createSolid, createText, findObject, newId, translateObjects,
 } from '../../model/scene.ts'
 import { useDesignDocument } from '../../state/useDesignDocument.ts'
-import { DEFAULT_FONT_ID, resolveTextOutlines } from '../../text/fonts.ts'
+import { DEFAULT_FONT_ID, loadFont, resolveTextOutlines } from '../../text/fonts.ts'
 import type { Ring } from '../../geometry/vec.ts'
 import { safeFilename, triggerDownload } from '../../export/download.ts'
 import { writeBinaryStl } from '../../export/stl.ts'
@@ -59,6 +60,11 @@ import { getFilamentPrices } from '../filaments/service.ts'
 import type { FilamentPrice } from '../filaments/service.ts'
 import LibraryPalette from './components/LibraryPalette.tsx'
 import type { FastenerEntry, FileEntry, LibraryEntry } from './components/libraryEntries.ts'
+import { EL_LOGO } from './components/libraryEntries.ts'
+import IdCardDialog from './components/IdCardDialog.tsx'
+import type { CardKit } from './components/IdCardDialog.tsx'
+import type { CardSpec, FoundCard } from './idCard.ts'
+import { CARD_SIZES, DEFAULT_CARD_SPEC, layoutCard, measureWith, readCards } from './idCard.ts'
 import FastenerDialog from './components/FastenerDialog.tsx'
 import type { MetricSize } from './hardware.ts'
 import { createFastenerCutter } from './hardware.ts'
@@ -88,6 +94,18 @@ const OVERHANG_PART_ID = '__overhangs'
 /** Arrow-key nudge with snap off; Shift multiplies whatever the step is. */
 const FREE_NUDGE_MM = 1
 const SHIFT_NUDGE = 10
+
+/** Between a new ID card and whatever is already on the plate. */
+const CARD_SPACING_MM = 5
+
+/** A shipped part's bytes, and the mesh parsed from them. */
+async function fetchLibraryFile(entry: FileEntry) {
+  const response = await fetch(entry.url)
+  if (!response.ok) throw new Error(`${entry.label} could not be loaded`)
+  const bytes = await response.arrayBuffer()
+  const parsed = await importFile(new File([bytes], entry.filename))
+  return { bytes, mesh: parsed.kind === '3d' ? parsed.mesh : null }
+}
 
 const SHORTCUTS: readonly [string, string][] = [
   ['⌘Z / ⇧⌘Z', 'Undo / redo'],
@@ -156,6 +174,10 @@ export default function BambuDesignerPage() {
     return () => { cancelled = true }
   }, [])
   const [fastener, setFastener] = useState<FastenerEntry | null>(null)
+  const [cardDialog, setCardDialog] = useState<
+    { spec: CardSpec; editing: FoundCard | null } | null>(null)
+  const [cardKit, setCardKit] = useState<CardKit | null>(null)
+  const [cardBusy, setCardBusy] = useState(false)
   const [mirrorAnchor, setMirrorAnchor] = useState<HTMLElement | null>(null)
   const [shortcutsAnchor, setShortcutsAnchor] = useState<HTMLElement | null>(null)
   const [showOverhangs, setShowOverhangs] = useState(false)
@@ -301,15 +323,12 @@ export default function BambuDesignerPage() {
   const addLibraryFile = useCallback(async (entry: FileEntry) => {
     setLibraryBusy(entry.id)
     try {
-      const response = await fetch(entry.url)
-      if (!response.ok) throw new Error(`${entry.label} could not be loaded`)
-      const bytes = await response.arrayBuffer()
+      const { bytes, mesh } = await fetchLibraryFile(entry)
       // A part is modelled wherever it sat in the file it came from -- the
       // badge is the raised layer of a two-part print, so its triangles start
       // 1.5 mm up. Seat it on the plate rather than leaving it hovering, which
       // reads as a mistake and prints as one.
-      const parsed = await importFile(new File([bytes], entry.filename))
-      const seatZ = parsed.kind === '3d' ? -parsed.mesh.bbox[2] : 0
+      const seatZ = mesh ? -mesh.bbox[2] : 0
       const asset = await storeImportedFile(bytes, entry.filename, entry.format)
       doc.addObject({
         id: newId(),
@@ -330,10 +349,94 @@ export default function BambuDesignerPage() {
     }
   }, [addMode, doc, lifecycle])
 
+  // -- Systainer ID cards ------------------------------------------------------
+
+  const cards = useMemo(() => readCards(objects, EL_LOGO.filename), [objects])
+  /** The card the selection belongs to, which "Edit ID card" reopens. */
+  const selectedCard = selectedObject
+    ? cards.find(card => card.ids.includes(selectedObject.id)) ?? null
+    : null
+
+  /** The font and the logo's shape, loaded the first time the template opens. */
+  const loadCardKit = useCallback(async () => {
+    if (cardKit) return
+    try {
+      const [font, logo] = await Promise.all([
+        loadFont(DEFAULT_FONT_ID),
+        fetchLibraryFile(EL_LOGO).catch(() => null),
+      ])
+      const b = logo?.mesh?.bbox
+      setCardKit({
+        measure: measureWith(font),
+        logoBounds: b
+          ? { widthMm: b[3] - b[0], depthMm: b[4] - b[1], minZ: b[2], maxZ: b[5] }
+          : null,
+      })
+    } catch (cause) {
+      setCardDialog(null)
+      lifecycle.setError(cause instanceof Error ? cause.message : 'could not load the font')
+    }
+  }, [cardKit, lifecycle])
+
+  /**
+   * A new card starts from the last one on the plate -- same size, logo and
+   * filaments, blank text -- because a run of labels differs only in what they
+   * say. The very first takes its colours from the trays it defaults to.
+   */
+  const openCardTemplate = useCallback((editing: FoundCard | null) => {
+    const trayColor = (slot?: number) => ams.trays?.find(t => t.slot === slot)?.color || undefined
+    const previous = cards.at(-1)
+    const spec: CardSpec = editing
+      ? editing.spec
+      : previous
+        ? { ...previous.spec, lines: [''] }
+        : {
+          ...DEFAULT_CARD_SPEC,
+          card: { ...DEFAULT_CARD_SPEC.card, color: trayColor(DEFAULT_CARD_SPEC.card.filamentSlot) },
+          raised: { ...DEFAULT_CARD_SPEC.raised, color: trayColor(DEFAULT_CARD_SPEC.raised.filamentSlot) },
+        }
+    setCardDialog({ spec, editing })
+    void loadCardKit()
+  }, [ams.trays, cards, loadCardKit])
+
+  const applyCard = useCallback(async (spec: CardSpec) => {
+    if (!cardKit || !cardDialog) return
+    setCardBusy(true)
+    try {
+      let logo = null
+      if (spec.logo !== 'none') {
+        if (!cardKit.logoBounds) throw new Error(`${EL_LOGO.label} could not be loaded`)
+        const { bytes } = await fetchLibraryFile(EL_LOGO)
+        const asset = await storeImportedFile(bytes, EL_LOGO.filename, EL_LOGO.format)
+        logo = { asset, bounds: cardKit.logoBounds, name: EL_LOGO.label }
+      }
+      const editing = cardDialog.editing
+      // A new card goes beside everything already on the plate, never on it.
+      const overall = combinedBounds([...bounds.values()])
+      const size = CARD_SIZES[spec.size]
+      const at: Triple = editing
+        ? editing.at
+        : overall
+          ? [overall.max[0] + CARD_SPACING_MM + size.widthMm / 2, overall.min[1] + size.depthMm / 2, 0]
+          : [0, 0, 0]
+      const { objects: made } = layoutCard(spec, cardKit.measure, logo, at)
+      const replaced = new Set(editing?.ids ?? [])
+      // One replace: re-laying a card is a single undo step, not one per part.
+      doc.replace(d => ({ ...d, objects: [...d.objects.filter(o => !replaced.has(o.id)), ...made] }))
+      doc.setSelection([made[0].id])
+      setCardDialog(null)
+    } catch (cause) {
+      lifecycle.setError(cause instanceof Error ? cause.message : 'could not make the card')
+    } finally {
+      setCardBusy(false)
+    }
+  }, [bounds, cardDialog, cardKit, doc, lifecycle])
+
   const addLibraryPart = useCallback((entry: LibraryEntry) => {
     if (entry.kind === 'fastener') setFastener(entry)
+    else if (entry.kind === 'template') openCardTemplate(null)
     else void addLibraryFile(entry)
-  }, [addLibraryFile])
+  }, [addLibraryFile, openCardTemplate])
 
   /** The one top-level part a cutter would be sized to and placed in. */
   const fastenerTarget = useMemo(() => {
@@ -798,6 +901,14 @@ export default function BambuDesignerPage() {
         right={
           <Stack spacing={1.5}>
             <Typography variant="h3">Properties</Typography>
+            {selectedCard && (
+              <Button
+                variant="outlined" size="small" startIcon={<BadgeRoundedIcon />}
+                onClick={() => openCardTemplate(selectedCard)}
+              >
+                Edit ID card
+              </Button>
+            )}
             {lifecycle.savedId && (
               <PrintHistory documentId={lifecycle.savedId} />
             )}
@@ -930,6 +1041,15 @@ export default function BambuDesignerPage() {
         }}
         onAdd={addFastener}
         onClose={() => setFastener(null)}
+      />
+      <IdCardDialog
+        initial={cardDialog && { spec: cardDialog.spec, editing: Boolean(cardDialog.editing) }}
+        kit={cardKit}
+        ams={ams}
+        colors={ownedColors}
+        busy={cardBusy}
+        onApply={spec => void applyCard(spec)}
+        onClose={() => setCardDialog(null)}
       />
       <OpenDocumentDialog
         open={openDialog}

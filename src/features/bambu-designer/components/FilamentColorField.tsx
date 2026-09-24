@@ -9,10 +9,11 @@ import type { SceneObject } from '../../../model/document.ts'
 import type { OwnedColor } from '../../filaments/useOwnedColors.ts'
 import OwnedColorSelect from '../../filaments/components/OwnedColorSelect.tsx'
 
-export default function FilamentColorField({ object, colors, onPatch }: {
-  object: SceneObject
+export default function FilamentColorField({ object, colors, onPatch, label = 'Colour' }: {
+  object: Pick<SceneObject, 'color'>
   colors: readonly OwnedColor[]
   onPatch: (patch: Partial<SceneObject>) => void
+  label?: string
 }) {
   if (!colors.length) return null
   // Matched by hex, because that is all the object carries: a colour picked
@@ -22,7 +23,7 @@ export default function FilamentColorField({ object, colors, onPatch }: {
 
   return (
     <OwnedColorSelect
-      label="Colour"
+      label={label}
       colors={colors}
       value={current?.key ?? null}
       onChange={choice => onPatch({ color: choice?.hexes[0] })}

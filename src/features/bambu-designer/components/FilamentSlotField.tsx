@@ -15,12 +15,15 @@ const describe = (tray: AmsTray): string =>
     .filter(Boolean).join(' · ')
 
 export interface FilamentSlotFieldProps {
-  object: SceneObject
+  /** Only the two fields it edits, so a template can offer it before any part exists. */
+  object: Pick<SceneObject, 'filamentSlot' | 'color'>
   ams: AmsTrayState
   onPatch: (patch: Partial<SceneObject>) => void
+  /** Leave out the note about syncing Studio, where it is said once elsewhere. */
+  quiet?: boolean
 }
 
-export default function FilamentSlotField({ object, ams, onPatch }: FilamentSlotFieldProps) {
+export default function FilamentSlotField({ object, ams, onPatch, quiet }: FilamentSlotFieldProps) {
   const trays = ams.trays
   const byslot = new Map(trays?.map(tray => [tray.slot, tray]))
   // Without a report every number is still a real filament in Studio's list.
@@ -64,12 +67,12 @@ export default function FilamentSlotField({ object, ams, onPatch }: FilamentSlot
           <MenuItem value={chosen}>{trayLabel(chosen)} (empty)</MenuItem>
         )}
       </TextField>
-      <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
+      {!quiet && <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
         {trays === null
           ? 'No AMS report available, so trays are shown by number. '
           : ''}
         Sync the filament list to the AMS in Bambu Studio so the numbers line up.
-      </Typography>
+      </Typography>}
     </Stack>
   )
 }
