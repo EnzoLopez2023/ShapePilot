@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'vitest'
 import type { Bounds } from './align.ts'
-import { dropToPlateDeltas, objectAtPoint } from './align.ts'
+import { dropToPlateDeltas, objectAtPoint, ontoPlateDeltas } from './align.ts'
 
 const box = (minZ: number, maxZ: number): Bounds => ({ min: [0, 0, minZ], max: [10, 10, maxZ] })
 
@@ -39,4 +39,28 @@ test('a point picks the part it falls in, and otherwise the nearest one', () => 
   assert.equal(objectAtPoint(bounds, [55, 5, 5]), 'right')
   assert.equal(objectAtPoint(bounds, [48, 5, 5]), 'right')
   assert.equal(objectAtPoint(new Map(), [0, 0, 0]), null)
+})
+
+const at = (x0: number, y0: number, x1: number, y1: number, z0 = 0): Bounds =>
+  ({ min: [x0, y0, z0], max: [x1, y1, z0 + 5] })
+
+test('a part off the plate is pulled back across the edge it crossed', () => {
+  const plate: [number, number, number] = [256, 256, 256]
+  const bounds = new Map([
+    ['right', at(120, 0, 150, 20)],
+    ['front', at(0, -140, 20, -120)],
+    ['sunk', at(0, 0, 10, 10, -2)],
+    ['inside', at(-128, -128, 128, 128)],
+  ])
+  const deltas = ontoPlateDeltas(bounds, bounds.keys(), plate)
+  assert.deepEqual([...deltas], [
+    ['right', [-22, 0, 0]],
+    ['front', [0, 12, 0]],
+    ['sunk', [0, 0, 2]],
+  ])
+})
+
+test('a part wider than the plate is centred on that axis', () => {
+  const bounds = new Map([['long', at(0, 0, 300, 10)]])
+  assert.deepEqual(ontoPlateDeltas(bounds, ['long'], [256, 256, 256]).get('long'), [-150, 0, 0])
 })

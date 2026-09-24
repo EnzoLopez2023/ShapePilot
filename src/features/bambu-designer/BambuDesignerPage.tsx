@@ -71,6 +71,7 @@ import { createFastenerCutter } from './hardware.ts'
 import type { SolidPaletteKind } from './components/solidEntries.ts'
 import {
   alignDeltas, combinedBounds, dropToPlateDeltas, meshBounds, mirrorTransform, objectAtPoint,
+  ontoPlateDeltas,
 } from './align.ts'
 import type { AlignEdge, Axis, Bounds } from './align.ts'
 import { checkPrint, worstSeverity } from './printChecks.ts'
@@ -544,6 +545,28 @@ export default function BambuDesignerPage() {
       }),
     }))
   }, [bounds, doc, objects])
+
+  // Parts hanging off the build plate, which the slicer would refuse. Locked
+  // parts count -- they are still off the plate -- but are left where they are.
+  const offPlate = useMemo(
+    () => ontoPlateDeltas(bounds, objects.map(o => o.id), machine.buildMm),
+    [bounds, objects, machine.buildMm])
+  const moveOntoPlate = useCallback(() => {
+    const movable = new Map([...offPlate].filter(([id]) => !findObject(objects, id)?.locked))
+    if (!movable.size) return
+    doc.replace(d => ({
+      ...d,
+      objects: d.objects.map(o => {
+        const delta = movable.get(o.id)
+        if (!delta) return o
+        const [x, y, z] = o.transform.position
+        return {
+          ...o,
+          transform: { ...o.transform, position: [x + delta[0], y + delta[1], z + delta[2]] as Triple },
+        }
+      }),
+    }))
+  }, [doc, objects, offPlate])
 
   const nudge = useCallback((axis: Axis, direction: 1 | -1, large: boolean) => {
     const ids = [...doc.selection].filter(id => !findObject(objects, id)?.locked)
@@ -1041,6 +1064,21 @@ export default function BambuDesignerPage() {
                   {cost.amount !== null && <> · {formatMoney(cost.amount, cost.currency!)}</>}
                 </span>
               </Tooltip>
+            )}
+            {offPlate.size > 0 && (
+              <Box component="span" sx={{ color: 'warning.main' }}>
+                {` · ${offPlate.size} off the plate · `}
+                <Box
+                  component="button" type="button" onClick={moveOntoPlate}
+                  sx={{
+                    pointerEvents: 'auto', border: 0, p: 0, background: 'none',
+                    cursor: 'pointer', color: 'primary.main', font: 'inherit',
+                    textDecoration: 'underline',
+                  }}
+                >
+                  Move onto plate
+                </Box>
+              </Box>
             )}
             {evaluating && ' · building…'}
           </span>

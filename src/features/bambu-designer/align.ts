@@ -112,6 +112,39 @@ export function dropToPlateDeltas(
   return deltas
 }
 
+/** Slack for a part that meets the plate edge exactly, or sits on z = 0. */
+const PLATE_EPS_MM = 1e-3
+
+/**
+ * How far to move each part that hangs off the build plate so it sits on it
+ * again: pulled in across whichever edge it crossed, and raised if it sank
+ * through the bed. A part wider than the plate is centred on that axis -- it
+ * cannot fit, and centred is where the slicer will complain most usefully.
+ * The plate is centred on the origin, sized `buildMm`.
+ */
+export function ontoPlateDeltas(
+  bounds: ReadonlyMap<string, Bounds>,
+  ids: Iterable<string>,
+  buildMm: Triple,
+): Map<string, Triple> {
+  const deltas = new Map<string, Triple>()
+  for (const id of ids) {
+    const b = bounds.get(id)
+    if (!b) continue
+    const d: [number, number, number] = [0, 0, 0]
+    for (const axis of [0, 1] as const) {
+      const half = buildMm[axis] / 2
+      const [lo, hi] = [b.min[axis], b.max[axis]]
+      if (hi - lo > 2 * half) d[axis] = -(lo + hi) / 2
+      else if (lo < -half - PLATE_EPS_MM) d[axis] = -half - lo
+      else if (hi > half + PLATE_EPS_MM) d[axis] = half - hi
+    }
+    if (b.min[2] < -PLATE_EPS_MM) d[2] = -b.min[2]
+    if (d.some(v => Math.abs(v) > PLATE_EPS_MM)) deltas.set(id, d)
+  }
+  return deltas
+}
+
 /**
  * The object a point falls in, or the nearest one. Print issues are found on
  * the union of the scene, which has no object identity left in it, so a
