@@ -4,7 +4,7 @@
 // is not, so results land in state. The document's `revision` is the key: it is
 // a counter bumped by every mutation, which is far cheaper than deep-comparing
 // an object tree on each render.
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Mesh } from '../../geometry/mesh.ts'
 import { evaluateNode } from '../../csg/evaluate.ts'
 import { objectNode } from '../../csg/fromScene.ts'
@@ -27,10 +27,16 @@ export interface SceneMeshes {
   detached: Set<string>
 }
 
-export function useSceneMeshes(doc: DesignDocument, textOutlines: TextOutlines): SceneMeshes {
+export function useSceneMeshes(
+  doc: DesignDocument, textOutlines: TextOutlines,
+): SceneMeshes & { retry: () => void } {
   const [state, setState] = useState<SceneMeshes>(
     { parts: [], evaluating: false, failures: new Map(), detached: new Set() })
   const generation = useRef(0)
+  // Bumped to rebuild an unchanged document: the kernel may have failed to
+  // load for reasons that have since passed, and nothing else would re-run.
+  const [attempt, setAttempt] = useState(0)
+  const retry = useCallback(() => setAttempt(n => n + 1), [])
 
   useEffect(() => {
     const run = ++generation.current
@@ -69,7 +75,7 @@ export function useSceneMeshes(doc: DesignDocument, textOutlines: TextOutlines):
 
     return () => { cancelled = true }
     // revision covers every edit; listing objects would deep-compare the tree.
-  }, [doc.revision, doc.objects, textOutlines])
+  }, [doc.revision, doc.objects, textOutlines, attempt])
 
-  return state
+  return { ...state, retry }
 }

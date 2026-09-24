@@ -19,6 +19,10 @@ let pending: Promise<ManifoldToplevel> | null = null
  * Resolves the singleton toplevel. `setup()` must run exactly once per module
  * instance, which is why the promise -- not the result -- is what gets cached:
  * two concurrent callers during the first load must not both call setup.
+ *
+ * A load that FAILS is forgotten, though. Caching the rejection meant one bad
+ * fetch -- a deploy swapping the server mid-request, a dropped connection --
+ * left every later build on the page failing until a reload, even a plain box.
  */
 export function loadManifold(): Promise<ManifoldToplevel> {
   pending ??= (async () => {
@@ -31,5 +35,7 @@ export function loadManifold(): Promise<ManifoldToplevel> {
     wasm.setup()
     return wasm
   })()
-  return pending
+  const attempt = pending
+  attempt.catch(() => { if (pending === attempt) pending = null })
+  return attempt
 }

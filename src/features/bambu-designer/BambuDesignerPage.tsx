@@ -209,7 +209,9 @@ export default function BambuDesignerPage() {
     })
   }, [objects])
 
-  const { parts, evaluating, failures, detached } = useSceneMeshes(doc.doc, textOutlines)
+  const {
+    parts, evaluating, failures, detached, retry: retryBuild,
+  } = useSceneMeshes(doc.doc, textOutlines)
 
   // While a proposal is up, the scene it would leave behind is the thing to
   // look at; drawing it over the current parts would be two overlapping solids.
@@ -989,9 +991,18 @@ export default function BambuDesignerPage() {
               </Alert>
             )}
             {failures.size > 0 && (
-              <Alert severity="warning" variant="outlined">
+              <Alert
+                severity="warning" variant="outlined"
+                action={<Button color="inherit" size="small" onClick={retryBuild}>Try again</Button>}
+              >
                 {failures.size} {failures.size === 1 ? 'object' : 'objects'} could not be built and
                 {' '}{failures.size === 1 ? 'is' : 'are'} not shown.
+                {/* The reason, once: when everything fails it is one cause, not N. */}
+                {[...new Set(failures.values())].slice(0, 2).map(reason => (
+                  <Typography key={reason} variant="body2" sx={{ mt: 0.5, color: 'text.secondary' }}>
+                    {reason}
+                  </Typography>
+                ))}
               </Alert>
             )}
             {severity && (
