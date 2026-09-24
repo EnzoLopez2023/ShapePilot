@@ -188,8 +188,11 @@ test('a library part is fetched, stored and added like any import', async () => 
   // asset store under the name the file has on disk.
   assert.equal(assets.storeImportedFile.mock.calls[0]?.[1], 'el-logo-badge.stl')
   assert.ok(within(tree).getByText('stl'))
-  // Modelled 1.5 mm up, so it is dropped by that much and sits on the plate.
-  assert.equal((screen.getByLabelText('Z') as HTMLInputElement).value, '-1.5')
+  // Modelled 1.5 mm up; it hangs from its own bottom centre instead, so it
+  // sits on the plate at the origin with nothing to offset.
+  for (const axis of ['X', 'Y', 'Z']) {
+    assert.equal((screen.getByLabelText(axis) as HTMLInputElement).value, '0')
+  }
 })
 
 test('undo removes the object that was just added', async () => {
