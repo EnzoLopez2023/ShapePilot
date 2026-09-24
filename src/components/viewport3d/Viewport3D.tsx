@@ -47,6 +47,8 @@ export interface Viewport3DProps {
   snapMm: number
   /** The measured-size readout follows the designer's unit toggle. */
   imperial?: boolean
+  /** Scale handles move all three axes together, so a drag cannot stretch. */
+  uniformScale?: boolean
   onSelect: (id: string | null, additive: boolean) => void
   /**
    * Fired once on gizmo release, so one drag is one undo step. The change is
@@ -85,7 +87,7 @@ const ZERO = new THREE.Vector3()
 export default function Viewport3D(props: Viewport3DProps) {
   const {
     parts, selection, buildMm, innerBuildMm, gizmo, snapMm, imperial = false,
-    onSelect, onTransform, fitToken,
+    uniformScale = false, onSelect, onTransform, fitToken,
   } = props
 
   const theme = useTheme()
@@ -97,8 +99,8 @@ export default function Viewport3D(props: Viewport3DProps) {
   const liveRef = useRef<HTMLSpanElement | null>(null)
   // The render loop reads these every frame; it is set up once and must not be
   // torn down to learn that the unit toggle or the gizmo mode changed.
-  const optionsRef = useRef({ imperial, gizmo })
-  optionsRef.current = { imperial, gizmo }
+  const optionsRef = useRef({ imperial, gizmo, uniformScale })
+  optionsRef.current = { imperial, gizmo, uniformScale }
   // Handlers live on refs so the mount effect never has to re-run.
   const onSelectRef = useRef(onSelect)
   const onTransformRef = useRef(onTransform)
@@ -133,6 +135,16 @@ export default function Viewport3D(props: Viewport3DProps) {
     })
     const pivot = new THREE.Object3D()
     scene.add(pivot)
+    // An axis handle scales only its own axis. With proportions kept, whichever
+    // axis the drag moved furthest from 1 sets all three -- the plane handles
+    // and the centre cube already move two or three together, so they agree.
+    gizmoControls.addEventListener('objectChange', () => {
+      const { gizmo: mode, uniformScale: uniform } = optionsRef.current
+      if (mode !== 'scale' || !uniform) return
+      const s = pivot.scale
+      const f = [s.x, s.y, s.z].reduce((a, v) => (Math.abs(v - 1) > Math.abs(a - 1) ? v : a), 1)
+      if (s.x !== f || s.y !== f || s.z !== f) s.set(f, f, f)
+    })
     const helper = gizmoControls.getHelper()
     scene.add(helper)
 

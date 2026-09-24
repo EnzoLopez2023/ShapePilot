@@ -34,7 +34,10 @@ const importedOutline: SceneObject = {
 const renderInspector = (
   object: SceneObject,
   onPatch: (patch: Partial<SceneObject>) => void,
-  props: { showZ?: boolean; showCut?: boolean; measuredMm?: Triple } = {},
+  props: {
+    showZ?: boolean; showCut?: boolean; measuredMm?: Triple
+    keepProportions?: boolean; onKeepProportions?: (keep: boolean) => void
+  } = {},
 ) => render(
   <ThemeModeProvider initialPreference="light">
     <Inspector
@@ -127,4 +130,44 @@ test('an unscaled shape states its size once, not twice', () => {
   }, vi.fn(), { measuredMm: [20, 20, 20] })
 
   assert.equal(screen.queryByText(/measured/), null)
+})
+
+const importedMesh: SceneObject = {
+  ...base,
+  id: 'cover',
+  name: 'cover.stl',
+  type: 'imported',
+  format: 'stl',
+  asset: { hash: 'a'.repeat(64), filename: 'cover.stl', byteLength: 1 },
+}
+
+test('typing a size with proportions kept scales every axis by the same factor', async () => {
+  const user = userEvent.setup()
+  const onPatch = vi.fn()
+  renderInspector(importedMesh, onPatch, {
+    measuredMm: [80, 40, 20], keepProportions: true, onKeepProportions: vi.fn(),
+  })
+  const width = screen.getByLabelText('Size X') as HTMLInputElement
+  assert.equal(width.value, '80')
+  await user.clear(width)
+  await user.type(width, '40')
+  await user.tab()
+  expect(onPatch).toHaveBeenCalledWith({ transform: { ...IDENTITY_TRANSFORM, scale: [0.5, 0.5, 0.5] } })
+})
+
+test('with proportions off, only the typed axis stretches', async () => {
+  const user = userEvent.setup()
+  const onPatch = vi.fn()
+  const onKeep = vi.fn()
+  renderInspector(importedMesh, onPatch, {
+    measuredMm: [80, 40, 20], keepProportions: false, onKeepProportions: onKeep,
+  })
+  const height = screen.getByLabelText('Size Z') as HTMLInputElement
+  await user.clear(height)
+  await user.type(height, '30')
+  await user.tab()
+  expect(onPatch).toHaveBeenCalledWith({ transform: { ...IDENTITY_TRANSFORM, scale: [1, 1, 1.5] } })
+
+  await user.click(screen.getByLabelText('Keep proportions'))
+  expect(onKeep).toHaveBeenCalledWith(true)
 })

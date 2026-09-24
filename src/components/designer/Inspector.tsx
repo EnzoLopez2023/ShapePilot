@@ -1,7 +1,9 @@
 // The properties panel. One component for all three sub-apps: which fields
 // appear follows from the selected object's type, and the CNC block appears
 // only where a cut type means something.
-import { Divider, MenuItem, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography } from '@mui/material'
+import {
+  Divider, FormControlLabel, MenuItem, Stack, Switch, TextField, ToggleButton, ToggleButtonGroup, Typography,
+} from '@mui/material'
 import type {
   CutType, ObjectMode, PathObject, SceneObject, Shape2DObject, SolidObject, TextObject, Triple,
 } from '../../model/document.ts'
@@ -13,6 +15,7 @@ import {
 } from '../../geometry/skadis.ts'
 import AngleField from '../AngleField.tsx'
 import { EmptyState } from '../LoadingState.tsx'
+import { localAxisFor, resizedScale } from './resize.ts'
 
 export interface InspectorProps {
   object: SceneObject | null
@@ -29,6 +32,12 @@ export interface InspectorProps {
    * without this the panel can say nothing at all about how big they are.
    */
   measuredMm?: Triple | null
+  /**
+   * 3D only: typed sizes and the gizmo's scale handles move every axis by the
+   * same factor. Owned by the page, because the gizmo reads it too.
+   */
+  keepProportions?: boolean
+  onKeepProportions?: (keep: boolean) => void
   onPatch: (patch: Partial<SceneObject>) => void
 }
 
@@ -43,7 +52,7 @@ const CUT_TYPES: { value: CutType; label: string; hint: string }[] = [
 export default function Inspector(props: InspectorProps) {
   const {
     object, selectionCount, imperial, showCut = false, showZ = true,
-    measuredMm = null, onPatch,
+    measuredMm = null, keepProportions = true, onKeepProportions, onPatch,
   } = props
 
   if (selectionCount === 0) {
@@ -124,7 +133,15 @@ export default function Inspector(props: InspectorProps) {
       />
 
       {objectDimensions(object, imperial, showZ, setParam, onPatch)}
-      {measuredMm && (!ownDimensions(object, showZ) || t.scale.some(v => v !== 1)) && (
+      {showZ && measuredMm && onKeepProportions && (
+        <ResizeFields
+          object={object} measuredMm={measuredMm} imperial={imperial}
+          keepProportions={keepProportions} onKeepProportions={onKeepProportions}
+          onScale={scale => onPatch({ transform: { ...t, scale } })}
+        />
+      )}
+      {!(showZ && onKeepProportions) && measuredMm
+        && (!ownDimensions(object, showZ) || t.scale.some(v => v !== 1)) && (
         <MeasuredSize
           object={object} measuredMm={measuredMm} imperial={imperial}
           heading={!ownDimensions(object, showZ)}
@@ -321,6 +338,70 @@ function MeasuredSize(
       <Typography variant="caption" sx={{ color: 'text.secondary', mt: -1 }}>
         {note}
       </Typography>
+    </>
+  )
+}
+
+const SIZE_AXES = [['Size X', 0], ['Size Y', 1], ['Size Z', 2]] as const
+
+/**
+ * The part's size as it comes out, editable. Typing a size rescales the part
+ * about its own origin -- for an import that is the bottom centre, so it stays
+ * on the plate. With proportions kept, the other two sizes follow.
+ */
+function ResizeFields(
+  { object, measuredMm, imperial, keepProportions, onKeepProportions, onScale }: {
+    object: SceneObject; measuredMm: Triple; imperial: boolean
+    keepProportions: boolean; onKeepProportions: (keep: boolean) => void
+    onScale: (scale: Triple) => void
+  },
+) {
+  const t = object.transform
+  const turned = !keepProportions && SIZE_AXES.some(([, axis]) => localAxisFor(t.rotationDeg, axis) === null)
+  const scaled = t.scale.some(v => Math.abs(v - 1) > 1e-9)
+  return (
+    <>
+      <Divider />
+      <Typography variant="h3">Size</Typography>
+      <Stack direction="row" spacing={1}>
+        {SIZE_AXES.map(([label, axis]) => (
+          <LengthField
+            key={label} label={label} valueMm={measuredMm[axis]} imperial={imperial}
+            onChangeMm={mm => {
+              const next = resizedScale(t, measuredMm, axis, mm, keepProportions)
+              if (next) onScale(next)
+            }}
+          />
+        ))}
+      </Stack>
+      <FormControlLabel
+        sx={{ mt: -0.5 }}
+        control={
+          <Switch
+            size="small" checked={keepProportions}
+            onChange={e => onKeepProportions(e.target.checked)}
+          />
+        }
+        label={<Typography variant="body2">Keep proportions</Typography>}
+      />
+      {(scaled || turned) && (
+        <Typography variant="caption" sx={{ color: 'text.secondary', mt: -1 }}>
+          {scaled && `Scaled ${t.scale.map(v => `${+(v * 100).toFixed(1)}%`).join(' × ')}. `}
+          {turned && 'Turned to an odd angle, so a size change scales every axis.'}
+          {scaled && !turned && (
+            <Typography
+              component="button" variant="caption"
+              onClick={() => onScale([1, 1, 1])}
+              sx={{
+                border: 0, p: 0, background: 'none', cursor: 'pointer',
+                color: 'primary.main', font: 'inherit',
+              }}
+            >
+              Reset scale
+            </Typography>
+          )}
+        </Typography>
+      )}
     </>
   )
 }

@@ -95,6 +95,8 @@ const OVERHANG_PART_ID = '__overhangs'
 const FREE_NUDGE_MM = 1
 const SHIFT_NUDGE = 10
 
+const KEEP_PROPORTIONS_KEY = 'shapepilot.bambu.keepProportions'
+
 /** Between a new ID card and whatever is already on the plate. */
 const CARD_SPACING_MM = 5
 
@@ -142,6 +144,15 @@ export default function BambuDesignerPage() {
   const [imperial, setImperial] = useState(false)
   const [snapMm, setSnapMm] = useState(1)
   const [gizmo, setGizmo] = useState<GizmoMode>('translate')
+  // One setting for the scale handles and the typed sizes alike. Remembered on
+  // this device: it is how you like to work, not part of any one model.
+  const [keepProportions, setKeepProportionsState] = useState(() => {
+    try { return localStorage.getItem(KEEP_PROPORTIONS_KEY) !== 'false' } catch { return true }
+  })
+  const setKeepProportions = useCallback((keep: boolean) => {
+    setKeepProportionsState(keep)
+    try { localStorage.setItem(KEEP_PROPORTIONS_KEY, String(keep)) } catch { /* not remembered */ }
+  }, [])
   const [addMode, setAddMode] = useState<ObjectMode>('solid')
   // How this designer opens, from the settings page. Applied once, on mount,
   // before anything has been touched.
@@ -863,6 +874,7 @@ export default function BambuDesignerPage() {
             buildMm={machine.buildMm}
             innerBuildMm={machine.dualNozzleBuildMm}
             gizmo={gizmo}
+            uniformScale={keepProportions}
             snapMm={snapMm}
             imperial={imperial}
             fitToken={fitToken}
@@ -917,6 +929,8 @@ export default function BambuDesignerPage() {
               selectionCount={doc.selection.size}
               imperial={imperial}
               measuredMm={selectedSizeMm}
+              keepProportions={keepProportions}
+              onKeepProportions={setKeepProportions}
               onPatch={patch => selectedObject && doc.updateObject(selectedObject.id, patch)}
             />
             {filamentTarget && (
