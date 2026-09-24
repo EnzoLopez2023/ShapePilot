@@ -144,6 +144,9 @@ describe('designer page', () => {
     ]
     renderPage(<KeycapTrayPage />, '/keycap-tray/2')
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
+    // Open is disabled until the tray finishes loading; on a slow runner the
+    // canvas appears first, and clicking a disabled button is refused.
+    await awaitTrayLoaded()
     assert.ok(screen.getByText(/^0 pockets/))
 
     await user.click(screen.getByRole('button', { name: 'Open' }))
@@ -195,6 +198,7 @@ describe('designer page', () => {
     }]
     renderPage(<KeycapTrayPage />, '/keycap-tray/1')
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
+    await awaitTrayLoaded()
 
     await user.click(screen.getByRole('button', { name: 'Open' }))
     const dialog = await screen.findByRole('dialog')
