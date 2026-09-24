@@ -570,7 +570,12 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
             </>
           )}
           {selected.map(p => (
-            <Stack key={p.id} direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+            // Wraps: an ISO Enter adds Mirror and Flip, and four switches on one
+            // line pushed the panel wider than itself, scrolled off to the side.
+            <Stack
+              key={p.id} direction="row" spacing={1} useFlexGap
+              sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}
+            >
               <Typography variant="body2" sx={{ minWidth: 56 }}>
                 {p.shape === 'iso-enter' ? 'ISO Ent.' : `${p.units}u`}
               </Typography>
