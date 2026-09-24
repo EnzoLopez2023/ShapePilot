@@ -29,7 +29,7 @@ import type { CanvasMode, ViewSettings } from './state/viewSettings.ts'
 import { designerDefaults } from '../settings/preferences.ts'
 import { DEFAULT_FABRICATION, paletteItemExtra } from './model/defaults.ts'
 import type { PaletteItem } from './model/defaults.ts'
-import type { FabricationSettings } from './model/types.ts'
+import type { FabricationSettings, TrayDesign } from './model/types.ts'
 import { emptyDesign } from './model/presets.ts'
 import { useTrayDesign } from './state/useTrayDesign.ts'
 import * as api from './service.ts'
@@ -53,6 +53,22 @@ const TrayViewer3D = lazy(() => import('../../components/viewport3d/SolidViewer3
 // whole element to work with. Hoisted so the fit effect's dependencies stay
 // stable -- an inline object literal re-runs it on every render.
 const CANVAS_INSET = { left: 0, right: 0, top: 0, bottom: 0 }
+
+/** How long the Name field rests before the nameplate is re-traced. */
+const NAME_SETTLE_MS = 250
+
+/** Fields that never reach a solid; the nameplate text arrives separately. */
+const NON_GEOMETRY_KEYS = new Set<keyof TrayDesign>(['name', 'notes', 'projectId', 'revision'])
+
+/** Same solids: every other field is the very same value. Edits copy only
+ *  what they change, so reference equality is enough. */
+function sameGeometry(a: TrayDesign, b: TrayDesign): boolean {
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)] as (keyof TrayDesign)[])
+  for (const key of keys) {
+    if (!NON_GEOMETRY_KEYS.has(key) && a[key] !== b[key]) return false
+  }
+  return true
+}
 
 export default function KeycapTrayPage() {
   const confirm = useConfirm()
@@ -113,21 +129,39 @@ export default function KeycapTrayPage() {
   // name or the cap height changes -- dragging the plate moves the anchor, not
   // the outlines. Held as null until the font resolves so the first paint
   // doesn't block on a fetch.
+  //
+  // The name is traced from a settled copy: every keystroke in the Name field
+  // used to re-trace and rebuild the whole tray twice over, which made typing
+  // crawl on a full tray.
   const [nameplatePolys, setNameplatePolys] = useState<MultiPolygon | null>(null)
   const npFontSizeMm = design.nameplate?.fontSizeMm
+  const [nameplateText, setNameplateText] = useState(design.name)
   useEffect(() => {
-    if (npFontSizeMm === undefined || !design.name.trim()) {
+    const t = setTimeout(() => setNameplateText(design.name), NAME_SETTLE_MS)
+    return () => clearTimeout(t)
+  }, [design.name])
+  useEffect(() => {
+    if (npFontSizeMm === undefined || !nameplateText.trim()) {
       setNameplatePolys(null)
       return
     }
     let cancelled = false
     void loadFont(DEFAULT_FONT_ID)
       .then(font => {
-        if (!cancelled) setNameplatePolys(traceTextPolys(font, design.name, npFontSizeMm))
+        if (!cancelled) setNameplatePolys(traceTextPolys(font, nameplateText, npFontSizeMm))
       })
       .catch(() => { if (!cancelled) setNameplatePolys(null) })
     return () => { cancelled = true }
-  }, [design.name, npFontSizeMm])
+  }, [nameplateText, npFontSizeMm])
+
+  // The design as the geometry sees it. Renaming (or editing notes) bumps the
+  // revision like any edit, but changes no solid, so it keeps the previous
+  // object and every mesh below stays memoised.
+  const geometryRef = useRef(design)
+  if (design !== geometryRef.current && !sameGeometry(design, geometryRef.current)) {
+    geometryRef.current = design
+  }
+  const geometryDesign = geometryRef.current
 
   // Rebuilt only when the design actually changes -- a full 75-pocket tray takes
   // ~55 ms, which is fine on commit but would stutter if it ran during a drag.
@@ -138,11 +172,11 @@ export default function KeycapTrayPage() {
   // spacers -- so it *is* the body-only mesh.
   const mesh = useMemo(
     () => buildTrayMesh(
-      design, nameplatePolys ? { nameplateOutlines: nameplatePolys } : undefined),
-    [design, nameplatePolys])
+      geometryDesign, nameplatePolys ? { nameplateOutlines: nameplatePolys } : undefined),
+    [geometryDesign, nameplatePolys])
   const nameplateMesh = useMemo(
-    () => buildNameplateMesh(design, nameplatePolys), [design, nameplatePolys])
-  const cornerSpacersMesh = useMemo(() => buildCornerSpacersMesh(design), [design])
+    () => buildNameplateMesh(geometryDesign, nameplatePolys), [geometryDesign, nameplatePolys])
+  const cornerSpacersMesh = useMemo(() => buildCornerSpacersMesh(geometryDesign), [geometryDesign])
   // The shelf and the AMS: a body painted in an owned colour previews in it,
   // and prints from the AMS tray holding it when one does.
   const ownedColors = useOwnedColors()
@@ -177,11 +211,11 @@ export default function KeycapTrayPage() {
   // Only the trays the AMS reports: Studio silently remaps a higher number.
   const maxSlot = ams.trays?.length ? Math.max(...ams.trays.map(tray => tray.slot)) : 4
   const bodyMesh = useMemo(
-    () => (extraParts.length ? buildTrayMesh(design, { omitSeparateParts: true }) : mesh),
-    [design, extraParts, mesh])
+    () => (extraParts.length ? buildTrayMesh(geometryDesign, { omitSeparateParts: true }) : mesh),
+    [geometryDesign, extraParts, mesh])
   const issues = useMemo(
-    () => validateDesign(design, fab, mesh, { minFloorMm: materialOf(settings.material).minFloorMm }),
-    [design, fab, mesh, settings.material])
+    () => validateDesign(geometryDesign, fab, mesh, { minFloorMm: materialOf(settings.material).minFloorMm }),
+    [geometryDesign, fab, mesh, settings.material])
 
   const refresh = useCallback(async () => {
     setListLoading(true)
