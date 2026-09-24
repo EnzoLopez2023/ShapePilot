@@ -99,7 +99,9 @@ function buildPrimitive(
           `the imported file for "${node.name}" is not available`,
         )
       }
-      return meshToManifold(wasm, source)
+      const solid = meshToManifold(wasm, source)
+      const o = p.originMm
+      return o ? solid.translate(-o[0], -o[1], -o[2]) : solid
     }
   }
 }

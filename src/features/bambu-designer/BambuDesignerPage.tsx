@@ -29,7 +29,7 @@ import Viewport3D from '../../components/viewport3d/Viewport3D.tsx'
 import type { GizmoMode, ViewportPart } from '../../components/viewport3d/Viewport3D.tsx'
 import { useConfirm } from '../../components/ConfirmDialogProvider.tsx'
 import ImportButton from '../shaper-designer/components/ImportButton.tsx'
-import { BAMBU_IMPORT_FORMATS, importFile } from '../../import/index.ts'
+import { BAMBU_IMPORT_FORMATS, bottomCentre, importFile } from '../../import/index.ts'
 import type { ObjectMode, PrinterProfile, SceneObject, Triple } from '../../model/document.ts'
 import { BAMBU_X2D, PRINTER_PROFILES } from '../../model/machines.ts'
 import {
@@ -326,9 +326,8 @@ export default function BambuDesignerPage() {
       const { bytes, mesh } = await fetchLibraryFile(entry)
       // A part is modelled wherever it sat in the file it came from -- the
       // badge is the raised layer of a two-part print, so its triangles start
-      // 1.5 mm up. Seat it on the plate rather than leaving it hovering, which
-      // reads as a mistake and prints as one.
-      const seatZ = mesh ? -mesh.bbox[2] : 0
+      // 1.5 mm up. Hang it from its bottom centre so it sits on the plate
+      // rather than hovering, which reads as a mistake and prints as one.
       const asset = await storeImportedFile(bytes, entry.filename, entry.format)
       doc.addObject({
         id: newId(),
@@ -336,7 +335,8 @@ export default function BambuDesignerPage() {
         type: 'imported',
         format: entry.format,
         asset,
-        transform: { ...IDENTITY_TRANSFORM, position: [0, 0, seatZ] },
+        transform: IDENTITY_TRANSFORM,
+        ...(mesh ? { originMm: bottomCentre(mesh.bbox) } : {}),
         mode: addMode,
         visible: true,
         locked: false,

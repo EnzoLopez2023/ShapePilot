@@ -38,3 +38,4 @@ export async function importFile(file: File): Promise<ImportResult> {
 }
 
 export { importDxf, importObj, importStl, importSvg, importThreeMf }
+export { bottomCentre } from './mesh.ts'

@@ -107,6 +107,15 @@ function mergeGeometries(geometries: BufferGeometry[]): Mesh {
   }
 }
 
+/**
+ * Where an imported model should hang from: the middle of its footprint, on
+ * its lowest point. Placed at the plate origin, that seats the part flat in the
+ * middle of the bed -- and it is the point the gizmo turns it about.
+ */
+export function bottomCentre(bbox: Mesh['bbox']): [number, number, number] {
+  return [(bbox[0] + bbox[3]) / 2, (bbox[1] + bbox[4]) / 2, bbox[2]]
+}
+
 export async function importThreeMf(buffer: ArrayBuffer): Promise<ImportedMesh> {
   const { ThreeMFLoader } = await import('three/addons/loaders/3MFLoader.js')
   const group = new ThreeMFLoader().parse(buffer)

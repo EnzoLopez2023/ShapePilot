@@ -142,6 +142,10 @@ export interface ImportedObject extends SceneObjectBase {
   type: 'imported'
   format: ImportFormat
   asset: AssetRef
+  /** The point in the file's own coordinates that sits at `transform.position`:
+   *  the bottom centre of its bounds, set on import. Absent on objects imported
+   *  before it existed, which keep the file's origin. */
+  originMm?: Triple
 }
 
 export interface GroupObject extends SceneObjectBase {

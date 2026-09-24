@@ -5,7 +5,7 @@ import { useCallback, useRef, useState } from 'react'
 import { Button, CircularProgress } from '@mui/material'
 import FileUploadRoundedIcon from '@mui/icons-material/FileUploadRounded'
 import type { ImportFormat, SceneObject } from '../../../model/document.ts'
-import { ACCEPT_ATTRIBUTE, importFile } from '../../../import/index.ts'
+import { ACCEPT_ATTRIBUTE, bottomCentre, importFile } from '../../../import/index.ts'
 import { storeImportedFile } from '../../../import/assets.ts'
 import { newId } from '../../../model/scene.ts'
 import { IDENTITY_TRANSFORM } from '../../../model/scene.ts'
@@ -68,6 +68,10 @@ export default function ImportButton(props: ImportButtonProps) {
         type: 'imported',
         format: result.format,
         asset,
+        // Files keep the coordinates they were exported with, often the middle
+        // of some other printer's plate; hang the part from its own bottom
+        // centre so it arrives on the plate origin.
+        originMm: bottomCentre(result.mesh.bbox),
       }])
     } catch (cause) {
       onError(cause instanceof Error ? cause.message : `could not import ${file.name}`)

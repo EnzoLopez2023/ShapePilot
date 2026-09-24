@@ -162,7 +162,7 @@ export function objectNode(o: SceneObject, opts: FromSceneOptions = {}): PartNod
     case 'imported':
       return {
         id: o.id, name: o.name, op: 'mesh', transform,
-        params: { meshId: o.asset.hash },
+        params: { meshId: o.asset.hash, ...(o.originMm ? { originMm: o.originMm } : {}) },
       }
 
     case 'group': return groupNode(o, opts)

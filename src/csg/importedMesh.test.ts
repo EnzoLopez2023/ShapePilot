@@ -95,6 +95,22 @@ test('a transform on the import is honoured', async () => {
   assert.ok(Math.abs(mesh.bbox[0] - 90) < 1e-3, `minX was ${mesh.bbox[0]}`)
 })
 
+test('an origin hangs the import from that point, so it lands on the plate centre', async () => {
+  // Slicers export parts around the middle of their own plate; without the
+  // origin such a file arrived in a corner and turned about a point off the bed.
+  // The cube as a slicer would have exported it: 20 mm, centred on (128, 128).
+  const far = await evaluateNode({
+    id: 'src', name: 'src', op: 'box',
+    params: { widthMm: 20, depthMm: 20, heightMm: 20 },
+    transform: { position: [128, 128, 0], rotationDeg: [0, 0, 0], scale: [1, 1, 1] },
+  })
+  const imported = importedObject({ originMm: [128, 128, 0] })
+  const program = programFromScene([imported])
+  assert.doesNotThrow(() => validateShapeProgram(JSON.parse(JSON.stringify(program))))
+  const mesh = await evaluateProgram(program, { meshes: new Map([[HASH, far]]) })
+  assert.deepEqual([...mesh.bbox].map(v => Math.round(v * 1000) / 1000), [-10, -10, 0, 10, 10, 20])
+})
+
 test('a missing file is a named failure, not a silently empty solid', async () => {
   // Assets are not authoritative and may genuinely be absent. Producing an
   // empty mesh instead would export a blank STL and look like success.

@@ -69,6 +69,13 @@ export interface ProgramParams {
    * to send to a model as context.
    */
   meshId?: string
+  /**
+   * `mesh` only: the point in the file's own coordinates that becomes the
+   * node's origin. A model exported far from zero -- most slicers put parts
+   * around the middle of a 256 mm plate -- would otherwise land off the plate
+   * and turn about a point nowhere near it.
+   */
+  originMm?: Triple
 }
 
 export interface PrimitiveNode {
@@ -245,7 +252,7 @@ function validateTransform(value: unknown, field: string): ProgramTransform {
 const PARAM_KEYS = [
   'widthMm', 'depthMm', 'heightMm', 'radiusMm', 'topRadiusMm', 'tubeMm',
   'cornerRadiusMm', 'segments', 'profile', 'holes', 'text', 'fontId', 'sizeMm',
-  'meshId',
+  'meshId', 'originMm',
 ] as const
 
 /** Which params each op actually requires. Anything else present is allowed
@@ -305,6 +312,9 @@ function validateParams(value: unknown, op: PrimitiveOp, field: string): Program
       bad(`${field}.meshId`, `${field}.meshId must be a SHA-256 hex digest`)
     }
     params.meshId = meshId
+  }
+  if (raw.originMm !== undefined) {
+    params.originMm = requireTriple(raw.originMm, `${field}.originMm`, PROGRAM_LIMITS.maxDimensionMm)
   }
 
   for (const key of REQUIRED_PARAMS[op]) {
