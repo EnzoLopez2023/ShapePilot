@@ -47,3 +47,28 @@ export function resizedScale(
   next[local] *= factor
   return next
 }
+
+/** The server refuses a scale factor past this; see LIMITS in designDocument.ts. */
+const MAX_SCALE = 10_000
+
+/**
+ * The scale after typing `percent` into one axis's Scale field, where 100% is
+ * the part as it was drawn or imported. Unlike a typed size this is the part's
+ * own axis, so it needs no rotation mapping. With `keepProportions` the other
+ * two axes move by the same factor, which keeps a part that was already
+ * stretched stretched rather than snapping it square.
+ */
+export function rescaledByPercent(
+  t: Transform, localAxis: 0 | 1 | 2, percent: number, keepProportions: boolean,
+): Triple | null {
+  const target = percent / 100
+  if (!(target > 0) || target > MAX_SCALE) return null
+  if (!keepProportions) {
+    const next = [...t.scale] as [number, number, number]
+    next[localAxis] = target
+    return next
+  }
+  const factor = target / t.scale[localAxis]
+  const next = t.scale.map(v => v * factor) as [number, number, number]
+  return next.every(v => v > 0 && v <= MAX_SCALE) ? next : null
+}

@@ -1,8 +1,10 @@
 // The properties panel. One component for all three sub-apps: which fields
 // appear follows from the selected object's type, and the CNC block appears
 // only where a cut type means something.
+import { useEffect, useState } from 'react'
 import {
-  Divider, FormControlLabel, MenuItem, Stack, Switch, TextField, ToggleButton, ToggleButtonGroup, Typography,
+  Divider, FormControlLabel, InputAdornment, MenuItem, Stack, Switch, TextField, ToggleButton,
+  ToggleButtonGroup, Typography,
 } from '@mui/material'
 import type {
   CutType, ObjectMode, PathObject, SceneObject, Shape2DObject, SolidObject, TextObject, Triple,
@@ -15,7 +17,7 @@ import {
 } from '../../geometry/skadis.ts'
 import AngleField from '../AngleField.tsx'
 import { EmptyState } from '../LoadingState.tsx'
-import { localAxisFor, resizedScale } from './resize.ts'
+import { localAxisFor, rescaledByPercent, resizedScale } from './resize.ts'
 
 export interface InspectorProps {
   object: SceneObject | null
@@ -343,6 +345,41 @@ function MeasuredSize(
 }
 
 const SIZE_AXES = [['Size X', 0], ['Size Y', 1], ['Size Z', 2]] as const
+const SCALE_AXES = [['Scale X', 0], ['Scale Y', 1], ['Scale Z', 2]] as const
+
+const formatPercent = (scale: number) => `${+(scale * 100).toFixed(2)}`
+
+/**
+ * One axis's scale as a percentage, 100 being the part as drawn or imported.
+ * Buffered like LengthField: it commits on blur or Enter, so typing "10" on
+ * the way to "103" never squashes the part to a tenth.
+ */
+function PercentField({ label, scale, onChangePercent }: {
+  label: string; scale: number; onChangePercent: (percent: number) => void
+}) {
+  const [text, setText] = useState(() => formatPercent(scale))
+  const [edited, setEdited] = useState(false)
+  useEffect(() => { setText(formatPercent(scale)); setEdited(false) }, [scale])
+  const commit = () => {
+    if (!edited) return
+    const parsed = Number(text.replace('%', '').trim())
+    if (text.trim() && Number.isFinite(parsed)) onChangePercent(parsed)
+    setText(formatPercent(scale))
+    setEdited(false)
+  }
+  return (
+    <TextField
+      size="small" label={label} value={text}
+      onChange={e => { setText(e.target.value); setEdited(true) }}
+      onBlur={commit}
+      onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+      slotProps={{
+        htmlInput: { inputMode: 'decimal', 'aria-label': `${label} percent` },
+        input: { endAdornment: <InputAdornment position="end">%</InputAdornment> },
+      }}
+    />
+  )
+}
 
 /**
  * The part's size as it comes out, editable. Typing a size rescales the part
@@ -363,6 +400,17 @@ function ResizeFields(
     <>
       <Divider />
       <Typography variant="h3">Size</Typography>
+      <Stack direction="row" spacing={1}>
+        {SCALE_AXES.map(([label, axis]) => (
+          <PercentField
+            key={label} label={label} scale={t.scale[axis]}
+            onChangePercent={percent => {
+              const next = rescaledByPercent(t, axis, percent, keepProportions)
+              if (next) onScale(next)
+            }}
+          />
+        ))}
+      </Stack>
       <Stack direction="row" spacing={1}>
         {SIZE_AXES.map(([label, axis]) => (
           <LengthField
@@ -386,7 +434,6 @@ function ResizeFields(
       />
       {(scaled || turned) && (
         <Typography variant="caption" sx={{ color: 'text.secondary', mt: -1 }}>
-          {scaled && `Scaled ${t.scale.map(v => `${+(v * 100).toFixed(1)}%`).join(' × ')}. `}
           {turned && 'Turned to an odd angle, so a size change scales every axis.'}
           {scaled && !turned && (
             <Typography

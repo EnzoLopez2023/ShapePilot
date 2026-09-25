@@ -171,3 +171,30 @@ test('with proportions off, only the typed axis stretches', async () => {
   await user.click(screen.getByLabelText('Keep proportions'))
   expect(onKeep).toHaveBeenCalledWith(true)
 })
+
+test('an import starts at 100%, and a typed percentage scales it', async () => {
+  const user = userEvent.setup()
+  const onPatch = vi.fn()
+  renderInspector(importedMesh, onPatch, {
+    measuredMm: [80, 40, 20], keepProportions: true, onKeepProportions: vi.fn(),
+  })
+  const scaleX = screen.getByLabelText('Scale X percent') as HTMLInputElement
+  expect(scaleX.value).toBe('100')
+  await user.clear(scaleX)
+  await user.type(scaleX, '103')
+  await user.tab()
+  expect(onPatch).toHaveBeenCalledWith({ transform: { ...IDENTITY_TRANSFORM, scale: [1.03, 1.03, 1.03] } })
+})
+
+test('with proportions off, a percentage scales only its own axis', async () => {
+  const user = userEvent.setup()
+  const onPatch = vi.fn()
+  renderInspector(importedMesh, onPatch, {
+    measuredMm: [80, 40, 20], keepProportions: false, onKeepProportions: vi.fn(),
+  })
+  const scaleZ = screen.getByLabelText('Scale Z percent') as HTMLInputElement
+  await user.clear(scaleZ)
+  await user.type(scaleZ, '50')
+  await user.tab()
+  expect(onPatch).toHaveBeenCalledWith({ transform: { ...IDENTITY_TRANSFORM, scale: [1, 1, 0.5] } })
+})
