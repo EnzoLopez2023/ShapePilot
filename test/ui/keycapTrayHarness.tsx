@@ -12,7 +12,7 @@
 // they describe. `installHarness()` is called once per file rather than the
 // hooks being exported loose, so a suite cannot half-install it.
 import { afterEach, beforeEach, expect, vi } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, configure, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import {
   forgetDesignerDefaults, SHIPPED_DESIGNER_DEFAULTS,
@@ -205,6 +205,11 @@ const awaitTrayLoaded = () => waitFor(() => expect(
 
 /** Everything a suite needs installed around each test. */
 export function installHarness(): void {
+  // A page here only renders once its tray list and its tray have both come
+  // back, which on a loaded CI runner takes longer than Testing Library's 1 s
+  // default for findBy* and waitFor. A wait that succeeds returns as soon as
+  // it can, so this only changes how long a genuine failure takes to report.
+  configure({ asyncUtilTimeout: 10_000 })
   beforeEach(() => {
     state = {
       designs: [],
