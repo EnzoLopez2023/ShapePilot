@@ -282,7 +282,7 @@ function validateObject(value: unknown, field: string, depth: number, state: Wal
       return base
 
     case 'imported': {
-      rejectUnknownKeys(raw, [...BASE_KEYS, 'format', 'asset'], field)
+      rejectUnknownKeys(raw, [...BASE_KEYS, 'format', 'asset', 'originMm'], field)
       base.format = requireEnum(raw.format, `${field}.format`, IMPORT_FORMATS)
       const asset = requireObject(raw.asset, `${field}.asset`)
       rejectUnknownKeys(asset, ASSET_KEYS, `${field}.asset`)
@@ -296,6 +296,11 @@ function validateObject(value: unknown, field: string, depth: number, state: Wal
         filename: requireString(asset.filename, `${field}.asset.filename`, LIMITS.filenameMaxLength),
         byteLength: requireNumber(asset.byteLength, `${field}.asset.byteLength`,
           { min: 0, max: Number.MAX_SAFE_INTEGER, integer: true }),
+      }
+      // Where the file's own origin sits relative to the part's position, set
+      // on import. Absent on parts imported before it existed.
+      if (raw.originMm !== undefined) {
+        base.originMm = requireTriple(raw.originMm, `${field}.originMm`, LIMITS.maxCoordMm)
       }
       return base
     }

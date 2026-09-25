@@ -242,6 +242,28 @@ describe('design document routes', () => {
     }
   })
 
+  test('an imported part keeps the origin it was imported with', async () => {
+    // Set on every import since bf35f91. Refusing it made every design with a
+    // freshly imported part -- a logo, a switch STL -- impossible to save.
+    const imported = {
+      id: 'i', name: 'Imported', type: 'imported', format: 'stl',
+      transform, mode: 'solid', visible: true, locked: false,
+      asset: { hash: 'a'.repeat(64), filename: 'part.stl', byteLength: 10 },
+      originMm: [1.25, -2, 1.5],
+    }
+    const created = await create(docPayload({ objects: [imported] }))
+    assert.equal(created.status, 201)
+    const read = await server.fetchJson<{ objects: { originMm?: number[] }[] }>(
+      `${BASE}/${created.body.id}`, { token: OWNER_TOKEN })
+    assert.deepEqual(read.body.objects[0].originMm, [1.25, -2, 1.5])
+
+    const broken = await server.fetchJson<{ error: { details?: { field?: string } } }>(
+      BASE, { method: 'POST', token: OWNER_TOKEN,
+        body: JSON.stringify(docPayload({ objects: [{ ...imported, originMm: [0, 0] }] })) })
+    assert.equal(broken.status, 400)
+    assert.equal(broken.body.error.details?.field, 'objects[0].originMm')
+  })
+
   test('an imported asset hash must be a real digest, or it would dangle', async () => {
     const imported = {
       id: 'i', name: 'Imported', type: 'imported', format: 'stl',
