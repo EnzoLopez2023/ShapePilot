@@ -11,7 +11,9 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import type { SceneObject } from '../../../model/document.ts'
 import type { OwnedColor } from '../../filaments/useOwnedColors.ts'
 import type { AmsTrayState } from '../useAmsTrays.ts'
-import type { CardPaint, CardSizeId, CardSpec, LogoBounds, LogoPlacement, MeasureText } from '../idCard.ts'
+import type {
+  CardPaint, CardSizeId, CardSpec, IconPlacement, LogoBounds, LogoPlacement, MeasureText,
+} from '../idCard.ts'
 import { CARD_SIZES, RAISE_OPTIONS, layoutCard } from '../idCard.ts'
 import type { CardIconId } from '../cardIcons.ts'
 import { CARD_ICONS, iconSvg } from '../cardIcons.ts'
@@ -63,7 +65,6 @@ function IdCardForm({ initial, kit, ams, colors, busy, onApply, onClose }:
   const maxValid = Number.isFinite(maxValue) && maxValue >= 1 && maxValue <= 50
   const hasText = spec.lines.some(line => line.trim())
   const hasLogo = spec.logo !== 'none'
-  const showing: CardIconId | 'text' = spec.icon ?? 'text'
 
   // The same layout the card will be built from, with a stand-in for the logo
   // file: only its shape matters to where the text can go.
@@ -121,13 +122,13 @@ function IdCardForm({ initial, kit, ams, colors, busy, onApply, onClose }:
           </ToggleButtonGroup>
 
           <Stack spacing={0.5}>
-            <Typography variant="subtitle2">Show</Typography>
+            <Typography variant="subtitle2">Icon</Typography>
             <ToggleButtonGroup
-              size="small" exclusive fullWidth value={showing} aria-label="Show"
-              onChange={(_e, value: CardIconId | 'text' | null) =>
-                value && patch({ icon: value === 'text' ? null : value })}
+              size="small" exclusive fullWidth value={spec.icon ?? 'none'} aria-label="Icon"
+              onChange={(_e, value: CardIconId | 'none' | null) =>
+                value && patch({ icon: value === 'none' ? null : value })}
             >
-              <ToggleButton value="text">Text</ToggleButton>
+              <ToggleButton value="none">None</ToggleButton>
               {(Object.keys(CARD_ICONS) as CardIconId[]).map(id => (
                 <ToggleButton key={id} value={id} aria-label={CARD_ICONS[id].label} sx={{ gap: 0.75 }}>
                   <svg
@@ -141,7 +142,22 @@ function IdCardForm({ initial, kit, ams, colors, busy, onApply, onClose }:
             </ToggleButtonGroup>
           </Stack>
 
-          {!spec.icon && <Stack spacing={1}>
+          {spec.icon && hasText && (
+            <Stack spacing={0.5}>
+              <Typography variant="subtitle2">Icon position</Typography>
+              <ToggleButtonGroup
+                size="small" exclusive fullWidth value={spec.iconAt} aria-label="Icon position"
+                onChange={(_e, value: IconPlacement | null) => value && patch({ iconAt: value })}
+              >
+                <ToggleButton value="left">Left</ToggleButton>
+                <ToggleButton value="right">Right</ToggleButton>
+                <ToggleButton value="above">Above</ToggleButton>
+                <ToggleButton value="below">Below</ToggleButton>
+              </ToggleButtonGroup>
+            </Stack>
+          )}
+
+          <Stack spacing={1}>
             {spec.lines.map((line, index) => {
               const size = sizes?.[index]
               return (
@@ -171,9 +187,9 @@ function IdCardForm({ initial, kit, ams, colors, busy, onApply, onClose }:
                 Add line
               </Button>
             )}
-          </Stack>}
+          </Stack>
 
-          {!spec.icon && <TextField
+          <TextField
             size="small" label="Largest text size" value={maxText}
             onChange={event => setMaxText(event.target.value)}
             error={!maxValid}
@@ -182,7 +198,7 @@ function IdCardForm({ initial, kit, ams, colors, busy, onApply, onClose }:
               htmlInput: { inputMode: 'decimal' },
               input: { endAdornment: <InputAdornment position="end">mm</InputAdornment> },
             }}
-          />}
+          />
 
           <Stack spacing={0.5}>
             <Typography variant="subtitle2">Raised by</Typography>
@@ -207,7 +223,7 @@ function IdCardForm({ initial, kit, ams, colors, busy, onApply, onClose }:
           </Stack>
 
           {paintFields('Card', 'card')}
-          {paintFields(spec.icon ? 'Icon and logo' : 'Text and logo', 'raised')}
+          {paintFields(spec.icon ? 'Text, icon and logo' : 'Text and logo', 'raised')}
           <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
             {ams.trays === null ? 'No AMS report available, so trays are shown by number. ' : ''}
             Sync the filament list to the AMS in Bambu Studio so the numbers line up.

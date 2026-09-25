@@ -403,9 +403,9 @@ export default function BambuDesignerPage() {
     const spec: CardSpec = editing
       ? editing.spec
       : previous
-        // A pair is usually one text card and one icon card, so a new card
-        // always starts as text rather than repeating the last one's icon.
-        ? { ...previous.spec, lines: [''], icon: null }
+        // A run of labels usually differs only in the words, so the icon and
+        // where it sits carry over with everything else.
+        ? { ...previous.spec, lines: [''] }
         : {
           ...DEFAULT_CARD_SPEC,
           card: { ...DEFAULT_CARD_SPEC.card, color: trayColor(DEFAULT_CARD_SPEC.card.filamentSlot) },

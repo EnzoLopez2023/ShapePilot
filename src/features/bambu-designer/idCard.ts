@@ -37,6 +37,9 @@ export const RAISE_OPTIONS = [0.4, 0.8] as const
 
 export type LogoPlacement = 'none' | 'left' | 'right'
 
+/** Where the icon sits against the text, when a card carries both. */
+export type IconPlacement = 'left' | 'right' | 'above' | 'below'
+
 /** Which tray a set of parts prints from, and the colour it is drawn in. */
 export interface CardPaint {
   filamentSlot?: number
@@ -48,11 +51,12 @@ export interface CardSpec {
   /** One text object per non-blank line, top to bottom. */
   lines: string[]
   /**
-   * A drawing in place of the text: the logo on one side, what the case holds
-   * on the other. Null for a text card. The lines are kept, not cleared, so
-   * switching back finds them where they were.
+   * A drawing of what the case holds, beside the text or on its own when
+   * there is no text. Null for no drawing.
    */
   icon: CardIconId | null
+  /** Where the icon goes relative to the text. Ignored without both. */
+  iconAt: IconPlacement
   /** The largest a line may be. A line too long for the card comes out smaller. */
   maxTextMm: number
   raiseMm: number
@@ -70,12 +74,17 @@ const LOGO_GAP_MM = 2.5
 const LINE_GAP_MM = 1.5
 /** The most of the card's inside width the logo takes. */
 const LOGO_SHARE = 0.4
+/** Between the icon and the text beside, above or below it. */
+const ICON_GAP_MM = 2
+/** The most of the space beside the logo that an icon takes from the text. */
+const ICON_SHARE = 0.4
 const MIN_TEXT_MM = 1
 
 export const DEFAULT_CARD_SPEC: CardSpec = {
   size: 's76',
   lines: [''],
   icon: null,
+  iconAt: 'below',
   maxTextMm: 12,
   raiseMm: 0.4,
   logo: 'none',
@@ -203,34 +212,83 @@ export function layoutCard(
     })
   }
 
-  if (spec.icon) {
-    objects.push(iconGroup(spec, textW, innerH, [textCx, at[1], top]))
+  const lines = spec.lines.map(line => line.trim()).filter(Boolean)
+  const metrics = lines.map(measure)
+  const region = { widthMm: textW, depthMm: innerH, cx: textCx, cy: at[1] }
+
+  /** Stacks the fitted lines down from `blockTop`, each centred on `cx`. */
+  const placeLines = (sizes: number[], cx: number, blockTop: number) => {
+    let cursor = blockTop
+    lines.forEach((line, i) => {
+      const height = metrics[i].heightMm * sizes[i]
+      const y = cursor - height / 2
+      cursor -= height + LINE_GAP_MM
+      // Too many lines for the card: a line this small would not print legibly.
+      if (sizes[i] < MIN_TEXT_MM) return
+      objects.push({
+        ...createText(line, [cx, y, top]),
+        fontId: DEFAULT_FONT_ID,
+        sizeMm: sizes[i],
+        thicknessMm: spec.raiseMm,
+        ...paint(spec.raised),
+      })
+    })
+  }
+  const blockHeight = (sizes: number[]) =>
+    metrics.reduce((sum, m, i) => sum + m.heightMm * sizes[i], 0)
+    + LINE_GAP_MM * Math.max(lines.length - 1, 0)
+
+  // An icon with no text to share with fills the space on its own.
+  if (spec.icon && !lines.length) {
+    objects.push(iconGroup(spec.icon, spec, region.widthMm, region.depthMm, [region.cx, region.cy, top]))
     return { objects, lineSizesMm: [] }
   }
 
-  const lines = spec.lines.map(line => line.trim()).filter(Boolean)
-  const metrics = lines.map(measure)
-  const sizes = fitLines(metrics, textW, innerH, spec.maxTextMm)
-  const heights = metrics.map((m, i) => m.heightMm * sizes[i])
-  const block = heights.reduce((sum, h) => sum + h, 0) + LINE_GAP_MM * Math.max(lines.length - 1, 0)
+  if (!spec.icon) {
+    const sizes = fitLines(metrics, region.widthMm, region.depthMm, spec.maxTextMm)
+    // Text is centred on its own outline, so each line's y is the middle of
+    // its slot in a block that is itself centred on the card.
+    placeLines(sizes, region.cx, region.cy + blockHeight(sizes) / 2)
+    return { objects, lineSizesMm: sizes }
+  }
 
-  // Text is centred on its own outline, so each line's y is the middle of its
-  // slot in a block that is itself centred on the card.
-  let cursor = at[1] + block / 2
-  lines.forEach((line, i) => {
-    const y = cursor - heights[i] / 2
-    cursor -= heights[i] + LINE_GAP_MM
-    // Too many lines for the card: a line this small would not print legibly.
-    if (sizes[i] < MIN_TEXT_MM) return
-    objects.push({
-      ...createText(line, [textCx, y, top]),
-      fontId: DEFAULT_FONT_ID,
-      sizeMm: sizes[i],
-      thicknessMm: spec.raiseMm,
-      ...paint(spec.raised),
-    })
-  })
-
+  // Text and icon together. The icon takes its share first, the text is
+  // fitted to what is left, and then the two are centred as one block -- so a
+  // short word does not leave the icon stranded at the card's edge.
+  const aspect = iconAspect(spec.icon)
+  let sizes: number[]
+  let iconCx: number, iconCy: number, iconW: number, iconH: number
+  if (spec.iconAt === 'above' || spec.iconAt === 'below') {
+    iconH = Math.min(region.depthMm * ICON_SHARE, region.widthMm / aspect)
+    iconW = iconH * aspect
+    sizes = fitLines(metrics, region.widthMm, region.depthMm - iconH - ICON_GAP_MM, spec.maxTextMm)
+    const textH = blockHeight(sizes)
+    const blockTop = region.cy + (textH + ICON_GAP_MM + iconH) / 2
+    iconCx = region.cx
+    if (spec.iconAt === 'above') {
+      iconCy = blockTop - iconH / 2
+      placeLines(sizes, region.cx, blockTop - iconH - ICON_GAP_MM)
+    } else {
+      iconCy = blockTop - textH - ICON_GAP_MM - iconH / 2
+      placeLines(sizes, region.cx, blockTop)
+    }
+  } else {
+    iconW = Math.min(region.widthMm * ICON_SHARE, region.depthMm * aspect)
+    iconH = iconW / aspect
+    sizes = fitLines(metrics, region.widthMm - iconW - ICON_GAP_MM, region.depthMm, spec.maxTextMm)
+    const inkW = Math.max(...metrics.map((m, i) => m.widthMm * sizes[i]))
+    const left = region.cx - (iconW + ICON_GAP_MM + inkW) / 2
+    iconCy = region.cy
+    const textTop = region.cy + blockHeight(sizes) / 2
+    if (spec.iconAt === 'left') {
+      iconCx = left + iconW / 2
+      placeLines(sizes, left + iconW + ICON_GAP_MM + inkW / 2, textTop)
+    } else {
+      iconCx = left + inkW + ICON_GAP_MM + iconW / 2
+      placeLines(sizes, left + inkW / 2, textTop)
+    }
+  }
+  objects.push(iconGroup(spec.icon, spec, iconW, iconH, [iconCx, iconCy, top]))
   return { objects, lineSizesMm: sizes }
 }
 
@@ -246,17 +304,25 @@ function outlineBounds(mp: MultiPolygon) {
   return { minX, minY, maxX, maxY }
 }
 
+/** Width over height of the drawing's ink, which is not its nominal square. */
+function iconAspect(id: CardIconId): number {
+  const probe = outlineBounds(iconOutline(id, 100))
+  return (probe.maxX - probe.minX) / (probe.maxY - probe.minY)
+}
+
 /**
  * The drawing as raised outlines, as large as fits `widthMm` × `depthMm` and
  * centred there. One path object per separate piece of ink, grouped so the
  * icon moves and prints as one part.
  */
-function iconGroup(spec: CardSpec, widthMm: number, depthMm: number, at: Triple): GroupObject {
-  const id = spec.icon!
+function iconGroup(
+  id: CardIconId, spec: CardSpec, widthMm: number, depthMm: number, at: Triple,
+): GroupObject {
   // Measure once at a nominal size, then redraw at the size that fits: the
   // strokes scale with the drawing, so the line weight stays in proportion.
   const probe = outlineBounds(iconOutline(id, 100))
-  const fit = Math.min(widthMm / (probe.maxX - probe.minX), depthMm / (probe.maxY - probe.minY))
+  // A hair under, so rounding in the redraw never lands a point past the box.
+  const fit = 0.999 * Math.min(widthMm / (probe.maxX - probe.minX), depthMm / (probe.maxY - probe.minY))
   const outline = iconOutline(id, 100 * fit)
   const b = outlineBounds(outline)
   const [cx, cy] = [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2]
@@ -338,6 +404,15 @@ export function readCards(objects: readonly SceneObject[], logoFilename: string)
 
     const ids = [box.id, ...texts.map(t => t.id), ...(logo ? [logo.id] : []), ...(icon ? [icon.id] : [])]
     ids.forEach(id => claimed.add(id))
+    // Which side of the text the icon is on: whichever way it is further off.
+    let iconAt: IconPlacement = DEFAULT_CARD_SPEC.iconAt
+    if (icon && texts.length) {
+      const tx = texts.reduce((sum, t) => sum + t.transform.position[0], 0) / texts.length
+      const ty = texts.reduce((sum, t) => sum + t.transform.position[1], 0) / texts.length
+      const dx = icon.transform.position[0] - tx
+      const dy = icon.transform.position[1] - ty
+      iconAt = Math.abs(dy) >= Math.abs(dx) ? (dy > 0 ? 'above' : 'below') : (dx < 0 ? 'left' : 'right')
+    }
     const raisedFrom = texts[0] ?? icon ?? logo
     const raise = texts[0]?.thicknessMm ?? iconPath?.thicknessMm ?? RAISE_OPTIONS[0]
     found.push({
@@ -347,6 +422,7 @@ export function readCards(objects: readonly SceneObject[], logoFilename: string)
         size: sizeId,
         lines: texts.length ? texts.map(t => t.text) : [''],
         icon: iconId,
+        iconAt,
         // The lines were fitted down from some larger cap; the largest is the
         // closest thing to it that survives.
         maxTextMm: texts.length ? Math.max(...texts.map(t => t.sizeMm)) : DEFAULT_CARD_SPEC.maxTextMm,

@@ -4,7 +4,7 @@ import { test } from 'vitest'
 import { parse } from 'opentype.js'
 import type { AssetRef, SceneObject } from '../../model/document.ts'
 import { traceTextPolys } from '../../text/fonts.ts'
-import type { CardSizeId, CardSpec, LogoBounds } from './idCard.ts'
+import type { CardSizeId, CardSpec, IconPlacement, LogoBounds } from './idCard.ts'
 import {
   CARD_MARGIN_MM, CARD_SIZES, DEFAULT_CARD_SPEC, fitLines, layoutCard, measureWith, readCards,
 } from './idCard.ts'
@@ -34,6 +34,18 @@ function footprints(objects: readonly SceneObject[]) {
         minY = Math.min(minY, y); maxY = Math.max(maxY, y)
       }
       return { box: [px + minX, py + minY, px + maxX, py + maxY], z: [pz, pz + (o.thicknessMm ?? 0)] }
+    }
+    if (o.type === 'group') {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity, raise = 0
+      for (const child of o.children) {
+        if (child.type !== 'path') continue
+        raise = child.thicknessMm ?? 0
+        for (const [x, y] of child.rings[0]) {
+          minX = Math.min(minX, x); maxX = Math.max(maxX, x)
+          minY = Math.min(minY, y); maxY = Math.max(maxY, y)
+        }
+      }
+      return { box: [px + minX, py + minY, px + maxX, py + maxY], z: [pz, pz + raise] }
     }
     const [sx, sy, sz] = o.transform.scale
     return {
@@ -130,34 +142,78 @@ test('readCards ignores a box that is not a card', () => {
   assert.deepEqual(readCards([{ ...box, params: { ...box.params, widthMm: 57 } }], LOGO_FILE), [])
 })
 
-test('an icon card puts the drawing where the text would go, inside the margin', () => {
+test('an icon on its own fills the space beside the logo, inside the margin', () => {
   for (const icon of ['keycap', 'switch'] as const) {
     const size = CARD_SIZES.s76
-    const { objects } = layoutCard(spec({ icon, logo: 'left', lines: ['ignored'] }), measure, logo, [10, 20, 0])
-    assert.equal(objects.filter(o => o.type === 'text').length, 0, 'an icon card carries no text')
+    const { objects } = layoutCard(spec({ icon, logo: 'left', lines: [''] }), measure, logo, [10, 20, 0])
+    assert.equal(objects.filter(o => o.type === 'text').length, 0)
     const group = objects.find(o => o.type === 'group')
     assert.ok(group && group.type === 'group', `${icon}: no icon group`)
-    const [gx, gy, gz] = group.transform.position
-    assert.equal(gz, size.heightMm, 'the icon stands on the card top')
-    // Right of the logo, and wholly inside the card's margin.
-    assert.ok(gx > 10, `${icon} should sit right of centre, opposite the logo`)
-    for (const child of group.children) {
-      assert.equal(child.type, 'path')
-      if (child.type !== 'path') continue
-      assert.equal(child.thicknessMm, DEFAULT_CARD_SPEC.raiseMm)
-      for (const [x, y] of child.rings[0]) {
-        assert.ok(gx + x <= 10 + size.widthMm / 2 - CARD_MARGIN_MM + 1e-6, `${icon} runs past the right margin`)
-        assert.ok(Math.abs(gy + y - 20) <= size.depthMm / 2 - CARD_MARGIN_MM + 1e-6, `${icon} runs past the margin`)
+    assert.equal(group.transform.position[2], size.heightMm, 'the icon stands on the card top')
+    assert.ok(group.transform.position[0] > 10, `${icon} should sit right of centre, opposite the logo`)
+    for (const { box: [x0, y0, x1, y1] } of footprints(objects)) {
+      assert.ok(x0 >= 10 - size.widthMm / 2 + CARD_MARGIN_MM - 1e-6 && x1 <= 10 + size.widthMm / 2 - CARD_MARGIN_MM + 1e-6)
+      assert.ok(y0 >= 20 - size.depthMm / 2 + CARD_MARGIN_MM - 1e-6 && y1 <= 20 + size.depthMm / 2 - CARD_MARGIN_MM + 1e-6)
+    }
+  }
+})
+
+test('text and icon share the card: on the side asked for, apart, and inside the margin', () => {
+  const placements: IconPlacement[] = ['left', 'right', 'above', 'below']
+  for (const size of Object.keys(CARD_SIZES) as CardSizeId[]) {
+    const card = CARD_SIZES[size]
+    const halfW = card.widthMm / 2 - CARD_MARGIN_MM + 1e-6
+    const halfD = card.depthMm / 2 - CARD_MARGIN_MM + 1e-6
+    for (const icon of ['keycap', 'switch'] as const) {
+      for (const iconAt of placements) {
+        for (const placement of ['none', 'left'] as const) {
+          for (const lines of [['Gateron'], ['Gateron', 'G Pro 3.0 Blue Clicky 60gf']]) {
+            const label = `${size} ${icon} ${iconAt} logo:${placement} ${lines.length} lines`
+            const { objects } = layoutCard(
+              spec({ size, icon, iconAt, logo: placement, lines }), measure, logo)
+            const parts = footprints(objects)
+            const iconIndex = objects.slice(1).findIndex(o => o.type === 'group')
+            assert.ok(iconIndex >= 0, `${label}: no icon`)
+            assert.equal(objects.filter(o => o.type === 'text').length, lines.length, `${label}: a line was dropped`)
+            for (const { box: [x0, y0, x1, y1], z: [z0] } of parts) {
+              assert.ok(x0 >= -halfW && x1 <= halfW, `${label} spills in x: ${x0}..${x1}`)
+              assert.ok(y0 >= -halfD && y1 <= halfD, `${label} spills in y: ${y0}..${y1}`)
+              assert.ok(Math.abs(z0 - card.heightMm) < 1e-9, `${label} floats at ${z0}`)
+            }
+            for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
+              const [a, b] = [parts[i].box, parts[j].box]
+              const apart = a[2] <= b[0] || b[2] <= a[0] || a[3] <= b[1] || b[3] <= a[1]
+              assert.ok(apart, `${label}: parts ${i} and ${j} overlap`)
+            }
+            // Every line is on the far side of the icon from where it was put.
+            const ib = parts[iconIndex].box
+            objects.slice(1).forEach((o, i) => {
+              if (o.type !== 'text') return
+              const tb = parts[i].box
+              const ok = iconAt === 'above' ? ib[1] >= tb[3]
+                : iconAt === 'below' ? ib[3] <= tb[1]
+                  : iconAt === 'left' ? ib[2] <= tb[0]
+                    : ib[0] >= tb[2]
+              assert.ok(ok, `${label}: the icon is not ${iconAt} "${o.type === 'text' ? o.text : ''}"`)
+            })
+          }
+        }
       }
     }
   }
 })
 
-test('an icon card reads back as the same card', () => {
-  const made = layoutCard(spec({ icon: 'switch', logo: 'left', raiseMm: 0.8 }), measure, logo, [0, 0, 0]).objects
-  const [found] = readCards(made, LOGO_FILE)
-  assert.equal(found.spec.icon, 'switch')
-  assert.equal(found.spec.logo, 'left')
-  assert.equal(found.spec.raiseMm, 0.8)
-  assert.equal(found.ids.length, made.length)
+test('a card with text and an icon reads back as the same card', () => {
+  for (const iconAt of ['left', 'right', 'above', 'below'] as const) {
+    const made = layoutCard(spec({
+      icon: 'switch', iconAt, logo: 'right', raiseMm: 0.8, lines: ['Gateron', 'Azure Dragon V4 60g'],
+    }), measure, logo, [0, 0, 0]).objects
+    const [found] = readCards(made, LOGO_FILE)
+    assert.equal(found.spec.icon, 'switch')
+    assert.equal(found.spec.iconAt, iconAt)
+    assert.equal(found.spec.logo, 'right')
+    assert.equal(found.spec.raiseMm, 0.8)
+    assert.deepEqual(found.spec.lines, ['Gateron', 'Azure Dragon V4 60g'])
+    assert.equal(found.ids.length, made.length)
+  }
 })
