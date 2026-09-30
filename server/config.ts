@@ -54,6 +54,7 @@ export interface AppConfig {
   clientDir: string
   ai: AiConfig
   element: ElementConfig
+  integration: IntegrationConfig
   push: PushConfig
   /**
    * Where imported design assets live. Derived from the database's own
@@ -84,6 +85,13 @@ export interface PushConfig {
 export interface ElementConfig {
   accessToken: string | null
   region: BambuRegion
+  unresolvedSecret: boolean
+}
+
+/** Service-to-service reads for the owner's other apps (Workshop's Library hub). */
+export interface IntegrationConfig {
+  /** Shared key for `Authorization: Integration <key>`; null disables the routes. */
+  printJobsKey: string | null
   unresolvedSecret: boolean
 }
 
@@ -203,6 +211,17 @@ function elementConfig(env: NodeJS.ProcessEnv): ElementConfig {
     )
   }
   return { accessToken: unresolvedSecret ? null : raw, region, unresolvedSecret }
+}
+
+function integrationConfig(env: NodeJS.ProcessEnv): IntegrationConfig {
+  const raw = env.SHAPEPILOT_INTEGRATION_KEY?.trim() || null
+  const unresolvedSecret = raw !== null && KEY_VAULT_REFERENCE.test(raw)
+  if (raw && !unresolvedSecret && (raw.length < 32 || raw.length > 512 || /[^\x21-\x7e]/.test(raw))) {
+    throw new ConfigError(
+      'CONFIG_INVALID', 'SHAPEPILOT_INTEGRATION_KEY must be 32-512 printable characters with no spaces',
+    )
+  }
+  return { printJobsKey: unresolvedSecret ? null : raw, unresolvedSecret }
 }
 
 /**
@@ -432,6 +451,7 @@ export function loadConfig(
     clientDir: resolve(cwd, env.SHAPEPILOT_CLIENT_DIR?.trim() || 'dist/client'),
     ai: aiConfig(env, isProduction),
     element: elementConfig(env),
+    integration: integrationConfig(env),
     push: pushConfig(env),
     assetStoreDir: env.SHAPEPILOT_ASSET_DIR?.trim()
       ? absolutePath(env.SHAPEPILOT_ASSET_DIR.trim(), 'SHAPEPILOT_ASSET_DIR', cwd, isProduction)

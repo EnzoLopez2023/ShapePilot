@@ -37,6 +37,7 @@ import { createToolTrayRouter } from './routes/toolTrays.ts'
 import { createSettingsRouter } from './routes/settings.ts'
 import { createVersionRouter } from './routes/version.ts'
 import { ElementMonitor } from './element/monitor.ts'
+import { createIntegrationRouter } from './routes/integrations.ts'
 import { createElementStatisticsRouter } from './routes/elementStatistics.ts'
 
 export interface CreateAppOptions {
@@ -116,6 +117,8 @@ export function createApp(options: CreateAppOptions): Express {
     instanceId,
   }))
   app.use(createVersionRouter(identity))
+  // Service key, not Entra: read-only print history for the owner's Workshop Library.
+  app.use('/api/integrations', createIntegrationRouter({ repos, config: config.integration }))
 
   const authenticated = requireAuth({
     auth: config.auth,

@@ -239,6 +239,19 @@ against for production. The setting is retained because deployment preflight
 requires this reference; removing it means editing that
 assertion, the table above, and the Web App out of band.
 
+### Optional Workshop Library print history
+
+`GET /api/integrations/print-jobs` gives Workshop's Library hub a read-only,
+whitelisted projection of the EL-ement Statistics job ledger (title, result,
+times, grams, materials; no account or printer names). It authenticates with
+`Authorization: Integration <key>`, never an Entra token, and answers 503 until
+`SHAPEPILOT_INTEGRATION_KEY` is set. Supply the key (32–512 printable
+characters) through a versionless
+`@Microsoft.KeyVault(SecretUri=https://kv-shapepilot-prod.vault.azure.net/secrets/SHAPEPILOT-INTEGRATION-KEY/)`
+reference, and give Workshop the same value as `SHAPEPILOT_INTEGRATION_KEY`
+alongside `SHAPEPILOT_URL`. Like the Bambu token, setup and rotation are
+owner-operated and the release workflow preserves the setting unchanged.
+
 ### Optional household printer monitoring
 
 EL-ement Statistics uses the separate server-only
