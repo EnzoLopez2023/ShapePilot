@@ -1,4 +1,3 @@
-import { zipSync } from 'fflate'
 import { Box, Button, Stack, Tooltip } from '@mui/material'
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline'
 import WarningAmberIcon from '@mui/icons-material/WarningAmber'
@@ -7,6 +6,7 @@ import type { Mesh } from '../../../geometry/mesh.ts'
 import { writeBinaryStl } from '../../../export/stl.ts'
 import { writeThreeMf, writeThreeMfParts } from '../../../export/threemf.ts'
 import { safeFilename, triggerDownload } from '../../../export/download.ts'
+import { zipParts } from '../../../export/zip.ts'
 import type { Issue } from '../geometry/validate.ts'
 import type { SwitchTrayDesign } from '../model/types.ts'
 
@@ -56,7 +56,7 @@ export default function SwitchExportPanel(
           files[`${base}_${part.suffix}.stl`] =
             new Uint8Array(writeBinaryStl(part.mesh, `${design.name} ${part.suffix}`))
         }
-        triggerDownload(zipSync(files, { level: 6 }), `${base}_2-colour.zip`, 'application/zip')
+        triggerDownload(zipParts(files), `${base}_2-colour.zip`, 'application/zip')
       } else {
         triggerDownload(writeBinaryStl(mesh, design.name), `${base}.stl`, 'model/stl')
       }

@@ -1,4 +1,5 @@
-import { zipSync, strToU8 } from 'fflate'
+import { strToU8 } from 'fflate'
+import { zipBuffer } from './zip.ts'
 import type { Mesh } from '../geometry/mesh.ts'
 
 const CONTENT_TYPES = `<?xml version="1.0" encoding="UTF-8"?>
@@ -88,10 +89,7 @@ const pack = (model: string, settings?: string): ArrayBuffer => {
     '3D/3dmodel.model': strToU8(model),
   }
   if (settings) files['Metadata/model_settings.config'] = strToU8(settings)
-  const zipped = zipSync(files, { level: 6 })
-  // Return a plain ArrayBuffer so it drops straight into a Blob.
-  return zipped.buffer.slice(
-    zipped.byteOffset, zipped.byteOffset + zipped.byteLength) as ArrayBuffer
+  return zipBuffer(files)
 }
 
 export interface ThreeMfPart {

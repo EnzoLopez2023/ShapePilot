@@ -17,6 +17,11 @@ npm run swatch:holder -- --coupon  # models/swatch-holder-coupon
 A change to `src/rack/config.ts` therefore shows up as a diff in this
 directory, which is the point: it is how you see that geometry moved.
 
+Every generator here is reproducible — rebuilding without changing anything
+leaves the directory clean. Zips carry a pinned timestamp rather than the wall
+clock (`src/export/zip.ts`), because a 3MF that changed on every build made
+every regeneration look like a change and hid the real one.
+
 ## rack/
 
 The full 6-bay Systainer3 S76 wall rack. 14 pieces plus two wall strips —

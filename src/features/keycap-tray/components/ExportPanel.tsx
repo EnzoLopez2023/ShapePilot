@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { zipSync, strToU8 } from 'fflate'
+import { strToU8 } from 'fflate'
 import { Box, Button, Stack, ToggleButton, ToggleButtonGroup, Tooltip } from '@mui/material'
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline'
 import WarningAmberIcon from '@mui/icons-material/WarningAmber'
@@ -10,6 +10,7 @@ import type { Mesh } from '../../../geometry/mesh.ts'
 import type { FabricationSettings, TrayDesign } from '../model/types.ts'
 import { tileTray } from '../geometry/tiling.ts'
 import { writeBinaryStl } from '../../../export/stl.ts'
+import { zipParts } from '../../../export/zip.ts'
 import { writeThreeMf, writeThreeMfParts } from '../../../export/threemf.ts'
 import { writeShaperSvg } from '../export/svg.ts'
 import { writeDxf } from '../export/dxf.ts'
@@ -78,7 +79,7 @@ export default function ExportPanel(
       `${tiles[0]?.depthMm.toFixed(0)} mm or smaller. Interior edges interlock with finger ` +
       `joints -- press together and glue. Labels are row then column from the front-left.\n`)
     triggerDownload(
-      zipSync(files, { level: 6 }), `${safeFilename(design.name)}_pieces.zip`, 'application/zip')
+      zipParts(files), `${safeFilename(design.name)}_pieces.zip`, 'application/zip')
   }
 
   const statusText = errors.length
@@ -104,7 +105,7 @@ export default function ExportPanel(
           files[`${base}_${part.suffix}.stl`] =
             new Uint8Array(writeBinaryStl(part.mesh, `${design.name} ${part.suffix}`))
         }
-        triggerDownload(zipSync(files, { level: 6 }), `${base}_2-colour.zip`, 'application/zip')
+        triggerDownload(zipParts(files), `${base}_2-colour.zip`, 'application/zip')
       } else {
         triggerDownload(writeBinaryStl(mesh, design.name), name, fmt.mime)
       }

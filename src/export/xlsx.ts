@@ -8,7 +8,8 @@
 // sharedStrings part to keep in step with the sheet, and no cell ever comes
 // back as anything but text -- a filament code like `10501` must not arrive as
 // the number 10501, and `#00AE42` must not be mistaken for a formula.
-import { zipSync, strToU8 } from 'fflate'
+import { strToU8 } from 'fflate'
+import { zipBuffer } from './zip.ts'
 
 const ENTITIES: Record<string, string> = {
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;',
@@ -70,7 +71,7 @@ export function writeXlsx(
     ).join('')}</row>`,
   ).join('')
 
-  const zipped = zipSync({
+  return zipBuffer({
     '[Content_Types].xml': strToU8(CONTENT_TYPES),
     '_rels/.rels': strToU8(RELS),
     'xl/workbook.xml': strToU8(
@@ -84,11 +85,7 @@ export function writeXlsx(
       '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
       + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
       + `<sheetData>${sheetData}</sheetData></worksheet>`),
-  }, { level: 6 })
-
-  // A plain ArrayBuffer so it drops straight into a Blob.
-  return zipped.buffer.slice(
-    zipped.byteOffset, zipped.byteOffset + zipped.byteLength) as ArrayBuffer
+  })
 }
 
 /** RFC 4180, CRLF, and a BOM -- see `LABEL_CSV_MIME` for why the BOM. */

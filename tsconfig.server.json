@@ -41,6 +41,7 @@
     "src/geometry/mesh.ts",
     "src/geometry/triangulate.ts",
     "src/export/stl.ts",
+    "src/export/zip.ts",
     "src/export/threemf.ts",
     "src/export/xlsx.ts",
     "src/features/filaments/model/labels.ts",
