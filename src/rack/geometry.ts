@@ -29,7 +29,8 @@
 // slide the finished course onto the stack. The course above then traps the
 // seam tabs, which is the only direction the seam is free in.
 import type { MultiPolygon, Ring } from '../geometry/vec.ts'
-import { multiArea } from '../geometry/vec.ts'
+import type { Band } from '../geometry/bands.ts'
+import { buildBands } from '../geometry/bands.ts'
 import { difference, intersection, union } from '../geometry/boolean.ts'
 import { insertTJunctions } from '../geometry/tjunction.ts'
 import { circleRing } from '../geometry/primitives.ts'
@@ -42,7 +43,8 @@ export type Side = 'left' | 'right'
 export type PieceKind = 'bottom' | 'middle' | 'top'
 export interface PieceSpec { kind: PieceKind; side: Side }
 
-export interface Band { z0: number; z1: number; region: MultiPolygon }
+export type { Band } from '../geometry/bands.ts'
+export { bandVolume } from '../geometry/bands.ts'
 export interface Piece { spec: PieceSpec; mesh: Mesh; bands: Band[] }
 
 const box = (x0: number, y0: number, x1: number, y1: number): Ring =>
@@ -390,42 +392,10 @@ export function bandsFor(cfg: RackConfig, spec: PieceSpec): Band[] {
  * first, `repairTJunctions` inside `finish()` last.
  */
 export function buildPiece(cfg: RackConfig, spec: PieceSpec): Piece {
-  const raw = bandsFor(cfg, spec)
   // Regions are evaluated at TRUE depth, which runs negative behind the back
   // face on the caps. Shift once here so every exported piece sits at z=0.
-  const zOff = backReachMm(cfg, spec)
-  const b = new MeshBuilder()
-  if (!raw.length) return { spec, mesh: b.finish(), bands: [] }
-
-  const rawUp: MultiPolygon[] = [[]]
-  const rawDown: MultiPolygon[] = [[]]
-  for (let i = 1; i < raw.length; i++) {
-    rawUp.push(difference(raw[i - 1]!.region, raw[i]!.region))
-    rawDown.push(difference(raw[i]!.region, raw[i - 1]!.region))
-  }
-
-  const n = raw.length
-  const flat = insertTJunctions([...raw.map(x => x.region), ...rawUp, ...rawDown])
-  const bands = raw.map((x, i) => ({ z0: x.z0 + zOff, z1: x.z1 + zOff, region: flat[i]! }))
-  const floorsUp = flat.slice(n, 2 * n)
-  const ceilingsDown = flat.slice(2 * n, 3 * n)
-
-  b.addHorizontal(bands[0]!.region, bands[0]!.z0, 'down')
-  for (let i = 1; i < bands.length; i++) {
-    b.addHorizontal(floorsUp[i] ?? [], bands[i]!.z0, 'up')
-    b.addHorizontal(ceilingsDown[i] ?? [], bands[i]!.z0, 'down')
-  }
-  b.addHorizontal(bands[n - 1]!.region, bands[n - 1]!.z1, 'up')
-  for (const band of bands) b.addWalls(band.region, band.z0, band.z1)
-
-  return { spec, mesh: b.finish(), bands }
-}
-
-/** Band areas times band lengths -- computed from the regions, not the mesh. */
-export function bandVolume(bands: Band[]): number {
-  let v = 0
-  for (const band of bands) v += multiArea(band.region) * (band.z1 - band.z0)
-  return v
+  const { mesh, bands } = buildBands(bandsFor(cfg, spec), backReachMm(cfg, spec))
+  return { spec, mesh, bands }
 }
 
 /** Every piece a rack of `cfg.bays` bays needs, in assembly order. */
