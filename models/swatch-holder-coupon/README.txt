@@ -9,7 +9,7 @@ printed becomes obsolete.
 Transferring a card
 -------------------
 Present the card to the blade, push it back, let go. To take it off, lift it
-0.5 mm until it clears the lip and pull it forward.
+0.7 mm until it clears the lip and pull it forward.
 
 Every mount here carries an IDENTICAL blade, so that motion is the same on the
 bar by the shelf, on the AMS and on a dry box. That is the whole point: the
@@ -17,7 +17,7 @@ card follows the spool.
 
 Printing
 --------
-  swatch_bar_1col        40.0 x 22.0 x 13.7 mm   4.0 g
+  swatch_bar_1col        40.0 x 22.0 x 14.9 mm   4.1 g
   swatch_pad_1up         30.0 x 24.0 x 6.7 mm   3.0 g
   coupon_blade_ladder    150.0 x 24.0 x 6.7 mm   14.9 g
 

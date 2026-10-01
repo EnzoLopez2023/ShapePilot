@@ -130,6 +130,40 @@ test('nothing on the bar stands above its top edge', () => {
   }
 })
 
+test('every prong starts on the bed, not part way up the print', () => {
+  // The bar is printed standing on its top edge, so a feature whose top is
+  // below the body's is a ledge hanging in mid-air. The first coupon had the
+  // prongs 4 mm down and they printed drooped -- which is what made the hook
+  // weak, not its thickness alone. Only the blade may start late: its 2.3 mm
+  // run is a bridge from the body to the lip, anchored at both ends.
+  const d = derive(HOLDER, BAR)
+  const bands = bandsFor(HOLDER, BAR)
+  const behind = bands.filter(b => b.z1 <= 0)
+  assert.equal(behind.length, 2, 'expected a shank band and a catch band')
+  for (const band of behind) {
+    let top = -Infinity
+    for (const poly of band.region) for (const ring of poly) {
+      for (const [, y] of ring) top = Math.max(top, y)
+    }
+    assert.ok(
+      Math.abs(top - d.heightMm) < 1e-6,
+      `a prong band starts ${(d.heightMm - top).toFixed(1)} mm up the print`,
+    )
+  }
+})
+
+test('the catch has more section than the slot would ever allow across its width', () => {
+  // The catch is a cantilever bending about its own thickness. Width cannot
+  // help it -- the catch has to pass through a 5 mm Skadis slot on the way in,
+  // so it is capped at slotWidth - 2 x fit. Thickness is the only axis left.
+  const d = derive(HOLDER, BAR)
+  assert.ok(d.prongWidthMm <= SKADIS.slotWidthMm - 2 * HOLDER.fitMm)
+  assert.ok(
+    HOLDER.prongCatchThicknessMm > d.prongWidthMm / 2,
+    'the catch is thinner than half the only width it is allowed',
+  )
+})
+
 test('every prong lands on the board own slot grid', () => {
   const d = derive(HOLDER, BAR)
   // A bar hung with its left edge on the board's left edge: its prongs must

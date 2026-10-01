@@ -71,8 +71,13 @@ test('a catch with too little board to hold on to is refused', () => {
 })
 
 test('a bar with no body below its prongs is refused', () => {
-  const issues = checkConfig({ ...HOLDER, bodyHeightMm: 17 }, BAR)
+  // The prong reaches 14.5 mm down from the body's top (9.5 shank + 5 catch),
+  // so a 15 mm body leaves half a millimetre to bear on the board.
+  const issues = checkConfig({ ...HOLDER, bodyHeightMm: 15 }, BAR)
   assert.ok(issues.some(m => /pivot on them/.test(m)), issues.join('; '))
+  // And the shipped body has real room below them.
+  const reach = HOLDER.prongTopBelowTopMm + HOLDER.prongHeightMm + HOLDER.prongCatchDropMm
+  assert.ok(HOLDER.bodyHeightMm - reach >= 5, 'too little body bearing on the board')
 })
 
 test('five columns fits the dual-nozzle plate, six warns and seven fits neither', () => {

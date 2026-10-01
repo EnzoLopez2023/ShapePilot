@@ -76,8 +76,25 @@ export interface HolderConfig {
   prongHeightMm: number
   /** How far the catch drops behind the board. Also the install action. */
   prongCatchDropMm: number
+  /**
+   * The catch's thickness, behind the board. It is a cantilever bending about
+   * its own thickness, so this is the number that makes the hook strong --
+   * width cannot help, because the catch has to pass through a 5 mm slot on
+   * the way in.
+   */
   prongCatchThicknessMm: number
-  /** Body top to the top of the prongs. */
+  /**
+   * Body top to the top of the prongs. Zero, and that is a PRINT decision.
+   *
+   * The bar is printed standing on its top edge, so the bed is the body-top
+   * plane. At zero the prongs start on the bed; at anything else they start
+   * that far up as a 7 mm ledge hanging off the side of the body with nothing
+   * under it, which prints drooped and is why the first coupon's hook was
+   * weak. It also happens to be the strongest place for them: the couple that
+   * resists a hanging card tipping the bar runs from the catch to the body's
+   * lower edge, so putting the prongs at the very top makes that arm the
+   * body's whole height.
+   */
   prongTopBelowTopMm: number
 
   // ---- pad ----
@@ -97,10 +114,13 @@ export interface HolderConfig {
 }
 
 export const HOLDER: HolderConfig = {
-  // 1.2 + 0.5 + 0.3 = 2.0, which is the card's slot exactly.
-  bladeThicknessMm: 1.2,
+  // 1.0 + 0.7 + 0.3 = 2.0, which is the card's slot exactly. Settled on the
+  // bench: the ladder coupon's fourth blade won, and it is also the limit --
+  // a bigger lip has to come out of the blade or out of the clearance, and
+  // the blade is already down to two and a half extrusions.
+  bladeThicknessMm: 1.0,
   bladeLengthMm: 24,
-  bladeLipMm: 0.5,
+  bladeLipMm: 0.7,
   bladeLipRunMm: 1.2,
   fitMm: 0.3,
 
@@ -111,8 +131,8 @@ export const HOLDER: HolderConfig = {
   boardThicknessMm: 5,
   prongHeightMm: 9.5,
   prongCatchDropMm: 5,
-  prongCatchThicknessMm: 2,
-  prongTopBelowTopMm: 4,
+  prongCatchThicknessMm: 3.2,
+  prongTopBelowTopMm: 0,
 
   padSideMm: 3,
   padHeightMm: 24,
