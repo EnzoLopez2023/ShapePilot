@@ -24,6 +24,8 @@ export const PRINT_SETTINGS: Readonly<Record<string, { speed: string; temp: stri
   'bambu-lab/pla/basic': { speed: '200 mm/s', temp: '220 °C' },
   'bambu-lab/pla/matte': { speed: '200 mm/s', temp: '220 °C' },
   'bambu-lab/pla/basic-gradient': { speed: '200 mm/s', temp: '220 °C' },
+  'bambu-lab/pla/silk-plus': { speed: '200 mm/s', temp: '230 °C' },
+  'bambu-lab/pla/silk-multi-color': { speed: '200 mm/s', temp: '230 °C' },
   'bambu-lab/pla/wood': { speed: '200 mm/s', temp: '220 °C' },
   'bambu-lab/petg/basic': { speed: '200 mm/s', temp: '255 °C' },
   'bambu-lab/petg/hf': { speed: '200 mm/s', temp: '255 °C' },

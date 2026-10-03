@@ -3,6 +3,8 @@
     { "brand": "bambu-lab", "brandLabel": "Bambu Lab", "material": "pla", "type": "basic", "label": "PLA Basic", "variants": ["spool", "refill"] },
     { "brand": "bambu-lab", "brandLabel": "Bambu Lab", "material": "pla", "type": "matte", "label": "PLA Matte", "variants": ["spool", "refill"] },
     { "brand": "bambu-lab", "brandLabel": "Bambu Lab", "material": "pla", "type": "basic-gradient", "label": "PLA Basic Gradient", "variants": ["spool"] },
+    { "brand": "bambu-lab", "brandLabel": "Bambu Lab", "material": "pla", "type": "silk-plus", "label": "PLA Silk+", "variants": ["spool", "refill"] },
+    { "brand": "bambu-lab", "brandLabel": "Bambu Lab", "material": "pla", "type": "silk-multi-color", "label": "PLA Silk Multi-Color", "variants": ["spool"] },
     { "brand": "bambu-lab", "brandLabel": "Bambu Lab", "material": "petg", "type": "basic", "label": "PETG Basic", "variants": ["spool"] },
     { "brand": "bambu-lab", "brandLabel": "Bambu Lab", "material": "petg", "type": "hf", "label": "PETG HF", "variants": ["spool", "refill"] },
     { "brand": "bambu-lab", "brandLabel": "Bambu Lab", "material": "petg", "type": "matte", "label": "PETG Matte", "variants": ["spool", "refill"] },
@@ -73,6 +75,33 @@
     ],
     "bambu-lab/pla/basic-gradient": [
       { "name": "Ocean to Meadow", "code": "10902", "hexes": ["#307FE2", "#54FF9B"] }
+    ],
+    "bambu-lab/pla/silk-plus": [
+      { "name": "Baby Blue", "code": "13603", "hexes": ["#A8C6EE"] },
+      { "name": "Blue", "code": "13604", "hexes": ["#008BDA"] },
+      { "name": "Candy Green", "code": "13506", "hexes": ["#018814"] },
+      { "name": "Candy Red", "code": "13205", "hexes": ["#D02727"] },
+      { "name": "Champagne", "code": "13404", "hexes": ["#F3CFB2"] },
+      { "name": "Gold", "code": "13405", "hexes": ["#F4A925"] },
+      { "name": "Mint", "code": "13507", "hexes": ["#96DCB9"] },
+      { "name": "Pink", "code": "13207", "hexes": ["#F7ADA6"] },
+      { "name": "Purple", "code": "13702", "hexes": ["#8671CB"] },
+      { "name": "Rose Gold", "code": "13206", "hexes": ["#BA9594"] },
+      { "name": "Silver", "code": "13109", "hexes": ["#C8C8C8"] },
+      { "name": "Titan Gray", "code": "13108", "hexes": ["#5F6367"] },
+      { "name": "White", "code": "13110", "hexes": ["#FFFFFF"] }
+    ],
+    "bambu-lab/pla/silk-multi-color": [
+      { "name": "Aurora Purple", "code": "13909", "hexes": ["#7F3696", "#006EC9"] },
+      { "name": "Blue Hawaii", "code": "13904", "hexes": ["#418FDE", "#70C884"] },
+      { "name": "Dawn Radiance", "code": "13912", "hexes": ["#EC984C", "#6CD4BC"] },
+      { "name": "Gilded Rose", "code": "13901", "hexes": ["#FF9425", "#C16784"] },
+      { "name": "Midnight Blaze", "code": "13902", "hexes": ["#0047BB", "#7D1B49"] },
+      { "name": "Mystic Magenta", "code": "13913", "hexes": ["#720062", "#3A913F"] },
+      { "name": "Neon City", "code": "13903", "hexes": ["#0047BB", "#BB22A3"] },
+      { "name": "Phantom Blue", "code": "13916", "hexes": ["#00629B", "#000000"] },
+      { "name": "South Beach", "code": "13906", "hexes": ["#F772A4", "#00918B"] },
+      { "name": "Velvet Eclipse", "code": "13905", "hexes": ["#000000", "#A34342"] }
     ],
     "bambu-lab/petg/basic": [
       { "name": "Black", "code": "30101", "hexes": ["#000000"], "discontinued": true },

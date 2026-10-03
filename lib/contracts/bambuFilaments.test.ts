@@ -12,9 +12,9 @@ import {
 
 const lineId = (id: string) => id
 
-test('holds the eight Bambu lines at their captured sizes', () => {
-  assert.equal(FILAMENT_LINES.length, 8)
-  assert.equal(FILAMENT_CATALOG.length, 131)
+test('holds the ten Bambu lines at their captured sizes', () => {
+  assert.equal(FILAMENT_LINES.length, 10)
+  assert.equal(FILAMENT_CATALOG.length, 154)
   const counts = Object.fromEntries(
     FILAMENT_LINES.map(l => [`${l.brand}/${l.material}/${l.type}`, filamentsOfLine(
       `${l.brand}/${l.material}/${l.type}`).length]))
@@ -24,6 +24,8 @@ test('holds the eight Bambu lines at their captured sizes', () => {
     // Added by hand for one spool on the shelf: the gradients are multi-colour
     // and were not in the original capture.
     'bambu-lab/pla/basic-gradient': 1,
+    'bambu-lab/pla/silk-plus': 13,
+    'bambu-lab/pla/silk-multi-color': 10,
     'bambu-lab/petg/basic': 28,
     'bambu-lab/petg/hf': 14,
     'bambu-lab/petg/matte': 8,
@@ -80,7 +82,7 @@ test('offers refills only on the lines Bambu sells them for', () => {
     .map(l => `${l.brand}/${l.material}/${l.type}`)
   assert.deepEqual(
     refillable.sort(), ['bambu-lab/petg/hf', 'bambu-lab/petg/matte', 'bambu-lab/pla/basic',
-      'bambu-lab/pla/matte'])
+      'bambu-lab/pla/matte', 'bambu-lab/pla/silk-plus'])
   for (const line of FILAMENT_LINES) {
     assert.ok(line.variants.includes('spool'), `${line.label} cannot be bought on a reel`)
   }
@@ -103,7 +105,8 @@ test('lookups resolve, and the pair count bounds a full tick set', () => {
   assert.equal(filamentByKey(known.key), known)
   assert.equal(filamentByKey('no/such/filament/key'), undefined)
   assert.equal(filamentLineById('no/such/line'), undefined)
-  // PLA Basic, PLA Matte, PETG HF and PETG Matte carry two variants each; the other 52 carry one.
-  assert.equal(FILAMENT_PAIR_COUNT, (32 + 25 + 14 + 8) * 2 + 1 + 28 + 6 + 17)
-  assert.equal(FILAMENT_PAIR_COUNT, 210)
+  // PLA Basic, PLA Matte, PLA Silk+, PETG HF and PETG Matte carry two variants each;
+  // the other 62 carry one.
+  assert.equal(FILAMENT_PAIR_COUNT, (32 + 25 + 13 + 14 + 8) * 2 + 1 + 10 + 28 + 6 + 17)
+  assert.equal(FILAMENT_PAIR_COUNT, 246)
 })
