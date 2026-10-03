@@ -57,6 +57,7 @@ export const FILAMENT_LINES: readonly FilamentLine[] = Object.freeze([
   { brand: 'bambu-lab', brandLabel: 'Bambu Lab', material: 'pla', type: 'basic-gradient', label: 'PLA Basic Gradient', variants: ['spool'] },
   { brand: 'bambu-lab', brandLabel: 'Bambu Lab', material: 'petg', type: 'basic', label: 'PETG Basic', variants: ['spool'] },
   { brand: 'bambu-lab', brandLabel: 'Bambu Lab', material: 'petg', type: 'hf', label: 'PETG HF', variants: ['spool', 'refill'] },
+  { brand: 'bambu-lab', brandLabel: 'Bambu Lab', material: 'petg', type: 'matte', label: 'PETG Matte', variants: ['spool', 'refill'] },
   { brand: 'bambu-lab', brandLabel: 'Bambu Lab', material: 'pla', type: 'wood', label: 'PLA Wood', variants: ['spool'] },
   { brand: 'bambu-lab', brandLabel: 'Bambu Lab', material: 'abs', type: 'basic', label: 'ABS', variants: ['spool'] },
 ])
@@ -168,6 +169,15 @@ export const FILAMENT_CATALOG: readonly FilamentColor[] = Object.freeze([
   { key: 'bambu-lab/petg/hf/red-33200', line: 'bambu-lab/petg/hf', name: 'Red', code: '33200', hexes: ['#EB3A3A'] },
   { key: 'bambu-lab/petg/hf/white-33100', line: 'bambu-lab/petg/hf', name: 'White', code: '33100', hexes: ['#FFFFFF'] },
   { key: 'bambu-lab/petg/hf/yellow-33400', line: 'bambu-lab/petg/hf', name: 'Yellow', code: '33400', hexes: ['#FFD00B'] },
+  // PETG Matte -- 8 colours
+  { key: 'bambu-lab/petg/matte/avocado-green-35501', line: 'bambu-lab/petg/matte', name: 'Avocado Green', code: '35501', hexes: ['#BCE194'] },
+  { key: 'bambu-lab/petg/matte/baby-blue-35600', line: 'bambu-lab/petg/matte', name: 'Baby Blue', code: '35600', hexes: ['#B9D9EB'] },
+  { key: 'bambu-lab/petg/matte/black-35101', line: 'bambu-lab/petg/matte', name: 'Black', code: '35101', hexes: ['#000000'] },
+  { key: 'bambu-lab/petg/matte/gray-35102', line: 'bambu-lab/petg/matte', name: 'Gray', code: '35102', hexes: ['#7F7E83'] },
+  { key: 'bambu-lab/petg/matte/lime-35500', line: 'bambu-lab/petg/matte', name: 'Lime', code: '35500', hexes: ['#C0DF16'] },
+  { key: 'bambu-lab/petg/matte/pink-35700', line: 'bambu-lab/petg/matte', name: 'Pink', code: '35700', hexes: ['#FABBCB'] },
+  { key: 'bambu-lab/petg/matte/violet-35702', line: 'bambu-lab/petg/matte', name: 'Violet', code: '35702', hexes: ['#A7A4E0'] },
+  { key: 'bambu-lab/petg/matte/white-35100', line: 'bambu-lab/petg/matte', name: 'White', code: '35100', hexes: ['#FFFFFF'] },
   // PLA Wood -- 6 colours
   { key: 'bambu-lab/pla/wood/black-walnut-13107', line: 'bambu-lab/pla/wood', name: 'Black Walnut', code: '13107', hexes: ['#4F3F24'] },
   { key: 'bambu-lab/pla/wood/classic-birch-13505', line: 'bambu-lab/pla/wood', name: 'Classic Birch', code: '13505', hexes: ['#918669'] },

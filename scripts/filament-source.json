@@ -5,6 +5,7 @@
     { "brand": "bambu-lab", "brandLabel": "Bambu Lab", "material": "pla", "type": "basic-gradient", "label": "PLA Basic Gradient", "variants": ["spool"] },
     { "brand": "bambu-lab", "brandLabel": "Bambu Lab", "material": "petg", "type": "basic", "label": "PETG Basic", "variants": ["spool"] },
     { "brand": "bambu-lab", "brandLabel": "Bambu Lab", "material": "petg", "type": "hf", "label": "PETG HF", "variants": ["spool", "refill"] },
+    { "brand": "bambu-lab", "brandLabel": "Bambu Lab", "material": "petg", "type": "matte", "label": "PETG Matte", "variants": ["spool", "refill"] },
     { "brand": "bambu-lab", "brandLabel": "Bambu Lab", "material": "pla", "type": "wood", "label": "PLA Wood", "variants": ["spool"] },
     { "brand": "bambu-lab", "brandLabel": "Bambu Lab", "material": "abs", "type": "basic", "label": "ABS", "variants": ["spool"] }
   ],
@@ -118,6 +119,16 @@
       { "name": "Red", "code": "33200", "hexes": ["#EB3A3A"] },
       { "name": "White", "code": "33100", "hexes": ["#FFFFFF"] },
       { "name": "Yellow", "code": "33400", "hexes": ["#FFD00B"] }
+    ],
+    "bambu-lab/petg/matte": [
+      { "name": "Avocado Green", "code": "35501", "hexes": ["#BCE194"] },
+      { "name": "Baby Blue", "code": "35600", "hexes": ["#B9D9EB"] },
+      { "name": "Black", "code": "35101", "hexes": ["#000000"] },
+      { "name": "Gray", "code": "35102", "hexes": ["#7F7E83"] },
+      { "name": "Lime", "code": "35500", "hexes": ["#C0DF16"] },
+      { "name": "Pink", "code": "35700", "hexes": ["#FABBCB"] },
+      { "name": "Violet", "code": "35702", "hexes": ["#A7A4E0"] },
+      { "name": "White", "code": "35100", "hexes": ["#FFFFFF"] }
     ],
     "bambu-lab/pla/wood": [
       { "name": "Black Walnut", "code": "13107", "hexes": ["#4F3F24"] },
