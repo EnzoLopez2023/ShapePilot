@@ -330,6 +330,16 @@ npx --yes icuewidget-cli@0.4.48 package widgets/element-edge
 unzip -p widgets/shapepilot-el-ement-edge.icuewidget index.html | xmllint --noout -
 ```
 
+The wrapper manifest must set `"interactive": true` for `dashboard_lcd`;
+without it, iCUE renders the page but does not forward touch/click events, so
+**Start pairing** appears to do nothing. Wrapper **1.0.1** corrects the missing
+flag in 1.0.0. Import the distinctly named
+`shapepilot-el-ement-edge-1.0.1.icuewidget` replacement and replace the old EDGE
+widget instance if iCUE retains it. This package-only correction requires no
+website deployment, database migration, sandbox change or IT-policy exception.
+Direct-browser and cross-origin iframe clicks against the live page both
+produce a pending pairing code; physical iCUE interaction must still be confirmed.
+
 ### AI design assistant
 
 Two further app settings, both **non-secret**, configure the assistant behind
