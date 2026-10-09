@@ -270,6 +270,66 @@ path, use authenticated **Admin -> EL-ement Statistics** to verify the connectio
 select the household printer and enable monitoring. A deployed page or a resolved
 Key Vault reference alone does not prove MQTT freshness or history recording.
 
+### EDGE current-job display (prepared, not activated)
+
+The dedicated `https://shapepilot.nintek.com/display/element` page reuses the
+existing household monitor and server-held Bambu credential. It has its own
+black/white/orange entry point, no Microsoft sign-in inside the frame, no app
+navigation, and no controls, history, connection settings or AMS/spool data.
+It requires no new Azure service, app setting, Bambu token copy or CORS change.
+The normal signed-in app and its theme/authentication are unchanged.
+
+Migration `018-element-displays` adds hashed, expiring display credentials to
+the existing SQLite authority. This is a **migration-carrying deployment**:
+the automatic pre-migration snapshot must succeed before startup can apply it,
+and the previous `017` image will refuse the upgraded ledger. Follow
+**Deploys that add a migration** below rather than assuming an image-only
+rollback will work. The compatibility diagnostic acknowledges and checks this
+additive lineage; this documentation is not production activation approval.
+
+After owner-approved deployment through the normal immutable-image pipeline:
+
+1. Import `shapepilot-el-ement-edge.icuewidget` in iCUE 5.52.93+ and add
+   **ShapePilot - EL-ement EDGE**. Click **Start pairing** on the display.
+2. On a normal browser/device, sign in as a ShapePilot administrator, enable
+   the selected household printer in **Admin → EL-ement Statistics**, then
+   enter the displayed 10-character code and name under **EDGE displays**.
+   Approve only a code visible on your own physical display.
+3. The code expires after 10 minutes and is single-use. Approved access lasts
+   90 days. Use **Revoke** in the same panel before retiring/sharing a display;
+   **Reset this display** only forgets its local credential, not the server grant.
+
+Only a SHA-256 credential digest is persisted server-side. The random
+256-bit credential stays in the dedicated origin's local storage and travels
+in an `Authorization: Display …` header, never a URL, wrapper property or
+log. It authorizes only the whitelisted current-job projection for the
+approved connection. The approving `(tenant_id, oid)` membership is rechecked
+on every read; losing admin access immediately denies the display.
+Switching printers never transfers a grant to the new connection. Each admin
+lists/revokes only their own approved displays. Public pairing and reads are
+bounded and return no telemetry before approval. API responses are `no-store`.
+
+The wrapper loads only the fixed ShapePilot HTTPS origin/path and validates a
+credential-free page-ready message from that frame; frame `load` is not proof
+of live telemetry. Black/white/orange job readings explicitly label
+offline/stale/unavailable states and preserve last-known readings on network
+failure without fabricating values. The page's CSP is scoped to the dedicated
+route, not a weakened application-wide policy.
+
+**Remaining physical acceptance:** public landing-page iframe rendering passed
+on XENEON EDGE, but the new page's pairing, storage persistence across iCUE/
+Windows restarts, and actual live telemetry must be checked after deployment.
+If iframe origin storage is blocked, the page reports it explicitly; do not
+relax IT/browser policy to make it work. No production deployment or physical
+acceptance is claimed by this source change.
+
+Package on an approved development machine (nothing to install on Windows):
+
+```sh
+npx --yes icuewidget-cli@0.4.48 package widgets/element-edge
+unzip -p widgets/shapepilot-el-ement-edge.icuewidget index.html | xmllint --noout -
+```
+
 ### AI design assistant
 
 Two further app settings, both **non-secret**, configure the assistant behind

@@ -25,6 +25,7 @@ export const EMPTY_SEED_DOMAIN_TABLES = [
   'audit_events',
   'design_assets',
   'design_documents',
+  'element_displays',
   'element_statistics_connections',
   'element_statistics_settings',
   'element_statistics_sync_state',

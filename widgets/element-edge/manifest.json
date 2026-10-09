@@ -1,0 +1,12 @@
+{
+  "author": "Enzo Lopez",
+  "id": "com.enzolopez.shapepilot-element-edge",
+  "name": "ShapePilot - EL-ement EDGE",
+  "description": "Read-only current printer job from ShapePilot. Administrator-approved display pairing; no controls, history or spool data.",
+  "version": "1.0.0",
+  "preview_icon": "resources/icon.svg",
+  "min_app_version": "5.52.93",
+  "min_framework_version": "1.0.0",
+  "os": [{ "platform": "windows" }],
+  "supported_devices": [{ "type": "dashboard_lcd" }]
+}

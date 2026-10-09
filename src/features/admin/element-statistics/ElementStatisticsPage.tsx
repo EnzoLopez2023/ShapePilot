@@ -12,6 +12,7 @@ import { errorMessage } from '../../../services/errors.ts'
 import { ErrorState } from '../../../components/LoadingState.tsx'
 import ConnectionPanel from './ConnectionPanel.tsx'
 import LiveStatus from './LiveStatus.tsx'
+import DisplayPanel from './DisplayPanel.tsx'
 import StatisticsFilters from './StatisticsFilters.tsx'
 import StatisticsCharts from './StatisticsCharts.tsx'
 import HistoryLedger from './HistoryLedger.tsx'
@@ -264,6 +265,7 @@ export default function ElementStatisticsPage() {
         </Box>
         {status.problem && status.settings.enabled && <Alert severity="warning">{status.problem.message}</Alert>}
       </>}
+      <DisplayPanel />
       <StatisticsFilters key={`${requestKey}:${range}`} filters={query.filters} range={range}
         connections={status?.connections ?? []} materials={report?.availableMaterials ?? reportState?.report.availableMaterials ?? []}
         onApply={applyFilters} onReset={reset} />

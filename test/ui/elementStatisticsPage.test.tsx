@@ -165,6 +165,7 @@ beforeEach(() => {
       preferences: { themeMode: 'light', units: 'mm', reducedMotion: 'system', designerDefaults: SHIPPED_DESIGNER_DEFAULTS },
     })
     if (offline) return json({ error: { code: 'unavailable', message: 'Synthetic API outage. Retry when the server is reachable.' } }, 503)
+    if (url.pathname === '/api/admin/element-displays') return json([])
     if (url.pathname.endsWith('/status')) return json(status())
     if (url.pathname.endsWith('/report')) return json(report(url.searchParams))
     if (url.pathname.includes('/jobs/')) return json({

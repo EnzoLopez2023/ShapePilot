@@ -78,6 +78,10 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
   {
+    files: ['widgets/**/*.js'],
+    languageOptions: { globals: globals.browser, sourceType: 'script' },
+  },
+  {
     // Imported into the generated service worker; runs with worker globals.
     files: ['public/push-handler.js'],
     languageOptions: { globals: globals.serviceworker, sourceType: 'script' },

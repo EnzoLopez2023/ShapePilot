@@ -47,6 +47,15 @@ are not assumed to have consumed their whole estimates, and unavailable data
 stays unavailable. Cloud coverage is not a lifetime odometer. Monitoring does
 not reinterpret or decrement the Filaments ownership ticks.
 
+**EDGE current-job display** is a deliberately narrower delegation of that
+administrator-owned household monitor. An administrator approves a short-lived
+pairing code from their physical display; the revocable, 90-day credential is
+bound to that approving identity and the selected printer connection. The
+dedicated black/white/orange page shows only current-job readings and their
+freshness, with no controls, setup, history or AMS/spool data. It does not rely
+on Microsoft sign-in inside iCUE, make printer data public, or change normal
+app authentication. Bambu credentials remain exclusively server-held.
+
 A person opens ShapePilot to lay something out, check whether the result can
 actually be printed or cut, and export a file their machine accepts. Everything
 downstream of that — geometry, validation, STL/3MF/SVG/DXF — happens in the

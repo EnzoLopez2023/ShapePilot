@@ -1,0 +1,87 @@
+/* THESIS: a glanceable current job, never an app dashboard.
+   OWN-WORLD: user-pinned black field, white type, orange progress; no app theme changes.
+   STORY: pair once outside the frame, then read real telemetry and its freshness.
+   FIRST VIEWPORT: printer/state/name, large progress/time, layers/temperatures, errors.
+   FORM: specified EDGE job-only display, compact horizontal and spacious vertical. */
+.edge-display {
+  --edge-muted: #b8b8b8;
+  --edge-accent: #ff9b3d;
+  box-sizing: border-box;
+  min-height: 100vh;
+  min-height: 100dvh;
+  width: 100%;
+  padding: clamp(18px, 3vw, 36px);
+  background: #000;
+  color: #fff;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: clamp(18px, 2.8vw, 26px);
+  line-height: 1.35;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(16px, 3vh, 28px);
+  font-variant-numeric: tabular-nums;
+}
+body { margin: 0; background: #000; color-scheme: dark; }
+.edge-display * { box-sizing: border-box; }
+.edge-display h1, .edge-display h2, .edge-display p, .edge-display dl, .edge-display dd { margin: 0; }
+.edge-header { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+.edge-header h1, .edge-pairing h1 { font-size: clamp(22px, 3.4vw, 32px); font-weight: 600; overflow-wrap: anywhere; }
+.edge-health { color: var(--edge-accent); font-size: clamp(16px, 2.4vw, 22px); text-align: right; }
+.edge-state { color: var(--edge-accent); font-weight: 600; }
+.edge-job h2 { font-size: clamp(26px, 4.5vw, 44px); line-height: 1.15; margin-top: 8px; overflow-wrap: anywhere; }
+.edge-progress-heading { display: flex; justify-content: space-between; gap: 20px; align-items: end; }
+.edge-label { display: block; color: var(--edge-muted); }
+.edge-progress strong { font-size: clamp(38px, 9vw, 76px); font-weight: 650; line-height: 1.15; }
+.edge-remaining { text-align: right; }
+.edge-remaining strong { font-size: clamp(28px, 6vw, 54px); }
+.edge-display progress, .edge-empty-progress { width: 100%; height: 12px; margin-top: 16px; border: 0; border-radius: 4px; background: #262626; overflow: hidden; display: block; }
+.edge-display progress { accent-color: var(--edge-accent); }
+.edge-display progress::-webkit-progress-bar { background: #262626; }
+.edge-display progress::-webkit-progress-value { background: var(--edge-accent); }
+.edge-display progress::-moz-progress-bar { background: var(--edge-accent); }
+.edge-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 22px 28px; }
+.edge-metrics > div:first-child { grid-column: 1 / -1; }
+.edge-metrics dt { color: var(--edge-muted); font-size: .85em; }
+.edge-metrics dt span { display: block; font-size: .85em; }
+.edge-metrics dd { font-size: clamp(26px, 4.5vw, 40px); margin-top: 5px; overflow-wrap: anywhere; }
+.edge-metrics dd span { color: var(--edge-muted); font-size: .8em; }
+.edge-footer { margin-top: auto; border-top: 1px solid #484848; padding-top: 14px; font-size: clamp(16px, 2.4vw, 22px); overflow-wrap: anywhere; }
+.edge-separator { color: var(--edge-muted); }
+.edge-updated { color: var(--edge-muted); font-size: .8em; margin-top: 8px !important; }
+.edge-pairing { justify-content: center; max-width: 100%; }
+.edge-pairing h2 { font-size: clamp(30px, 5vw, 48px); }
+.edge-code { color: var(--edge-accent); font-size: clamp(34px, 7vw, 64px); font-weight: 650; letter-spacing: .05em; }
+.edge-error { color: #ffb278; }
+.edge-pairing-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+.edge-display button { font: inherit; padding: 12px 20px; border: 1px solid var(--edge-accent); border-radius: 10px; background: var(--edge-accent); color: #000; cursor: pointer; }
+.edge-display button:hover { background: #ffb278; }
+.edge-display button:disabled { opacity: .65; cursor: wait; }
+.edge-display button.edge-secondary { background: transparent; color: #fff; border-color: #999; }
+.edge-display button:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
+@media (min-width: 700px) and (max-height: 450px) {
+  .edge-display { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: auto auto auto 1fr; padding: 16px 24px; gap: 10px 24px; font-size: 19px; }
+  .edge-header, .edge-metrics, .edge-footer { grid-column: 1 / -1; }
+  .edge-footer { align-self: end; }
+  .edge-header h1 { font-size: 23px; }
+  .edge-health { font-size: 17px; }
+  .edge-job h2 { font-size: 26px; margin-top: 3px; }
+  .edge-state { font-size: 18px; }
+  .edge-progress strong { font-size: 40px; }
+  .edge-remaining strong { font-size: 32px; }
+  .edge-display progress, .edge-empty-progress { height: 8px; margin-top: 6px; }
+  .edge-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .edge-metrics > div:first-child { grid-column: auto; }
+  .edge-metrics dt span { display: inline; }
+  .edge-metrics dd { font-size: 25px; margin-top: 2px; }
+  .edge-footer { font-size: 16px; padding-top: 8px; }
+  .edge-pairing h2 { font-size: 30px; }
+  .edge-pairing { display: flex; }
+  .edge-code { font-size: 34px; }
+}
+@media (max-width: 480px) {
+  .edge-header { align-items: start; }
+  .edge-progress-heading { flex-wrap: wrap; }
+  .edge-remaining { text-align: left; }
+  .edge-metrics { grid-template-columns: 1fr; }
+  .edge-metrics > div:first-child { grid-column: auto; }
+}
