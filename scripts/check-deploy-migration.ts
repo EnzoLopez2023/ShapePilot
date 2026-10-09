@@ -132,6 +132,12 @@ const ROLLBACK_COMPATIBLE_LEDGER = [
     name: 'filament prices',
     checksum: '435ddae65151d7351e450580c9be9fec3446ef1bfd03ff4225cd58317efb5933',
   },
+  {
+    ordinal: 17,
+    id: '018-element-displays',
+    name: 'revocable current-job displays',
+    checksum: 'f44fc7362cb2bc0bf71af82c2b8600cf710ae7113c82002cd7f7be92781de156',
+  },
 ] as const
 
 const REQUIRED_TABLES = [
@@ -147,6 +153,7 @@ const REQUIRED_TABLES = [
   'element_statistics_jobs',
   'element_statistics_telemetry',
   'element_statistics_events',
+  'element_displays',
   'filament_inventory',
   'filament_prices',
   'filament_usage_mappings',

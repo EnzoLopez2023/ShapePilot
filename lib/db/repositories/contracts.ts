@@ -7,6 +7,7 @@
 import type { FilamentUsageMapping } from '../../contracts/filamentUsage.ts'
 import type { ThemePaletteId } from '../../contracts/themePalettes.ts'
 import type { ElementStatisticsRepository } from './elementStatisticsContract.ts'
+import type { ElementDisplayRepository } from './elementDisplays.ts'
 
 export type { ElementStatisticsRepository } from './elementStatisticsContract.ts'
 
@@ -779,6 +780,7 @@ export interface Repositories {
   filaments: FilamentInventoryRepository
   filamentPrices: FilamentPriceRepository
   elementStatistics: ElementStatisticsRepository
+  elementDisplays: ElementDisplayRepository
   maintenance: MaintenanceRepository
   filamentUsageMappings: FilamentUsageMappingRepository
   push: PushRepository

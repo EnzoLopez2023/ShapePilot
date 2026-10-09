@@ -39,6 +39,7 @@ import { createVersionRouter } from './routes/version.ts'
 import { ElementMonitor } from './element/monitor.ts'
 import { createIntegrationRouter } from './routes/integrations.ts'
 import { createElementStatisticsRouter } from './routes/elementStatistics.ts'
+import { createElementDisplayAdminRouter, createElementDisplayRouter } from './routes/elementDisplays.ts'
 
 export interface CreateAppOptions {
   config: AppConfig
@@ -119,6 +120,10 @@ export function createApp(options: CreateAppOptions): Express {
   app.use(createVersionRouter(identity))
   // Service key, not Entra: read-only print history for the owner's Workshop Library.
   app.use('/api/integrations', createIntegrationRouter({ repos, config: config.integration }))
+  const elementMonitor = options.elementMonitor ?? new ElementMonitor({
+    repository: repos.elementStatistics, config: config.element, logger: options.logger,
+  })
+  app.use('/api/element-display', createElementDisplayRouter({ repos, monitor: elementMonitor }))
 
   const authenticated = requireAuth({
     auth: config.auth,
@@ -153,10 +158,10 @@ export function createApp(options: CreateAppOptions): Express {
   app.use('/api/admin/audit', authenticated, adminOnly, createAuditAdminRouter(repos))
   app.use('/api/admin/element-statistics', authenticated, adminOnly, createElementStatisticsRouter({
     repos,
-    monitor: options.elementMonitor ?? new ElementMonitor({
-      repository: repos.elementStatistics, config: config.element, logger: options.logger,
-    }),
+    monitor: elementMonitor,
   }))
+  app.use('/api/admin/element-displays', authenticated, adminOnly,
+    createElementDisplayAdminRouter({ repos, monitor: elementMonitor }))
   app.use('/api/admin', authenticated, adminOnly, createAdminRouter({
     repos,
     identity,
@@ -170,6 +175,14 @@ export function createApp(options: CreateAppOptions): Express {
   // Same-origin SPA in production. Real URL routing means every unmatched
   // non-API path has to fall through to the shell.
   if (existsSync(config.clientDir)) {
+    app.get('/display.html', (_req, res) => { res.redirect('/display/element') })
+    app.get('/display/element', (_req, res) => {
+      res.setHeader('cache-control', 'no-store')
+      res.setHeader('referrer-policy', 'no-referrer')
+      res.setHeader('content-security-policy',
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'")
+      res.sendFile(join(config.clientDir, 'display.html'))
+    })
     app.use(express.static(config.clientDir, { index: false, maxAge: '1h' }))
     app.get(/.*/, (req, res, next) => {
       if (req.path.startsWith('/api/')) return next()

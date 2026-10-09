@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <title>tr('ShapePilot - EL-ement EDGE')</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="referrer" content="no-referrer" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; frame-src https://shapepilot.nintek.com; base-uri 'none'; form-action 'none'" />
+  <link rel="icon" type="image/svg+xml" href="resources/icon.svg" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main>
+    <p id="status" role="status">Loading ShapePilot printer display&#8230;</p>
+    <button id="reload" type="button">Reload display</button>
+    <iframe id="website" title="ShapePilot current printer job"
+      sandbox="allow-scripts allow-same-origin" referrerpolicy="no-referrer"></iframe>
+  </main>
+  <script src="widget.js"></script>
+</body>
+</html>

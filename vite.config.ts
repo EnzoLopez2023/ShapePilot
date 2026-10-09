@@ -31,10 +31,10 @@ const pwa = VitePWA({
     clientsClaim: true,
     navigateFallback: '/index.html',
     // The API and the version probe are always live network, never the shell.
-    navigateFallbackDenylist: [/^\/api\//, /^\/version\.json$/],
+    navigateFallbackDenylist: [/^\/api\//, /^\/version\.json$/, /^\/display\/element$/],
     runtimeCaching: [
       {
-        urlPattern: ({ request }) => request.destination === 'document',
+        urlPattern: ({ request, url }) => request.destination === 'document' && url.pathname !== '/display/element',
         handler: 'NetworkFirst',
         options: { cacheName: 'html', networkTimeoutSeconds: 3 },
       },
@@ -46,7 +46,15 @@ const pwa = VitePWA({
 // The API is same-origin in production, so the dev proxy is the only place the
 // two processes are stitched together. No CORS package is needed anywhere.
 export default defineConfig({
-  plugins: [react(), pwa],
+  plugins: [react(), pwa, {
+    name: 'element-display-route',
+    configureServer(server) {
+      server.middlewares.use((req, _res, next) => {
+        if (req.url?.split('?')[0] === '/display/element') req.url = '/display.html'
+        next()
+      })
+    },
+  }],
   server: {
     port: 5173,
     proxy: {
@@ -55,6 +63,7 @@ export default defineConfig({
     },
   },
   build: {
+    rollupOptions: { input: { app: 'index.html', display: 'display.html' } },
     outDir: 'dist/client',
     sourcemap: true,
   },
