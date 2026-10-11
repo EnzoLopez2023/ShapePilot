@@ -12,6 +12,7 @@ npm run swatch:build            # models/filament-swatch
 npm run swatch:labels           # the label sheet for those cards
 npm run swatch:holder           # models/swatch-holder
 npm run swatch:holder -- --coupon  # models/swatch-holder-coupon
+npm run boards:build            # models/cutting-boards
 ```
 
 A change to `src/rack/config.ts` therefore shows up as a diff in this
@@ -77,3 +78,11 @@ still releases one-handed.
 These are ~55 MB of binaries and git keeps every version of each. If the
 history gets heavy, the usual answers are Git LFS or pruning old revisions of
 this directory; neither is set up today.
+
+## cutting-boards/
+
+Shaper Origin SVGs for two juice-groove cutting boards, after the Woodpeckers
+CBJG-SM (8 x 13 in, corner hang hole) and CBJG-LG (10-3/4 x 17-3/4 in, slot
+handles). Exterior profile, interior handles, and the groove as an on-line cut
+for a 3/8 in core box bit -- `README.txt` has the depth and cut order, which the
+SVG cannot carry.
