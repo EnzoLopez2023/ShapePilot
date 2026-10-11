@@ -11,9 +11,11 @@ import type { CompileOptions } from '../../geometry/sceneShapes.ts'
 import type { CutType, DesignDocument, SceneObject } from '../../model/document.ts'
 import type { CutDrawing, CutLayer } from '../../export/cutLayers.ts'
 
-/** Emission order. Anything not cut through comes before the outline that frees
- *  the part, which is also the order a person would cut them by hand. */
-const LAYER_ORDER: CutType[] = ['pocket', 'interior', 'online', 'guide', 'exterior']
+/** Paint order, bottom to top. The profile goes first, as the keycap tray's
+ *  proven file has it: its white fill would otherwise paint over every pocket
+ *  and hole inside it, in Origin's preview and in any viewer. Which cut is made
+ *  first is decided at the machine, not by this order. */
+const LAYER_ORDER: CutType[] = ['exterior', 'pocket', 'interior', 'online', 'guide']
 
 const LAYER_LABEL: Record<CutType, string> = {
   pocket: 'pockets',

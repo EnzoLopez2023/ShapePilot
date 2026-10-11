@@ -42,6 +42,8 @@ test('a template opens as profile, groove and handles, each its own cut', () => 
     const doc = template.build()
     assert.equal(doc.kind, 'shaper')
     const drawing = sceneCutDrawing(doc)
+    // Profile underneath: drawn last, its white fill would hide the rest.
+    assert.equal(drawing.layers[0]!.cutType, 'exterior', template.id)
     const byType = new Map(drawing.layers.map(l => [l.cutType, l]))
     assert.deepEqual([...byType.keys()].sort(), ['exterior', 'interior', 'online'], template.id)
     assert.equal(byType.get('exterior')!.polygons.length, 1)
