@@ -35,6 +35,13 @@ test('two external spools are numbered, one is just Ext', () => {
   assert.deepEqual(two.bays.map(bay => [bay.label, bay.slot?.slotId]), [['Ext 1', '254'], ['Ext 2', '255']])
 })
 
+test('an AMS with nothing loaded is drawn as four empty trays; an empty holder is not drawn', () => {
+  const units = amsUnits({ receivedAt: '2026-10-11T16:03:12Z', slots: [], units: ['0', 'external'] })
+  assert.equal(units.length, 1)
+  assert.deepEqual(units[0].bays.map(bay => [bay.label, bay.slot]),
+    [['A1', null], ['A2', null], ['A3', null], ['A4', null]])
+})
+
 test('no report is no units', () => {
   assert.deepEqual(amsUnits(null), [])
 })

@@ -45,6 +45,8 @@ export function trayName(slot: Pick<LoadedSlot, 'amsId' | 'slotId'>): string {
 export function amsUnits(stock: AmsStock | null): AmsUnit[] {
   if (!stock) return []
   const byUnit = new Map<string, LoadedSlot[]>()
+  // A unit reported with nothing loaded is still a unit: drawn as empty trays.
+  for (const id of stock.units ?? []) byUnit.set(id, [])
   for (const slot of stock.slots) {
     byUnit.set(slot.amsId, [...(byUnit.get(slot.amsId) ?? []), slot])
   }
@@ -55,36 +57,38 @@ export function amsUnits(stock: AmsStock | null): AmsUnit[] {
     return Number.isInteger(value) ? value : Number.MAX_SAFE_INTEGER - 1
   }
 
-  return [...byUnit.keys()].sort((a, b) => order(a) - order(b)).map(id => {
+  return [...byUnit.keys()].sort((a, b) => order(a) - order(b)).flatMap((id): AmsUnit[] => {
     const slots = byUnit.get(id) ?? []
     const unit = Number(id)
+    // An empty external holder or AMS HT has no fixed trays to draw as gaps.
+    if (slots.length === 0 && (id === 'external' || !Number.isInteger(unit) || unit >= HT_UNIT_ID)) return []
     if (id === 'external') {
       // The X2D has a holder per nozzle. One loaded is "Ext", as Studio says;
       // two are numbered in the printer's own order rather than guessed left
       // and right.
       const ordered = [...slots].sort((a, b) => Number(a.slotId) - Number(b.slotId))
-      return {
+      return [{
         id,
         name: 'External spool',
         bays: ordered.map((slot, index) => ({
           label: ordered.length > 1 ? `Ext ${index + 1}` : 'Ext', slot,
         })),
-      }
+      }]
     }
     if (!Number.isInteger(unit) || unit >= HT_UNIT_ID) {
-      return {
+      return [{
         id,
         name: unit >= HT_UNIT_ID ? `AMS HT ${unit - HT_UNIT_ID + 1}` : `AMS ${id}`,
         bays: slots.map(slot => ({ label: trayName(slot), slot })),
-      }
+      }]
     }
-    return {
+    return [{
       id,
       name: `AMS ${unit + 1}`,
       bays: Array.from({ length: TRAYS_PER_UNIT }, (_, tray) => ({
         label: `${letter(unit)}${tray + 1}`,
         slot: slots.find(slot => Number(slot.slotId) === tray) ?? null,
       })),
-    }
+    }]
   })
 }

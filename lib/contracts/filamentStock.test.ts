@@ -63,6 +63,20 @@ describe('matching a slot', () => {
     assert.equal(amsStockOf(null), null)
   })
 
+  // What production reported on 2026-10-11 with every spool out of the AMS so
+  // its dryer could run: four trays with nothing said about any of them.
+  test('a tray reported with nothing in it is empty, not an unknown spool', () => {
+    const blankTray = (slotId: string) =>
+      slot(slotId, '', null, { material: null, subBrand: null, empty: null })
+    const stock = amsStockOf(snapshot(['0', '1', '2', '3'].map(blankTray)))!
+    assert.deepEqual(stock.slots, [])
+    // The unit is still known, so it is drawn as four empty trays.
+    assert.deepEqual(stock.units, ['0'])
+    // A spool with a colour but no brand is still a spool.
+    const unbranded = amsStockOf(snapshot([slot('0', '#161616FF', null, { subBrand: null })]))!
+    assert.equal(unbranded.slots.length, 1)
+  })
+
   test('labels slots from one, as the printer does', () => {
     assert.equal(slotLabel({ amsId: '0', slotId: '3' }), 'AMS 1 · slot 4')
     assert.equal(slotLabel({ amsId: 'external', slotId: '0' }), 'AMS external · slot 0')

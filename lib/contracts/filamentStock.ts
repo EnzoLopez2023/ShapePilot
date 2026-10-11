@@ -54,7 +54,21 @@ export interface AmsStock {
   /** When the printer last reported. The panel says so; it is not hidden when old. */
   receivedAt: string
   slots: LoadedSlot[]
+  /**
+   * Every unit the report mentioned, loaded or not, so an AMS with nothing in
+   * it -- emptied to run its dryer -- is still drawn, as four empty trays.
+   * Absent on stock built before this was recorded.
+   */
+  units?: string[]
 }
+
+/**
+ * A tray the printer reports nothing about: no material, no brand, no colour.
+ * An AMS emptied to dry reports its trays this way rather than as `empty`, and
+ * there is no spool there to be unknown -- it is an empty tray.
+ */
+const blank = (slot: ElementAmsSlot): boolean =>
+  !slot.material && !slot.subBrand && !normalizeColor(slot.color)
 
 const LINE_BY_LABEL = new Map(FILAMENT_LINES.map(line => [
   line.label.toUpperCase(), `${line.brand}/${line.material}/${line.type}`,
@@ -82,8 +96,9 @@ export function amsStockOf(snapshot: ElementSnapshot | null): AmsStock | null {
   if (!snapshot?.ams) return null
   return {
     receivedAt: snapshot.fieldUpdatedAt.ams ?? snapshot.receivedAt,
+    units: [...new Set(snapshot.ams.map(slot => slot.amsId))],
     slots: snapshot.ams
-      .filter(slot => slot.empty !== true)
+      .filter(slot => slot.empty !== true && !blank(slot))
       .map(slot => ({
         amsId: slot.amsId,
         slotId: slot.slotId,
