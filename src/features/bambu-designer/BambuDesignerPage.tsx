@@ -56,8 +56,7 @@ import { assignExtruders, filamentWarnings, trayLabel } from './amsTrays.ts'
 import { SPOOL_GRAMS, densityOf, formatGrams, printedGrams } from './estimate.ts'
 import { overhangSurface } from './surfaces.ts'
 import { costOf, formatMoney } from '../filaments/model/cost.ts'
-import { getFilamentPrices } from '../filaments/service.ts'
-import type { FilamentPrice } from '../filaments/service.ts'
+import { usePriceBook } from '../filaments/usePriceBook.ts'
 import LibraryPalette from './components/LibraryPalette.tsx'
 import type { FastenerEntry, FileEntry, LibraryEntry } from './components/libraryEntries.ts'
 import { EL_LOGO } from './components/libraryEntries.ts'
@@ -175,16 +174,10 @@ export default function BambuDesignerPage() {
   const [libraryBusy, setLibraryBusy] = useState<string | null>(null)
   const ams = useAmsTrays()
   const ownedColors = useOwnedColors()
-  // What the filament costs, when the lines in the AMS are priced. Unpriced
-  // lines are left out of the money and named as unpriced, never guessed at.
-  const [prices, setPrices] = useState<FilamentPrice[]>([])
-  useEffect(() => {
-    let cancelled = false
-    void getFilamentPrices()
-      .then(stored => { if (!cancelled) setPrices(stored) })
-      .catch(() => { /* no prices, no cost line */ })
-    return () => { cancelled = true }
-  }, [])
+  // What the filament costs, from what was paid for it. A colour with no order
+  // behind it (in itself or its line) is left out of the money and named as
+  // unpriced, never guessed at.
+  const priceOf = usePriceBook()
   const [fastener, setFastener] = useState<FastenerEntry | null>(null)
   const [cardDialog, setCardDialog] = useState<
     { spec: CardSpec; editing: FoundCard | null } | null>(null)
@@ -299,7 +292,7 @@ export default function BambuDesignerPage() {
       const key = ams.trays?.find(tray => tray.slot === slot)?.key
       return key ? [{ key, grams }] : []
     }),
-    prices), [usage, ams.trays, prices])
+    priceOf), [usage, ams.trays, priceOf])
 
   const trayWarnings = useMemo(() => {
     const warnings = filamentWarnings(objects, ams.trays)
@@ -1069,7 +1062,7 @@ export default function BambuDesignerPage() {
                   ? ` By filament: ${usage.map(u => `${trayLabel(u.slot)} ${formatGrams(u.grams)}`).join(', ')}.`
                   : '')
                 + (cost.unpricedGrams > 0
-                  ? ` ${formatGrams(cost.unpricedGrams)} is on filament with no price set.`
+                  ? ` ${formatGrams(cost.unpricedGrams)} is on filament with no order to price it.`
                   : '')
               }>
                 <span style={{ pointerEvents: 'auto' }}>

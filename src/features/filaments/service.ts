@@ -1,97 +1,48 @@
-// Filament inventory API client.
+// Filament API client: orders, the shelf they add up to, and print usage.
 //
-// Thin wrappers over `apiRequest`, like every other feature service -- with one
-// addition the others do not need.
-//
-// The page has no Save button: a tick is the commit, and the whole inventory
-// goes up on every tick. Two of those in flight at once can land out of order
-// and leave the older body as the stored truth, which per-row writes would have
-// been immune to. So writes go through a single-flight queue that coalesces:
-// one request in flight, one pending body, and the pending body is always the
-// most recent. Ticking thirty boxes quickly is at most two requests, and the
-// last one always describes what the page is showing.
-import { apiRequest } from '../../services/http.ts'
+// Orders are the inventory. What an account owns is derived from them on the
+// server (and the same way on the page), so nothing here writes an owned list;
+// it logs orders, deletes them, and marks rolls used up.
+import { accessToken, apiBlobRequest, apiRequest, parseError } from '../../services/http.ts'
 import type { FilamentTick } from './model/types.ts'
 import { ApiRequestError } from '../../services/errors.ts'
 import type {
   FilamentUsageMapping, FilamentUsageReport,
 } from '../../../lib/contracts/filamentUsage.ts'
+import type {
+  FilamentOrder, FilamentOrderInput, FilamentRollAdjustment,
+} from '../../../lib/contracts/filamentOrders.ts'
 
 const base = '/filaments'
 
-interface InventoryResponse {
-  owned: FilamentTick[]
-}
-
+/** What the account owns, derived from its orders: one entry per colour and form on hand. */
 export const getFilaments = () =>
-  apiRequest<InventoryResponse>(base).then(response => response.owned)
+  apiRequest<{ owned: FilamentTick[] }>(base).then(response => response.owned)
 
-const putFilaments = (owned: readonly FilamentTick[]) =>
-  apiRequest<InventoryResponse>(base, {
-    method: 'PUT',
-    body: {
-      owned: owned.map(tick => ({ key: tick.key, variant: tick.variant, quantity: tick.quantity })),
-    },
-  }).then(response => response.owned)
-
-export interface FilamentPrice {
-  line: string
-  pricePerKg: number
-  currency: string
+export interface OrderBook {
+  orders: FilamentOrder[]
+  adjustments: FilamentRollAdjustment[]
 }
 
-export const getFilamentPrices = () =>
-  apiRequest<{ prices?: FilamentPrice[] }>(`${base}/prices`)
-    // Defaulted rather than trusted: an empty price list is a real answer, and
-    // callers multiply by it.
-    .then(response => response?.prices ?? [])
+export const getOrders = () =>
+  apiRequest<OrderBook>(`${base}/orders`).then(response => ({
+    orders: response?.orders ?? [],
+    adjustments: response?.adjustments ?? [],
+  }))
 
-export const putFilamentPrices = (prices: readonly FilamentPrice[]) =>
-  apiRequest<{ prices: FilamentPrice[] }>(`${base}/prices`, {
-    method: 'PUT', body: { prices },
-  }).then(response => response.prices)
+/** Log one order. Rejects with a 409 when its order number is already logged. */
+export const createOrder = (order: FilamentOrderInput) =>
+  apiRequest<{ order: FilamentOrder }>(`${base}/orders`, { method: 'POST', body: order })
+    .then(response => response.order)
 
-export interface InventoryWriter {
-  /** Queue the whole inventory. Resolves when this body, or a newer one, is stored. */
-  save(owned: readonly FilamentTick[]): Promise<void>
-}
+export const deleteOrder = (id: string) =>
+  apiRequest<void>(`${base}/orders/${encodeURIComponent(id)}`, { method: 'DELETE' })
 
-/**
- * One writer per mounted page. Kept out of module scope so a second page (or a
- * test) never inherits another's in-flight state.
- */
-export function createInventoryWriter(
-  onError: (error: unknown) => void,
-): InventoryWriter {
-  let inFlight: Promise<void> | null = null
-  let pending: readonly FilamentTick[] | null = null
-
-  const drain = async (): Promise<void> => {
-    while (pending !== null) {
-      const body = pending
-      pending = null
-      try {
-        await putFilaments(body)
-      } catch (error) {
-        // Report and stop: the page reconciles by reloading rather than
-        // retrying a body the server may have already rejected on its merits.
-        pending = null
-        onError(error)
-        return
-      }
-    }
-  }
-
-  return {
-    save(owned) {
-      pending = owned
-      if (!inFlight) {
-        inFlight = drain().finally(() => { inFlight = null })
-      }
-      return inFlight
-    },
-  }
-}
+/** Mark how many rolls of a colour are used up; 0 clears the mark. */
+export const setRollsFinished = (key: string, finished: number) =>
+  apiRequest<{ adjustments: FilamentRollAdjustment[] }>(`${base}/adjustments`, {
+    method: 'PUT', body: { key, finished },
+  }).then(response => response.adjustments)
 
 /**
  * Per-colour usage from the recorded print history, or null when this account
@@ -109,3 +60,23 @@ export const putUsageMappings = (mappings: readonly FilamentUsageMapping[]) =>
   apiRequest<{ mappings: FilamentUsageMapping[] }>(`${base}/usage/mappings`, {
     method: 'PUT', body: { mappings },
   }).then(response => response.mappings)
+
+/** Keep the original invoice (PDF, PNG or JPEG) with an order, for reference. */
+export async function uploadInvoice(orderId: string, file: Blob, filename: string): Promise<void> {
+  const token = await accessToken()
+  const response = await fetch(
+    `/api${base}/orders/${encodeURIComponent(orderId)}/invoice?${new URLSearchParams({ filename })}`, {
+      method: 'PUT',
+      headers: {
+        'content-type': 'application/octet-stream',
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
+      body: file,
+      credentials: 'same-origin',
+    })
+  if (!response.ok) throw await parseError(response)
+}
+
+/** The invoice kept with an order, as a file to open. */
+export const fetchInvoice = (orderId: string): Promise<Blob> =>
+  apiBlobRequest(`${base}/orders/${encodeURIComponent(orderId)}/invoice`)

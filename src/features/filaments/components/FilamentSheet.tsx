@@ -1,60 +1,61 @@
-// Everything about one colour, and the ticks that say you own it.
+// Everything about one colour: what is on hand, what it cost, where it went.
 //
-// A bottom sheet on a phone, a dialog on a desk. The ticks moved here from the
-// rows: a shelf of sixty colours reads as a shelf when each colour is one
-// picture, and the two checkboxes per colour it replaced read as a form. A
-// tick is still the commit -- nothing here waits for a Save.
+// A bottom sheet on a phone, a dialog on a desk. Nothing here is ticked any
+// more -- rolls come from orders -- so the one thing a person can say is that a
+// roll ran out before the printer's gram estimates said it would. That mark is
+// the override the automatic count needs, and it can be taken back.
 //
 // The sheet steps through the colours that were on screen when it opened
-// (arrows, or ← and → on a keyboard), so ticking a run of spools is a run of
-// taps rather than a run of open-and-close.
+// (arrows, or ← and → on a keyboard).
 import { forwardRef, useEffect } from 'react'
 import type { ReactElement, Ref } from 'react'
 import {
-  Box, Checkbox, Dialog, Fade, IconButton, Slide, Stack, Typography, useMediaQuery,
+  Box, Button, Dialog, Fade, IconButton, Link, Slide, Stack, Typography, useMediaQuery,
 } from '@mui/material'
+import { Link as RouterLink } from 'react-router-dom'
 import type { TransitionProps } from '@mui/material/transitions'
 import { useTheme } from '@mui/material/styles'
-import AddRoundedIcon from '@mui/icons-material/AddRounded'
-import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded'
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import type { FilamentColor, FilamentLine, FilamentVariant } from '../../../../lib/contracts/bambuFilaments.ts'
 import type { ColorStock } from '../../../../lib/contracts/filamentStock.ts'
 import type { FilamentUsageTotals } from '../../../../lib/contracts/filamentUsage.ts'
-import { MAX_QUANTITY } from '../model/types.ts'
+import type { ColorLedger, KilogramPrice } from '../../../../lib/contracts/filamentOrders.ts'
 import { trayName } from '../model/ams.ts'
-import { formatGrams } from '../model/usage.ts'
 import { formatMoney } from '../model/cost.ts'
 import { SpoolArt } from './SpoolArt.tsx'
-import { VARIANT_NOUN, countOf, stockNote, tickName } from '../model/shelf.ts'
+import { formatExactGrams, rollsLabel, stockNote } from '../model/shelf.ts'
 import { EASE_IOS } from '../../../theme/theme.ts'
 
-const VARIANT_TITLE: Record<FilamentVariant, string> = {
+const FORM: Record<FilamentVariant, string> = {
   spool: 'With spool',
   refill: 'Refill',
 }
 
-const VARIANT_NOTE: Record<FilamentVariant, string> = {
-  spool: 'On its own reusable reel',
-  refill: 'The coil alone, for a reel you keep',
+const formatDate = (iso: string): string => {
+  const date = new Date(`${iso}T12:00:00`)
+  return Number.isNaN(date.getTime()) ? iso
+    : new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric' }).format(date)
 }
 
 export interface SheetEntry {
   line: FilamentLine
   color: FilamentColor
-  quantities: Readonly<Record<FilamentVariant, number>>
+  ledger?: ColorLedger
   stock?: ColorStock
   usage?: FilamentUsageTotals
-  pricePerKg: number | null
+  /** What a kilogram costs: this colour's own average, or its line's. */
+  price: KilogramPrice | null
 }
 
 export interface FilamentSheetProps {
   entry: SheetEntry | null
   onClose: () => void
-  onQuantity: (key: string, variant: FilamentVariant, quantity: number) => void
-  currency: string | null
+  /** Set how many of this colour's rolls are marked used up. */
+  onFinished: (key: string, finished: number) => void
+  /** True while a mark is being saved. */
+  busy: boolean
   /** Where this colour sits in the run the sheet steps through. */
   position: { index: number; total: number }
   onStep: (delta: -1 | 1) => void
@@ -86,7 +87,7 @@ function Fact({ label, value, tone }: { label: string; value: string; tone?: 'wa
 }
 
 export default function FilamentSheet({
-  entry, onClose, onQuantity, currency, position, onStep,
+  entry, onClose, onFinished, busy, position, onStep,
 }: FilamentSheetProps) {
   const theme = useTheme()
   const phone = useMediaQuery(theme.breakpoints.down('sm'))
@@ -230,129 +231,142 @@ export default function FilamentSheet({
               </Typography>
             </Box>
 
-            {(stock || entry.usage || entry.pricePerKg !== null) && (
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-                  gap: 1.5,
-                  p: 1.5,
-                  borderRadius: '14px',
-                  border: '1px solid', borderColor: 'divider',
-                }}
-              >
-                {stock && (
-                  <Fact
-                    label="In the AMS"
-                    value={stockNote(stock)}
-                    tone={stock.status === 'reorder' ? 'warning' : undefined}
-                  />
-                )}
-                {entry.usage && (
-                  <Fact
-                    label="Printed"
-                    value={`${formatGrams(entry.usage.grams)} used · ${entry.usage.prints} ${entry.usage.prints === 1 ? 'print' : 'prints'}`}
-                  />
-                )}
-                {entry.pricePerKg !== null && currency && (
-                  <Fact label="Price" value={`${formatMoney(entry.pricePerKg, currency)} / kg`} />
-                )}
-              </Box>
-            )}
-
-            <Box component="section" aria-labelledby="filament-sheet-shelf">
-              <Typography variant="h3" component="h3" id="filament-sheet-shelf" sx={{ mb: 1 }}>
-                On your shelf
-              </Typography>
-              <Stack spacing={1}>
-                {entry.line.variants.map(variant => {
-                  const quantity = entry.quantities[variant]
-                  const label = tickName(entry.line, entry.color, variant)
-                  const noun = VARIANT_NOUN[variant][0]
-                  return (
-                    <Box
-                      key={variant}
-                      component="label"
-                      sx={{
-                        display: 'flex', alignItems: 'center', gap: 1.5,
-                        p: 1, pl: 1.5, minHeight: 64,
-                        borderRadius: '14px',
-                        border: '1px solid',
-                        borderColor: quantity > 0 ? 'primary.main' : 'divider',
-                        bgcolor: quantity > 0 ? 'action.selected' : 'transparent',
-                        cursor: 'pointer',
-                        transition: `border-color 0.2s ${EASE_IOS}, background-color 0.2s ${EASE_IOS}`,
-                      }}
-                    >
-                      <SpoolArt hexes={entry.color.hexes} variant={variant} size={40} />
-                      <Box sx={{ flex: 1, minWidth: 0 }}>
-                        <Typography variant="body2" sx={{ fontWeight: 650 }}>
-                          {VARIANT_TITLE[variant]}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
-                          {VARIANT_NOTE[variant]}
-                        </Typography>
-                      </Box>
-                      {quantity > 0 && (
-                        // Stops at one. Going to none is unticking, which is a
-                        // different decision and already has its own control.
-                        <Stack
-                          direction="row"
-                          role="group"
-                          aria-label={`How many: ${label}`}
-                          sx={{ alignItems: 'center' }}
-                          onClick={event => event.preventDefault()}
-                        >
-                          <IconButton
-                            size="small"
-                            aria-label={`One fewer ${noun}`}
-                            disabled={quantity <= 1}
-                            onClick={() => onQuantity(entry.color.key, variant, quantity - 1)}
-                          >
-                            <RemoveRoundedIcon fontSize="small" />
-                          </IconButton>
-                          <Typography
-                            aria-live="polite"
-                            sx={{
-                              minWidth: 28, textAlign: 'center', fontWeight: 650,
-                              fontVariantNumeric: 'tabular-nums',
-                            }}
-                          >
-                            <span aria-hidden>{quantity}</span>
-                            <Box component="span" sx={visuallyHidden}>{countOf(variant, quantity)}</Box>
-                          </Typography>
-                          <IconButton
-                            size="small"
-                            aria-label={`One more ${noun}`}
-                            disabled={quantity >= MAX_QUANTITY}
-                            onClick={() => onQuantity(entry.color.key, variant, quantity + 1)}
-                          >
-                            <AddRoundedIcon fontSize="small" />
-                          </IconButton>
-                        </Stack>
-                      )}
-                      <Checkbox
-                        checked={quantity > 0}
-                        onChange={event => onQuantity(entry.color.key, variant, event.target.checked ? 1 : 0)}
-                        slotProps={{ input: { 'aria-label': label } }}
+            {(() => {
+              const ledger = entry.ledger
+              const rolls = ledger?.rollsOnHand ?? 0
+              const ownPrice = ledger?.costPerKg !== null && ledger?.costPerKg !== undefined
+              return (
+                <>
+                  <Box
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
+                      gap: 1.5,
+                      p: 1.5,
+                      borderRadius: '14px',
+                      border: '1px solid', borderColor: 'divider',
+                    }}
+                  >
+                    <Fact
+                      label="On hand"
+                      value={rolls > 0
+                        ? `${rollsLabel(rolls)} · ${formatExactGrams(ledger!.gramsAvailable)}`
+                        : 'None'}
+                    />
+                    {entry.usage && (
+                      <Fact
+                        label="Printed"
+                        value={`${formatExactGrams(entry.usage.grams)} · ${entry.usage.prints} ${entry.usage.prints === 1 ? 'print' : 'prints'}`}
                       />
-                    </Box>
-                  )
-                })}
-              </Stack>
-            </Box>
-            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
-              A tick saves as you make it.
-            </Typography>
+                    )}
+                    {entry.price && (
+                      <Fact
+                        label={ownPrice ? 'Average paid' : 'Line average'}
+                        value={`${formatMoney(entry.price.pricePerKg, entry.price.currency)} / kg`}
+                      />
+                    )}
+                    {stock && (
+                      <Fact
+                        label="In the AMS"
+                        value={stockNote(stock)}
+                        tone={stock.status === 'reorder' ? 'warning' : undefined}
+                      />
+                    )}
+                  </Box>
+
+                  {ledger && ledger.gramsUnaccounted > 0 && (
+                    <Typography variant="body2" sx={{ color: 'warning.main' }}>
+                      {formatExactGrams(ledger.gramsUnaccounted)} printed with no order behind it.
+                      {' '}A roll is missing from your orders.
+                    </Typography>
+                  )}
+
+                  <Box component="section" aria-labelledby="filament-sheet-rolls">
+                    <Stack
+                      direction="row"
+                      sx={{ alignItems: 'baseline', justifyContent: 'space-between', mb: 1, gap: 1 }}
+                    >
+                      <Typography variant="h3" component="h3" id="filament-sheet-rolls">Rolls</Typography>
+                      <Link
+                        component={RouterLink}
+                        to={`/filaments/orders?add=${encodeURIComponent(entry.color.key)}`}
+                        variant="body2"
+                      >
+                        Add a roll without an invoice
+                      </Link>
+                    </Stack>
+                    {!ledger || ledger.rolls.length === 0 ? (
+                      <Typography variant="body2" color="text.secondary">
+                        No order of this colour is logged.
+                      </Typography>
+                    ) : (
+                      <Stack
+                        component="ol"
+                        sx={{ listStyle: 'none', p: 0, m: 0 }}
+                        divider={<Box sx={{ borderTop: '1px solid', borderColor: 'divider' }} />}
+                      >
+                        {ledger.rolls.map((roll, index) => {
+                          const state = index < ledger.finished ? 'Used up'
+                            : index === ledger.finished && ledger.usedGrams
+                              > ledger.rolls.slice(0, index).reduce((sum, r) => sum + r.grams, 0)
+                              ? 'In use' : 'On the shelf'
+                          return (
+                            <Stack
+                              component="li"
+                              key={`${roll.orderId}-${index}`}
+                              direction="row"
+                              sx={{ alignItems: 'center', gap: 1.5, py: 0.75, opacity: state === 'Used up' ? 0.55 : 1 }}
+                            >
+                              <SpoolArt hexes={entry.color.hexes} variant={roll.variant} size={32} />
+                              <Box sx={{ flex: 1, minWidth: 0 }}>
+                                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                  {FORM[roll.variant]} · {formatExactGrams(roll.grams)}
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
+                                  {formatDate(roll.orderedAt)} · {state}
+                                </Typography>
+                              </Box>
+                              <Typography variant="body2" sx={{ fontVariantNumeric: 'tabular-nums' }}>
+                                {roll.cost === null ? '—' : formatMoney(roll.cost, roll.currency)}
+                              </Typography>
+                            </Stack>
+                          )
+                        })}
+                      </Stack>
+                    )}
+                  </Box>
+
+                  {ledger && ledger.rolls.length > 0 && (
+                    <Stack direction="row" sx={{ gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        disabled={busy || rolls === 0}
+                        onClick={() => onFinished(entry.color.key, ledger.finished + 1)}
+                      >
+                        Mark a roll used up
+                      </Button>
+                      {ledger.finishedByHand > 0 && (
+                        <Button
+                          size="small"
+                          disabled={busy}
+                          onClick={() => onFinished(entry.color.key, ledger.finished - 1)}
+                        >
+                          Undo
+                        </Button>
+                      )}
+                      <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem', flexBasis: '100%' }}>
+                        A roll counts as used up on its own once its grams are printed. Mark one
+                        sooner when a reel runs out early.
+                      </Typography>
+                    </Stack>
+                  )}
+                </>
+              )
+            })()}
           </Stack>
         </Box>
       )}
     </Dialog>
   )
 }
-
-const visuallyHidden = {
-  // Strings, not numbers: in `sx` a width of 1 means 100%.
-  position: 'absolute', width: '1px', height: '1px', p: 0, m: '-1px',
-  overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap', border: 0,
-} as const

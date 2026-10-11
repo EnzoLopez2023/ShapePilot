@@ -51,8 +51,22 @@ describe('reorder reminders', () => {
       ...syntheticElementSnapshot, ams: slots,
     })
   }
-  const own = (owner: Owner, quantity: number) =>
-    temp.repos.filaments.replace(owner, quantity > 0 ? [{ key: COCOA, variant: 'spool', quantity }] : [])
+  // What is owned is what was bought: replace the account's orders with one
+  // for `quantity` rolls of Cocoa Brown, or none.
+  const own = async (owner: Owner, quantity: number) => {
+    for (const order of await temp.repos.filamentOrders.list(owner)) {
+      await temp.repos.filamentOrders.delete(owner, order.id)
+    }
+    if (quantity === 0) return
+    await temp.repos.filamentOrders.create(owner, {
+      source: 'manual', orderNumber: null, orderedAt: '2026-09-01', currency: 'USD',
+      orderDiscount: 0, credit: 0, shipping: 0, grandTotal: null, note: null,
+      lines: [{
+        key: COCOA, description: 'Cocoa Brown', sku: null, variant: 'spool',
+        gramsPerUnit: 1000, quantity, unitPrice: null, discount: 0, tax: 0,
+      }],
+    })
+  }
   const run = () => checkReorderAlerts(temp.repos, sender)
 
   beforeEach(async () => {

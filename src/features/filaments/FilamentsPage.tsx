@@ -1,53 +1,44 @@
 // What this workbench can print in today.
 //
-// The catalogue is compiled in; only the ticks travel. A tick is the commit --
-// there is no Save button, because a dirty-guard over ~190 ticks is
-// friction nobody wants and a checkbox that does not mean anything until you
-// press something else is a checkbox that lies.
+// Orders are the inventory. The page loads what was bought and what the
+// printer used, and derives the shelf from the two (lib/contracts/
+// filamentOrders.ts): rolls on hand, grams left, and what a kilogram of each
+// colour cost. Nothing here is ticked; the one thing a person says on this page
+// is that a roll ran out early.
 //
-// Ticks are applied optimistically and the whole inventory is queued for
-// writing. If the write fails the page says so and offers a reload rather than
-// silently diverging from what was stored.
+// Each line lists what is on hand first, the most printed first, then the rest
+// of the catalogue in its own order.
 //
 // Discontinued colours are hidden by default: more than half of PETG Basic is
 // gone from the shop, and a page you shop from should show what you can buy.
-// The ones you own are never hidden -- the catalogue keeps dead SKUs precisely
-// because a spool outlives its listing, and a tick you cannot see is a tick you
-// cannot correct.
+// The ones you have bought are never hidden -- a spool outlives its listing.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Box, Stack, Typography } from '@mui/material'
+import { Alert, Box, Button, Paper, Stack, Typography } from '@mui/material'
+import { Link as RouterLink } from 'react-router-dom'
 import {
-  FILAMENT_CATALOG, FILAMENT_LINES, filamentsOfLine,
+  FILAMENT_LINES, filamentsOfLine,
 } from '../../../lib/contracts/bambuFilaments.ts'
-import type {
-  FilamentColor, FilamentLine, FilamentVariant,
-} from '../../../lib/contracts/bambuFilaments.ts'
+import type { FilamentColor, FilamentLine } from '../../../lib/contracts/bambuFilaments.ts'
 import { ErrorState, LoadingState } from '../../components/LoadingState.tsx'
 import FilamentSection from './components/FilamentSection.tsx'
-import { quantitiesOf } from './model/shelf.ts'
 import FilamentSheet from './components/FilamentSheet.tsx'
 import FilterBar from './components/FilterBar.tsx'
 import type { StatusFilter } from './model/shelf.ts'
-import PricesDialog from './components/PricesDialog.tsx'
+import { formatExactGrams, rollsLabel } from './model/shelf.ts'
 import UsagePanel from './components/UsagePanel.tsx'
-import {
-  createInventoryWriter, getFilamentPrices, getFilamentUsage, getFilaments, putFilamentPrices,
-  putUsageMappings,
-} from './service.ts'
-import type { FilamentPrice } from './service.ts'
+import { getFilamentUsage, getOrders, putUsageMappings, setRollsFinished } from './service.ts'
+import type { OrderBook } from './service.ts'
 import type {
   FilamentUsageMapping, FilamentUsageReport,
 } from '../../../lib/contracts/filamentUsage.ts'
-import {
-  MAX_QUANTITY, inventoryToTicks, ownedByColor, tickId, ticksToInventory, totalRolls,
-} from './model/types.ts'
+import { ledgerOf, priceBookOf } from '../../../lib/contracts/filamentOrders.ts'
+import type { ColorLedger } from '../../../lib/contracts/filamentOrders.ts'
 import { stockOf } from '../../../lib/contracts/filamentStock.ts'
 import { labelSheet } from './model/labels.ts'
 import { XLSX_MIME, writeXlsx } from '../../export/xlsx.ts'
 import { triggerDownload } from '../../export/download.ts'
 import ReorderBanner from './components/ReorderBanner.tsx'
 import AmsPanel from './components/AmsPanel.tsx'
-import type { Inventory } from './model/types.ts'
 
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : 'The inventory could not be reached.'
@@ -64,12 +55,6 @@ const SECTIONS: readonly Section[] = FILAMENT_LINES.map(line => {
   return { id, line, colors: filamentsOfLine(id) }
 })
 
-const VARIANTS_BY_KEY = new Map<string, readonly FilamentVariant[]>(
-  SECTIONS.flatMap(section => section.colors.map(
-    color => [color.key, section.line.variants] as const)))
-
-const variantsOf = (key: string): readonly FilamentVariant[] => VARIANTS_BY_KEY.get(key) ?? []
-
 /** Each colour with the line it belongs to, for opening its sheet by key. */
 const ENTRY_BY_KEY = new Map<string, { id: string; line: FilamentLine; color: FilamentColor }>(
   SECTIONS.flatMap(section => section.colors.map(
@@ -77,22 +62,20 @@ const ENTRY_BY_KEY = new Map<string, { id: string; line: FilamentLine; color: Fi
 
 const LINE_CHOICES = SECTIONS.map(section => ({ id: section.id, line: section.line }))
 
-const countPairs = (sections: readonly Section[]): number => sections.reduce(
-  (total, section) => total + section.colors.length * section.line.variants.length, 0)
+const countColors = (sections: readonly Section[]): number =>
+  sections.reduce((total, section) => total + section.colors.length, 0)
 
-const ALL_PAIRS = countPairs(SECTIONS)
+const ALL_COLORS = countColors(SECTIONS)
 
-/** The discontinued colours this inventory has a tick on, by colour key. */
-const ownedDiscontinued = (owned: Inventory): Set<string> => new Set(
-  FILAMENT_CATALOG
-    .filter(color => color.discontinued
-      && variantsOf(color.key).some(variant => owned.has(tickId(color.key, variant))))
-    .map(color => color.key))
+/** Where each colour sits in the catalogue, for the order after the shelf's own. */
+const CATALOG_INDEX = new Map(SECTIONS.flatMap(section => section.colors.map(color => color.key))
+  .map((key, index) => [key, index]))
 
 export default function FilamentsPage() {
-  const [owned, setOwned] = useState<Inventory | null>(null)
+  const [book, setBook] = useState<OrderBook | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [marking, setMarking] = useState(false)
   const [hideDiscontinued, setHideDiscontinued] = useState(true)
   const [status, setStatus] = useState<StatusFilter>('all')
   const [lineFilter, setLineFilter] = useState<string | null>(null)
@@ -100,51 +83,22 @@ export default function FilamentsPage() {
   // The colours the sheet steps through, sampled when it opens: a filter that
   // re-ran under an open sheet would move the next colour out from under it.
   const [sheet, setSheet] = useState<{ keys: readonly string[]; index: number } | null>(null)
-  const [pricesOpen, setPricesOpen] = useState(false)
   const searchRef = useRef<HTMLInputElement>(null)
   // null: this account may not see usage, so the page shows without it.
   // undefined: not loaded yet, or it failed and `usageError` says why.
   const [usage, setUsage] = useState<FilamentUsageReport | null | undefined>(undefined)
   const [usageError, setUsageError] = useState<string | null>(null)
   const [linking, setLinking] = useState(false)
-  // Which discontinued rows survive the filter. Sampled when the filter goes on
-  // and when the inventory loads, never tracked live: a row that vanished the
-  // instant you cleared its last tick would take with it the checkbox you were
-  // in the middle of correcting.
-  const [kept, setKept] = useState<ReadonlySet<string>>(() => new Set<string>())
-  // What a kilogram of each line costs, and the currency they are priced in.
-  // Absent until the account says; nothing here guesses a price or a currency.
-  const [prices, setPrices] = useState<FilamentPrice[]>([])
-  const [currency, setCurrency] = useState<string | null>(null)
-  const [priceError, setPriceError] = useState<string | null>(null)
-
-  const writerRef = useRef<ReturnType<typeof createInventoryWriter> | null>(null)
-  if (!writerRef.current) {
-    writerRef.current = createInventoryWriter(error => setSaveError(messageOf(error)))
-  }
 
   const load = useCallback(() => {
     setLoadError(null)
     setSaveError(null)
     let cancelled = false
-    void getFilaments()
-      .then(ticks => {
-        if (cancelled) return
-        const inventory = ticksToInventory(ticks)
-        setKept(ownedDiscontinued(inventory))
-        setOwned(inventory)
-      })
+    void getOrders()
+      .then(result => { if (!cancelled) setBook(result) })
       .catch(error => { if (!cancelled) setLoadError(messageOf(error)) })
-    // Separate from the inventory on purpose. Usage is a second opinion on the
-    // page, and the statistics history being unreachable must never stop
-    // anyone ticking a spool.
-    void getFilamentPrices()
-      .then(stored => {
-        if (cancelled) return
-        setPrices(stored)
-        if (stored.length) setCurrency(stored[0].currency)
-      })
-      .catch(error => { if (!cancelled) setPriceError(messageOf(error)) })
+    // Separate on purpose. Usage is a second opinion on the page, and the
+    // statistics history being unreachable must never hide what was bought.
     setUsageError(null)
     void getFilamentUsage()
       .then(result => { if (!cancelled) setUsage(result) })
@@ -154,57 +108,26 @@ export default function FilamentsPage() {
 
   useEffect(() => load(), [load])
 
-  /**
-   * Set how many of one filament in one form are owned. Zero removes the tick.
-   * Ticking a box is `1`, unticking is `0`, and the stepper is anything between.
-   */
-  const setQuantity = useCallback((key: string, variant: FilamentVariant, quantity: number) => {
-    setOwned(previous => {
-      if (!previous) return previous
-      const updated = new Map(previous)
-      const clamped = Math.max(0, Math.min(MAX_QUANTITY, Math.round(quantity)))
-      if (clamped === 0) updated.delete(tickId(key, variant))
-      else updated.set(tickId(key, variant), clamped)
-      // Queued, not awaited: the control has already moved, and the writer
-      // coalesces so a fast run of ticks or steps is not a fast run of requests.
-      void writerRef.current?.save(inventoryToTicks(updated, FILAMENT_CATALOG, variantsOf))
-      return updated
-    })
+  const usageByKey = useMemo(
+    () => (usage ? new Map(usage.colors.map(color => [color.key, color])) : undefined),
+    [usage])
+
+  const ledgers = useMemo<Map<string, ColorLedger>>(() => {
+    if (!book) return new Map()
+    const used = new Map((usage?.colors ?? []).map(color => [color.key, color.grams]))
+    return ledgerOf(book.orders, used, book.adjustments)
+  }, [book, usage])
+
+  const priceOf = useMemo(() => priceBookOf(book?.orders ?? []), [book])
+
+  const markFinished = useCallback((key: string, finished: number) => {
+    setMarking(true)
     setSaveError(null)
+    void setRollsFinished(key, Math.max(0, finished))
+      .then(adjustments => setBook(previous => previous && { ...previous, adjustments }))
+      .catch(error => setSaveError(messageOf(error)))
+      .finally(() => setMarking(false))
   }, [])
-
-  /** Prices are replaced wholesale, like the inventory: edit one, send them all. */
-  const savePrices = useCallback((next: FilamentPrice[]) => {
-    setPrices(next)
-    setPriceError(null)
-    void putFilamentPrices(next)
-      .then(stored => {
-        setPrices(stored)
-        if (!stored.length) setCurrency(previous => previous)
-      })
-      .catch(error => setPriceError(messageOf(error)))
-  }, [])
-
-  const setLinePrice = useCallback((line: string, pricePerKg: number | null) => {
-    if (!currency) return
-    setPrices(previous => {
-      const next = previous.filter(price => price.line !== line)
-      if (pricePerKg !== null) next.push({ line, pricePerKg, currency })
-      const sorted = next.sort((a, b) => a.line < b.line ? -1 : a.line > b.line ? 1 : 0)
-      savePrices(sorted)
-      return sorted
-    })
-  }, [currency, savePrices])
-
-  const changeCurrency = useCallback((next: string) => {
-    setCurrency(next)
-    // Prices are amounts in one currency; re-stamping them is the only honest
-    // option short of converting, which nothing here does.
-    if (prices.length) savePrices(prices.map(price => ({ ...price, currency: next })))
-  }, [prices, savePrices])
-
-  const priceByLine = useMemo(
-    () => new Map(prices.map(price => [price.line, price.pricePerKg])), [prices])
 
   const saveMappings = useCallback((mappings: FilamentUsageMapping[]) => {
     setLinking(true)
@@ -216,24 +139,12 @@ export default function FilamentsPage() {
       .finally(() => setLinking(false))
   }, [])
 
-  const usageByKey = useMemo(
-    () => (usage ? new Map(usage.colors.map(color => [color.key, color])) : undefined),
-    [usage])
-
-  // Against the inventory being edited, not the one last saved: stepping a count
-  // up clears its warning the moment it is pressed.
   const stock = useMemo(() => {
-    if (!usage?.ams || !owned) return []
-    const totals = ownedByColor(owned)
-    return stockOf(usage.ams, key => totals.get(key) ?? 0)
-  }, [usage, owned])
+    if (!usage?.ams) return []
+    return stockOf(usage.ams, key => ledgers.get(key)?.rollsOnHand ?? 0)
+  }, [usage, ledgers])
 
   const stockByKey = useMemo(() => new Map(stock.map(entry => [entry.key, entry])), [stock])
-
-  const hide = useCallback((next: boolean) => {
-    if (next && owned) setKept(ownedDiscontinued(owned))
-    setHideDiscontinued(next)
-  }, [owned])
 
   // `/` is the shorthand every list with a search box has; it must not steal
   // the key from a field someone is already typing in.
@@ -254,28 +165,38 @@ export default function FilamentsPage() {
       !needle
       || color.name.toLowerCase().includes(needle)
       || (color.code ?? '').toLowerCase().includes(needle)
-    const ownsAny = (section: Section, color: FilamentColor) => !owned
-      || section.line.variants.some(variant => owned.has(tickId(color.key, variant)))
-    const inStatus = (section: Section, color: FilamentColor): boolean => {
+    const onHand = (key: string) => ledgers.get(key)?.rollsOnHand ?? 0
+    const used = (key: string) => ledgers.get(key)?.usedGrams ?? 0
+    const inStatus = (color: FilamentColor): boolean => {
       switch (status) {
-        case 'owned': return ownsAny(section, color)
-        case 'missing': return !owned || !ownsAny(section, color)
+        case 'owned': return onHand(color.key) > 0
+        case 'missing': return onHand(color.key) === 0
         case 'loaded': return stockByKey.has(color.key)
         case 'used': return Boolean(usageByKey?.get(color.key)?.grams)
         default: return true
       }
     }
+    // Bought ever, not just on hand: a discontinued colour you used up is
+    // still part of your history.
+    const bought = (key: string) => (ledgers.get(key)?.rolls.length ?? 0) > 0
     return SECTIONS
       .filter(section => lineFilter === null || section.id === lineFilter)
       .map(section => ({
         ...section,
-        colors: section.colors.filter(color =>
-          (!hideDiscontinued || !color.discontinued || kept.has(color.key))
-          && matches(color)
-          && inStatus(section, color)),
+        colors: section.colors
+          .filter(color =>
+            (!hideDiscontinued || !color.discontinued || bought(color.key))
+            && matches(color)
+            && inStatus(color))
+          // On hand first; among those, and among the rest, the most printed
+          // first; otherwise the catalogue's own order.
+          .sort((a, b) =>
+            Number(onHand(b.key) > 0) - Number(onHand(a.key) > 0)
+            || used(b.key) - used(a.key)
+            || (CATALOG_INDEX.get(a.key) ?? 0) - (CATALOG_INDEX.get(b.key) ?? 0)),
       }))
       .filter(section => section.colors.length > 0)
-  }, [hideDiscontinued, kept, search, status, lineFilter, owned, stockByKey, usageByKey])
+  }, [hideDiscontinued, search, status, lineFilter, ledgers, stockByKey, usageByKey])
 
   // Exactly the rows on screen, so the filters above are what choose them:
   // flip Owned only and the sheet is your shelf. The count is in the button
@@ -289,18 +210,24 @@ export default function FilamentsPage() {
   }, [shownColors])
 
   const summary = useMemo(() => {
-    if (!owned) return null
-    const shown = countPairs(sections)
+    if (!book) return null
+    let colors = 0
+    let rolls = 0
+    let grams = 0
+    for (const ledger of ledgers.values()) {
+      if (ledger.rollsOnHand > 0) colors += 1
+      rolls += ledger.rollsOnHand
+      grams += ledger.gramsAvailable
+    }
+    const shown = countColors(sections)
     return {
-      total: owned.size,
-      rolls: totalRolls(owned),
-      shown,
-      hidden: ALL_PAIRS - shown,
+      colors, rolls, grams,
+      hidden: ALL_COLORS - shown,
       // "Discontinued hidden" is only true when that switch is the only filter
-      // on; a search, a type or a status holds back rows of every kind.
+      // on; a search, a type or a status holds back colours of every kind.
       filtered: Boolean(search.trim()) || status !== 'all' || lineFilter !== null,
     }
-  }, [owned, sections, search, status, lineFilter])
+  }, [book, ledgers, sections, search, status, lineFilter])
 
   const statuses = useMemo<StatusFilter[]>(() => [
     'all', 'owned', 'missing',
@@ -330,18 +257,19 @@ export default function FilamentsPage() {
   }, [])
 
   const sheetEntry = useMemo(() => {
-    if (!sheet || !owned) return null
+    if (!sheet || !book) return null
     const found = ENTRY_BY_KEY.get(sheet.keys[sheet.index])
     if (!found) return null
+    const key = found.color.key
     return {
       line: found.line,
       color: found.color,
-      quantities: quantitiesOf(owned, found.color.key),
-      stock: usage?.ams ? stockByKey.get(found.color.key) : undefined,
-      usage: usageByKey?.get(found.color.key),
-      pricePerKg: priceByLine.get(found.id) ?? null,
+      ledger: ledgers.get(key),
+      stock: usage?.ams ? stockByKey.get(key) : undefined,
+      usage: usageByKey?.get(key),
+      price: priceOf(key),
     }
-  }, [sheet, owned, usage, stockByKey, usageByKey, priceByLine])
+  }, [sheet, book, ledgers, usage, stockByKey, usageByKey, priceOf])
 
   return (
     <Stack spacing={2} sx={{ p: { xs: 0, sm: 1, md: 2.5 }, maxWidth: 1120, width: '100%' }}>
@@ -350,8 +278,8 @@ export default function FilamentsPage() {
         <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
           {summary ? (
             <>
-              {summary.total} of {summary.shown} owned
-              {summary.rolls > summary.total && <> ({summary.rolls} rolls)</>}
+              {rollsLabel(summary.rolls)} in {summary.colors} {summary.colors === 1 ? 'colour' : 'colours'}
+              {summary.grams > 0 && <> · {formatExactGrams(summary.grams)} available</>}
               {summary.hidden > 0 && (
                 summary.filtered
                   ? <> · {summary.hidden} not shown</>
@@ -365,17 +293,7 @@ export default function FilamentsPage() {
       {saveError && (
         <Alert severity="warning">
           <Typography variant="body2" sx={{ fontWeight: 600 }}>Not saved</Typography>
-          <Typography variant="body2">
-            {saveError} Your ticks are still on screen but were not stored — reload to see
-            what is.
-          </Typography>
-        </Alert>
-      )}
-
-      {priceError && (
-        <Alert severity="warning">
-          <Typography variant="body2" sx={{ fontWeight: 600 }}>Prices not saved</Typography>
-          <Typography variant="body2">{priceError}</Typography>
+          <Typography variant="body2">{saveError}</Typography>
         </Alert>
       )}
 
@@ -386,14 +304,27 @@ export default function FilamentsPage() {
         </Alert>
       )}
 
-      {owned && usage?.ams && <ReorderBanner stock={stock} receivedAt={usage.ams.receivedAt} />}
+      {book && book.orders.length === 0 && (
+        <Paper sx={{ p: 2 }}>
+          <Typography variant="h2" component="h2">Nothing on the shelf yet</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 1.5 }}>
+            Your shelf is worked out from what you bought. Upload your Bambu Lab invoices, or add
+            rolls you bought without one, and it fills in.
+          </Typography>
+          <Button variant="contained" component={RouterLink} to="/filaments/orders">
+            Log your orders
+          </Button>
+        </Paper>
+      )}
 
-      {owned && usage?.ams && <AmsPanel ams={usage.ams} stock={stockByKey} onOpen={openSheet} />}
+      {book && usage?.ams && <ReorderBanner stock={stock} receivedAt={usage.ams.receivedAt} />}
+
+      {book && usage?.ams && <AmsPanel ams={usage.ams} stock={stockByKey} onOpen={openSheet} />}
 
       {loadError && <ErrorState message={loadError} onRetry={load} />}
-      {!loadError && !owned && <LoadingState label="Loading your filaments…" />}
+      {!loadError && !book && <LoadingState label="Loading your filaments…" />}
 
-      {owned && (
+      {book && (
         <FilterBar
           search={search}
           onSearch={setSearch}
@@ -405,14 +336,13 @@ export default function FilamentsPage() {
           onStatus={setStatus}
           statuses={statuses}
           showDiscontinued={!hideDiscontinued}
-          onShowDiscontinued={next => hide(!next)}
+          onShowDiscontinued={next => setHideDiscontinued(!next)}
           labelCount={shownColors.length}
           onLabels={exportLabels}
-          onPrices={() => setPricesOpen(true)}
         />
       )}
 
-      {owned && sections.length === 0 && (
+      {book && sections.length === 0 && (
         <Stack sx={{ alignItems: 'center', gap: 1, py: 4 }}>
           <Typography variant="body2" color="text.secondary">
             No colour matches those filters.
@@ -431,42 +361,29 @@ export default function FilamentsPage() {
         </Stack>
       )}
 
-      {owned && sections.map(section => (
+      {book && sections.map(section => (
         <FilamentSection
           key={section.id}
           id={section.id}
           line={section.line}
           colors={section.colors}
-          owned={owned}
-          usage={usageByKey}
+          ledgers={ledgers}
           stock={usage?.ams ? stockByKey : undefined}
-          pricePerKg={priceByLine.get(section.id) ?? null}
-          currency={currency}
           onOpen={openSheet}
         />
       ))}
 
-      {owned && usage && (
-        <UsagePanel usage={usage} busy={linking} prices={prices} onMappings={saveMappings} />
+      {book && usage && (
+        <UsagePanel usage={usage} busy={linking} priceOf={priceOf} onMappings={saveMappings} />
       )}
 
       <FilamentSheet
         entry={sheetEntry}
         onClose={() => setSheet(null)}
-        onQuantity={setQuantity}
-        currency={currency}
+        onFinished={markFinished}
+        busy={marking}
         position={{ index: sheet?.index ?? 0, total: sheet?.keys.length ?? 0 }}
         onStep={stepSheet}
-      />
-
-      <PricesDialog
-        open={pricesOpen}
-        onClose={() => setPricesOpen(false)}
-        lines={LINE_CHOICES}
-        priceByLine={priceByLine}
-        currency={currency}
-        onCurrency={changeCurrency}
-        onPrice={setLinePrice}
       />
     </Stack>
   )

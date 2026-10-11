@@ -118,8 +118,17 @@ describe('protected EL-ement Statistics API', () => {
     const discovered = await request<ElementAccount>('/discover', 'POST', {})
     expect(discovered.status).toBe(200)
     expect(discovered.body.accountId).toBe(syntheticElementAccount.accountId)
-    const owned = [{ key: filamentsOfLine('bambu-lab/pla/basic')[0].key, variant: 'spool' as const, quantity: 1 }]
-    await server.repos.filaments.replace({ tenantId: TEST_TENANT, oid: TEST_OID }, owned)
+    // Monitoring reads the shelf; it must never write what was bought.
+    const owner = { tenantId: TEST_TENANT, oid: TEST_OID }
+    await server.repos.filamentOrders.create(owner, {
+      source: 'manual', orderNumber: null, orderedAt: '2026-09-01', currency: 'USD',
+      orderDiscount: 0, credit: 0, shipping: 0, grandTotal: null, note: null,
+      lines: [{
+        key: filamentsOfLine('bambu-lab/pla/basic')[0].key, description: 'A roll', sku: null,
+        variant: 'spool', gramsPerUnit: 1000, quantity: 1, unitPrice: null, discount: 0, tax: 0,
+      }],
+    })
+    const orders = await server.repos.filamentOrders.list(owner)
     await importHistory()
     const historyCalls = vi.mocked(provider.history).mock.calls.length
     const report = await request<ElementReport>('/report?timeZone=UTC&from=2026-09-14&to=2026-09-14&grain=day')
@@ -142,7 +151,7 @@ describe('protected EL-ement Statistics API', () => {
     expect(status.body.coverage[0].sync.backfillComplete).toBe(true)
     expect(JSON.stringify([discovered.body, report.body, detail.body, status.body])).not.toContain(TOKEN)
     expect(readFileSync(server.database.path).includes(Buffer.from(TOKEN))).toBe(false)
-    expect(await server.repos.filaments.list({ tenantId: TEST_TENANT, oid: TEST_OID })).toEqual(owned)
+    expect(await server.repos.filamentOrders.list(owner)).toEqual(orders)
   })
 
   test('all exports use identical persisted filters, escape content and forbid caching', async () => {

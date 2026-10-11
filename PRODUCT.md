@@ -30,11 +30,15 @@ set raises: what still needs a home.
 
 Wave 4 adds **filaments**, and it is the first surface here that is neither
 design nor fabrication. It belongs anyway: the inventory is the workbench's
-material vocabulary — what this machine can actually print in today. A person
-ticks the Bambu Lab spools and refills they own; the catalogue of what exists is
-committed code, and only the ticks are stored. It answers the question that
-comes before a design, not after it, and it is the natural source for the
-designers' own material choices once they want one.
+material vocabulary — what this machine can actually print in today. The
+catalogue of what exists is committed code. What an account owns is *derived*:
+a person logs what they bought — a Bambu Lab US invoice read in the browser
+and checked before saving, or rolls with no invoice entered by hand — and rolls
+on hand, grams left and the price of a kilogram of each colour follow from the
+orders, the grams the printer has used, and any roll marked used up early.
+Spool or refill only changes what a roll cost, so rolls are counted together.
+It answers the question that comes before a design, not after it, and it is
+the source for the designers' material and cost choices.
 
 **EL-ement Statistics** extends Admin for the household printer. It monitors
 available Bambu printer and AMS reports without controls or video, keeps a
@@ -44,8 +48,9 @@ configuration, statistics and exports are administrator-only, not a per-user
 connection flow. Account/region/printer identities keep histories distinct.
 Slice weights and durations remain explicitly estimates, failed/aborted jobs
 are not assumed to have consumed their whole estimates, and unavailable data
-stays unavailable. Cloud coverage is not a lifetime odometer. Monitoring does
-not reinterpret or decrement the Filaments ownership ticks.
+stays unavailable. Cloud coverage is not a lifetime odometer. Monitoring never
+writes Filaments orders; the shelf subtracts usage when it is read, and only
+for an administrator, who is the one who can see usage.
 
 **EDGE current-job display** is a deliberately narrower delegation of that
 administrator-owned household monitor. An administrator approves a short-lived
@@ -82,6 +87,11 @@ These hold regardless of what the product grows into.
 - **A keycap set is described once, per project.** Trays link to a project;
   deleting a project unassigns its trays rather than destroying them, because
   the design outlives the description of the caps it was cut for.
+- **An invoice is read, never trusted.** Reading a filament invoice proposes
+  an order a person checks — every line matched to the catalogue or matched by
+  hand, the lines adding up to what was paid — before it is saved. It is read
+  on the device; once the order is saved the PDF is kept with it, private to
+  the account, as the receipt rather than the record.
 - **The assistant proposes an inventory, it does not write one.** Reading a
   photograph produces rows a person reviews and edits before anything is saved —
   the same rule the design copilot ships under.
@@ -109,8 +119,9 @@ Named here so that their absence is a decision rather than an oversight.
   file, and an asset that goes missing degrades to "re-attach this file" rather
   than breaking the document or the project. Making them first-class would mean
   a manifest that covers them, verifies them on restore, and garbage-collects
-  unreferenced ones. The parametric document is the design; an imported mesh and
-  a photograph of a keycap set are both references.
+  unreferenced ones. The parametric document is the design; an imported mesh,
+  a photograph of a keycap set and a kept filament invoice are all references —
+  the order's own rows are the purchase record.
 - Sketch constraints, fillets and chamfers, and boolean history editing beyond
   the group tree.
 - Slicing. ShapePilot exports a mesh; Bambu Studio slices it.

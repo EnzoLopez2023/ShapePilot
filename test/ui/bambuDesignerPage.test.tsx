@@ -80,9 +80,9 @@ beforeEach(() => {
       })
     }
     // Nothing was ever uploaded from this run, so the asset resolve misses.
-    // What a kilogram costs; nothing is priced in these runs.
-    if (url.includes('/api/filaments/prices')) {
-      return new Response(JSON.stringify({ prices: [] }), {
+    // What was bought, which is what prices filament; nothing in these runs.
+    if (url.includes('/api/filaments/orders')) {
+      return new Response(JSON.stringify({ orders: [], adjustments: [] }), {
         status: 200, headers: { 'content-type': 'application/json' },
       })
     }

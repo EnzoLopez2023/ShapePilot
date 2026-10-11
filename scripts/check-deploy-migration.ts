@@ -138,6 +138,12 @@ const ROLLBACK_COMPATIBLE_LEDGER = [
     name: 'revocable current-job displays',
     checksum: 'f44fc7362cb2bc0bf71af82c2b8600cf710ae7113c82002cd7f7be92781de156',
   },
+  {
+    ordinal: 18,
+    id: '019-filament-orders',
+    name: 'filament orders',
+    checksum: 'dafcf8a06870f66ba3c4b57901fc0e5992df8eb6ec374cfcfe264df9a2a71ca2',
+  },
 ] as const
 
 const REQUIRED_TABLES = [
@@ -155,7 +161,10 @@ const REQUIRED_TABLES = [
   'element_statistics_events',
   'element_displays',
   'filament_inventory',
+  'filament_orders',
+  'filament_order_lines',
   'filament_prices',
+  'filament_roll_adjustments',
   'filament_usage_mappings',
   'filament_reorder_alerts',
   'maintenance_events',

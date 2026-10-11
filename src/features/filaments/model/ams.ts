@@ -59,7 +59,17 @@ export function amsUnits(stock: AmsStock | null): AmsUnit[] {
     const slots = byUnit.get(id) ?? []
     const unit = Number(id)
     if (id === 'external') {
-      return { id, name: 'External spool', bays: slots.map(slot => ({ label: 'Ext', slot })) }
+      // The X2D has a holder per nozzle. One loaded is "Ext", as Studio says;
+      // two are numbered in the printer's own order rather than guessed left
+      // and right.
+      const ordered = [...slots].sort((a, b) => Number(a.slotId) - Number(b.slotId))
+      return {
+        id,
+        name: 'External spool',
+        bays: ordered.map((slot, index) => ({
+          label: ordered.length > 1 ? `Ext ${index + 1}` : 'Ext', slot,
+        })),
+      }
     }
     if (!Number.isInteger(unit) || unit >= HT_UNIT_ID) {
       return {

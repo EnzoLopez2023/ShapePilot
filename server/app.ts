@@ -146,7 +146,7 @@ export function createApp(options: CreateAppOptions): Express {
   app.use('/api/design-assets', authenticated,
     createDesignAssetRouter({ repos, store, logger: options.logger }))
   app.use('/api/ai', authenticated, createAiRouter({ repos, client: aiClient, store }))
-  app.use('/api/filaments', authenticated, createFilamentRouter(repos))
+  app.use('/api/filaments', authenticated, createFilamentRouter(repos, store))
   app.use('/api/maintenance', authenticated, createMaintenanceRouter(repos))
   app.use('/api/notifications', authenticated, createNotificationRouter({
     repos,

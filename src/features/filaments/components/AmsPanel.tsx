@@ -179,7 +179,9 @@ export default function AmsPanel({ ams, stock, onOpen }: AmsPanelProps) {
         </Typography>
       </Stack>
 
-      <Stack spacing={1.5}>
+      {/* Side by side when there is room, each unit as wide as its trays need,
+          so a loaded external spool sits beside AMS-A rather than under it. */}
+      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1.5 }}>
         {units.map(unit => (
           <Box
             key={unit.id}
@@ -187,10 +189,14 @@ export default function AmsPanel({ ams, stock, onOpen }: AmsPanelProps) {
             // picture; each tray inside is also its own button.
             role="group"
             aria-label={`${unit.name}: ${unit.bays.map(bayName).join('; ')}`}
-            sx={{ borderRadius: '14px', border: '1px solid', borderColor: 'divider', p: { xs: 1, sm: 1.5 } }}
+            sx={{
+              borderRadius: '14px', border: '1px solid', borderColor: 'divider', p: { xs: 1, sm: 1.5 },
+              flex: `${unit.bays.length} 1 ${unit.bays.length * 84}px`, minWidth: 0,
+            }}
           >
             <Typography variant="body2" sx={{ fontWeight: 650, mb: 0.5, px: 0.5 }}>
-              {unit.name.replace(/^AMS (\d+)$/, (_, n: string) => `AMS-${String.fromCharCode(64 + Number(n))}`)}
+              {unit.id === 'external' ? 'External'
+                : unit.name.replace(/^AMS (\d+)$/, (_, n: string) => `AMS-${String.fromCharCode(64 + Number(n))}`)}
             </Typography>
             <Box
               sx={{
@@ -208,7 +214,7 @@ export default function AmsPanel({ ams, stock, onOpen }: AmsPanelProps) {
             </Box>
           </Box>
         ))}
-      </Stack>
+      </Box>
     </Paper>
   )
 }

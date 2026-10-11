@@ -380,50 +380,75 @@ base ring, local coords, origin (0,0), bbox w0×h0   (w0,h0 = UN-rotated extents
   hub are literal colours because they are a picture of plastic. A dual-colour
   filament is a 135° split of its two hexes, as `Swatch` still draws it in the
   usage panel and the colour pickers.
-- **The ticks live in the sheet.** `FilamentSheet` is a bottom sheet below
-  `sm` (slides up, grabber, top corners only) and a 460px dialog above it. It
-  shows the reel at size, the brand tag, the facts that exist (in the AMS,
-  printed, price), and one row per way the line is sold, each with its
-  checkbox and — once owned — its stepper. It steps through the colours that
-  were on screen when it opened (arrows, ← →), sampled then so a live filter
-  cannot move the next colour out from under it.
-- **The two-checkbox asymmetry is the catalogue's shape, not a layout choice.**
-  PLA Basic, PLA Matte and PETG HF are sold on a reel and as a refill; the
-  rest only on a reel. `variants` is data on the line, so a brand that sells
-  differently needs no new code; a spool-only line says "spool only" in its
-  header.
+- **Orders are the inventory; nothing is ticked.** The shelf is derived
+  (`lib/contracts/filamentOrders.ts`, `ledgerOf`) from what was bought, the
+  grams printed, and rolls marked used up. Rolls are used up oldest first; a
+  roll counts as used up once usage passes its last gram, and a person can mark
+  one sooner (never later — printed grams are gone). The server derives the
+  same owned list for the colour pickers and the reorder check, so nothing can
+  count a colour differently.
+- **Spool or refill is a price, not a shelf.** A tile counts rolls together:
+  the number sits to the left of the reel, then "1,921 g available" and
+  "79 g used". The form appears only in the sheet's list of rolls, beside what
+  each one cost.
+- **What a roll cost is what was paid for it.** Landed cost: the line's price
+  after its own discount, its share of the order's discount, store credit and
+  shipping (by price), plus its own tax. An order's landed costs add back up to
+  its grand total, which is how a misread invoice is caught. A colour's price
+  is the weighted average of its rolls; a colour never bought borrows its
+  line's average; a roll with no price is counted on the shelf and left out of
+  every average.
+- **The sheet says what the shelf is made of.** `FilamentSheet` is a bottom
+  sheet below `sm` and a 460px dialog above it: the reel at size, on hand,
+  printed, average paid, the AMS reading, then every roll (form, date, cost,
+  used up / in use / on the shelf) and one action, "Mark a roll used up", with
+  Undo. It steps through the colours that were on screen when it opened.
+- **The shelf leads with what is on it.** Within a line: colours with rolls on
+  hand first, most printed first; then the rest of the catalogue, most printed
+  first, otherwise in catalogue order.
+- **Orders have their own page.** `/filaments/orders` lists orders newest
+  first with each roll's landed cost. "Upload invoices" reads Bambu Lab US PDFs
+  on the device (pdf.js, a lazy chunk loaded only then) and proposes them in a
+  review dialog: matched lines, a picker for any unmatched one, whether the
+  lines add up, and "already logged" for a repeat order number — none of it
+  saved until Save. "Add without an invoice" logs rolls by hand, price
+  optional. Orders are deleted and re-logged, never edited.
+- **The Orders page is the purchase history.** Each card leads with the date
+  and what was paid; "Every item and total" opens every line on the invoice —
+  hotends and plates too — with each item's price, discount, tax and landed
+  cost, then how the invoice reached its total (items, order discount, store
+  credit, shipping, tax, paid). A phone keeps only quantity and paid; the
+  arithmetic is the desk's. The original invoice is kept with its order in the
+  asset store (owner-scoped, content-addressed, not authoritative) and opens
+  from the card; an order without one offers "Attach invoice", which takes a
+  PDF or a photo of a paper receipt.
 - **The colour name is never tinted with its own hex.** It is the one move this
   page invites and it would drop half the catalogue through the contrast floor.
   Colour lives in the reel; the name stays body text.
-- **Everything names itself in full.** A tile is "PLA Basic Jade White 10100,
-  owned: 2 spools, in A2, 62%"; a checkbox is "PLA Basic Jade White 10100, with
-  spool". Uniqueness of both is asserted in the UI test.
-- **A tick is the commit.** No Save button. Ticks apply optimistically and the
-  whole inventory is queued; the writer coalesces so a fast run is at most two
-  requests and the last one always describes what is on screen. A write that
-  fails says so and offers a reload rather than diverging in silence.
+- **Everything names itself in full.** A tile is "PLA Basic Bambu Green
+  10501, owned: 2 rolls, 1,921 g available, in A4, 64%, 79 g used". Uniqueness
+  is asserted in the UI test.
 - **Owned, loaded and printed-with read differently, and only the badge uses the
   accent.** Owned: the tile sits on `action.selected` with an accent check
-  badge, and its foot says what you have ("2 spools · 346 g used"). Loaded: a
-  tray tag in the corner ("A1", `warning` when it needs reordering) and the
-  Handy library bar — the reel's own colour, as long as what is left. Printed
-  with: the name goes bold. Order stays the catalogue's.
+  badge and the roll count beside its reel. Loaded: a tray tag in the corner
+  ("A1", `warning` when it needs reordering) and the Handy library bar — the
+  reel's own colour, as long as what is left. Printed with: the name goes bold.
 - **Filters are Handy's pills.** A sticky bar (flush to the scroll edge) holds
   the search and three pills: Type, Status (owned, not owned, and — when the
   account can see them — in the AMS and printed with) and Discontinued. A pill
-  that is filtering names its value and takes the selected wash. Prices and the
+  that is filtering names its value and takes the selected wash. Orders and the
   label sheet are words at a desk and icons on a phone.
-- **Discontinued colours stay hidden until asked for, except the ones you own.**
-  A spool outlives its SKU, and a filter that hid it would untick something
-  real by hiding it.
-- **Prices are one dialog, not a field per line.** A per-kilogram price per
-  line and one currency exist only so Print usage can turn grams into money.
-  They sit behind Prices, which says so; the line header shows a price once set.
+- **Discontinued colours stay hidden until asked for, except the ones you bought.**
+  A spool outlives its SKU, and a filter that hid it would hide something you
+  paid for.
 - **The AMS is drawn as Handy draws it.** A card per unit ("AMS-A"), each tray
   a reel with its name printed on the coil and the material over a bar of the
   filament's colour; below it the name, the code and what is left. A tray whose
   colour is in the catalogue opens that colour's sheet. Empty trays are a
-  dashed gap.
+  dashed gap. Units sit side by side, each as wide as its trays, so a spool
+  loaded on an external holder is its own "External" card beside AMS-A on a
+  desk (and under it on a phone); two external spools are "Ext 1" and "Ext 2"
+  in the printer's order, not guessed left and right.
 
 ## Home
 

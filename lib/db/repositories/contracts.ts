@@ -5,6 +5,9 @@
 // every route, and so nothing above this line can accidentally depend on
 // synchronous statement execution.
 import type { FilamentUsageMapping } from '../../contracts/filamentUsage.ts'
+import type {
+  FilamentOrder, FilamentOrderInput, FilamentOrderInvoice, FilamentRollAdjustment,
+} from '../../contracts/filamentOrders.ts'
 import type { ThemePaletteId } from '../../contracts/themePalettes.ts'
 import type { ElementStatisticsRepository } from './elementStatisticsContract.ts'
 import type { ElementDisplayRepository } from './elementDisplays.ts'
@@ -672,6 +675,30 @@ export interface FilamentPriceRepository {
   replace(owner: Owner, prices: readonly FilamentPrice[]): Promise<FilamentPrice[]>
 }
 
+/**
+ * What an account bought. Orders are the inventory: rolls on hand, grams left
+ * and cost per kilogram are derived from them (lib/contracts/filamentOrders.ts).
+ */
+export interface FilamentOrderRepository {
+  /** Every order, oldest first, each with its lines in invoice order. */
+  list(owner: Owner): Promise<FilamentOrder[]>
+  /**
+   * Store one order. Resolves null when the account already has an order with
+   * this order number -- the same invoice uploaded twice.
+   */
+  create(owner: Owner, order: FilamentOrderInput): Promise<FilamentOrder | null>
+  /** False when there was no such order for this account. */
+  delete(owner: Owner, id: string): Promise<boolean>
+  /** Name the stored file kept with an order; replaces any before it. False when no such order. */
+  attachInvoice(owner: Owner, id: string, invoice: FilamentOrderInvoice & { hash: string }): Promise<boolean>
+  /** Where an order's kept file is, or null when it has none (or is not this account's). */
+  findInvoice(owner: Owner, id: string): Promise<
+    { hash: string; filename: string; contentType: FilamentOrderInvoice['contentType'] } | null>
+  listAdjustments(owner: Owner): Promise<FilamentRollAdjustment[]>
+  /** Set how many rolls of a colour are marked used up; 0 clears the mark. */
+  setAdjustment(owner: Owner, key: string, finished: number): Promise<FilamentRollAdjustment[]>
+}
+
 export interface FilamentInventoryRepository {
   list(owner: Owner): Promise<FilamentInventoryEntry[]>
   /**
@@ -779,6 +806,7 @@ export interface Repositories {
   designAssets: DesignAssetRepository
   filaments: FilamentInventoryRepository
   filamentPrices: FilamentPriceRepository
+  filamentOrders: FilamentOrderRepository
   elementStatistics: ElementStatisticsRepository
   elementDisplays: ElementDisplayRepository
   maintenance: MaintenanceRepository

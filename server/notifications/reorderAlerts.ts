@@ -17,6 +17,7 @@
 // With no AMS reading at all, a run changes nothing. "The printer said nothing"
 // is not "the spool is fine", and clearing alerts on silence would re-send them
 // the moment it spoke again.
+import { shelfOf } from '../filaments/shelf.ts'
 import webpush from 'web-push'
 import { amsStockOf, colorLabel, slotLabel, stockOf } from '../../lib/contracts/filamentStock.ts'
 import type { ColorStock } from '../../lib/contracts/filamentStock.ts'
@@ -126,11 +127,9 @@ export async function checkReorderAlerts(
     if (membership?.role !== 'admin') continue
     result.checked += 1
 
-    const totals = new Map<string, number>()
-    for (const entry of await repos.filaments.list(owner)) {
-      totals.set(entry.key, (totals.get(entry.key) ?? 0) + entry.quantity)
-    }
-    const reorder = stockOf(ams, key => totals.get(key) ?? 0)
+    // Rolls on hand, derived from orders and usage exactly as the page derives them.
+    const shelf = await shelfOf(repos, owner)
+    const reorder = stockOf(ams, key => shelf.get(key)?.rollsOnHand ?? 0)
       .filter(entry => entry.status === 'reorder')
     const due = new Set(reorder.map(entry => entry.key))
     const alerted = new Set(await repos.push.alertedKeys(owner))

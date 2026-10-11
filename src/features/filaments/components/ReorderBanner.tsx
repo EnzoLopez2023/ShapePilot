@@ -50,7 +50,7 @@ export default function ReorderBanner({ stock, receivedAt, now = new Date() }: R
               <strong>{colorLabel(entry.key)}</strong>
               {' — '}
               {entry.lowestPercent}% left in {slotLabel(slot)}
-              {entry.owned === 0 ? ', and it is not in your inventory' : ', with no spare on the shelf'}
+              {entry.owned === 0 ? ', and none is left on your shelf' : ', with no spare on the shelf'}
             </Typography>
           )
         })}

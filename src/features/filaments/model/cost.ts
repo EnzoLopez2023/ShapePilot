@@ -1,11 +1,12 @@
 // What the filament in a print is worth.
 //
-// Priced per line, because Bambu prices a line: a spool of Jade White costs
-// what a spool of Bambu Black costs. A colour whose line has no price
+// Priced from what was actually paid: each colour at the average landed cost
+// of the rolls bought of it, a colour never bought at its line's average (see
+// priceBookOf in lib/contracts/filamentOrders.ts). A colour with neither
 // contributes nothing to the total and is counted as unpriced instead -- a
 // total that quietly skips half the grams would read as a smaller bill rather
 // than an incomplete one.
-import type { FilamentPrice } from '../service.ts'
+import type { KilogramPrice } from '../../../../lib/contracts/filamentOrders.ts'
 
 export interface CostTotal {
   /** Money, in `currency`; null when nothing priced was used. */
@@ -24,16 +25,15 @@ export const lineOfKey = (key: string): string =>
 
 export function costOf(
   usage: readonly { key: string; grams: number }[],
-  prices: readonly FilamentPrice[],
+  priceOf: (key: string) => KilogramPrice | null,
 ): CostTotal {
-  const byLine = new Map(prices.map(price => [price.line, price]))
   const currencies = new Set<string>()
   let amount = 0
   let pricedGrams = 0
   let unpricedGrams = 0
 
   for (const entry of usage) {
-    const price = byLine.get(lineOfKey(entry.key))
+    const price = priceOf(entry.key)
     if (!price) {
       unpricedGrams += entry.grams
       continue

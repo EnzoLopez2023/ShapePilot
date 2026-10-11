@@ -6,8 +6,6 @@ import type { FilamentColor, FilamentLine, FilamentVariant } from '../../../../l
 import type { ColorStock } from '../../../../lib/contracts/filamentStock.ts'
 import { SPOOL_GRAMS } from '../../../../lib/contracts/filamentStock.ts'
 import { trayName } from './ams.ts'
-import { tickId } from './types.ts'
-import type { Inventory } from './types.ts'
 
 /** What one of each form is called when counting them. */
 export const VARIANT_NOUN: Record<FilamentVariant, readonly [string, string]> = {
@@ -43,22 +41,13 @@ export function stockNote(stock: ColorStock): string {
   return base
 }
 
-/** What the tile says about ownership, spoken and shown alike. */
-export const ownedSummary = (
-  line: FilamentLine, quantities: Readonly<Record<FilamentVariant, number>>,
-): string | null => {
-  const parts = line.variants
-    .filter(variant => quantities[variant] > 0)
-    .map(variant => countOf(variant, quantities[variant]))
-  return parts.length ? parts.join(' + ') : null
-}
+const GRAMS = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 })
 
-export const quantitiesOf = (
-  owned: Inventory, key: string,
-): Record<FilamentVariant, number> => ({
-  spool: owned.get(tickId(key, 'spool')) ?? 0,
-  refill: owned.get(tickId(key, 'refill')) ?? 0,
-})
+/** "1,921 g": grams to the gram, as a shelf is counted. */
+export const formatExactGrams = (grams: number): string => `${GRAMS.format(Math.round(grams))} g`
+
+/** "2 rolls": spools and refills together, because the form only changes the price. */
+export const rollsLabel = (rolls: number): string => `${rolls} ${rolls === 1 ? 'roll' : 'rolls'}`
 
 export type StatusFilter = 'all' | 'owned' | 'missing' | 'loaded' | 'used'
 

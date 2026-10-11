@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 //
 // The filaments page through the real components, with the API stubbed at the
-// fetch boundary. What is pinned is what a person can get wrong silently: a
-// checkbox nobody can name, a tick that never reaches the server, a line
-// offering a variant it is not sold in, and a coalescing writer that drops the
-// last tick of a fast run.
+// fetch boundary. Orders are the inventory: what is pinned is that the shelf a
+// person sees is exactly what their orders and their printing add up to --
+// rolls on hand beside each reel, grams left, grams used, the order the shelf
+// is listed in -- and that the one thing they can say on this page, that a
+// roll ran out early, reaches the server and can be taken back.
 import assert from 'node:assert/strict'
 import { afterEach, beforeEach, expect, test, vi } from 'vitest'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
@@ -18,54 +19,54 @@ import { syntheticElementSnapshot, syntheticRecordedElementJob } from '../fixtur
 import { amsStockOf } from '../../lib/contracts/filamentStock.ts'
 import type { ElementAmsSlot } from '../../lib/contracts/elementStatistics.ts'
 import { ThemeModeProvider } from '../../src/theme/ThemeModeProvider.tsx'
-import {
-  FILAMENT_CATALOG, FILAMENT_LINES, FILAMENT_PAIR_COUNT,
-} from '../../lib/contracts/bambuFilaments.ts'
-
-const VARIANT_COUNT = new Map(FILAMENT_LINES.map(
-  line => [`${line.brand}/${line.material}/${line.type}`, line.variants.length]))
-
-/** Pairs left once the discontinued colours are filtered out -- the page's default. */
-const LISTED_PAIR_COUNT = FILAMENT_CATALOG.reduce(
-  (total, color) => total + (color.discontinued ? 0 : VARIANT_COUNT.get(color.line) ?? 0), 0)
+import { FILAMENT_CATALOG } from '../../lib/contracts/bambuFilaments.ts'
+import type {
+  FilamentOrder, FilamentOrderLine, FilamentRollAdjustment,
+} from '../../lib/contracts/filamentOrders.ts'
 
 type User = ReturnType<typeof userEvent.setup>
+
+const COCOA = 'bambu-lab/pla/basic/cocoa-brown-10802'
+const GREEN = 'bambu-lab/pla/basic/bambu-green-10501'
+const JADE = 'bambu-lab/pla/basic/jade-white-10100'
+const BLACK = 'bambu-lab/pla/basic/black-10101'
+const PETG_BLUE = 'bambu-lab/petg/basic/blue-30600'
+
+const LISTED = FILAMENT_CATALOG.filter(color => !color.discontinued).length
+
+const roll = (key: string, variant: 'spool' | 'refill', quantity = 1, unitPrice: number | null = 20): FilamentOrderLine => ({
+  key, description: key, sku: null, variant, gramsPerUnit: 1000, quantity, unitPrice, discount: 0, tax: 0,
+})
+
+let nextId = 0
+const bought = (orderedAt: string, lines: FilamentOrderLine[]): FilamentOrder => ({
+  id: `order-${++nextId}`, createdAt: '', invoice: null, source: 'bambu-us-invoice', orderNumber: `us-${nextId}`,
+  orderedAt, currency: 'USD', orderDiscount: 0, credit: 0, shipping: 0, grandTotal: null, note: null, lines,
+})
 
 const showEverything = async (user: User) =>
   user.click(await screen.findByRole('button', { name: 'Discontinued' }))
 
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
-/** The tile for one colour, by the name its checkboxes start with. */
+/** The tile for one colour, by its full name. */
 const tileOf = (colour: string) =>
   screen.getByRole('button', { name: new RegExp(`^${escape(colour)}, (not owned|owned: )`) })
 
 /** Every colour tile on screen. The AMS trays are buttons too, named differently. */
 const allTiles = () => screen.queryAllByRole('button', { name: /, (not owned|owned: )/ })
 
-/** Open a colour's sheet from its tile. */
+const tileNames = () => allTiles().map(tile => tile.getAttribute('aria-label')!.split(',')[0])
+
 const openColour = async (user: User, colour: string) => {
   await user.click(tileOf(colour))
   return screen.findByRole('dialog')
 }
 
-/** Tick (or untick) one checkbox, the way a person does: open, tick, close. */
-const tick = async (user: User, label: string) => {
-  const colour = label.slice(0, label.lastIndexOf(','))
-  const sheet = await openColour(user, colour)
-  await user.click(within(sheet).getByLabelText(label))
-  await user.keyboard('{Escape}')
-  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-}
-
-interface PutBody { owned: { key: string; variant: string; quantity: number }[] }
-
-let puts: PutBody[] = []
-let prices: { line: string; pricePerKg: number; currency: string }[] = []
-let pricePuts: { line: string; pricePerKg: number; currency: string }[][] = []
-let owned: { key: string; variant: string; quantity: number }[] = []
+let orders: FilamentOrder[] = []
+let adjustments: FilamentRollAdjustment[] = []
+let adjustmentPuts: FilamentRollAdjustment[] = []
 let failLoad = false
-let failSave = false
 // Usage is administrator data. `admin: false` answers 403, as the server does
 // for everyone else; otherwise usage is computed from `jobs` and `mappings` by
 // the real matcher, so the page is tested against the numbers it would get.
@@ -79,17 +80,11 @@ let amsReportedAt = new Date().toISOString()
 
 const stubFetch = () => vi.stubGlobal('fetch', vi.fn(async (url: unknown, init?: RequestInit) => {
   const path = String(url)
+  const method = init?.method ?? 'GET'
   if (!path.includes('/api/filaments')) throw new Error(`unexpected fetch ${path}`)
-  if (path.includes('/api/filaments/prices')) {
-    if ((init?.method ?? 'GET') === 'PUT') {
-      prices = (JSON.parse(String(init?.body)) as { prices: typeof prices }).prices
-      pricePuts.push(prices)
-    }
-    return Response.json({ prices })
-  }
   if (path.includes('/api/filaments/usage')) {
     if (!admin) return Response.json({ error: { code: 'forbidden', message: 'No.' } }, { status: 403 })
-    if ((init?.method ?? 'GET') === 'PUT') {
+    if (method === 'PUT') {
       mappings = (JSON.parse(String(init?.body)) as { mappings: FilamentUsageMapping[] }).mappings
       mappingPuts.push(mappings)
       return Response.json({ mappings })
@@ -101,28 +96,42 @@ const stubFetch = () => vi.stubGlobal('fetch', vi.fn(async (url: unknown, init?:
       }),
     })
   }
-  if ((init?.method ?? 'GET') === 'GET') {
-    if (failLoad) return new Response('nope', { status: 500 })
-    return Response.json({ owned })
+  if (path.includes('/api/filaments/adjustments') && method === 'PUT') {
+    const body = JSON.parse(String(init?.body)) as FilamentRollAdjustment
+    adjustmentPuts.push(body)
+    adjustments = [...adjustments.filter(entry => entry.key !== body.key),
+      ...(body.finished > 0 ? [body] : [])]
+    return Response.json({ adjustments })
   }
-  const body = JSON.parse(String(init?.body)) as PutBody
-  puts.push(body)
-  if (failSave) return new Response('nope', { status: 500 })
-  owned = body.owned
-  return Response.json({ owned })
+  if (path.includes('/api/filaments/orders')) {
+    if (failLoad) return new Response('nope', { status: 500 })
+    return Response.json({ orders, adjustments })
+  }
+  throw new Error(`unexpected ${method} ${path}`)
 }))
 
 const draw = () => render(
   <MemoryRouter><ThemeModeProvider><FilamentsPage /></ThemeModeProvider></MemoryRouter>,
 )
 
+/** A recorded print using one filament, shaped as the statistics history holds it. */
+const used = (id: string, color: string, grams: number) => syntheticRecordedElementJob({
+  id, result: 'completed',
+  materials: [{
+    material: 'PLA', filamentId: 'GFA00', color, estimatedWeightGrams: grams,
+    nozzleId: null, amsId: null, slotId: null,
+  }],
+})
+
+const loadedSlot = (slotId: string, color: string, remainingPercent: number | null): ElementAmsSlot => ({
+  amsId: '0', slotId, material: 'PLA', subBrand: 'PLA Basic', color, remainingPercent, empty: false,
+})
+
 beforeEach(() => {
-  prices = []
-  pricePuts = []
-  puts = []
-  owned = []
+  orders = []
+  adjustments = []
+  adjustmentPuts = []
   failLoad = false
-  failSave = false
   admin = false
   jobs = []
   mappings = []
@@ -141,286 +150,196 @@ test('renders one h1 and a section per product line', async () => {
   draw()
   await screen.findByRole('heading', { name: 'Filaments', level: 1 })
   assert.equal(screen.getAllByRole('heading', { level: 1 }).length, 1)
-
   for (const label of ['PLA Basic', 'PLA Matte', 'PETG Basic', 'PETG HF', 'PLA Wood', 'ABS']) {
     await screen.findByRole('heading', { name: label, level: 2 })
   }
 })
 
-// Every colour is one tile, and each tile names itself in full -- line, colour,
-// code and whether it is owned -- because "Jade White" alone is ambiguous
-// across lines, and a page of 169 buttons called "button" is no page at all.
-test('gives every colour tile a unique accessible name', async () => {
+test('every colour is one tile with a name of its own', async () => {
   const user = userEvent.setup()
   draw()
   await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
+  assert.equal(allTiles().length, LISTED)
   await showEverything(user)
-
-  const tiles = allTiles()
-  assert.equal(tiles.length, FILAMENT_CATALOG.length)
-  const names = tiles.map(tile => tile.getAttribute('aria-label'))
+  const names = allTiles().map(tile => tile.getAttribute('aria-label'))
+  assert.equal(names.length, FILAMENT_CATALOG.length)
   assert.equal(new Set(names).size, names.length, 'two tiles share an accessible name')
 })
 
-// The checkboxes live in the sheet, and still name themselves in full.
-test('the sheet names each checkbox in full', async () => {
-  const user = userEvent.setup()
+test('with no orders, the page says where the shelf comes from', async () => {
+  draw()
+  await screen.findByRole('heading', { name: 'Nothing on the shelf yet', level: 2 })
+  const link = screen.getByRole('link', { name: 'Log your orders' })
+  assert.equal(link.getAttribute('href'), '/filaments/orders')
+  await screen.findByText(/^0 rolls in 0 colours/)
+})
+
+// The mock-up this answers: "2" beside the reel, then grams left, then grams used.
+test('a tile counts rolls together, whatever their form, and says grams left and used', async () => {
+  admin = true
+  orders = [
+    bought('2026-09-04', [roll(GREEN, 'spool')]),
+    bought('2026-09-08', [roll(GREEN, 'refill', 1, 18)]),
+  ]
+  jobs = [used('g1', '#00AE42FF', 79)]
+  draw()
+  const tile = await screen.findByRole('button', {
+    name: 'PLA Basic Bambu Green 10501, owned: 2 rolls, 1,921 g available, 79 g used',
+  })
+  expect(within(tile).getByText('2')).toBeTruthy()
+  expect(within(tile).getByText('1,921 g available')).toBeTruthy()
+  expect(within(tile).getByText('79 g used')).toBeTruthy()
+  // And never the forms: spool or refill is a price, not a shelf.
+  expect(within(tile).queryByText(/spool|refill/i)).toBeNull()
+  await screen.findByText(/^2 rolls in 1 colour · 1,921 g available/)
+})
+
+test('a line lists what is on hand first, the most printed first', async () => {
+  admin = true
+  orders = [bought('2026-09-04', [roll(JADE, 'spool'), roll(BLACK, 'spool'), roll(COCOA, 'spool')])]
+  jobs = [used('b', '#000000FF', 300), used('c', '#6F5034FF', 500)]
   draw()
   await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
-  const sheet = await openColour(user, 'PLA Basic Jade White 10100')
-  const names = within(sheet).getAllByRole('checkbox').map(box => box.getAttribute('aria-label'))
-  assert.deepEqual(names, [
-    'PLA Basic Jade White 10100, with spool',
-    'PLA Basic Jade White 10100, refill',
+  const basic = screen.getByRole('region', { name: 'PLA Basic' })
+  const names = within(basic).getAllByRole('button').map(tile => tile.getAttribute('aria-label')!.split(',')[0])
+  assert.deepEqual(names.slice(0, 3), [
+    'PLA Basic Cocoa Brown 10802', 'PLA Basic Black 10101', 'PLA Basic Jade White 10100',
   ])
 })
 
-// The catalogue's shape, surfaced: only the two PLA lines are sold as refills.
-test('offers two variants on PLA Basic and one on ABS', async () => {
+test('the sheet lists every roll with what it cost, and averages the price', async () => {
   const user = userEvent.setup()
-  draw()
-  await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
-
-  let sheet = await openColour(user, 'PLA Basic Jade White 10100')
-  assert.ok(within(sheet).getByLabelText('PLA Basic Jade White 10100, with spool'))
-  assert.ok(within(sheet).getByLabelText('PLA Basic Jade White 10100, refill'))
-  await user.keyboard('{Escape}')
-  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
-
-  sheet = await openColour(user, 'ABS Red 40200')
-  assert.ok(within(sheet).getByLabelText('ABS Red 40200, with spool'))
-  expect(within(sheet).queryByLabelText('ABS Red 40200, refill')).toBeNull()
-})
-
-test('a tick sends the whole inventory and survives a reload', async () => {
-  const user = userEvent.setup()
-  const first = draw()
-  await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
-
-  await tick(user, 'PLA Basic Jade White 10100, with spool')
-  await waitFor(() => { assert.ok(puts.length >= 1) })
-  assert.deepEqual(puts.at(-1)?.owned, [
-    { key: 'bambu-lab/pla/basic/jade-white-10100', variant: 'spool', quantity: 1 },
-  ])
-
-  first.unmount()
-  draw()
-  await screen.findByRole('button', { name: /^PLA Basic Jade White 10100, owned: 1 spool/ })
-  const sheet = await openColour(user, 'PLA Basic Jade White 10100')
-  expect((within(sheet).getByLabelText('PLA Basic Jade White 10100, with spool') as HTMLInputElement)
-    .checked).toBe(true)
-})
-
-test('unticking removes just that pair', async () => {
-  const user = userEvent.setup()
-  draw()
-  await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
-
-  const sheet = await openColour(user, 'PLA Basic Jade White 10100')
-  await user.click(within(sheet).getByLabelText('PLA Basic Jade White 10100, with spool'))
-  await user.click(within(sheet).getByLabelText('PLA Basic Jade White 10100, refill'))
-  await waitFor(() => { assert.equal(puts.at(-1)?.owned.length, 2) })
-
-  await user.click(within(sheet).getByLabelText('PLA Basic Jade White 10100, with spool'))
-  await waitFor(() => {
-    assert.deepEqual(puts.at(-1)?.owned, [
-      { key: 'bambu-lab/pla/basic/jade-white-10100', variant: 'refill', quantity: 1 },
-    ])
-  })
-})
-
-// The writer coalesces, so a fast run is not one request per tick -- but the
-// last request must still describe everything that was ticked.
-test('coalesces a fast run without losing the last tick', async () => {
-  const user = userEvent.setup()
-  draw()
-  await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
-
-  const labels = [
-    'PLA Basic Jade White 10100, with spool',
-    'PLA Basic Black 10101, with spool',
-    'PLA Basic Gray 10103, with spool',
-    'PLA Basic Red 10200, with spool',
-  ]
-  for (const label of labels) await tick(user, label)
-
-  await waitFor(() => { assert.equal(puts.at(-1)?.owned.length, 4) })
-  assert.ok(puts.length <= labels.length, 'the writer issued more requests than ticks')
-  assert.deepEqual(
-    puts.at(-1)?.owned.map(entry => entry.key).sort(),
-    [
-      'bambu-lab/pla/basic/black-10101',
-      'bambu-lab/pla/basic/gray-10103',
-      'bambu-lab/pla/basic/jade-white-10100',
-      'bambu-lab/pla/basic/red-10200',
-    ],
-  )
-})
-
-// The denominator is what is on screen, not what the catalogue holds: counting
-// against rows the filter is hiding would read as a page that lost something.
-test('counts what is owned against what is listed', async () => {
-  const user = userEvent.setup()
-  draw()
-  await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
-  await screen.findByText(new RegExp(`^0 of ${LISTED_PAIR_COUNT} owned`))
-
-  await tick(user, 'PLA Basic Jade White 10100, with spool')
-  await screen.findByText(new RegExp(`^1 of ${LISTED_PAIR_COUNT} owned`))
-
-  await showEverything(user)
-  await screen.findByText(new RegExp(`^1 of ${FILAMENT_PAIR_COUNT} owned`))
-})
-
-// Half of PETG Basic is gone from the shop. The default is the shop.
-test('hides discontinued colours until the filter is turned on', async () => {
-  const user = userEvent.setup()
-  draw()
-  await screen.findByRole('heading', { name: 'PETG Basic', level: 2 })
-
-  assert.equal(allTiles().length, FILAMENT_CATALOG.filter(color => !color.discontinued).length)
-  expect(screen.queryByRole('button', { name: /^PETG Basic Blue 30600, / })).toBeNull()
-  assert.ok(tileOf('PETG Basic Pine Green 30503'))
-
-  await showEverything(user)
-  assert.equal(allTiles().length, FILAMENT_CATALOG.length)
-  assert.ok(tileOf('PETG Basic Blue 30600'))
-})
-
-// The catalogue keeps dead SKUs because a spool outlives its listing. A tick
-// the filter hid would be a tick nobody could find, let alone correct.
-test('never hides a discontinued filament you own', async () => {
-  owned = [{ key: 'bambu-lab/petg/basic/blue-30600', variant: 'spool', quantity: 1 }]
-  draw()
-  await screen.findByRole('heading', { name: 'PETG Basic', level: 2 })
-
-  assert.ok(screen.getByRole('button', { name: /^PETG Basic Blue 30600, owned: 1 spool/ }))
-  expect(screen.queryByRole('button', { name: /^PETG Basic Gold 30401, / })).toBeNull()
-})
-
-// Clearing a tick must not pull the row out from under the pointer -- you may
-// have meant to tick the other variant, or to put the tick straight back.
-test('an owned discontinued row stays put when its last tick is cleared', async () => {
-  const user = userEvent.setup()
-  owned = [{ key: 'bambu-lab/petg/basic/blue-30600', variant: 'spool', quantity: 1 }]
-  draw()
-  await screen.findByRole('heading', { name: 'PETG Basic', level: 2 })
-
-  await tick(user, 'PETG Basic Blue 30600, with spool')
-  await waitFor(() => { assert.deepEqual(puts.at(-1)?.owned, []) })
-
-  assert.ok(tileOf('PETG Basic Blue 30600'))
-  const sheet = await openColour(user, 'PETG Basic Blue 30600')
-  const box = within(sheet).getByLabelText('PETG Basic Blue 30600, with spool') as HTMLInputElement
-  assert.equal(box.checked, false)
-})
-
-// A tick is one spool. Once ticked, the count's stepper sits beside it in the
-// sheet, so "I have three of these" is on screen rather than behind a gesture.
-test('steps a count up and down, and sends it', async () => {
-  const user = userEvent.setup()
-  draw()
-  await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
-  const name = 'PLA Basic Jade White 10100, with spool'
-
-  const sheet = await openColour(user, 'PLA Basic Jade White 10100')
-  // Nothing to count until it is owned.
-  expect(within(sheet).queryByRole('group', { name: `How many: ${name}` })).toBeNull()
-  await user.click(within(sheet).getByLabelText(name))
-
-  const stepper = await within(sheet).findByRole('group', { name: `How many: ${name}` })
-  // Stops at one: going to none is unticking, which has its own control.
-  assert.equal((within(stepper).getByRole('button', { name: 'One fewer spool' }) as HTMLButtonElement)
-    .disabled, true)
-
-  await user.click(within(stepper).getByRole('button', { name: 'One more spool' }))
-  await user.click(within(stepper).getByRole('button', { name: 'One more spool' }))
-  await within(stepper).findByText('3 spools')
-  await waitFor(() => {
-    assert.deepEqual(puts.at(-1)?.owned, [
-      { key: 'bambu-lab/pla/basic/jade-white-10100', variant: 'spool', quantity: 3 },
-    ])
-  })
-
-  await user.click(within(stepper).getByRole('button', { name: 'One fewer spool' }))
-  await waitFor(() => { assert.equal(puts.at(-1)?.owned[0].quantity, 2) })
-  await user.keyboard('{Escape}')
-  assert.ok(await screen.findByRole('button', { name: /^PLA Basic Jade White 10100, owned: 2 spools/ }))
-})
-
-test('reads stored counts back, per form, and totals the rolls', async () => {
-  owned = [
-    { key: 'bambu-lab/pla/basic/jade-white-10100', variant: 'spool', quantity: 3 },
-    { key: 'bambu-lab/pla/basic/jade-white-10100', variant: 'refill', quantity: 2 },
+  orders = [
+    bought('2026-09-04', [roll(GREEN, 'spool', 1, 16)]),
+    bought('2026-09-08', [roll(GREEN, 'refill', 1, 12)]),
   ]
   draw()
   await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
-
-  assert.ok(screen.getByRole('button', {
-    name: /^PLA Basic Jade White 10100, owned: 3 spools \+ 2 refills/,
-  }))
-  // Two ticks, five rolls on the shelf.
-  await screen.findByText(new RegExp(`^2 of ${LISTED_PAIR_COUNT} owned \\(5 rolls\\)`))
+  const sheet = await openColour(user, 'PLA Basic Bambu Green 10501')
+  expect(within(sheet).getByText('2 rolls · 2,000 g')).toBeTruthy()
+  expect(within(sheet).getByText('$14.00 / kg')).toBeTruthy()
+  expect(within(sheet).getByText('With spool · 1,000 g')).toBeTruthy()
+  expect(within(sheet).getByText('Refill · 1,000 g')).toBeTruthy()
+  expect(within(sheet).getByText('$16.00')).toBeTruthy()
 })
 
-// Unticking is the only way to own none, and it forgets the count with it.
-test('unticking a counted filament removes it outright', async () => {
+test('a roll marked used up comes off the shelf, and Undo puts it back', async () => {
   const user = userEvent.setup()
-  owned = [{ key: 'bambu-lab/pla/basic/black-10101', variant: 'spool', quantity: 4 }]
+  orders = [bought('2026-09-04', [roll(BLACK, 'spool', 2)])]
   draw()
   await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
-
   const sheet = await openColour(user, 'PLA Basic Black 10101')
-  await user.click(within(sheet).getByLabelText('PLA Basic Black 10101, with spool'))
-  await waitFor(() => { assert.deepEqual(puts.at(-1)?.owned, []) })
-  expect(within(sheet).queryByRole('group', { name: /^How many:/ })).toBeNull()
+
+  await user.click(within(sheet).getByRole('button', { name: 'Mark a roll used up' }))
+  await waitFor(() => assert.deepEqual(adjustmentPuts.at(-1), { key: BLACK, finished: 1 }))
+  await within(sheet).findByText('1 roll · 1,000 g')
+
+  await user.click(within(sheet).getByRole('button', { name: 'Undo' }))
+  await waitFor(() => assert.deepEqual(adjustmentPuts.at(-1), { key: BLACK, finished: 0 }))
+  await within(sheet).findByText('2 rolls · 2,000 g')
+  expect(within(sheet).queryByRole('button', { name: 'Undo' })).toBeNull()
 })
 
-// The sheet steps through what was on screen, so a run of ticks is a run of taps.
 test('the sheet steps to the next and previous colour', async () => {
   const user = userEvent.setup()
   draw()
   await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
-  const shown = allTiles().map(tile => tile.getAttribute('aria-label') ?? '')
-  const at = shown.findIndex(label => label.startsWith('PLA Basic Jade White 10100,'))
-  const next = shown[at + 1].split(',')[0]
+  const shown = tileNames()
+  const at = shown.indexOf('PLA Basic Jade White 10100')
   const sheet = await openColour(user, 'PLA Basic Jade White 10100')
 
   await user.click(within(sheet).getByRole('button', { name: 'Next colour' }))
-  assert.ok(within(sheet).getByRole('checkbox', { name: `${next}, with spool` }))
+  const next = FILAMENT_CATALOG.find(color => shown[at + 1].endsWith(`${color.name} ${color.code}`))!
+  await within(sheet).findByRole('heading', { name: next.name, level: 2 })
   await user.click(within(sheet).getByRole('button', { name: 'Previous colour' }))
-  assert.ok(within(sheet).getByRole('checkbox', { name: 'PLA Basic Jade White 10100, with spool' }))
+  await within(sheet).findByRole('heading', { name: 'Jade White', level: 2 })
+})
+
+// Half of PETG Basic is gone from the shop. The default is the shop.
+test('hides discontinued colours until asked, except one that was bought', async () => {
+  const user = userEvent.setup()
+  draw()
+  await screen.findByRole('heading', { name: 'PETG Basic', level: 2 })
+  expect(screen.queryByRole('button', { name: /^PETG Basic Blue 30600, / })).toBeNull()
+  await showEverything(user)
+  assert.ok(tileOf('PETG Basic Blue 30600'))
+
+  cleanup()
+  orders = [bought('2026-09-04', [roll(PETG_BLUE, 'spool')])]
+  draw()
+  await screen.findByRole('button', { name: /^PETG Basic Blue 30600, owned: 1 roll/ })
 })
 
 test('a failed load offers a retry that works', async () => {
   const user = userEvent.setup()
   failLoad = true
   draw()
-
   await screen.findByRole('alert')
   assert.equal(allTiles().length, 0)
-
   failLoad = false
   await user.click(screen.getByRole('button', { name: 'Try again' }))
   await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
 })
 
-// A tick that did not store must not sit on screen looking stored with nothing
-// said about it.
-test('says so when a tick could not be saved', async () => {
+test('search narrows every line, and Escape clears it', async () => {
   const user = userEvent.setup()
-  failSave = true
   draw()
   await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
-
-  const sheet = await openColour(user, 'PLA Basic Jade White 10100')
-  await user.click(within(sheet).getByLabelText('PLA Basic Jade White 10100, with spool'))
+  const before = allTiles().length
+  await user.type(screen.getByLabelText('Search colours'), 'jade')
+  await waitFor(() => expect(allTiles().length).toBeLessThan(before))
+  for (const name of tileNames()) expect(name.toLowerCase()).toContain('jade')
   await user.keyboard('{Escape}')
-  const alert = await screen.findByRole('alert')
-  assert.match(alert.textContent ?? '', /Not saved/)
+  await waitFor(() => expect(allTiles().length).toBe(before))
 })
 
-/** A recorded print using one filament, shaped as the statistics history holds it. */
+test('a search that matches nothing says so, and offers to clear the filters', async () => {
+  const user = userEvent.setup()
+  draw()
+  await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
+  const before = allTiles().length
+  await user.type(screen.getByLabelText('Search colours'), 'zzzz')
+  await screen.findByText('No colour matches those filters.')
+  await user.click(screen.getByRole('button', { name: 'Clear filters' }))
+  await waitFor(() => expect(allTiles().length).toBe(before))
+})
+
+test('"/" jumps to the search box', async () => {
+  const user = userEvent.setup()
+  draw()
+  await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
+  await user.keyboard('/')
+  expect(document.activeElement).toBe(screen.getByLabelText('Search colours'))
+  expect((screen.getByLabelText('Search colours') as HTMLInputElement).value).toBe('')
+})
+
+test('the Owned status leaves just the colours on hand', async () => {
+  orders = [bought('2026-09-04', [roll(JADE, 'refill')])]
+  const user = userEvent.setup()
+  draw()
+  await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
+  await user.click(screen.getByRole('button', { name: 'Status' }))
+  await user.click(await screen.findByRole('menuitem', { name: 'Owned' }))
+  await waitFor(() => expect(allTiles()).toHaveLength(1))
+  expect(tileNames()).toEqual(['PLA Basic Jade White 10100'])
+})
+
+test('the Type filter shows one line', async () => {
+  const user = userEvent.setup()
+  draw()
+  await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
+  await user.click(screen.getByRole('button', { name: 'Type' }))
+  await user.click(await screen.findByRole('menuitem', { name: 'ABS' }))
+  await waitFor(() => expect(screen.queryByRole('heading', { name: 'PLA Basic', level: 2 })).toBeNull())
+  assert.ok(screen.getByRole('heading', { name: 'ABS', level: 2 }))
+})
+
+test('the filter bar leads to the orders', async () => {
+  draw()
+  await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
+  assert.equal(screen.getByRole('link', { name: 'Orders' }).getAttribute('href'), '/filaments/orders')
+})
+
 const printed = (id: string, material: string, filamentId: string, color: string, grams: number) =>
   syntheticRecordedElementJob({
     id,
@@ -494,46 +413,37 @@ test('"don\'t track" sets filament aside, and removing the link brings it back',
   assert.deepEqual(mappingPuts.at(-1), [])
 })
 
-const loadedSlot = (slotId: string, color: string, remainingPercent: number | null): ElementAmsSlot => ({
-  amsId: '0', slotId, material: 'PLA', subBrand: 'PLA Basic', color, remainingPercent, empty: false,
-})
 
-test('says to reorder a low loaded spool with no spare, and a spare clears it', async () => {
+test('says to reorder a low loaded spool with nothing behind it, and another roll clears it', async () => {
   const user = userEvent.setup()
   admin = true
-  owned = [{ key: 'bambu-lab/pla/basic/cocoa-brown-10802', variant: 'spool', quantity: 1 }]
+  orders = [bought('2026-09-04', [roll(COCOA, 'spool')])]
   amsSlots = [loadedSlot('0', '#6F5034FF', 12), loadedSlot('1', '#8E9089FF', 62)]
   draw()
 
   const banner = await screen.findByRole('status', { name: 'Reorder soon' })
   assert.match(banner.textContent ?? '', /PLA Basic · Cocoa Brown 10802 — 12% left in AMS 1 · slot 1, with no spare on the shelf/)
-  // Gray is loaded but not low, so it is not in the banner.
   assert.doesNotMatch(banner.textContent ?? '', /Gray/)
-  // The tile carries the tray and says to reorder.
   assert.ok(tileOf('PLA Basic Cocoa Brown 10802').getAttribute('aria-label')?.includes('in A1, 12%, reorder'))
-  // The sheet names the tray, then the grams that percentage is of a full spool.
   const sheet = await openColour(user, 'PLA Basic Cocoa Brown 10802')
   await within(sheet).findByText('A1 · 12% · ≈120 g · reorder')
-
-  // One more Cocoa Brown on the shelf is a spare behind the loaded spool.
-  await user.click(within(sheet).getByRole('button', { name: 'One more spool' }))
-  await waitFor(() => {
-    expect(screen.queryByRole('status', { name: /Reorder soon/ })).toBeNull()
-  })
-  await within(sheet).findByText('A1 · 12% · ≈120 g · spare on shelf')
   await user.keyboard('{Escape}')
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
 
-  const gray = await openColour(user, 'PLA Basic Gray 10103')
-  await within(gray).findByText('A2 · 62% · ≈620 g')
+  // A second roll bought is a spare behind the loaded one.
+  cleanup()
+  orders = [bought('2026-09-04', [roll(COCOA, 'spool', 2)])]
+  draw()
+  await screen.findByRole('region', { name: 'In the AMS' })
+  expect(screen.queryByRole('status', { name: /Reorder soon/ })).toBeNull()
 })
 
-test('a low colour never ticked in the inventory says so', async () => {
+test('a low colour with nothing bought says so', async () => {
   admin = true
   amsSlots = [loadedSlot('3', '#FFFFFFFF', 4)]
   draw()
   const banner = await screen.findByRole('status', { name: 'Reorder soon' })
-  assert.match(banner.textContent ?? '', /Jade White 10100 — 4% left in AMS 1 · slot 4, and it is not in your inventory/)
+  assert.match(banner.textContent ?? '', /Jade White 10100 — 4% left in AMS 1 · slot 4, and none is left on your shelf/)
 })
 
 test('an old reading says when it was taken; an unreported percentage never warns', async () => {
@@ -548,118 +458,19 @@ test('an old reading says when it was taken; an unreported percentage never warn
   await within(sheet).findByText('In A2')
 })
 
-test('search narrows every line to the colours that match, and Escape clears it', async () => {
-  const user = userEvent.setup()
-  draw()
-  await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
-  const before = allTiles().length
-
-  await user.type(screen.getByLabelText('Search colours'), 'jade')
-
-  await waitFor(() => expect(allTiles().length).toBeLessThan(before))
-  for (const tile of allTiles()) {
-    expect(tile.getAttribute('aria-label')?.toLowerCase()).toContain('jade')
-  }
-
-  await user.keyboard('{Escape}')
-  await waitFor(() => expect(allTiles().length).toBe(before))
-})
-
-test('a search that matches nothing says so, and offers to clear the filters', async () => {
-  const user = userEvent.setup()
-  draw()
-  await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
-  const before = allTiles().length
-
-  await user.type(screen.getByLabelText('Search colours'), 'zzzz')
-
-  await screen.findByText('No colour matches those filters.')
-  expect(allTiles()).toHaveLength(0)
-  await user.click(screen.getByRole('button', { name: 'Clear filters' }))
-  await waitFor(() => expect(allTiles().length).toBe(before))
-})
-
-test('"/" jumps to the search box', async () => {
-  const user = userEvent.setup()
-  draw()
-  await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
-
-  await user.keyboard('/')
-
-  expect(document.activeElement).toBe(screen.getByLabelText('Search colours'))
-  // And it is a shortcut, not a character: the field is still empty.
-  expect((screen.getByLabelText('Search colours') as HTMLInputElement).value).toBe('')
-})
-
-test('the Owned status leaves just the ticked colours', async () => {
-  owned = [{ key: 'bambu-lab/pla/basic/jade-white-10100', variant: 'spool', quantity: 1 }]
-  const user = userEvent.setup()
-  draw()
-  await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
-
-  await user.click(screen.getByRole('button', { name: 'Status' }))
-  await user.click(await screen.findByRole('menuitem', { name: 'Owned' }))
-
-  await waitFor(() => expect(allTiles()).toHaveLength(1))
-  expect(allTiles()[0].getAttribute('aria-label')).toMatch(/^PLA Basic Jade White 10100, owned: 1 spool/)
-  // The pill says what it filters to.
-  assert.ok(screen.getByRole('button', { name: 'Owned' }))
-})
-
-test('the Type filter shows one line', async () => {
-  const user = userEvent.setup()
-  draw()
-  await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
-
-  await user.click(screen.getByRole('button', { name: 'Type' }))
-  await user.click(await screen.findByRole('menuitem', { name: 'ABS' }))
-
-  await waitFor(() => expect(screen.queryByRole('heading', { name: 'PLA Basic', level: 2 })).toBeNull())
-  assert.ok(screen.getByRole('heading', { name: 'ABS', level: 2 }))
-})
-
-test('a line can be priced once a currency is chosen, and the price is sent', async () => {
-  const user = userEvent.setup()
-  draw()
-  await screen.findByRole('heading', { name: 'PLA Basic', level: 2 })
-  await user.click(screen.getByRole('button', { name: 'Prices' }))
-  await screen.findByRole('dialog', { name: 'Filament prices' })
-  // Nothing is priced in a currency nobody has chosen.
-  expect(screen.getAllByLabelText(/^Price per kg/)[0].hasAttribute('disabled')).toBe(true)
-
-  await user.click(screen.getByRole('combobox', { name: 'Prices in' }))
-  await user.click(await screen.findByRole('option', { name: 'EUR' }))
-
-  const field = screen.getByLabelText('Price per kg of PLA Basic')
-  await user.type(field, '24.99')
-  await user.tab()
-
-  await waitFor(() => expect(pricePuts.length).toBe(1))
-  expect(pricePuts[0]).toEqual([
-    { line: 'bambu-lab/pla/basic', pricePerKg: 24.99, currency: 'EUR' },
-  ])
-})
-
-test('usage is costed from the priced lines, and unpriced grams are said to be unpriced', async () => {
+test('usage is costed from what was paid for it', async () => {
   admin = true
-  jobs = [syntheticRecordedElementJob({
-    id: 'p1', result: 'completed',
-    materials: [{
-      material: 'PLA', filamentId: 'GFA00', color: '#FFFFFF', estimatedWeightGrams: 1000,
-      nozzleId: null, amsId: null, slotId: null,
-    }],
-  })]
-  prices = [{ line: 'bambu-lab/pla/basic', pricePerKg: 20, currency: 'EUR' }]
+  orders = [bought('2026-09-04', [roll(JADE, 'spool', 1, 20)])]
+  jobs = [used('p1', '#FFFFFF', 1000)]
   draw()
-
-  // 1 kg of a line priced at 20 a kilogram.
+  // 1 kg of a colour bought at 20 a kilogram.
   const line = await screen.findByText(/of filament, from the/)
-  expect(line.textContent).toMatch(/€20\.00|20,00/)
+  expect(line.textContent).toMatch(/\$20\.00/)
 })
 
 test('the AMS is drawn with every tray, and names what is in each', async () => {
   admin = true
-  owned = [{ key: 'bambu-lab/pla/basic/cocoa-brown-10802', variant: 'spool', quantity: 2 }]
+  orders = [bought('2026-09-04', [roll(COCOA, 'spool', 2)])]
   // Tray 3 is empty and the printer does not report it, as a real AMS does not.
   amsSlots = [
     loadedSlot('0', '#6F5034FF', 40),
@@ -682,23 +493,14 @@ test('the AMS is drawn with every tray, and names what is in each', async () => 
   expect(within(panel).getByText('Empty')).toBeTruthy()
 })
 
-test('a loaded colour and a colour printed with are marked differently', async () => {
+test('a spool loaded on the external holder sits beside the AMS', async () => {
   admin = true
-  owned = [
-    { key: 'bambu-lab/pla/basic/cocoa-brown-10802', variant: 'spool', quantity: 1 },
-    { key: 'bambu-lab/pla/basic/jade-white-10100', variant: 'spool', quantity: 1 },
+  amsSlots = [
+    loadedSlot('0', '#6F5034FF', 40),
+    { ...loadedSlot('254', '#6F5034FF', 70), amsId: 'external' },
   ]
-  amsSlots = [loadedSlot('0', '#6F5034FF', 60)]
-  jobs = [syntheticRecordedElementJob({
-    id: 'jw', result: 'completed',
-    materials: [{
-      material: 'PLA', filamentId: 'GFA00', color: '#FFFFFF', estimatedWeightGrams: 40,
-      nozzleId: null, amsId: null, slotId: null,
-    }],
-  })]
   draw()
-
-  await screen.findByRole('region', { name: 'In the AMS' })
-  await waitFor(() => expect(tileOf('PLA Basic Cocoa Brown 10802').getAttribute('data-state')).toBe('loaded'))
-  await waitFor(() => expect(tileOf('PLA Basic Jade White 10100').getAttribute('data-state')).toBe('used'))
+  const panel = await screen.findByRole('region', { name: 'In the AMS' })
+  expect(within(panel).getByRole('group', { name: /^External spool: Ext: PLA Basic Cocoa Brown 10802, 70%/ })).toBeTruthy()
+  expect(within(panel).getByText('External')).toBeTruthy()
 })

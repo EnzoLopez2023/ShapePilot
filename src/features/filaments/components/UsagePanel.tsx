@@ -21,15 +21,15 @@ import type {
 } from '../../../../lib/contracts/filamentUsage.ts'
 import { colorLabel, formatGrams, sourceLabel } from '../model/usage.ts'
 import { costOf, formatMoney } from '../model/cost.ts'
-import type { FilamentPrice } from '../service.ts'
+import type { KilogramPrice } from '../../../../lib/contracts/filamentOrders.ts'
 import { Swatch } from './Swatch.tsx'
 import ReminderControl from './ReminderControl.tsx'
 
 export interface UsagePanelProps {
   usage: FilamentUsage
   busy: boolean
-  /** What the account pays per kilogram, per line. Unpriced lines cost nothing. */
-  prices: readonly FilamentPrice[]
+  /** What a kilogram of a colour cost, from the orders; null when nothing prices it. */
+  priceOf: (key: string) => KilogramPrice | null
   /** Replace every link. The page saves and reloads usage. */
   onMappings: (mappings: FilamentUsageMapping[]) => void
 }
@@ -62,10 +62,10 @@ const formatSince = (iso: string): string =>
   new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
     .format(new Date(iso))
 
-export default function UsagePanel({ usage, busy, prices, onMappings }: UsagePanelProps) {
+export default function UsagePanel({ usage, busy, priceOf, onMappings }: UsagePanelProps) {
   // Only the colours the matcher is sure of can be priced: an unlinked filament
   // has no line, so its grams are counted as unpriced rather than guessed at.
-  const cost = useMemo(() => costOf(usage.colors, prices), [usage.colors, prices])
+  const cost = useMemo(() => costOf(usage.colors, priceOf), [usage.colors, priceOf])
   const untrackedGrams = useMemo(
     () => new Map(usage.untracked.map(entry => [sourceId(entry), entry.grams])), [usage.untracked])
 
@@ -112,7 +112,7 @@ export default function UsagePanel({ usage, busy, prices, onMappings }: UsagePan
               <Box component="span" sx={{ fontWeight: 650 }}>
                 {formatMoney(cost.amount!, cost.currency!)}
               </Box>
-              {' '}of filament, from the {formatGrams(cost.pricedGrams)} on priced lines
+              {' '}of filament, from the {formatGrams(cost.pricedGrams)} priced from your orders
               {cost.unpricedGrams > 0 && <> ({formatGrams(cost.unpricedGrams)} unpriced)</>}.
             </>}
         </Typography>

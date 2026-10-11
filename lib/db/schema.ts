@@ -423,6 +423,97 @@ export const FILAMENT_PRICE_STATEMENTS: readonly string[] = [
 ]
 
 /**
+ * Filament orders -- what an account bought, which is now what it owns.
+ *
+ *   `filament_orders`           one row per order: a store invoice, or a manual
+ *                               entry for rolls with no invoice behind them (a
+ *                               shop counter, a gift). The store's order number
+ *                               is unique per account, so the same invoice
+ *                               uploaded twice is refused rather than doubled;
+ *                               a manual entry has none. Order-level money --
+ *                               discount, store credit, shipping -- is stored as
+ *                               printed, positive, and shared out over the lines
+ *                               when a roll's landed cost is worked out
+ *                               (lib/contracts/filamentOrders.ts).
+ *
+ *   `filament_order_lines`      every line of an order, filament or not: a
+ *                               hotend on the same invoice still takes its share
+ *                               of the order's credit and shipping. A line that
+ *                               is not filament has no key and no variant.
+ *                               `unit_price` NULL is "not known" (a gift), never
+ *                               zero.
+ *
+ *                               The original invoice -- a PDF, or a photo of a
+ *                               paper receipt -- is kept for reference in the
+ *                               asset store, owner-scoped and content-addressed
+ *                               like a set photo, and named here by its hash.
+ *                               Like every asset it is not authoritative: the
+ *                               order is the record, the file is the receipt.
+ *
+ *   `filament_roll_adjustments` rolls of a colour a person has marked used up,
+ *                               for when the reel runs out before the slicer's
+ *                               gram estimates say it should.
+ *
+ * Nothing here stores rolls on hand, grams left or a price per kilogram. Those
+ * are derived from these rows and the print history every time, so they can
+ * never disagree with what was bought or printed. `filament_inventory` and
+ * `filament_prices`, which held the ticks and line prices this replaces, are
+ * left in place and no longer read.
+ */
+export const FILAMENT_ORDER_STATEMENTS: readonly string[] = [
+  `CREATE TABLE filament_orders (
+  id              TEXT    PRIMARY KEY,
+  owner_tenant_id TEXT    NOT NULL,
+  owner_oid       TEXT    NOT NULL,
+  source          TEXT    NOT NULL CHECK (source IN ('bambu-us-invoice', 'manual')),
+  order_number    TEXT    CHECK (order_number IS NULL OR length(order_number) BETWEEN 1 AND 80),
+  ordered_at      TEXT    NOT NULL CHECK (ordered_at GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+  currency        TEXT    NOT NULL CHECK (length(currency) = 3),
+  order_discount  REAL    NOT NULL DEFAULT 0 CHECK (order_discount >= 0),
+  credit          REAL    NOT NULL DEFAULT 0 CHECK (credit >= 0),
+  shipping        REAL    NOT NULL DEFAULT 0 CHECK (shipping >= 0),
+  grand_total     REAL    CHECK (grand_total IS NULL OR grand_total >= 0),
+  note            TEXT    CHECK (note IS NULL OR length(note) <= 500),
+  invoice_hash    TEXT    CHECK (invoice_hash IS NULL OR (length(invoice_hash) = 64 AND invoice_hash NOT GLOB '*[^0-9a-f]*')),
+  invoice_name    TEXT    CHECK (invoice_name IS NULL OR length(invoice_name) BETWEEN 1 AND 200),
+  invoice_type    TEXT    CHECK (invoice_type IS NULL OR invoice_type IN ('application/pdf', 'image/png', 'image/jpeg')),
+  invoice_bytes   INTEGER CHECK (invoice_bytes IS NULL OR invoice_bytes > 0),
+  created_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+  CHECK ((invoice_hash IS NULL) = (invoice_name IS NULL)
+     AND (invoice_hash IS NULL) = (invoice_type IS NULL)
+     AND (invoice_hash IS NULL) = (invoice_bytes IS NULL))
+)`,
+  `CREATE UNIQUE INDEX idx_filament_orders_number
+  ON filament_orders (owner_tenant_id, owner_oid, order_number)
+  WHERE order_number IS NOT NULL`,
+  `CREATE INDEX idx_filament_orders_owner
+  ON filament_orders (owner_tenant_id, owner_oid, ordered_at)`,
+  `CREATE TABLE filament_order_lines (
+  order_id        TEXT    NOT NULL REFERENCES filament_orders (id) ON DELETE CASCADE,
+  position        INTEGER NOT NULL CHECK (position >= 0),
+  filament_key    TEXT,
+  variant         TEXT    CHECK (variant IS NULL OR variant IN ('spool', 'refill')),
+  description     TEXT    NOT NULL CHECK (length(description) BETWEEN 1 AND 300),
+  sku             TEXT    CHECK (sku IS NULL OR length(sku) <= 120),
+  grams_per_unit  INTEGER NOT NULL CHECK (grams_per_unit BETWEEN 0 AND 10000),
+  quantity        INTEGER NOT NULL CHECK (quantity BETWEEN 1 AND 999),
+  unit_price      REAL    CHECK (unit_price IS NULL OR unit_price >= 0),
+  discount        REAL    NOT NULL DEFAULT 0 CHECK (discount >= 0),
+  tax             REAL    NOT NULL DEFAULT 0 CHECK (tax >= 0),
+  PRIMARY KEY (order_id, position),
+  CHECK ((filament_key IS NULL) = (variant IS NULL))
+)`,
+  `CREATE TABLE filament_roll_adjustments (
+  owner_tenant_id TEXT    NOT NULL,
+  owner_oid       TEXT    NOT NULL,
+  filament_key    TEXT    NOT NULL,
+  finished        INTEGER NOT NULL CHECK (finished BETWEEN 1 AND 999),
+  updated_at      TEXT    NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (owner_tenant_id, owner_oid, filament_key)
+)`,
+]
+
+/**
  * `filament_usage_mappings` -- what a recorded print's filament *is*.
  *
  * A print reports a material, a preset filament ID and an AMS colour, and most

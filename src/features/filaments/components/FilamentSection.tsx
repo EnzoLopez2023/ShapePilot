@@ -4,39 +4,34 @@
 // names barely overlap: PLA Matte shares none of PLA Basic's names, and PLA
 // Wood shares none with anything.
 //
-// Each colour is a tile that opens its sheet; the spool and refill ticks live
-// there. The grid fills the width it has, so a phone gets three reels to a row
-// and a desk gets seven, and nothing ever scrolls sideways.
+// Each colour is a tile that opens its sheet. The grid fills the width it has,
+// so a phone gets three reels to a row and a desk gets seven, and nothing ever
+// scrolls sideways. Colours arrive already ordered: on hand first, the most
+// printed of those first.
 import { Box, Paper, Stack, Typography } from '@mui/material'
 import type { FilamentColor, FilamentLine } from '../../../../lib/contracts/bambuFilaments.ts'
-import { tickId } from '../model/types.ts'
-import type { Inventory } from '../model/types.ts'
-import type { FilamentUsageTotals } from '../../../../lib/contracts/filamentUsage.ts'
 import type { ColorStock } from '../../../../lib/contracts/filamentStock.ts'
-import { formatMoney } from '../model/cost.ts'
+import type { ColorLedger } from '../../../../lib/contracts/filamentOrders.ts'
 import ColorTile from './ColorTile.tsx'
-import { quantitiesOf } from '../model/shelf.ts'
+import { rollsLabel } from '../model/shelf.ts'
 
 export interface FilamentSectionProps {
   id: string
   line: FilamentLine
   colors: readonly FilamentColor[]
-  owned: Inventory
-  /** Printed so far, by colour key. Absent when this account cannot see usage. */
-  usage?: ReadonlyMap<string, FilamentUsageTotals>
+  /** Bought and printed, by colour key. */
+  ledgers: ReadonlyMap<string, ColorLedger>
   /** Colours loaded in the AMS, by key. Absent when this account cannot see it. */
   stock?: ReadonlyMap<string, ColorStock>
-  pricePerKg: number | null
-  currency: string | null
   onOpen: (key: string) => void
 }
 
 export default function FilamentSection({
-  id, line, colors, owned, usage, stock, pricePerKg, currency, onOpen,
+  id, line, colors, ledgers, stock, onOpen,
 }: FilamentSectionProps) {
   const headingId = `line-${line.material}-${line.type}`
-  const ownedColors = colors.filter(color =>
-    line.variants.some(variant => owned.has(tickId(color.key, variant)))).length
+  const ownedColors = colors.filter(color => (ledgers.get(color.key)?.rollsOnHand ?? 0) > 0).length
+  const rolls = colors.reduce((sum, color) => sum + (ledgers.get(color.key)?.rollsOnHand ?? 0), 0)
 
   return (
     <Paper component="section" aria-labelledby={headingId} data-line={id} sx={{ p: { xs: 1.5, sm: 2 } }}>
@@ -48,10 +43,13 @@ export default function FilamentSection({
           {line.label}
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ fontVariantNumeric: 'tabular-nums' }}>
-          {ownedColors > 0 && <><Box component="span" sx={{ color: 'text.primary', fontWeight: 650 }}>{ownedColors}</Box> owned · </>}
-          {colors.length} {colors.length === 1 ? 'colour' : 'colours'}
-          {line.variants.length === 1 && ' · spool only'}
-          {pricePerKg !== null && currency && <> · {formatMoney(pricePerKg, currency)}/kg</>}
+          {ownedColors > 0 && (
+            <>
+              <Box component="span" sx={{ color: 'text.primary', fontWeight: 650 }}>{rollsLabel(rolls)}</Box>
+              {' '}in {ownedColors} {ownedColors === 1 ? 'colour' : 'colours'} ·{' '}
+            </>
+          )}
+          {colors.length} listed
         </Typography>
       </Stack>
 
@@ -70,9 +68,8 @@ export default function FilamentSection({
             key={color.key}
             line={line}
             color={color}
-            quantities={quantitiesOf(owned, color.key)}
+            ledger={ledgers.get(color.key)}
             stock={stock?.get(color.key)}
-            usage={usage?.get(color.key)}
             onOpen={() => onOpen(color.key)}
           />
         ))}

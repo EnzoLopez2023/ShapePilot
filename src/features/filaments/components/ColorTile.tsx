@@ -1,36 +1,38 @@
 // One colour of one line, as a reel you can pick up.
 //
-// The tile is the whole control: it opens the colour's sheet, where the spool
-// and refill ticks live. What it shows is only what you scan a shelf for --
-// the reel, its name, whether you own it, and whether it is in the AMS -- so a
-// line of sixty colours reads as a shelf rather than as a form.
+// The tile is the whole control: it opens the colour's sheet. What it shows is
+// only what you scan a shelf for -- the reel, how many rolls of it are on hand
+// (beside it, spools and refills counted together, because the form only
+// changes what you paid), how many grams that is, how much you have printed,
+// and whether it is in the AMS.
 import { Box, ButtonBase, Typography } from '@mui/material'
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded'
 import type { FilamentColor, FilamentLine, FilamentVariant } from '../../../../lib/contracts/bambuFilaments.ts'
 import type { ColorStock } from '../../../../lib/contracts/filamentStock.ts'
-import type { FilamentUsageTotals } from '../../../../lib/contracts/filamentUsage.ts'
+import type { ColorLedger } from '../../../../lib/contracts/filamentOrders.ts'
 import { SpoolArt } from './SpoolArt.tsx'
 import { trayName } from '../model/ams.ts'
-import { formatGrams } from '../model/usage.ts'
+import { formatExactGrams, rollsLabel } from '../model/shelf.ts'
 import { EASE_IOS } from '../../../theme/theme.ts'
-import { ownedSummary } from '../model/shelf.ts'
 
 export interface ColorTileProps {
   line: FilamentLine
   color: FilamentColor
-  /** How many of each form the inventory holds; 0 is not owned. */
-  quantities: Readonly<Record<FilamentVariant, number>>
+  /** What was bought and printed of this colour; absent when neither happened. */
+  ledger?: ColorLedger
   stock?: ColorStock
-  usage?: FilamentUsageTotals
   onOpen: () => void
 }
 
 export default function ColorTile({
-  line, color, quantities, stock, usage, onOpen,
+  line, color, ledger, stock, onOpen,
 }: ColorTileProps) {
-  const owned = ownedSummary(line, quantities)
-  // A refill-only shelf draws its reel as a refill: the picture is of what you have.
-  const drawn: FilamentVariant = quantities.spool === 0 && quantities.refill > 0 ? 'refill' : 'spool'
+  const rolls = ledger?.rollsOnHand ?? 0
+  const owned = rolls > 0
+  const used = ledger?.usedGrams ?? 0
+  // Drawn as what is on the shelf: a refill when every roll on hand is one.
+  const drawn: FilamentVariant = ledger && ledger.onHandByVariant.spool === 0
+    && ledger.onHandByVariant.refill > 0 ? 'refill' : 'spool'
   const percent = stock?.lowestPercent ?? null
   const trays = stock?.loaded.map(trayName).join(', ')
   const reorder = stock?.status === 'reorder'
@@ -40,9 +42,9 @@ export default function ColorTile({
   // line it is in, or that you own two of it.
   const spoken = [
     `${line.label} ${color.name}${code}`,
-    owned ? `owned: ${owned}` : 'not owned',
+    owned ? `owned: ${rollsLabel(rolls)}, ${formatExactGrams(ledger!.gramsAvailable)} available` : 'not owned',
     trays && `in ${trays}${percent !== null ? `, ${percent}%` : ''}${reorder ? ', reorder' : ''}`,
-    usage?.grams ? `${formatGrams(usage.grams)} used` : null,
+    used ? `${formatExactGrams(used)} used` : null,
     color.discontinued && 'discontinued',
   ].filter(Boolean).join(', ')
 
@@ -51,7 +53,7 @@ export default function ColorTile({
       onClick={onOpen}
       aria-label={spoken}
       aria-haspopup="dialog"
-      data-state={stock ? 'loaded' : usage?.grams ? 'used' : undefined}
+      data-state={stock ? 'loaded' : used ? 'used' : undefined}
       data-owned={owned ? 'true' : undefined}
       sx={{
         position: 'relative',
@@ -85,6 +87,19 @@ export default function ColorTile({
           position: 'relative',
         }}
       >
+        {/* How many rolls, beside the reel they are rolls of. */}
+        {owned && (
+          <Typography
+            aria-hidden
+            sx={{
+              position: 'absolute', left: { xs: 2, sm: 6 }, top: '50%', transform: 'translateY(-50%)',
+              fontSize: '1.75rem', fontWeight: 650, lineHeight: 1, letterSpacing: '-0.02em',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            {rolls}
+          </Typography>
+        )}
         <Box className="tile-reel">
           <SpoolArt
             hexes={color.hexes}
@@ -140,7 +155,7 @@ export default function ColorTile({
         <Typography
           variant="body2"
           sx={{
-            fontWeight: owned || stock || usage?.grams ? 650 : 500,
+            fontWeight: owned || stock || used ? 650 : 500,
             lineHeight: 1.3,
             display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
             overflow: 'hidden', overflowWrap: 'anywhere',
@@ -189,15 +204,27 @@ export default function ColorTile({
           </Typography>
         </Box>
       )}
-      {!stock && (owned || usage?.grams) && (
-        <Typography
-          variant="body2"
-          color="text.secondary"
-          sx={{ fontSize: '0.75rem', mt: 'auto', fontVariantNumeric: 'tabular-nums' }}
-        >
-          {[owned && owned.replace(/ \+ /g, ' · '), usage?.grams && `${formatGrams(usage.grams)} used`]
-            .filter(Boolean).join(' · ')}
-        </Typography>
+      {(owned || used > 0) && (
+        <Box sx={{ mt: stock ? 0 : 'auto' }}>
+          {owned && (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ fontSize: '0.75rem', fontVariantNumeric: 'tabular-nums', lineHeight: 1.4 }}
+            >
+              {formatExactGrams(ledger!.gramsAvailable)} available
+            </Typography>
+          )}
+          {used > 0 && (
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              sx={{ fontSize: '0.75rem', fontVariantNumeric: 'tabular-nums', lineHeight: 1.4 }}
+            >
+              {formatExactGrams(used)} used
+            </Typography>
+          )}
+        </Box>
       )}
     </ButtonBase>
   )

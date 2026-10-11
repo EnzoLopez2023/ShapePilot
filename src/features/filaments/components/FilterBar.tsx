@@ -15,7 +15,8 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded'
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded'
 import CheckRoundedIcon from '@mui/icons-material/CheckRounded'
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded'
-import SellOutlinedIcon from '@mui/icons-material/SellOutlined'
+import ReceiptLongOutlinedIcon from '@mui/icons-material/ReceiptLongOutlined'
+import { Link as RouterLink } from 'react-router-dom'
 import type { FilamentLine } from '../../../../lib/contracts/bambuFilaments.ts'
 import { STATUS_LABEL } from '../model/shelf.ts'
 import type { StatusFilter } from '../model/shelf.ts'
@@ -35,7 +36,6 @@ export interface FilterBarProps {
   onShowDiscontinued: (next: boolean) => void
   labelCount: number
   onLabels: () => void
-  onPrices: () => void
 }
 
 const actionSx = {
@@ -85,7 +85,7 @@ function Option({ selected, onClick, children }: { selected: boolean; onClick: (
 
 export default function FilterBar({
   search, onSearch, searchRef, lines, line, onLine, status, onStatus, statuses,
-  showDiscontinued, onShowDiscontinued, labelCount, onLabels, onPrices,
+  showDiscontinued, onShowDiscontinued, labelCount, onLabels,
 }: FilterBarProps) {
   const [menu, setMenu] = useState<{ which: 'line' | 'status'; anchor: HTMLElement } | null>(null)
   const close = () => setMenu(null)
@@ -176,16 +176,17 @@ export default function FilterBar({
         {/* Words at a desk, icons on a phone: the pills are what a thumb
             is here for, and these two are occasional. One control each, named
             the same at every width. */}
-        <Tooltip title="What a kilogram of each line costs, for costing your prints">
+        <Tooltip title="What you bought, which is what is on the shelf">
           <Button
             size="small"
             color="inherit"
-            aria-label="Prices"
-            startIcon={<SellOutlinedIcon />}
-            onClick={onPrices}
+            aria-label="Orders"
+            component={RouterLink}
+            to="/filaments/orders"
+            startIcon={<ReceiptLongOutlinedIcon />}
             sx={actionSx}
           >
-            <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>Prices</Box>
+            <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>Orders</Box>
           </Button>
         </Tooltip>
         <Tooltip title="A sheet for the label printer, one label per colour shown">

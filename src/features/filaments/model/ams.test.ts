@@ -28,6 +28,13 @@ test('units come in the printer\'s order, the external spool last', () => {
   assert.deepEqual(units.map(unit => unit.name), ['AMS 1', 'AMS 2', 'External spool'])
 })
 
+test('two external spools are numbered, one is just Ext', () => {
+  const [one] = amsUnits(stock([slot('external', '254')]))
+  assert.deepEqual(one.bays.map(bay => bay.label), ['Ext'])
+  const [two] = amsUnits(stock([slot('external', '255'), slot('external', '254')]))
+  assert.deepEqual(two.bays.map(bay => [bay.label, bay.slot?.slotId]), [['Ext 1', '254'], ['Ext 2', '255']])
+})
+
 test('no report is no units', () => {
   assert.deepEqual(amsUnits(null), [])
 })
