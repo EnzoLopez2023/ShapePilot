@@ -504,3 +504,21 @@ test('a spool loaded on the external holder sits beside the AMS', async () => {
   expect(within(panel).getByRole('group', { name: /^External spool: Ext: PLA Basic Cocoa Brown 10802, 70%/ })).toBeTruthy()
   expect(within(panel).getByText('External')).toBeTruthy()
 })
+
+test('a colour says what its prints reported, and one source can be set aside', async () => {
+  const user = userEvent.setup()
+  admin = true
+  jobs = [used('w1', '#FFFFFF', 24)]
+  draw()
+  await screen.findByRole('heading', { name: 'Print usage', level: 2 })
+  const sheet = await openColour(user, 'PLA Basic Jade White 10100')
+  expect(within(sheet).getByText('24 g · 1 print · matched automatically')).toBeTruthy()
+
+  await user.click(within(sheet).getByRole('button', { name: 'Don’t track PLA · GFA00 · #FFFFFF' }))
+  await waitFor(() => assert.deepEqual(mappingPuts.at(-1), [{
+    source: { material: 'PLA', filamentId: 'GFA00', color: '#FFFFFF' }, key: null,
+  }]))
+  await waitFor(() => expect(within(sheet).queryByRole('heading', { name: 'Printed as' })).toBeNull())
+  await user.keyboard('{Escape}')
+  await screen.findByText('not tracked (24 g)')
+})

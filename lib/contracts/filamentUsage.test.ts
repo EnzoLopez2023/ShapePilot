@@ -125,6 +125,8 @@ describe('computing usage', () => {
     const cocoa = usage.colors.find(color => color.key === COCOA)
     assert.deepEqual(cocoa, {
       key: COCOA, grams: 142, failedGrams: 42, prints: 2, lastUsedAt: '2026-09-12T10:00:00Z',
+      // Where those grams came from, so the colour can say so.
+      sources: [{ material: 'PLA', filamentId: 'GFA00', color: '#6F5034', grams: 142, prints: 2, linked: false }],
     })
   })
 
@@ -137,6 +139,14 @@ describe('computing usage', () => {
     ])
     assert.equal(usage.unmatched[0].candidates.length, 5)
     assert.deepEqual(usage.untracked, [])
+  })
+
+  test('a source that reached a colour by a hand-made link says so', () => {
+    const usage = computeFilamentUsage(history(), [
+      { source: { material: 'PLA', filamentId: 'GFA00', color: '#307FE2' }, key: BLUE_CURRENT },
+    ])
+    const blue = usage.colors.find(color => color.key === BLUE_CURRENT)!
+    assert.deepEqual(blue.sources.map(source => [source.color, source.grams, source.linked]), [['#307FE2', 300, true]])
   })
 
   test('a hand-made link credits a colour, and "don\'t track" sets usage aside', () => {

@@ -20,7 +20,8 @@ import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded'
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded'
 import type { FilamentColor, FilamentLine, FilamentVariant } from '../../../../lib/contracts/bambuFilaments.ts'
 import type { ColorStock } from '../../../../lib/contracts/filamentStock.ts'
-import type { FilamentUsageTotals } from '../../../../lib/contracts/filamentUsage.ts'
+import type { ColorUsage, FilamentSource } from '../../../../lib/contracts/filamentUsage.ts'
+import { sourceLabel } from '../model/usage.ts'
 import type { ColorLedger, KilogramPrice } from '../../../../lib/contracts/filamentOrders.ts'
 import { trayName } from '../model/ams.ts'
 import { formatMoney } from '../model/cost.ts'
@@ -44,7 +45,7 @@ export interface SheetEntry {
   color: FilamentColor
   ledger?: ColorLedger
   stock?: ColorStock
-  usage?: FilamentUsageTotals
+  usage?: ColorUsage
   /** What a kilogram costs: this colour's own average, or its line's. */
   price: KilogramPrice | null
 }
@@ -56,6 +57,10 @@ export interface FilamentSheetProps {
   onFinished: (key: string, finished: number) => void
   /** True while a mark is being saved. */
   busy: boolean
+  /** Set one recorded filament aside, so its prints count for nothing. Absent without usage. */
+  onUntrack?: (source: FilamentSource) => void
+  /** True while links are being saved. */
+  linking?: boolean
   /** Where this colour sits in the run the sheet steps through. */
   position: { index: number; total: number }
   onStep: (delta: -1 | 1) => void
@@ -87,7 +92,7 @@ function Fact({ label, value, tone }: { label: string; value: string; tone?: 'wa
 }
 
 export default function FilamentSheet({
-  entry, onClose, onFinished, busy, position, onStep,
+  entry, onClose, onFinished, busy, onUntrack, linking, position, onStep,
 }: FilamentSheetProps) {
   const theme = useTheme()
   const phone = useMediaQuery(theme.breakpoints.down('sm'))
@@ -279,6 +284,52 @@ export default function FilamentSheet({
                       {formatExactGrams(ledger.gramsUnaccounted)} printed with no order behind it.
                       {' '}A roll is missing from your orders.
                     </Typography>
+                  )}
+
+                  {entry.usage && entry.usage.sources.length > 0 && onUntrack && (
+                    <Box component="section" aria-labelledby="filament-sheet-sources">
+                      <Typography variant="h3" component="h3" id="filament-sheet-sources" sx={{ mb: 0.5 }}>
+                        Printed as
+                      </Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem', mb: 1 }}>
+                        What the prints reported, and how it came to count as this colour. Set one
+                        aside if it was something else, like an old spool you do not want counted.
+                      </Typography>
+                      <Stack
+                        component="ul"
+                        sx={{ listStyle: 'none', p: 0, m: 0 }}
+                        divider={<Box sx={{ borderTop: '1px solid', borderColor: 'divider' }} />}
+                      >
+                        {entry.usage.sources.map(source => (
+                          <Stack
+                            component="li"
+                            key={sourceLabel(source)}
+                            direction="row"
+                            sx={{ alignItems: 'center', gap: 1, py: 0.75 }}
+                          >
+                            <Box sx={{ flex: 1, minWidth: 0 }}>
+                              <Typography variant="body2" sx={{ overflowWrap: 'anywhere' }}>
+                                {sourceLabel(source)}
+                              </Typography>
+                              <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
+                                {formatExactGrams(source.grams)} · {source.prints} {source.prints === 1 ? 'print' : 'prints'}
+                                {' · '}{source.linked ? 'linked by you' : 'matched automatically'}
+                              </Typography>
+                            </Box>
+                            <Button
+                              size="small"
+                              disabled={linking}
+                              onClick={() => onUntrack({
+                                material: source.material, filamentId: source.filamentId, color: source.color,
+                              })}
+                              aria-label={`Don’t track ${sourceLabel(source)}`}
+                            >
+                              Don’t track
+                            </Button>
+                          </Stack>
+                        ))}
+                      </Stack>
+                    </Box>
                   )}
 
                   <Box component="section" aria-labelledby="filament-sheet-rolls">

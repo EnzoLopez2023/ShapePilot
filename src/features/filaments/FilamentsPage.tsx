@@ -28,8 +28,9 @@ import { formatExactGrams, rollsLabel } from './model/shelf.ts'
 import UsagePanel from './components/UsagePanel.tsx'
 import { getFilamentUsage, getOrders, putUsageMappings, setRollsFinished } from './service.ts'
 import type { OrderBook } from './service.ts'
+import { sourceId } from '../../../lib/contracts/filamentUsage.ts'
 import type {
-  FilamentUsageMapping, FilamentUsageReport,
+  FilamentSource, FilamentUsageMapping, FilamentUsageReport,
 } from '../../../lib/contracts/filamentUsage.ts'
 import { ledgerOf, priceBookOf } from '../../../lib/contracts/filamentOrders.ts'
 import type { ColorLedger } from '../../../lib/contracts/filamentOrders.ts'
@@ -138,6 +139,16 @@ export default function FilamentsPage() {
       .catch(error => setUsageError(messageOf(error)))
       .finally(() => setLinking(false))
   }, [])
+
+  // "Don't track" from a colour's sheet: the same link the usage panel makes,
+  // replacing any link that source already had.
+  const untrack = useCallback((source: FilamentSource) => {
+    if (!usage) return
+    saveMappings([
+      ...usage.mappings.filter(mapping => sourceId(mapping.source) !== sourceId(source)),
+      { source, key: null },
+    ])
+  }, [usage, saveMappings])
 
   const stock = useMemo(() => {
     if (!usage?.ams) return []
@@ -382,6 +393,8 @@ export default function FilamentsPage() {
         onClose={() => setSheet(null)}
         onFinished={markFinished}
         busy={marking}
+        onUntrack={usage ? untrack : undefined}
+        linking={linking}
         position={{ index: sheet?.index ?? 0, total: sheet?.keys.length ?? 0 }}
         onStep={stepSheet}
       />
