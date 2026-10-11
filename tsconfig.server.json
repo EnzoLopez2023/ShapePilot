@@ -43,6 +43,7 @@
     "src/export/stl.ts",
     "src/export/cutLayers.ts",
     "src/export/shaperSvg.ts",
+    "src/features/shaper-designer/templates/cuttingBoards.ts",
     "src/export/zip.ts",
     "src/export/threemf.ts",
     "src/export/xlsx.ts",

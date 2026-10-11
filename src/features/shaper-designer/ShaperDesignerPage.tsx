@@ -1,8 +1,8 @@
 // Shaper Designer: 2D CNC design for the Shaper Origin.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Alert, Box, Button, Divider, IconButton, MenuItem, Snackbar, Stack, TextField,
-  ToggleButton, ToggleButtonGroup, Tooltip, Typography,
+  Alert, Box, Button, Divider, IconButton, ListItemText, Menu, MenuItem, Snackbar, Stack,
+  TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material'
 import UndoRoundedIcon from '@mui/icons-material/UndoRounded'
 import RedoRoundedIcon from '@mui/icons-material/RedoRounded'
@@ -38,6 +38,8 @@ import type { PaletteKind } from './components/paletteEntries.ts'
 import ImportButton from './components/ImportButton.tsx'
 import { conflictingPocketDepths, sceneCutDrawing } from './cutDrawing.ts'
 import { designerDefaults } from '../settings/preferences.ts'
+import type { ShaperTemplate } from './templates/index.ts'
+import { SHAPER_TEMPLATES } from './templates/index.ts'
 
 const SNAP_OPTIONS = [0, 0.5, 1, 5, 10]
 const GRID_OPTIONS = [0, 5, 10, 25]
@@ -66,6 +68,7 @@ export default function ShaperDesignerPage() {
   const [fitToken, setFitToken] = useState(0)
   const [openDialog, setOpenDialog] = useState(false)
   const [saveAsOpen, setSaveAsOpen] = useState(false)
+  const [templatesAnchor, setTemplatesAnchor] = useState<HTMLElement | null>(null)
   const [textOutlines, setTextOutlines] = useState<Map<string, Ring[]>>(new Map())
 
   const objects = doc.doc.objects
@@ -178,6 +181,23 @@ export default function ShaperDesignerPage() {
       triggerDownload(writeDxf(drawing), `${name}.dxf`, 'image/vnd.dxf')
     }
   }, [doc.doc, compileOptions, lifecycle])
+
+  const openTemplate = useCallback(async (template: ShaperTemplate) => {
+    setTemplatesAnchor(null)
+    // A template replaces the canvas and clears undo, so work on it is only
+    // thrown away on purpose.
+    if (objects.length && (!lifecycle.savedId || lifecycle.hasUnsavedChanges)) {
+      const ok = await confirm({
+        title: `Start from ${template.name}?`,
+        message: 'This replaces the current design, and its unsaved changes are lost.',
+        confirmLabel: 'Replace',
+        destructive: true,
+      })
+      if (!ok) return
+    }
+    lifecycle.startFrom(template.build())
+    setFitToken(t => t + 1)
+  }, [confirm, lifecycle, objects.length])
 
   const stock = useMemo(() => ({ widthMm: 300, heightMm: 200 }), [])
 
@@ -296,6 +316,23 @@ export default function ShaperDesignerPage() {
       <Divider orientation="vertical" flexItem />
 
       <Button size="small" onClick={lifecycle.create}>New</Button>
+      <Button
+        size="small" aria-haspopup="menu" aria-expanded={Boolean(templatesAnchor)}
+        onClick={e => setTemplatesAnchor(e.currentTarget)}
+      >
+        Templates
+      </Button>
+      <Menu
+        anchorEl={templatesAnchor}
+        open={Boolean(templatesAnchor)}
+        onClose={() => setTemplatesAnchor(null)}
+      >
+        {SHAPER_TEMPLATES.map(template => (
+          <MenuItem key={template.id} onClick={() => void openTemplate(template)}>
+            <ListItemText primary={template.name} secondary={template.summary} />
+          </MenuItem>
+        ))}
+      </Menu>
       <Button size="small" onClick={() => setOpenDialog(true)}>Open</Button>
       <Button size="small" onClick={() => setSaveAsOpen(true)}>Save as</Button>
       <Button

@@ -403,6 +403,7 @@ export default function Canvas2D(props: Canvas2DProps) {
     stock: dark ? '#3b3f46' : '#cfcabd',
     solid: dark ? '#8d99a8' : '#c3bfb4',
     hole: dark ? '#2a2d33' : '#8d8578',
+    pocket: dark ? '#5d6570' : '#a49d90',
     selected: theme.palette.primary.main,
     guide: theme.palette.warning.main,
     label: theme.palette.background.paper,
@@ -526,17 +527,28 @@ export default function Canvas2D(props: Canvas2DProps) {
                 turning ? `rotate(${turning.angle - turning.baseRotation} ${cx} ${cy})` : '',
               ].filter(Boolean).join(' ')
 
+            // Shaper's own reading of a cut, so an interior cut or a groove
+            // drawn over the board it is cut into does not vanish into it:
+            // through cuts dark, pockets mid-grey, line cuts as lines.
+            const showSelected = selected && !stretching
+            const line = shape.cutType === 'online' || shape.cutType === 'guide'
+            const fill = line ? 'none'
+              : shape.mode === 'hole' || shape.cutType === 'interior' ? colours.hole
+                : shape.cutType === 'pocket' ? colours.pocket
+                  : colours.solid
+            const lineColour = shape.cutType === 'guide' ? colours.guide : colours.hole
+
             return (
               <g key={shape.id} transform={transform || undefined}>
                 <path
                   d={d}
-                  fill={shape.mode === 'hole' ? colours.hole : colours.solid}
-                  fillOpacity={shape.mode === 'hole' ? 0.85 : 1}
+                  fill={fill}
+                  fillOpacity={fill === colours.hole ? 0.85 : 1}
                   fillRule="evenodd"
                   // A stretched outline would carry a stretched outline stroke
                   // with it; mid-resize the frame is what shows the selection.
-                  stroke={selected && !stretching ? colours.selected : 'none'}
-                  strokeWidth={selected && !stretching ? stroke * 1.5 : 0}
+                  stroke={showSelected ? colours.selected : line ? lineColour : 'none'}
+                  strokeWidth={line ? stroke * 3 : showSelected ? stroke * 1.5 : 0}
                   style={{ cursor: shape.locked ? 'not-allowed' : 'move' }}
                   onPointerDown={e => beginDrag(e, shape)}
                 />

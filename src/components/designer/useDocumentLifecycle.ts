@@ -24,6 +24,8 @@ export interface DocumentLifecycle {
   setError: (message: string | null) => void
   refresh: () => Promise<void>
   create: () => void
+  /** Like `create`, but starting from a ready-made design rather than empty. */
+  startFrom: (doc: DesignDocument) => void
   open: (id: string) => Promise<void>
   save: () => Promise<void>
   saveAs: (name: string) => Promise<void>
@@ -77,12 +79,14 @@ export function useDocumentLifecycle(options: LifecycleOptions): DocumentLifecyc
   useEffect(() => { void refresh() }, [refresh])
 
 
-  const create = useCallback(() => {
+  const startFrom = useCallback((next: DesignDocument) => {
     loadGeneration.current += 1
-    setDoc(emptyDocument(kind))
+    setDoc(next)
     setSavedId(null)
     setSavedRevision(null)
-  }, [kind, setDoc])
+  }, [setDoc])
+
+  const create = useCallback(() => startFrom(emptyDocument(kind)), [kind, startFrom])
 
   const openDocument = useCallback(async (id: string) => {
     const generation = ++loadGeneration.current
@@ -196,6 +200,6 @@ export function useDocumentLifecycle(options: LifecycleOptions): DocumentLifecyc
 
   return {
     documents, listLoading, busy, savedId, hasUnsavedChanges, toast, error,
-    setToast, setError, refresh, create, open: openDocument, save, saveAs, remove, handOff,
+    setToast, setError, refresh, create, startFrom, open: openDocument, save, saveAs, remove, handOff,
   }
 }
