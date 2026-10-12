@@ -12,6 +12,7 @@ const HomePage = lazy(() => import('../features/home/HomePage.tsx'))
 const KeycapTrayPage = lazy(() => import('../features/keycap-tray/KeycapTrayPage.tsx'))
 const SwitchTrayPage = lazy(() => import('../features/switch-tray/SwitchTrayPage.tsx'))
 const ToolTrayPage = lazy(() => import('../features/tool-tray/ToolTrayPage.tsx'))
+const CabinetPage = lazy(() => import('../features/cabinet/CabinetPage.tsx'))
 const ProjectsPage = lazy(() => import('../features/keycap-projects/ProjectsPage.tsx'))
 const ProjectPage = lazy(() => import('../features/keycap-projects/ProjectPage.tsx'))
 const ShaperDesignerPage = lazy(() => import('../features/shaper-designer/ShaperDesignerPage.tsx'))
@@ -112,6 +113,16 @@ export function AppRoutes() {
               <Box sx={{ flex: 1, minHeight: 0 }}>
                 <Suspense fallback={<LoadingState label="Loading the designer…" />}>
                   <ToolTrayPage />
+                </Suspense>
+              </Box>
+            }
+          />
+          <Route
+            path="/cabinet"
+            element={
+              <Box sx={{ flex: 1, minHeight: 0 }}>
+                <Suspense fallback={<LoadingState label="Loading the designer…" />}>
+                  <CabinetPage />
                 </Suspense>
               </Box>
             }
