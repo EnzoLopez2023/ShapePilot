@@ -36,7 +36,7 @@ const openCavity = (
 
 export function bandsFor(cfg: PocketConfig, card: CardConfig = CARD_50x30): Band[] {
   const d = derive(cfg, card)
-  const outline = ring(0, 0, d.widthMm, d.heightMm, 2)
+  const outline = ring(0, 0, d.widthMm, d.heightMm, cfg.cornerRadiusMm)
   // Past the top of the sleeve, so the difference leaves the mouth open.
   const over = d.heightMm
   const cavity = openCavity(cfg, cfg.wallMm, d.cavityWidthMm, over)

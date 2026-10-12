@@ -302,9 +302,27 @@ export class MeshBuilder {
 }
 
 export interface ManifoldReport {
+  /**
+   * CLOSED and the right way out -- not necessarily manifold. Two pockets that
+   * share a wall pinch the mesh to a line, which is still closed and still has
+   * positive volume; `nonManifoldEdges` is what sees that, and the keycap tray
+   * has layouts that do it on purpose. Anything headed for a slicer should
+   * check both.
+   */
   ok: boolean
   /** Half-edges that never found an opposite. Non-empty means a leaky mesh. */
   danglingEdges: number
+  /**
+   * Edges used by more than two faces.
+   *
+   * Pairing half-edges is not enough on its own: an edge touched by four faces
+   * cancels perfectly and still is not a manifold. That is what a pinch looks
+   * like -- two parts of a region meeting at a line -- and a slicer refuses it
+   * ("non-manifold edges") even though the mesh is closed and its volume is
+   * positive. Found the hard way, in Bambu Studio, on a mesh this function had
+   * already called ok.
+   */
+  nonManifoldEdges: number
   /** Signed volume via the divergence theorem. Must be positive. */
   volume: number
 }
@@ -317,7 +335,11 @@ export interface ManifoldReport {
 export function checkManifold(mesh: Mesh): ManifoldReport {
   const { indices: ix, positions: p } = mesh
   const counts = new Map<string, number>()
+  /** Undirected edge use, which has to be exactly two for every edge. */
+  const valence = new Map<string, number>()
   const bump = (a: number, b: number) => {
+    const und = a < b ? `${a}_${b}` : `${b}_${a}`
+    valence.set(und, (valence.get(und) ?? 0) + 1)
     const fwd = `${a}_${b}`, rev = `${b}_${a}`
     const r = counts.get(rev)
     if (r) { if (r === 1) counts.delete(rev); else counts.set(rev, r - 1); return }
@@ -334,5 +356,12 @@ export function checkManifold(mesh: Mesh): ManifoldReport {
   }
   let dangling = 0
   for (const n of counts.values()) dangling += n
-  return { ok: dangling === 0 && vol > 0, danglingEdges: dangling, volume: vol }
+  let nonManifold = 0
+  for (const n of valence.values()) if (n !== 2) nonManifold++
+  return {
+    ok: dangling === 0 && vol > 0,
+    danglingEdges: dangling,
+    nonManifoldEdges: nonManifold,
+    volume: vol,
+  }
 }

@@ -43,6 +43,15 @@ test('a sleeve too shallow to hold the card upright is refused', () => {
   assert.ok(issues.some(m => /lean out of the sleeve/.test(m)), issues.join('; '))
 })
 
+test('a corner radius that would pinch the wall tops is refused', () => {
+  const issues = checkConfig({ ...POCKET, cornerRadiusMm: 2 })
+  assert.ok(issues.some(m => /pinches the wall tops/.test(m)), issues.join('; '))
+  // And the refusal is not theoretical: that config really does pinch.
+  const bad = checkManifold(buildPocket({ ...POCKET, cornerRadiusMm: 2 }))
+  assert.ok(bad.nonManifoldEdges > 0, 'expected the pinch this rule exists to stop')
+  assert.ok(bad.danglingEdges === 0 && bad.volume > 0, 'and it is closed anyway, which is the trap')
+})
+
 test('lips that meet in the middle are refused', () => {
   const issues = checkConfig({ ...POCKET, lipMm: 36 })
   assert.ok(issues.some(m => /no window left/.test(m)), issues.join('; '))
@@ -54,10 +63,14 @@ test('a pocket with no lip, or walls under two extrusions, is refused', () => {
   assert.ok(checkConfig({ ...POCKET, backMm: 0.5 }).some(m => /under two extrusions/.test(m)))
 })
 
-test('the pocket is watertight and its bands add up', () => {
+test('the pocket is watertight, manifold, and its bands add up', () => {
   const mesh = buildPocket(POCKET)
   const report = checkManifold(mesh)
   assert.equal(report.danglingEdges, 0)
+  // Closed is not enough. A pinched wall top leaves edges shared by four faces,
+  // which still cancel -- Bambu Studio refused exactly that and this check did
+  // not. It is the reason the corner radius has to stay under the wall.
+  assert.equal(report.nonManifoldEdges, 0)
   assert.ok(report.volume > 0)
   const fromBands = bandVolume(bandsFor(POCKET))
   assert.ok(Math.abs(fromBands - report.volume) / report.volume < 1e-6)

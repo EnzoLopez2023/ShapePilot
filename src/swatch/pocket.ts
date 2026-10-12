@@ -20,6 +20,16 @@ export interface PocketConfig {
   /** Side walls and floor. */
   wallMm: number
   /**
+   * The sleeve's outside corners.
+   *
+   * It has to stay UNDER `wallMm`. The cavity's side runs up at x = wallMm, so
+   * a bigger radius means that edge cuts through the corner arc instead of
+   * meeting the straight top, which pinches each wall to a point and leaves an
+   * edge shared by four faces. The mesh is still closed and still has positive
+   * volume -- it just is not a manifold, and a slicer will say so.
+   */
+  cornerRadiusMm: number
+  /**
    * The plate behind the card. On a perforated box this is also what gives the
    * card a flat seat instead of a row of slots to catch on.
    */
@@ -38,6 +48,7 @@ export interface PocketConfig {
 export const POCKET: PocketConfig = {
   fitMm: 0.6,
   wallMm: 1.6,
+  cornerRadiusMm: 1.2,
   backMm: 1.6,
   lipMm: 2,
   lipRunMm: 1.2,
@@ -89,6 +100,12 @@ export function checkConfig(cfg: PocketConfig, card: CardConfig = CARD_50x30): s
     issues.push('a card has to be able to drop in, so the cavity needs to be bigger than the card')
   }
   if (cfg.wallMm < 0.8) issues.push(`a ${cfg.wallMm} mm wall is under two extrusions`)
+  if (cfg.cornerRadiusMm >= cfg.wallMm) {
+    issues.push(
+      `a ${cfg.cornerRadiusMm} mm corner on a ${cfg.wallMm} mm wall pinches the wall tops `
+      + 'to a point -- the corner radius has to stay under the wall thickness',
+    )
+  }
   if (cfg.backMm < 0.8) issues.push(`a ${cfg.backMm} mm back is under two extrusions`)
   if (cfg.lipMm <= 0) issues.push('with no lip the card falls out of the front')
   if (cfg.lipRunMm < 2 * cfg.layerHeightMm) {
