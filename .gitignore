@@ -14,6 +14,12 @@ data/
 artifacts/
 legacy-export/
 
+# Switch-tester geometry. The source model is someone else's and the tray and
+# cover are cut from its own footprint, so neither it nor its derivatives are
+# published from this public repository -- only the script that makes them.
+# See models/Switch tester/README.txt.
+models/Switch tester/*.stl
+
 # Scratch output. The published STL set lives in models/, which IS tracked.
 out/
 
