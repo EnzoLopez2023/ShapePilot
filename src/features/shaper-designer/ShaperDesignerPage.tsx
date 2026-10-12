@@ -1,7 +1,7 @@
 // Shaper Designer: 2D CNC design for the Shaper Origin.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Alert, Box, Button, Divider, IconButton, ListItemText, Menu, MenuItem, Snackbar, Stack,
+  Alert, Box, Button, Divider, IconButton, ListItemText, ListSubheader, Menu, MenuItem, Snackbar, Stack,
   TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material'
 import UndoRoundedIcon from '@mui/icons-material/UndoRounded'
@@ -39,7 +39,7 @@ import ImportButton from './components/ImportButton.tsx'
 import { conflictingPocketDepths, sceneCutDrawing } from './cutDrawing.ts'
 import { designerDefaults } from '../settings/preferences.ts'
 import type { ShaperTemplate } from './templates/index.ts'
-import { SHAPER_TEMPLATES } from './templates/index.ts'
+import { SHAPER_TEMPLATES, TEMPLATE_CATEGORIES } from './templates/index.ts'
 
 const SNAP_OPTIONS = [0, 0.5, 1, 5, 10]
 const GRID_OPTIONS = [0, 5, 10, 25]
@@ -327,11 +327,15 @@ export default function ShaperDesignerPage() {
         open={Boolean(templatesAnchor)}
         onClose={() => setTemplatesAnchor(null)}
       >
-        {SHAPER_TEMPLATES.map(template => (
-          <MenuItem key={template.id} onClick={() => void openTemplate(template)}>
-            <ListItemText primary={template.name} secondary={template.summary} />
-          </MenuItem>
-        ))}
+        {/* A Menu wants its items as direct children, not wrapped in fragments. */}
+        {TEMPLATE_CATEGORIES.flatMap(category => [
+          <ListSubheader key={category}>{category}</ListSubheader>,
+          ...SHAPER_TEMPLATES.filter(t => t.category === category).map(template => (
+            <MenuItem key={template.id} onClick={() => void openTemplate(template)}>
+              <ListItemText primary={template.name} secondary={template.summary} />
+            </MenuItem>
+          )),
+        ])}
       </Menu>
       <Button size="small" onClick={() => setOpenDialog(true)}>Open</Button>
       <Button size="small" onClick={() => setSaveAsOpen(true)}>Save as</Button>
