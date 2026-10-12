@@ -23,8 +23,8 @@ export default function CabinetElevations({ params }: { params: CabinetParams })
   const fw = d.overallWidthMm
   const fh = d.overallHeightMm
   const trays = Array.from({ length: p.trayCount }, (_, i) => {
-    // Slot i's floor, from the bottom of the case; drawn from the top.
-    const floor = p.stockMm + i * d.pitchMm
+    // Slot i's dado floor, from the bottom of the case; drawn from the top.
+    const floor = d.dadoFloorsMm[i]
     return {
       y: fh - floor - p.trayThicknessMm,
       x: p.stockMm + p.dadoDepthMm - p.slideClearanceMm / 2,

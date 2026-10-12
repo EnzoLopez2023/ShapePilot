@@ -70,7 +70,7 @@ export default function CabinetPage() {
       `(${len(settings.dadoHeightMm)} dado + ${len(settings.gapMm)} clear).\n` +
       `Dados: ${dims.dadoFloorsMm.length} per side, ${len(settings.dadoDepthMm)} deep, ` +
       `floors at ${dims.dadoFloorsMm.map(v => len(v)).join(', ')} from the bottom end.\n` +
-      `The lowest tray rests on the cabinet bottom and needs no dado.\n` +
+      `One gap of solid side below the lowest dado, and the same above the highest.\n` +
       `Back rabbet: ${len(dims.backRabbetMm)} × ${len(dims.backRabbetMm)} in all four pieces.\n` +
       `Screws: through each side into the top and bottom at ` +
       `${screwPositionsMm(settings).map(v => len(v)).join(', ')} from the front edge, ` +
@@ -142,7 +142,7 @@ export default function CabinetPage() {
             <Alert key={w.code} severity="warning" sx={{ py: 0 }}>{w.message}</Alert>
           ))}
 
-          <HoverTooltip title="How many trays the case holds. The lowest rests on the cabinet bottom, so the sides are cut with one dado fewer.">
+          <HoverTooltip title="How many trays the case holds. Every one rides in a dado of its own, so this is also the number of dados cut in each side.">
             <LengthField
               label="Trays" imperial={false} valueMm={settings.trayCount}
               onChangeMm={v => set({ trayCount: Math.max(1, Math.round(v)) })}

@@ -12,10 +12,11 @@
 //    between them, screwed through the sides. So the overall height is the
 //    interior plus two thicknesses, and the top and bottom are as long as the
 //    interior is wide.
-//  * **Slot pitch, counted from the bottom.** Slot 0's floor *is* the top face
-//    of the bottom panel: the lowest tray slides on the cabinet bottom and
-//    needs no dado. Every slot above it gets one, so a 12-tray case is cut with
-//    11 dados per side.
+//  * **Slot pitch, counted from the bottom.** Every tray rides in a dado of its
+//    own, the lowest included, so a 12-tray case is cut with 12 dados per side.
+//    The lowest dado sits one gap above the bottom panel, which leaves the same
+//    solid side under it as between any two dados, and the top gap above the
+//    highest tray matches. So the interior is one gap taller than the slots.
 
 export interface CabinetParams {
   /** How many trays the case holds. */
@@ -83,9 +84,10 @@ export interface CabinetDims {
 export function cabinetDims(p: CabinetParams): CabinetDims {
   const pitchMm = p.dadoHeightMm + p.gapMm
   const interiorWidthMm = p.trayWidthMm + p.slideClearanceMm - 2 * p.dadoDepthMm
-  const interiorHeightMm = p.trayCount * pitchMm
+  // One gap of solid side below the lowest dado, and the same above the highest.
+  const interiorHeightMm = p.trayCount * pitchMm + p.gapMm
   const dadoFloorsMm = Array.from(
-    { length: Math.max(0, p.trayCount - 1) }, (_, i) => p.stockMm + (i + 1) * pitchMm)
+    { length: p.trayCount }, (_, i) => p.stockMm + p.gapMm + i * pitchMm)
   // A tray rests on its dado floor, so the air above it is the rest of the dado
   // plus the solid gap to the next one.
   const headroomMm = pitchMm - p.trayThicknessMm

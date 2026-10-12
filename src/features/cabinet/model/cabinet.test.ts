@@ -10,16 +10,19 @@ describe('the 12-tray sample case', () => {
 
   test('slots stack at the dado height plus the gap', () => {
     expect(d.pitchMm).toBe(24)
-    expect(d.interiorHeightMm).toBe(288)
-    // The lowest tray rests on the cabinet bottom, so one dado fewer than trays.
-    expect(d.dadoFloorsMm).toHaveLength(11)
-    expect(d.dadoFloorsMm[0]).toBeCloseTo(36.7)
-    expect(d.dadoFloorsMm[10]).toBeCloseTo(276.7)
+    // Twelve slots plus the solid side below the lowest dado.
+    expect(d.interiorHeightMm).toBe(305)
+    // Every tray rides in a dado, the lowest included.
+    expect(d.dadoFloorsMm).toHaveLength(12)
+    expect(d.dadoFloorsMm[0]).toBeCloseTo(29.7)
+    expect(d.dadoFloorsMm[11]).toBeCloseTo(293.7)
   })
 
-  test('the top dado leaves the same headroom as every other slot', () => {
-    const top = d.dadoFloorsMm[10] + DEFAULT_CABINET.dadoHeightMm
-    const ceiling = DEFAULT_CABINET.stockMm + d.interiorHeightMm
+  test('the lowest and highest dados sit a gap off the bottom and the top', () => {
+    const floor = DEFAULT_CABINET.stockMm
+    const ceiling = floor + d.interiorHeightMm
+    expect(d.dadoFloorsMm[0] - floor).toBeCloseTo(DEFAULT_CABINET.gapMm)
+    const top = d.dadoFloorsMm[11] + DEFAULT_CABINET.dadoHeightMm
     expect(ceiling - top).toBeCloseTo(DEFAULT_CABINET.gapMm)
     expect(d.headroomMm).toBeCloseTo(17.6)
   })
@@ -34,17 +37,17 @@ describe('the 12-tray sample case', () => {
   test('the case is the tray depth plus the back, and two thicknesses around', () => {
     expect(d.panelDepthMm).toBeCloseTo(172.35)
     expect(d.overallWidthMm).toBeCloseTo(265.4)
-    expect(d.overallHeightMm).toBeCloseTo(313.4)
+    expect(d.overallHeightMm).toBeCloseTo(330.4)
     expect(d.backWidthMm).toBeCloseTo(252.7)
-    expect(d.backHeightMm).toBeCloseTo(300.7)
+    expect(d.backHeightMm).toBeCloseTo(317.7)
   })
 
   test('the cut list is three rows and nothing is wrong with it', () => {
     const rows = cutList(DEFAULT_CABINET)
     expect(rows.map(r => [r.part, r.count, +r.lengthMm.toFixed(2), +r.widthMm.toFixed(2)])).toEqual([
-      ['Side', 2, 313.4, 172.35],
+      ['Side', 2, 330.4, 172.35],
       ['Top / bottom', 2, 240, 172.35],
-      ['Back', 1, 300.7, 252.7],
+      ['Back', 1, 317.7, 252.7],
     ])
     expect(checkCabinet(DEFAULT_CABINET)).toEqual([])
   })
@@ -72,7 +75,7 @@ describe('the Shaper drawings', () => {
     const drawing = sideDrawing(DEFAULT_CABINET)
     expect(drawing.layers.map(l => l.id)).toEqual(['panel', 'tray-dados', 'back-rabbet'])
     const dados = drawing.layers[1]
-    expect(dados.polygons).toHaveLength(11)
+    expect(dados.polygons).toHaveLength(12)
     expect(dados.depthMm).toBe(5)
     expect(drawing.layers[2].depthMm).toBe(6.35)
     // Dados stop where the rabbet starts, and open at the front edge.
@@ -83,7 +86,7 @@ describe('the Shaper drawings', () => {
 
   test('the side SVG comes out at the panel size, in millimetres', () => {
     const svg = writeShaperSvg(sideDrawing(DEFAULT_CABINET))
-    expect(svg).toContain('width="172.35mm" height="313.4mm"')
+    expect(svg).toContain('width="172.35mm" height="330.4mm"')
     expect(svg).toContain('shaper:cutDepth="5mm"')
     expect(svg).toContain('shaper:cutType="pocket"')
   })
