@@ -12,6 +12,11 @@ export interface DocumentNameFieldProps {
   onRename: (name: string) => void
 }
 
+/** A fixed width, not one that follows the name: the field sits in a wrapping
+ *  toolbar, and a width that changed with every name moved the wrap point, so
+ *  the buttons after it jumped between rows whenever a design was opened. */
+const FIELD_CHARS = 30
+
 export default function DocumentNameField({ name, onRename }: DocumentNameFieldProps) {
   const [draft, setDraft] = useState(name)
   // A load, an undo, or a Save as changes the name from underneath the field.
@@ -29,7 +34,8 @@ export default function DocumentNameField({ name, onRename }: DocumentNameFieldP
   }
 
   return (
-    <Tooltip title="Rename this design" describeChild>
+    // A name too long for the field is cut off, so the tooltip carries it whole.
+    <Tooltip title={draft.length > FIELD_CHARS ? `${draft} -- click to rename` : 'Rename this design'} describeChild>
       <InputBase
         value={draft}
         onChange={e => setDraft(e.target.value)}
@@ -38,7 +44,11 @@ export default function DocumentNameField({ name, onRename }: DocumentNameFieldP
           if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
           if (e.key === 'Escape') { setDraft(name); (e.target as HTMLInputElement).blur() }
         }}
-        inputProps={{ 'aria-label': 'Design name', size: Math.max(12, draft.length) }}
+        inputProps={{
+          'aria-label': 'Design name',
+          size: FIELD_CHARS,
+          style: { textOverflow: 'ellipsis' },
+        }}
         sx={{
           fontSize: '0.9375rem', fontWeight: 500,
           px: 0.75, borderRadius: 1,
