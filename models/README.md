@@ -13,6 +13,7 @@ npm run swatch:labels           # the label sheet for those cards
 npm run swatch:holder           # models/swatch-holder
 npm run swatch:holder -- --coupon  # models/swatch-holder-coupon
 npm run boards:build            # models/cutting-boards
+npm run kitchen:build           # models/kitchen-pieces
 ```
 
 A change to `src/rack/config.ts` therefore shows up as a diff in this
@@ -86,3 +87,9 @@ CBJG-SM (8 x 13 in, corner hang hole) and CBJG-LG (10-3/4 x 17-3/4 in, slot
 handles). Exterior profile, interior handles, and the groove as an on-line cut
 for a 3/8 in core box bit -- `README.txt` has the depth and cut order, which the
 SVG cannot carry.
+
+## kitchen-pieces/
+
+The coaster set and the trivet as Shaper Origin SVGs. They are the Shaper
+Designer's own templates, exported through the same cut drawing as its SVG
+button, so a file here matches opening the template and pressing SVG.
