@@ -92,10 +92,19 @@ export default function CabinetElevations({ params }: { params: CabinetParams })
             x={0} y={sh - floor - p.dadoHeightMm} width={p.trayDepthMm} height={p.dadoHeightMm}
             fill="var(--cab-dado)"
           />
-          <text x={p.trayDepthMm + 10} y={sh - floor - 1} fontSize={9} fill="var(--cab-text)">
+          <text x={sw + 3} y={sh - floor - 1} fontSize={9} fill="var(--cab-text)">
             {n(floor)}
           </text>
         </g>
+      ))}
+      {/* Behind the back: the cleats and spacer it hides, as dashed outlines. */}
+      {d.cleat && [d.cleat.caseProfile, d.cleat.spacerProfile, d.cleat.wallProfile].map((ring, i) => (
+        <polygon
+          key={`c${i}`}
+          points={ring.map(([u, v]) => `${u},${sh - v}`).join(' ')}
+          fill="none" stroke="var(--cab-line)" strokeWidth={0.6}
+          strokeDasharray={i === 2 ? '1.5 2' : '4 2'}
+        />
       ))}
       <text x={sw / 2} y={-8} textAnchor="middle" fontSize={11} fill="var(--cab-text)">
         {n(sw)} mm · front edge left

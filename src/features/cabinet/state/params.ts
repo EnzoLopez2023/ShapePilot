@@ -11,11 +11,14 @@ import type { CabinetParams } from '../model/cabinet.ts'
 export interface CabinetSettings extends CabinetParams {
   /** Show lengths in fractional inches. Stock comes in inches; cuts in mm. */
   imperial: boolean
+  /** Flat drawings, or the assembled case in 3D. */
+  view: '2d' | '3d'
 }
 
 export const DEFAULT_CABINET_SETTINGS: CabinetSettings = {
   ...DEFAULT_CABINET,
   imperial: false,
+  view: '2d',
 }
 
 /** Rebuilt field by field: anything in storage was written by an older release. */
@@ -35,7 +38,11 @@ export function readCabinetSettings(
     stockMm: numberIn(s.stockMm, 3, 60, baseline.stockMm),
     backMm: numberIn(s.backMm, 1, 40, baseline.backMm),
     slideClearanceMm: numberIn(s.slideClearanceMm, 0, 10, baseline.slideClearanceMm),
+    frenchCleat: booleanOr(s.frenchCleat, baseline.frenchCleat),
+    cleatThicknessMm: numberIn(s.cleatThicknessMm, 3, 60, baseline.cleatThicknessMm),
+    cleatHeightMm: numberIn(s.cleatHeightMm, 10, 300, baseline.cleatHeightMm),
     imperial: booleanOr(s.imperial, baseline.imperial),
+    view: s.view === '2d' || s.view === '3d' ? s.view : baseline.view,
   }
 }
 

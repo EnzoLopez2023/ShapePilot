@@ -34,11 +34,17 @@ const n = (v: number): string => {
 const screwMarks = (depths: readonly number[], y: number): Ring[] =>
   depths.map(x => circle(x, y, 2))
 
+/** At the rear edge the back sits in a rabbet; set forward for a cleat, a groove. */
+const backPocket = (insetMm: number) => (insetMm > 0
+  ? { id: 'back-groove', name: 'back groove' }
+  : { id: 'back-rabbet', name: 'back rabbet' })
+
 export function sideDrawing(p: CabinetParams): CutDrawing {
   const d = cabinetDims(p)
   const W = d.panelDepthMm
   const H = d.overallHeightMm
   const rabbetX = p.trayDepthMm // where the back rabbet starts, measured from the front
+  const back = backPocket(d.backInsetMm)
 
   const dados: MultiPolygon = d.dadoFloorsMm.map(y =>
     [rect(0, y, rabbetX, y + p.dadoHeightMm)])
@@ -47,8 +53,8 @@ export function sideDrawing(p: CabinetParams): CutDrawing {
     { id: 'panel', cutType: 'exterior', polygons: [[rect(0, 0, W, H)]] },
     { id: 'tray-dados', cutType: 'pocket', depthMm: p.dadoDepthMm, polygons: dados },
     {
-      id: 'back-rabbet', cutType: 'pocket', depthMm: d.backRabbetMm,
-      polygons: [[rect(rabbetX, 0, W, H)]],
+      id: back.id, cutType: 'pocket', depthMm: d.backRabbetMm,
+      polygons: [[rect(rabbetX, 0, rabbetX + d.backRabbetMm, H)]],
     },
   ]
 
@@ -65,7 +71,7 @@ export function sideDrawing(p: CabinetParams): CutDrawing {
     guideRings,
     description:
       `Inner face up, front edge at left. 1 unit = 1 mm, 1:1. grey = pocket ` +
-      `(dados ${n(p.dadoDepthMm)} mm, back rabbet ${n(d.backRabbetMm)} mm) | ` +
+      `(dados ${n(p.dadoDepthMm)} mm, ${back.name} ${n(d.backRabbetMm)} mm) | ` +
       `white+outline = panel ${n(W)} × ${n(H)} mm | blue = 4 mm screw marks, ` +
       `reference only -- Shaper does not cut guide lines.`,
   }
@@ -75,11 +81,13 @@ export function topBottomDrawing(p: CabinetParams): CutDrawing {
   const d = cabinetDims(p)
   const W = d.interiorWidthMm
   const H = d.panelDepthMm
+  const inset = d.backInsetMm
+  const back = backPocket(inset)
   const layers: CutLayer[] = [
     { id: 'panel', cutType: 'exterior', polygons: [[rect(0, 0, W, H)]] },
     {
-      id: 'back-rabbet', cutType: 'pocket', depthMm: d.backRabbetMm,
-      polygons: [[rect(0, 0, W, d.backRabbetMm)]],
+      id: back.id, cutType: 'pocket', depthMm: d.backRabbetMm,
+      polygons: [[rect(0, inset, W, inset + d.backRabbetMm)]],
     },
   ]
   return {
@@ -87,7 +95,8 @@ export function topBottomDrawing(p: CabinetParams): CutDrawing {
     layers,
     description:
       `Inner face up, rear edge at the bottom of the drawing. 1 unit = 1 mm, 1:1. ` +
-      `grey = back rabbet ${n(d.backRabbetMm)} mm deep | white+outline = panel ` +
+      `grey = ${back.name} ${n(d.backRabbetMm)} mm deep` +
+      `${inset > 0 ? `, ${n(inset)} mm in from the rear edge` : ''} | white+outline = panel ` +
       `${n(W)} × ${n(H)} mm. Cut two.`,
   }
 }

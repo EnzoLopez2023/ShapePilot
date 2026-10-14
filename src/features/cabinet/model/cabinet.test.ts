@@ -4,6 +4,9 @@ import {
 } from './cabinet.ts'
 import { sideDrawing, topBottomDrawing } from '../export/cutDrawing.ts'
 import { writeShaperSvg } from '../../../export/shaperSvg.ts'
+import { checkManifold } from '../../../geometry/mesh.ts'
+import { meshFromBands } from '../../../geometry/bands.ts'
+import { cabinetSolid, drawingBands } from './solid.ts'
 
 describe('the 12-tray sample case', () => {
   const d = cabinetDims(DEFAULT_CABINET)
@@ -95,5 +98,99 @@ describe('the Shaper drawings', () => {
     const drawing = topBottomDrawing(DEFAULT_CABINET)
     expect(drawing.layers.map(l => l.id)).toEqual(['panel', 'back-rabbet'])
     expect(drawing.layers[1].depthMm).toBe(6.35)
+  })
+})
+
+describe('the French cleat', () => {
+  const p = { ...DEFAULT_CABINET, frenchCleat: true }
+  const d = cabinetDims(p)
+  const c = d.cleat!
+
+  test('the back moves forward by a cleat, and the case deepens to match', () => {
+    expect(cabinetDims(DEFAULT_CABINET).cleat).toBeNull()
+    expect(d.backInsetMm).toBe(12.7)
+    expect(d.panelDepthMm).toBeCloseTo(172.35 + 12.7)
+    // Nothing in front of the back changes.
+    expect(d.overallHeightMm).toBeCloseTo(330.4)
+    expect(d.dadoFloorsMm).toEqual(cabinetDims(DEFAULT_CABINET).dadoFloorsMm)
+  })
+
+  test('the two halves fill the pocket and meet on the bevel', () => {
+    const [wallX, faceX] = [d.panelDepthMm, d.panelDepthMm - p.cleatThicknessMm]
+    const xs = [...c.caseProfile, ...c.wallProfile].map(([x]) => x)
+    expect(Math.min(...xs)).toBeCloseTo(faceX)
+    expect(Math.max(...xs)).toBeCloseTo(wallX)
+    // The case half tops out under the top panel; the bevel is shared.
+    expect(Math.max(...c.caseProfile.map(([, y]) => y))).toBeCloseTo(d.overallHeightMm - p.stockMm)
+    const bevel = (ring: [number, number][]) => ring.filter(([x, y]) =>
+      c.caseProfile.some(([a, b]) => a === x && b === y) &&
+      c.wallProfile.some(([a, b]) => a === x && b === y))
+    expect(bevel(c.caseProfile)).toHaveLength(2)
+    expect(c.wallCleatDropMm).toBeCloseTo(12.7 + 50.8 - 12.7)
+    expect(c.liftClearanceMm).toBeGreaterThan(p.cleatThicknessMm)
+  })
+
+  test('the cut list gains the cleats and the spacer, and nothing is wrong', () => {
+    const rows = cutList(p)
+    expect(rows.map(r => r.part)).toEqual(
+      ['Side', 'Top / bottom', 'Back', 'French cleat', 'Cleat spacer'])
+    expect(rows[3].lengthMm).toBe(d.interiorWidthMm)
+    expect(checkCabinet(p)).toEqual([])
+  })
+
+  test('a narrow cleat, or a case too short to lift off it, says so', () => {
+    const codes = (over: Partial<typeof DEFAULT_CABINET>) =>
+      checkCabinet({ ...p, ...over }).map(w => w.code)
+    expect(codes({ cleatHeightMm: 20 })).toContain('cleat-too-narrow')
+    expect(codes({ trayCount: 2, cleatHeightMm: 80 })).toContain('cleat-no-lift')
+  })
+
+  test('the rabbet becomes a groove, a cleat in from the rear edge', () => {
+    const side = sideDrawing(p)
+    expect(side.layers.map(l => l.id)).toEqual(['panel', 'tray-dados', 'back-groove'])
+    const xs = side.layers[2].polygons[0][0].map(([x]) => x)
+    expect(Math.min(...xs)).toBe(166)
+    expect(Math.max(...xs)).toBeCloseTo(166 + 6.35)
+    const top = topBottomDrawing(p)
+    const ys = top.layers[1].polygons[0][0].map(([, y]) => y)
+    expect(Math.min(...ys)).toBeCloseTo(12.7)
+    expect(Math.max(...ys)).toBeCloseTo(12.7 + 6.35)
+  })
+})
+
+describe('the 3D case', () => {
+  test('every panel is closed and right way out, mirrored or not', () => {
+    for (const params of [DEFAULT_CABINET, { ...DEFAULT_CABINET, frenchCleat: true }]) {
+      const solid = cabinetSolid(params)
+      for (const mesh of [solid.caseMesh, solid.trays, solid.wallCleat].filter(m => m !== null)) {
+        const report = checkManifold(mesh)
+        expect(report.danglingEdges).toBe(0)
+        expect(report.volume).toBeGreaterThan(0)
+      }
+    }
+  })
+
+  test('the side is the stock less its dados and rabbet', () => {
+    const d = cabinetDims(DEFAULT_CABINET)
+    const p = DEFAULT_CABINET
+    const side = meshFromBands(drawingBands(sideDrawing(p), p.stockMm))
+    const expected = d.panelDepthMm * d.overallHeightMm * p.stockMm
+      - 12 * p.trayDepthMm * p.dadoHeightMm * p.dadoDepthMm
+      - p.backMm * d.overallHeightMm * p.backMm
+    expect(checkManifold(side).volume).toBeCloseTo(expected, 0)
+  })
+
+  test('it fills the overall box, and the wall cleat sits inside it', () => {
+    const params = { ...DEFAULT_CABINET, frenchCleat: true }
+    const d = cabinetDims(params)
+    const solid = cabinetSolid(params)
+    const [x0, y0, z0, x1, y1, z1] = solid.caseMesh.bbox
+    for (const v of [x0, y0, z0]) expect(v).toBeCloseTo(0, 3)
+    expect(x1).toBeCloseTo(d.overallWidthMm, 3)
+    expect(y1).toBeCloseTo(d.panelDepthMm, 3)
+    expect(z1).toBeCloseTo(d.overallHeightMm, 3)
+    const w = solid.wallCleat!.bbox
+    expect(w[1]).toBeCloseTo(d.panelDepthMm - params.cleatThicknessMm, 3)
+    expect(w[4]).toBeCloseTo(d.panelDepthMm, 3)
   })
 })

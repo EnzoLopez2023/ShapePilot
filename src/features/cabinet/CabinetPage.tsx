@@ -3,11 +3,13 @@
 // Parametric and stateless on the server: the whole design is the dozen numbers
 // in the panel on the right, kept in this browser (state/params.ts). What comes
 // out is a cut list and one Shaper SVG per panel, which is the only artefact a
-// wooden case actually needs -- there is no mesh to print.
-import { useEffect, useMemo, useState } from 'react'
+// wooden case actually needs -- there is no mesh to print. The 3D view is the
+// same panels assembled, built from those cut drawings (model/solid.ts).
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import {
-  Alert, Box, Button, Divider, Paper, Stack, Table, TableBody, TableCell, TableHead,
-  TableRow, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
+  Alert, Box, Button, Divider, FormControlLabel, Paper, Stack, Switch, Table, TableBody,
+  TableCell, TableHead, TableRow, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
+  useTheme,
 } from '@mui/material'
 import { zipSync, strToU8 } from 'fflate'
 import LengthField from '../../components/LengthField.tsx'
@@ -24,8 +26,18 @@ import {
 } from './state/params.ts'
 import type { CabinetSettings } from './state/params.ts'
 import CabinetElevations from './components/CabinetElevations.tsx'
+import { cabinetSolid } from './model/solid.ts'
+import type { CabinetParams } from './model/cabinet.ts'
+import { LoadingState } from '../../components/LoadingState.tsx'
+
+// three.js is a third of the bundle and the drawings are the default view, so
+// the viewer is only fetched when someone actually switches to 3D.
+const SolidViewer3D = lazy(() => import('../../components/viewport3d/SolidViewer3D.tsx'))
 
 const PANEL_IDS: PanelId[] = ['side', 'top-bottom', 'back']
+
+/** The wall half of the cleat: not part of the case, so not in the case colour. */
+const WALL_CLEAT_COLOUR = '#8c7a62'
 
 export default function CabinetPage() {
   const [settings, setSettings] = useState<CabinetSettings>(DEFAULT_CABINET_SETTINGS)
@@ -34,14 +46,25 @@ export default function CabinetPage() {
   useEffect(() => { setSettings(loadCabinetSettings()); setLoaded(true) }, [])
   useEffect(() => { if (loaded) saveCabinetSettings(settings) }, [loaded, settings])
 
-  const { imperial } = settings
+  const { imperial, view, ...rawParams } = settings
   const set = (patch: Partial<CabinetSettings>) =>
     setSettings(current => ({ ...current, ...patch }))
 
-  const dims = useMemo(() => cabinetDims(settings), [settings])
-  const rows = useMemo(() => cutList(settings), [settings])
-  const warnings = useMemo(() => checkCabinet(settings), [settings])
+  // Keyed on the case's own numbers, so flipping units or views neither rebuilds
+  // the solid nor moves the 3D camera.
+  const paramsKey = JSON.stringify(rawParams)
+  const params = useMemo(() => JSON.parse(paramsKey) as CabinetParams, [paramsKey])
+  const dims = useMemo(() => cabinetDims(params), [params])
+  const rows = useMemo(() => cutList(params), [params])
+  const warnings = useMemo(() => checkCabinet(params), [params])
   const len = (mm: number) => formatLength(mm, imperial)
+
+  const theme = useTheme()
+  const solid = useMemo(() => (view === '3d' ? cabinetSolid(params) : null), [view, params])
+  const extras = useMemo(() => solid && [
+    { mesh: solid.trays, color: theme.palette.primary.main },
+    ...(solid.wallCleat ? [{ mesh: solid.wallCleat, color: WALL_CLEAT_COLOUR }] : []),
+  ], [solid, theme.palette.primary.main])
 
   const download = (panel: PanelId, format: 'svg' | 'dxf') => {
     const drawing = PANEL_DRAWINGS[panel](settings)
@@ -71,7 +94,13 @@ export default function CabinetPage() {
       `Dados: ${dims.dadoFloorsMm.length} per side, ${len(settings.dadoDepthMm)} deep, ` +
       `floors at ${dims.dadoFloorsMm.map(v => len(v)).join(', ')} from the bottom end.\n` +
       `One gap of solid side below the lowest dado, and the same above the highest.\n` +
-      `Back rabbet: ${len(dims.backRabbetMm)} × ${len(dims.backRabbetMm)} in all four pieces.\n` +
+      (dims.cleat
+        ? `Back groove: ${len(dims.backRabbetMm)} wide × ${len(dims.backRabbetMm)} deep in all ` +
+          `four pieces, ${len(dims.backInsetMm)} in from the rear edge.\n` +
+          `French cleat: the case half under the top, behind the back, long face to the wall; ` +
+          `the spacer on the bottom behind the back. Mount the wall half with its high edge ` +
+          `${len(dims.cleat.wallCleatDropMm)} below where the top of the case should be.\n`
+        : `Back rabbet: ${len(dims.backRabbetMm)} × ${len(dims.backRabbetMm)} in all four pieces.\n`) +
       `Screws: through each side into the top and bottom at ` +
       `${screwPositionsMm(settings).map(v => len(v)).join(', ')} from the front edge, ` +
       `${len(settings.stockMm / 2)} in from each end.\n`)
@@ -101,9 +130,18 @@ export default function CabinetPage() {
           sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 1 }}
         >
           <Typography variant="h3" component="h1">Tray cabinet</Typography>
+          <ToggleButtonGroup
+            exclusive size="small" value={view}
+            aria-label="Canvas view"
+            onChange={(_e, v) => v && set({ view: v })}
+          >
+            <ToggleButton value="2d">Drawings</ToggleButton>
+            <ToggleButton value="3d">3D</ToggleButton>
+          </ToggleButtonGroup>
           <Typography variant="body2" color="text.secondary" sx={{ flex: 1, minWidth: 220 }}>
             {settings.trayCount} trays · {len(dims.overallWidthMm)} × {len(dims.overallHeightMm)} ×{' '}
             {len(dims.panelDepthMm)} · {dims.dadoFloorsMm.length} dados a side
+            {dims.cleat ? ' · French cleat' : ''}
           </Typography>
           <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>
             <Tooltip title="Every panel as a Shaper SVG, plus the cut list as a text file.">
@@ -121,7 +159,23 @@ export default function CabinetPage() {
       </Paper>
 
       <Paper sx={{ ...panel }}>
-        <CabinetElevations params={settings} />
+        {view === '3d' && solid && extras ? (
+          <Box sx={{ position: 'relative', flex: 1, minHeight: 360 }}>
+            <Suspense fallback={<LoadingState label="Loading the 3D view…" />}>
+              <SolidViewer3D mesh={solid.caseMesh} extras={extras} up="z" label="the tray cabinet"
+              />
+            </Suspense>
+            <Typography
+              variant="body2" color="text.secondary"
+              sx={{ position: 'absolute', left: 12, bottom: 8, pointerEvents: 'none' }}
+            >
+              {settings.trayCount} trays seated
+              {dims.cleat ? ' · wall cleat shown hung, in brown' : ''}
+            </Typography>
+          </Box>
+        ) : (
+          <CabinetElevations params={params} />
+        )}
       </Paper>
 
       <Paper sx={{ ...panel, order: { xs: -1, md: 0 } }}>
@@ -213,6 +267,35 @@ export default function CabinetPage() {
           </Stack>
 
           <Divider textAlign="left">
+            <Typography variant="caption" color="text.secondary">Mounting</Typography>
+          </Divider>
+          <HoverTooltip title="Hang the case on a 45° French cleat. The back moves forward by the cleat thickness and sits in a groove, leaving a hidden pocket behind it for the case cleat, a spacer, and the wall cleat.">
+            <FormControlLabel
+              control={
+                <Switch
+                  size="small" checked={settings.frenchCleat}
+                  onChange={e => set({ frenchCleat: e.target.checked })}
+                />
+              }
+              label="French cleat"
+            />
+          </HoverTooltip>
+          {settings.frenchCleat && (
+            <Stack direction="row" spacing={1}>
+              <LengthField
+                label="Cleat stock" imperial={imperial} valueMm={settings.cleatThicknessMm}
+                hint="Cleat thickness. The back is set this far forward, so the cleats hide behind it and the case hangs flush to the wall."
+                onChangeMm={v => set({ cleatThicknessMm: v })}
+              />
+              <LengthField
+                label="Cleat height" imperial={imperial} valueMm={settings.cleatHeightMm}
+                hint="Each cleat's long face after the 45° rip. At least twice the stock, so the short face is not a sliver."
+                onChangeMm={v => set({ cleatHeightMm: v })}
+              />
+            </Stack>
+          )}
+
+          <Divider textAlign="left">
             <Typography variant="caption" color="text.secondary">Cut list</Typography>
           </Divider>
           <Table size="small" aria-label="Cut list">
@@ -249,6 +332,10 @@ export default function CabinetPage() {
             tray. Each dado holds {len(dims.engagementMm)} of the tray's edge. Screws through the
             sides at {screwPositionsMm(settings).map(v => len(v)).join(', ')} from the front edge,
             {' '}{len(settings.stockMm / 2)} in from each end.
+            {dims.cleat && (
+              <> Mount the wall cleat with its high edge {len(dims.cleat.wallCleatDropMm)} below
+                where the top of the case should be.</>
+            )}
           </Typography>
         </Stack>
       </Paper>

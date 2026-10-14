@@ -22,6 +22,12 @@ export interface SolidViewer3DProps {
   color?: string
   /** Bodies exported separately, e.g. a nameplate in a second filament. */
   extras?: readonly SolidViewerBody[]
+  /**
+   * Which axis the orbit keeps upright. Trays lie flat and read best orbiting
+   * about Y; something standing on Z, like the tray cabinet, wants 'z'. Read
+   * once, when the viewer mounts.
+   */
+  up?: 'y' | 'z'
 }
 
 /**
@@ -31,8 +37,9 @@ export interface SolidViewer3DProps {
  * Shared by every tray-shaped designer -- it only ever needed a `Mesh`.
  */
 export default function SolidViewer3D(
-  { mesh, label = 'the model', color, extras }: SolidViewer3DProps,
+  { mesh, label = 'the model', color, extras, up = 'y' }: SolidViewer3DProps,
 ) {
+  const upRef = useRef(up)
   const theme = useTheme()
   const dark = theme.palette.mode === 'dark'
   const hostRef = useRef<HTMLDivElement | null>(null)
@@ -63,6 +70,8 @@ export default function SolidViewer3D(
 
     const scene = new THREE.Scene()
     const camera = new THREE.PerspectiveCamera(45, 1, 1, 5000)
+    // OrbitControls takes its upright axis from the camera when it is built.
+    if (upRef.current === 'z') camera.up.set(0, 0, 1)
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
 
@@ -134,7 +143,17 @@ export default function SolidViewer3D(
     const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2, cz = (minZ + maxZ) / 2
     const span = Math.max(maxX - minX, maxY - minY, maxZ - minZ) || 100
     state.controls.target.set(cx, cy, cz)
-    state.camera.position.set(cx + span * 0.55, cy - span * 0.95, cz + span * 0.85)
+    if (upRef.current === 'z') {
+      // A standing part is as tall as it is wide, so the tray framing below
+      // crops it. Back off until the whole bounding sphere is in view, from a
+      // three-quarter view a little above eye level.
+      const radius = Math.hypot(maxX - minX, maxY - minY, maxZ - minZ) / 2 || 50
+      const fit = radius / Math.sin(THREE.MathUtils.degToRad(state.camera.fov / 2))
+      const dir = new THREE.Vector3(0.6, -1, 0.5).normalize().multiplyScalar(fit * 1.05)
+      state.camera.position.set(cx + dir.x, cy + dir.y, cz + dir.z)
+    } else {
+      state.camera.position.set(cx + span * 0.55, cy - span * 0.95, cz + span * 0.85)
+    }
     state.camera.near = span / 100
     state.camera.far = span * 20
     state.camera.updateProjectionMatrix()
