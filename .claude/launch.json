@@ -33,6 +33,15 @@
         "--strictPort"
       ],
       "port": 5173
+    },
+    {
+      "name": "dev-noauth",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": [
+        "/c",
+        "set VITE_AUTH_MODE=development&& npx vite --port 5174 --strictPort"
+      ],
+      "port": 5174
     }
   ]
 }
