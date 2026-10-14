@@ -135,8 +135,9 @@ export function cabinetSolid(p: CabinetParams): CabinetSolid {
     )
   }
 
-  // A tray is a slab across both dados, flush with the front edge.
-  const trayX = t + p.dadoDepthMm - p.slideClearanceMm / 2
+  // A tray is a slab across both dados, flush with the front edge, centred so
+  // half the slide clearance is left at the back of each dado.
+  const trayX = t - p.dadoDepthMm + p.slideClearanceMm / 2
   const slab = box(0, 0, p.trayWidthMm, p.trayDepthMm, p.trayThicknessMm)
   const trays = placeAll(d.dadoFloorsMm.map(floor => ({
     mesh: slab,

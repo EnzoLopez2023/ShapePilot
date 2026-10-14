@@ -193,4 +193,12 @@ describe('the 3D case', () => {
     expect(w[1]).toBeCloseTo(d.panelDepthMm - params.cleatThicknessMm, 3)
     expect(w[4]).toBeCloseTo(d.panelDepthMm, 3)
   })
+
+  test('the trays sit centred in both dados, inside the sides', () => {
+    const p = DEFAULT_CABINET
+    const d = cabinetDims(p)
+    const [x0, , , x1] = cabinetSolid(p).trays.bbox
+    expect(x0).toBeCloseTo(p.stockMm - p.dadoDepthMm + p.slideClearanceMm / 2, 3)
+    expect(x1).toBeCloseTo(d.overallWidthMm - p.stockMm + p.dadoDepthMm - p.slideClearanceMm / 2, 3)
+  })
 })

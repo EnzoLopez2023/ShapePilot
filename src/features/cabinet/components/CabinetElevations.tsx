@@ -27,7 +27,7 @@ export default function CabinetElevations({ params }: { params: CabinetParams })
     const floor = d.dadoFloorsMm[i]
     return {
       y: fh - floor - p.trayThicknessMm,
-      x: p.stockMm + p.dadoDepthMm - p.slideClearanceMm / 2,
+      x: p.stockMm - p.dadoDepthMm + p.slideClearanceMm / 2,
       w: p.trayWidthMm,
     }
   })
