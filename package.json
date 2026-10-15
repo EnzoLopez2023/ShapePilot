@@ -49,7 +49,9 @@
     "legacy:export": "node scripts/legacy-export.ts",
     "legacy:import": "node scripts/legacy-import.ts",
     "legacy:reconcile": "node scripts/reconcile.ts",
-    "recovery": "node scripts/recovery.ts"
+    "recovery": "node scripts/recovery.ts",
+    "library": "node tools/library-scanner/bin/library.mjs",
+    "test:library": "node --test tools/library-scanner/test/*.test.js"
   },
   "dependencies": {
     "@azure/identity": "^4.13.2",

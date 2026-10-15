@@ -707,3 +707,173 @@ export const OWNED_LEGACY_TABLES = [
 ] as const
 
 export type OwnedLegacyTable = (typeof OWNED_LEGACY_TABLES)[number]
+
+/**
+ * The model Library: an index of the 3D print files on the owner's Mac, moved
+ * here from Workshop.
+ *
+ * The files never reach this server. The organizer on the Mac
+ * (tools/library-scanner) syncs one row per model folder -- keyed by the id in
+ * that folder's model.json, so a rename or move in Finder keeps its row -- plus
+ * the files' metadata. Thumbnails are bytes in the asset store, like every
+ * other non-authoritative picture here; `library_thumbs` only records which
+ * hashes an account has, so the organizer can skip uploading them again.
+ *
+ * Models are never deleted, only marked `missing`, so nothing points at a
+ * model with a foreign key that would have to null an owner column: prints and
+ * collection rows name the model by id, and the reads join on owner + id.
+ *
+ * `bambu_hub_url` replaces Workshop's foreign key into its own Bambu Hub table.
+ * That table stayed behind in Workshop, so the link is a plain URL to the
+ * project page there.
+ */
+export const LIBRARY_STATEMENTS: readonly string[] = [
+  `CREATE TABLE library_models (
+  owner_tenant_id TEXT    NOT NULL,
+  owner_oid       TEXT    NOT NULL,
+  id              TEXT    NOT NULL CHECK (length(id) BETWEEN 8 AND 64),
+  title           TEXT    NOT NULL,
+  category        TEXT    NOT NULL DEFAULT '_Inbox',
+  folder          TEXT,
+  status          TEXT    NOT NULL DEFAULT 'inbox'
+                  CHECK (status IN ('inbox', 'want', 'queued', 'printed', 'failed', 'skip')),
+  tags_json       TEXT    NOT NULL DEFAULT '[]',
+  notes           TEXT    NOT NULL DEFAULT '',
+  favorite        INTEGER NOT NULL DEFAULT 0 CHECK (favorite IN (0, 1)),
+  designer        TEXT,
+  license         TEXT,
+  description     TEXT,
+  source_site     TEXT,
+  source_url      TEXT,
+  source_model_id TEXT,
+  bambu_hub_url   TEXT    CHECK (bambu_hub_url IS NULL OR length(bambu_hub_url) <= 2000),
+  thumb_hash      TEXT,
+  gallery_json    TEXT    NOT NULL DEFAULT '[]',
+  formats_json    TEXT    NOT NULL DEFAULT '[]',
+  file_count      INTEGER NOT NULL DEFAULT 0,
+  total_bytes     INTEGER NOT NULL DEFAULT 0,
+  plate_count     INTEGER NOT NULL DEFAULT 0,
+  printer         TEXT,
+  filaments_json  TEXT    NOT NULL DEFAULT '[]',
+  est_seconds     REAL,
+  est_grams       REAL,
+  is_sliced       INTEGER NOT NULL DEFAULT 0 CHECK (is_sliced IN (0, 1)),
+  bbox_json       TEXT,
+  state           TEXT    NOT NULL DEFAULT 'present' CHECK (state IN ('present', 'missing')),
+  edit_version    INTEGER NOT NULL DEFAULT 0,
+  disk_version    INTEGER NOT NULL DEFAULT 0,
+  disk_created_at TEXT,
+  first_seen_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  last_seen_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  updated_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  PRIMARY KEY (owner_tenant_id, owner_oid, id)
+)`,
+  `CREATE INDEX idx_library_models_status
+  ON library_models (owner_tenant_id, owner_oid, state, status)`,
+  `CREATE TABLE library_files (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_tenant_id TEXT    NOT NULL,
+  owner_oid       TEXT    NOT NULL,
+  model_id        TEXT    NOT NULL,
+  rel_path        TEXT    NOT NULL,
+  filename        TEXT    NOT NULL,
+  kind            TEXT    NOT NULL CHECK (kind IN ('stl', '3mf', 'obj', 'step', 'other')),
+  size            INTEGER NOT NULL DEFAULT 0,
+  sha256          TEXT    NOT NULL,
+  geom_hash       TEXT,
+  mtime           TEXT,
+  triangles       INTEGER,
+  bbox_json       TEXT,
+  is_sliced       INTEGER NOT NULL DEFAULT 0 CHECK (is_sliced IN (0, 1)),
+  printer         TEXT,
+  seconds         REAL,
+  grams           REAL,
+  plates_json     TEXT    NOT NULL DEFAULT '[]',
+  profile_title   TEXT,
+  filaments_json  TEXT    NOT NULL DEFAULT '[]',
+  generator       TEXT,
+  thumb_hash      TEXT,
+  FOREIGN KEY (owner_tenant_id, owner_oid, model_id)
+    REFERENCES library_models (owner_tenant_id, owner_oid, id) ON DELETE CASCADE
+)`,
+  `CREATE UNIQUE INDEX idx_library_files_path
+  ON library_files (owner_tenant_id, owner_oid, rel_path)`,
+  `CREATE INDEX idx_library_files_model
+  ON library_files (owner_tenant_id, owner_oid, model_id)`,
+  `CREATE INDEX idx_library_files_geom
+  ON library_files (owner_tenant_id, owner_oid, geom_hash) WHERE geom_hash IS NOT NULL`,
+  `CREATE TABLE library_thumbs (
+  owner_tenant_id TEXT NOT NULL,
+  owner_oid       TEXT NOT NULL,
+  hash            TEXT NOT NULL CHECK (length(hash) = 64 AND hash NOT GLOB '*[^0-9a-f]*'),
+  created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  PRIMARY KEY (owner_tenant_id, owner_oid, hash)
+)`,
+  // A print is either logged by hand or copied out of the household printer's
+  // job ledger (EL-ement Statistics); `job_key` is that ledger's
+  // "<connection>:<job>" and keeps a re-import from duplicating it.
+  `CREATE TABLE library_prints (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_tenant_id TEXT    NOT NULL,
+  owner_oid       TEXT    NOT NULL,
+  model_id        TEXT,
+  source          TEXT    NOT NULL CHECK (source IN ('manual', 'bambu')),
+  job_key         TEXT,
+  title           TEXT,
+  result          TEXT    NOT NULL DEFAULT 'completed'
+                  CHECK (result IN ('completed', 'failed', 'active', 'unknown')),
+  started_at      TEXT,
+  ended_at        TEXT,
+  seconds         REAL,
+  grams           REAL,
+  materials_json  TEXT    NOT NULL DEFAULT '[]',
+  notes           TEXT    NOT NULL DEFAULT '',
+  match_state     TEXT    NOT NULL DEFAULT 'manual'
+                  CHECK (match_state IN ('manual', 'auto', 'confirmed', 'suggested', 'unmatched', 'rejected')),
+  match_score     REAL,
+  created_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CHECK ((source = 'bambu') = (job_key IS NOT NULL))
+)`,
+  `CREATE UNIQUE INDEX idx_library_prints_job
+  ON library_prints (owner_tenant_id, owner_oid, job_key) WHERE job_key IS NOT NULL`,
+  `CREATE INDEX idx_library_prints_model
+  ON library_prints (owner_tenant_id, owner_oid, model_id)`,
+  `CREATE TABLE library_devices (
+  id              TEXT PRIMARY KEY,
+  owner_tenant_id TEXT NOT NULL,
+  owner_oid       TEXT NOT NULL,
+  name            TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 80),
+  token_hash      TEXT NOT NULL UNIQUE,
+  created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  last_seen_at    TEXT,
+  revoked_at      TEXT,
+  FOREIGN KEY (owner_tenant_id, owner_oid) REFERENCES app_memberships (tenant_id, oid)
+)`,
+  `CREATE TABLE library_collections (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_tenant_id TEXT NOT NULL,
+  owner_oid       TEXT NOT NULL,
+  name            TEXT NOT NULL CHECK (length(name) BETWEEN 1 AND 80),
+  kind            TEXT NOT NULL CHECK (kind IN ('manual', 'smart')),
+  query_json      TEXT,
+  created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+)`,
+  `CREATE UNIQUE INDEX idx_library_collections_name
+  ON library_collections (owner_tenant_id, owner_oid, name COLLATE NOCASE)`,
+  `CREATE TABLE library_collection_models (
+  collection_id INTEGER NOT NULL REFERENCES library_collections (id) ON DELETE CASCADE,
+  model_id      TEXT    NOT NULL,
+  added_at      TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  PRIMARY KEY (collection_id, model_id)
+)`,
+  // The organizer's last plan and change log, and the print-history cursor.
+  `CREATE TABLE library_state (
+  owner_tenant_id TEXT NOT NULL,
+  owner_oid       TEXT NOT NULL,
+  key             TEXT NOT NULL,
+  value           TEXT NOT NULL,
+  updated_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  PRIMARY KEY (owner_tenant_id, owner_oid, key)
+)`,
+]

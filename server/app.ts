@@ -38,6 +38,7 @@ import { createSettingsRouter } from './routes/settings.ts'
 import { createVersionRouter } from './routes/version.ts'
 import { ElementMonitor } from './element/monitor.ts'
 import { createIntegrationRouter } from './routes/integrations.ts'
+import { createLibraryRouter, createLibrarySyncRouter } from './routes/library.ts'
 import { createElementStatisticsRouter } from './routes/elementStatistics.ts'
 import { createElementDisplayAdminRouter, createElementDisplayRouter } from './routes/elementDisplays.ts'
 
@@ -107,7 +108,10 @@ export function createApp(options: CreateAppOptions): Express {
     next()
   })
 
-  app.use(express.json({ limit: JSON_LIMIT }))
+  // The Library organizer's sync batches are larger than this limit; those
+  // routes parse their own bodies (see routes/library.ts).
+  const jsonParser = express.json({ limit: JSON_LIMIT })
+  app.use((req, res, next) => (req.path.startsWith('/api/library/sync/') ? next() : jsonParser(req, res, next)))
 
   // Unauthenticated: process liveness, bounded readiness, immutable identity.
   app.use('/api', createHealthRouter({
@@ -118,12 +122,19 @@ export function createApp(options: CreateAppOptions): Express {
     instanceId,
   }))
   app.use(createVersionRouter(identity))
-  // Service key, not Entra: read-only print history for the owner's Workshop Library.
+  // Service key, not Entra: read-only print history for Workshop's Library, until
+  // Workshop stops calling it now that the Library lives here.
   app.use('/api/integrations', createIntegrationRouter({ repos, config: config.integration }))
   const elementMonitor = options.elementMonitor ?? new ElementMonitor({
     repository: repos.elementStatistics, config: config.element, logger: options.logger,
   })
   app.use('/api/element-display', createElementDisplayRouter({ repos, monitor: elementMonitor }))
+  // One memoized store for every route that needs one, so a test injecting a
+  // temporary directory reaches the assistant's photo reads and the Library's
+  // thumbnails as well.
+  const store = assetStore(options.assetStore, config.assetStoreDir)
+  // Device token, not Entra: the Library organizer on the owner's Mac.
+  app.use('/api/library/sync', createLibrarySyncRouter({ repos, store }))
 
   const authenticated = requireAuth({
     auth: config.auth,
@@ -140,14 +151,12 @@ export function createApp(options: CreateAppOptions): Express {
   // Asset bytes never touch express.json, which only parses application/json;
   // an octet-stream body passes straight through to this route's own raw
   // parser, which has its own much larger limit.
-  // One memoized store for both routes that need one, so a test injecting a
-  // temporary directory reaches the assistant's photo reads as well.
-  const store = assetStore(options.assetStore, config.assetStoreDir)
   app.use('/api/design-assets', authenticated,
     createDesignAssetRouter({ repos, store, logger: options.logger }))
   app.use('/api/ai', authenticated, createAiRouter({ repos, client: aiClient, store }))
   app.use('/api/filaments', authenticated, createFilamentRouter(repos, store))
   app.use('/api/maintenance', authenticated, createMaintenanceRouter(repos))
+  app.use('/api/library', authenticated, createLibraryRouter({ repos, store }))
   app.use('/api/notifications', authenticated, createNotificationRouter({
     repos,
     config: config.push,

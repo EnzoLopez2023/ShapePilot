@@ -87,6 +87,11 @@ export default tseslint.config(
     languageOptions: { globals: globals.serviceworker, sourceType: 'script' },
   },
   {
+    // The Library organizer runs under Node on the owner's Mac.
+    files: ['tools/library-scanner/**/*.{js,mjs}'],
+    languageOptions: { globals: globals.node },
+  },
+  {
     files: ['vite.config.ts', 'eslint.config.js'],
     languageOptions: { globals: globals.node },
   },

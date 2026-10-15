@@ -21,6 +21,7 @@ import Inventory2RoundedIcon from '@mui/icons-material/Inventory2Rounded'
 import BuildCircleRoundedIcon from '@mui/icons-material/BuildCircleRounded'
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded'
 import AdminPanelSettingsRoundedIcon from '@mui/icons-material/AdminPanelSettingsRounded'
+import CollectionsBookmarkRoundedIcon from '@mui/icons-material/CollectionsBookmarkRounded'
 import { EASE_IOS, glassFor, SHADOW } from '../theme/theme.ts'
 import { PageBackdrop } from '../components/PageBackdrop.tsx'
 import { getSettings } from '../features/settings/preferences.ts'
@@ -51,6 +52,7 @@ const NAV: NavItem[] = [
   { to: '/shaper-designer', label: 'Shaper designer', icon: ArchitectureRoundedIcon },
   { to: '/bambu-designer', label: 'Bambu designer', icon: ViewInArRoundedIcon },
   { to: '/playground', label: 'AI playground', icon: AutoAwesomeRoundedIcon },
+  { to: '/library', label: 'Library', icon: CollectionsBookmarkRoundedIcon },
   { to: '/filaments', label: 'Filaments', icon: Inventory2RoundedIcon },
   { to: '/maintenance', label: 'Maintenance', icon: BuildCircleRoundedIcon },
   { to: '/settings', label: 'Settings', icon: TuneRoundedIcon },

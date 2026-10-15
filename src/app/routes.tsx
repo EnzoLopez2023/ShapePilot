@@ -21,6 +21,12 @@ const PlaygroundPage = lazy(() => import('../features/playground/PlaygroundPage.
 const FilamentsPage = lazy(() => import('../features/filaments/FilamentsPage.tsx'))
 const OrdersPage = lazy(() => import('../features/filaments/OrdersPage.tsx'))
 const MaintenancePage = lazy(() => import('../features/maintenance/MaintenancePage.tsx'))
+const LibraryPage = lazy(() => import('../features/library/LibraryPage.tsx'))
+const LibraryModelPage = lazy(() => import('../features/library/ModelPage.tsx'))
+const LibraryInboxPage = lazy(() => import('../features/library/InboxPage.tsx'))
+const LibraryReviewPage = lazy(() => import('../features/library/ReviewPage.tsx'))
+const LibraryOrganizePage = lazy(() => import('../features/library/OrganizePage.tsx'))
+const LibraryManagePage = lazy(() => import('../features/library/ManagePage.tsx'))
 const SettingsPage = lazy(() => import('../features/settings/SettingsPage.tsx'))
 const AdminPage = lazy(() => import('../features/admin/AdminPage.tsx'))
 
@@ -196,6 +202,56 @@ export function AppRoutes() {
                 <MaintenancePage />
               </Suspense>
             }
+          />
+          {/* The fixed sub-pages are declared before `/library/:modelId`, so
+              a model id can never shadow them. */}
+          <Route
+            path="/library"
+            element={(
+              <Suspense fallback={<LoadingState label="Loading the library…" />}>
+                <LibraryPage />
+              </Suspense>
+            )}
+          />
+          <Route
+            path="/library/inbox"
+            element={(
+              <Suspense fallback={<LoadingState label="Loading the inbox…" />}>
+                <LibraryInboxPage />
+              </Suspense>
+            )}
+          />
+          <Route
+            path="/library/review"
+            element={(
+              <Suspense fallback={<LoadingState label="Loading…" />}>
+                <LibraryReviewPage />
+              </Suspense>
+            )}
+          />
+          <Route
+            path="/library/organize"
+            element={(
+              <Suspense fallback={<LoadingState label="Loading the plan…" />}>
+                <LibraryOrganizePage />
+              </Suspense>
+            )}
+          />
+          <Route
+            path="/library/manage"
+            element={(
+              <Suspense fallback={<LoadingState label="Loading…" />}>
+                <LibraryManagePage />
+              </Suspense>
+            )}
+          />
+          <Route
+            path="/library/:modelId"
+            element={(
+              <Suspense fallback={<LoadingState label="Loading the model…" />}>
+                <LibraryModelPage />
+              </Suspense>
+            )}
           />
           <Route
             path="/settings"

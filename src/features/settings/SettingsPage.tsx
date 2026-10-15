@@ -9,6 +9,7 @@ import type { AccountProfile, AppPreferences } from './preferences.ts'
 import { useThemeMode } from '../../theme/ThemeModeProvider.tsx'
 import { ErrorState, LoadingState } from '../../components/LoadingState.tsx'
 import DesignerDefaultsPanel from './DesignerDefaultsPanel.tsx'
+import LibraryDevicesPanel from '../library/components/LibraryDevicesPanel.tsx'
 import PalettePicker from './PalettePicker.tsx'
 import { errorMessage } from '../../services/errors.ts'
 
@@ -123,6 +124,10 @@ export default function SettingsPage() {
             onChange={next => void update({ designerDefaults: next })}
           />
         )}
+      </Paper>
+
+      <Paper sx={{ p: 2 }}>
+        <LibraryDevicesPanel />
       </Paper>
 
       <Paper sx={{ p: 2 }}>

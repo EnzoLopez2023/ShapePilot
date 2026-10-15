@@ -22,6 +22,7 @@ import {
   forgetDesignerDefaults, SHIPPED_DESIGNER_DEFAULTS,
 } from '../../src/features/settings/preferences.ts'
 import { ThemeModeProvider } from '../../src/theme/ThemeModeProvider.tsx'
+import { ConfirmDialogProvider } from '../../src/components/ConfirmDialogProvider.tsx'
 
 interface Saved { designerDefaults?: unknown }
 
@@ -62,9 +63,11 @@ const stubMsal = () => ({
 
 const renderPage = () => render(
   <ThemeModeProvider initialPreference="light">
-    <MsalProvider instance={stubMsal() as never}>
-      <SettingsPage />
-    </MsalProvider>
+    <ConfirmDialogProvider>
+      <MsalProvider instance={stubMsal() as never}>
+        <SettingsPage />
+      </MsalProvider>
+    </ConfirmDialogProvider>
   </ThemeModeProvider>,
 )
 
@@ -81,6 +84,12 @@ beforeEach(() => {
       return new Response(JSON.stringify({ preferences: body }), {
         status: 200, headers: { 'content-type': 'application/json' },
       })
+    }
+    if (path === '/api/library/devices') {
+      return new Response(JSON.stringify([{
+        id: '6f1d1e5e-0000-4000-8000-000000000001', name: 'Studio Mac',
+        createdAt: '2026-10-01T00:00:00.000Z', lastSeenAt: null, revokedAt: null,
+      }]), { status: 200, headers: { 'content-type': 'application/json' } })
     }
     if (path === '/api/settings') {
       return new Response(JSON.stringify(settingsBody()), {
@@ -178,4 +187,13 @@ test('defaults are not remembered across a failure', async () => {
   const recovered = await designerDefaults()
   assert.deepEqual(recovered, SHIPPED_DESIGNER_DEFAULTS)
   assert.ok(recovered)
+})
+
+test('the Library section lists the Macs that may sync, and offers a token for another', async () => {
+  renderPage()
+  await waitFor(() => expect(screen.getByText('Studio Mac')).toBeTruthy())
+  assert.ok(screen.getByRole('heading', { name: 'Library' }))
+  assert.ok(screen.getByText(/not synced yet/))
+  assert.ok(screen.getByRole('button', { name: 'Disconnect' }))
+  assert.ok(screen.getByRole('button', { name: 'Create device token' }))
 })

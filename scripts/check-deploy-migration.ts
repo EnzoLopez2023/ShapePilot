@@ -144,6 +144,12 @@ const ROLLBACK_COMPATIBLE_LEDGER = [
     name: 'filament orders',
     checksum: 'dafcf8a06870f66ba3c4b57901fc0e5992df8eb6ec374cfcfe264df9a2a71ca2',
   },
+  {
+    ordinal: 19,
+    id: '020-library',
+    name: 'model library',
+    checksum: '6a1255da0945135d471bd7d89547d8611f3a9b18b4d2b7f29fa1c881581c09ab',
+  },
 ] as const
 
 const REQUIRED_TABLES = [
@@ -171,6 +177,14 @@ const REQUIRED_TABLES = [
   'maintenance_profile',
   'push_subscriptions',
   'keycap_pocket_library',
+  'library_collection_models',
+  'library_collections',
+  'library_devices',
+  'library_files',
+  'library_models',
+  'library_prints',
+  'library_state',
+  'library_thumbs',
   'keycap_project_photos',
   'keycap_projects',
   'keycap_set_items',

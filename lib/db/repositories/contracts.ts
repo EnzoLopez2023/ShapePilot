@@ -11,6 +11,7 @@ import type {
 import type { ThemePaletteId } from '../../contracts/themePalettes.ts'
 import type { ElementStatisticsRepository } from './elementStatisticsContract.ts'
 import type { ElementDisplayRepository } from './elementDisplays.ts'
+import type { LibraryRepository } from './library.ts'
 
 export type { ElementStatisticsRepository } from './elementStatisticsContract.ts'
 
@@ -812,4 +813,5 @@ export interface Repositories {
   maintenance: MaintenanceRepository
   filamentUsageMappings: FilamentUsageMappingRepository
   push: PushRepository
+  library: LibraryRepository
 }
