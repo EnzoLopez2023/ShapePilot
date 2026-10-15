@@ -25,6 +25,8 @@ import {
 import type {
   LibraryMatchCounts, LibraryModelQuery, LibraryOverview, LibraryStatus, SyncedModel,
 } from '../../lib/contracts/library.ts'
+import { cleanWorkshopBundle, isWorkshopBundleError } from '../../lib/contracts/libraryWorkshop.ts'
+import type { WorkshopBundle } from '../../lib/contracts/libraryWorkshop.ts'
 import { ownerOf } from '../auth/requireAuth.ts'
 import { ApiError } from '../errors/ApiError.ts'
 import { integrationPrintJob } from './integrations.ts'
@@ -380,6 +382,40 @@ export function createLibraryRouter({ repos, store }: LibraryRouterOptions): Rou
 
   router.get('/plan', async (req, res) => {
     res.json(await repos.library.plan(ownerOf(req)))
+  })
+
+  // ── The Workshop carry-over (one-time) ──
+  //
+  // `{ bundle }` is a dry run: the import runs and is rolled back, and the
+  // report comes back with its hash. `{ bundle, apply: <that hash> }` commits,
+  // but only if the same bundle against the same Library still produces that
+  // exact report -- so what was reviewed is what gets written.
+
+  router.post('/import/workshop', async (req, res) => {
+    const b = (req.body ?? {}) as { bundle?: unknown; apply?: unknown }
+    let bundle: WorkshopBundle
+    try {
+      bundle = cleanWorkshopBundle(b.bundle)
+    } catch (error) {
+      if (isWorkshopBundleError(error)) throw ApiError.badRequest(`Not a Workshop Library bundle: ${error.message}`)
+      throw error
+    }
+    const expected = typeof b.apply === 'string' ? b.apply : null
+    const owner = ownerOf(req)
+    let reportHash = ''
+    const { report, committed } = await repos.library.importWorkshop(owner, bundle, r => {
+      reportHash = createHash('sha256').update(JSON.stringify(r)).digest('hex')
+      return expected !== null && reportHash === expected
+    })
+    if (expected !== null && !committed) {
+      throw ApiError.conflict('The Library changed since that dry run. Run the dry run again and review it.', { report, reportHash })
+    }
+    if (committed) {
+      await repos.audit.record({
+        owner, category: 'library_import', action: 'workshop', outcome: 'success', requestId: req.requestId,
+      })
+    }
+    res.json({ committed, reportHash, report })
   })
 
   // ── Devices ──

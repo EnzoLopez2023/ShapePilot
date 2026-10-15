@@ -25,6 +25,7 @@ import type {
   LibraryMatchCounts, LibraryModel, LibraryModelDetail, LibraryModelQuery, LibraryOverview, LibraryPlan,
   LibraryPlate, LibraryPrint, LibraryPrintResult, LibraryQuery, LibraryStatus, MatchModel, SyncedModel,
 } from '../../contracts/library.ts'
+import type { WorkshopBundle, WorkshopImportReport } from '../../contracts/libraryWorkshop.ts'
 
 /** An edit made here that model.json has not caught up with, in the organizer's shape. */
 export interface LibraryPendingEdit {
@@ -119,6 +120,14 @@ export interface LibraryRepository {
   listDevices(owner: Owner): Promise<LibraryDevice[]>
   revokeDevice(owner: Owner, id: string): Promise<boolean>
   deviceByHash(tokenHash: string): Promise<LibraryDeviceGrant | null>
+
+  /**
+   * Carries Workshop-only data over, in one transaction that commits only if
+   * `commit(report)` says so -- a dry run is the same work, rolled back.
+   * Idempotent: a second run reports everything unchanged.
+   */
+  importWorkshop(owner: Owner, bundle: WorkshopBundle, commit: (report: WorkshopImportReport) => boolean):
+    Promise<{ report: WorkshopImportReport; committed: boolean }>
 }
 
 // ── Rows ─────────────────────────────────────────────────────────────────────
@@ -732,6 +741,126 @@ export function createLibraryRepository(db: SqliteDatabase): LibraryRepository {
     return hydrateCollection(owner, getCollectionRow.get(...own(owner), id)!)
   })
 
+  // ── Workshop carry-over ──
+
+  const setFavorite = db.prepare<[...O, string]>(
+    `UPDATE library_models SET favorite = 1, updated_at = ${NOW} WHERE ${WHERE_OWNER} AND id = ?`)
+  const setHubUrl = db.prepare<[string, ...O, string]>(
+    `UPDATE library_models SET bambu_hub_url = ?, updated_at = ${NOW} WHERE ${WHERE_OWNER} AND id = ?`)
+  const insertImportedCollection = db.prepare<[...O, string, string, string | null, string]>(`
+    INSERT INTO library_collections (owner_tenant_id, owner_oid, name, kind, query_json, created_at)
+    VALUES (?, ?, ?, ?, ?, ?)`)
+  const sameManualPrint = db.prepare<[...O, string, string, string | null, string], { id: number }>(`
+    SELECT id FROM library_prints
+    WHERE ${WHERE_OWNER} AND source = 'manual' AND model_id = ? AND created_at = ? AND started_at IS ? AND result = ?`)
+  const insertImportedManualPrint = db.prepare(`
+    INSERT INTO library_prints (
+      owner_tenant_id, owner_oid, model_id, source, title, result, started_at, ended_at, seconds, grams, notes,
+      match_state, created_at
+    ) VALUES (
+      @tenant, @oid, @modelId, 'manual', @title, @result, @startedAt, @endedAt, @seconds, @grams, @notes, 'manual', @createdAt
+    )`)
+  const printByJobKey = db.prepare<[...O, string], PrintRow>(
+    `SELECT * FROM library_prints WHERE ${WHERE_OWNER} AND job_key = ?`)
+  const insertDecidedJob = db.prepare(`
+    INSERT INTO library_prints (
+      owner_tenant_id, owner_oid, model_id, source, job_key, title, result, started_at, ended_at, seconds, grams,
+      materials_json, match_state, match_score
+    ) VALUES (
+      @tenant, @oid, @modelId, 'bambu', @jobKey, @title, @result, @startedAt, @endedAt, @seconds, @grams,
+      @materials, @matchState, @matchScore
+    )`)
+
+  class Rollback extends Error {}
+
+  const importWorkshop = db.transaction((owner: Owner, bundle: WorkshopBundle, commit: (r: WorkshopImportReport) => boolean) => {
+    const tally = () => ({ applied: 0, unchanged: 0, skipped: 0 })
+    const report: WorkshopImportReport = {
+      sourceSha256: bundle.sourceSha256,
+      favorites: tally(),
+      bambuHubUrls: { ...tally(), differs: 0 },
+      collections: { ...tally(), conflicts: [] },
+      collectionMembers: tally(),
+      manualPrints: tally(),
+      decisions: tally(),
+      missingModels: [],
+    }
+    const missing = new Set<string>()
+    const model = (id: string) => {
+      const row = getModelRow.get(...own(owner), id)
+      if (!row) missing.add(id)
+      return row
+    }
+
+    for (const m of bundle.models) {
+      const row = model(m.id)
+      if (m.favorite) {
+        if (!row) report.favorites.skipped += 1
+        else if (row.favorite === 1) report.favorites.unchanged += 1
+        else { setFavorite.run(...own(owner), m.id); report.favorites.applied += 1 }
+      }
+      if (m.bambuHubUrl) {
+        const t = report.bambuHubUrls
+        if (!row) t.skipped += 1
+        else if (row.bambu_hub_url === m.bambuHubUrl) t.unchanged += 1
+        // A link set here since wins over Workshop's.
+        else if (row.bambu_hub_url) { t.skipped += 1; t.differs += 1 }
+        else { setHubUrl.run(m.bambuHubUrl, ...own(owner), m.id); t.applied += 1 }
+      }
+    }
+
+    for (const c of bundle.collections) {
+      let row = collectionByName.get(...own(owner), c.name)
+      if (row && row.kind !== c.kind) {
+        report.collections.skipped += 1
+        report.collections.conflicts.push(c.name)
+        continue
+      }
+      if (row) report.collections.unchanged += 1
+      else {
+        const id = Number(insertImportedCollection.run(
+          ...own(owner), c.name, c.kind, c.kind === 'smart' ? JSON.stringify(c.query ?? {}) : null, c.createdAt ?? new Date().toISOString(),
+        ).lastInsertRowid)
+        row = getCollectionRow.get(...own(owner), id)!
+        report.collections.applied += 1
+      }
+      for (const modelId of c.modelIds) {
+        if (!model(modelId)) report.collectionMembers.skipped += 1
+        else if (addMember.run(row.id, modelId).changes === 1) report.collectionMembers.applied += 1
+        else report.collectionMembers.unchanged += 1
+      }
+    }
+
+    for (const p of bundle.manualPrints) {
+      if (!model(p.modelId)) report.manualPrints.skipped += 1
+      else if (sameManualPrint.get(...own(owner), p.modelId, p.createdAt, p.startedAt, p.result)) report.manualPrints.unchanged += 1
+      else {
+        insertImportedManualPrint.run({ tenant: owner.tenantId, oid: owner.oid, ...p })
+        report.manualPrints.applied += 1
+      }
+    }
+
+    for (const d of bundle.decisions) {
+      if (d.modelId && !model(d.modelId)) { report.decisions.skipped += 1; continue }
+      const row = printByJobKey.get(...own(owner), d.jobKey)
+      if (!row) {
+        insertDecidedJob.run({
+          tenant: owner.tenantId, oid: owner.oid, ...d, materials: JSON.stringify(d.materials),
+        })
+        report.decisions.applied += 1
+      } else if (row.match_state === d.matchState && row.model_id === d.modelId) {
+        report.decisions.unchanged += 1
+      } else {
+        setMatch.run(d.modelId, d.matchState, row.match_score ?? d.matchScore, ...own(owner), row.id)
+        report.decisions.applied += 1
+      }
+    }
+
+    report.missingModels = [...missing].sort()
+    if (!commit(report)) throw new Rollback()
+    return report
+  })
+
   // ── Devices ──
 
   const insertDevice = db.prepare<[string, ...O, string, string]>(
@@ -898,6 +1027,16 @@ export function createLibraryRepository(db: SqliteDatabase): LibraryRepository {
       if (!row) return null
       touchDevice.run(row.id)
       return { id: row.id, owner: { tenantId: row.owner_tenant_id, oid: row.owner_oid }, name: row.name }
+    },
+
+    async importWorkshop(owner, bundle, commit) {
+      let report: WorkshopImportReport | null = null
+      try {
+        return { report: importWorkshop(owner, bundle, r => { report = r; return commit(r) }), committed: true }
+      } catch (error) {
+        if (error instanceof Rollback && report) return { report, committed: false }
+        throw error
+      }
     },
   }
 }
