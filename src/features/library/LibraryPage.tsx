@@ -27,13 +27,14 @@ import type { LibraryCollection, LibraryModel, LibraryModelQuery, LibraryOvervie
 import { EmptyState, ErrorState, LoadingState } from '../../components/LoadingState.tsx'
 import { errorMessage } from '../../services/errors.ts'
 import { ModelCard } from './components/ModelCard.tsx'
+import type { ModelCardChange } from './components/ModelCard.tsx'
 import { useToast } from './components/useToast.tsx'
 import { STATUS_ORDER, categoryLabel, plural, relativeDate } from './model/format.ts'
 import {
   DEFAULT_FILTERS, FORMAT_OPTIONS, SORT_OPTIONS, filtersForCollection, filtersMatchSmart, readFilters, writeFilters,
 } from './model/filters.ts'
 import type { LibraryFilters } from './model/filters.ts'
-import { createCollection, getOverview, listCollections, listModels } from './service.ts'
+import { createCollection, getOverview, listCollections, listModels, updateModel } from './service.ts'
 
 const PAGE_SIZE = 60
 
@@ -105,6 +106,19 @@ export default function LibraryPage() {
   useEffect(() => {
     if (category && overview && !overview.byCategory.some(c => c.category === category)) patch({ category: '' })
   }, [category, overview])
+
+  // A change from a card shows at once and is saved behind it; a failed save puts the card back.
+  const changeModel = async (model: LibraryModel, change: ModelCardChange) => {
+    const swap = (next: LibraryModel) => setModels(current => current.map(m => (m.id === next.id ? next : m)))
+    swap({ ...model, ...change })
+    try {
+      swap(await updateModel(model.id, change))
+      if ('status' in change) getOverview().then(setOverview).catch(() => undefined)
+    } catch (cause) {
+      swap(model)
+      toast.failure('status' in change ? 'Could not change the status' : 'Could not update the favorite', cause)
+    }
+  }
 
   const loadMore = async () => {
     try {
@@ -292,7 +306,7 @@ export default function LibraryPage() {
       ) : (
         <>
           <Box sx={{ display: 'grid', gap: 1.5, gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))' }}>
-            {models.map(model => <ModelCard key={model.id} model={model} />)}
+            {models.map(model => <ModelCard key={model.id} model={model} onChange={change => void changeModel(model, change)} />)}
           </Box>
           {models.length < total && (
             <Box sx={{ display: 'flex', justifyContent: 'center' }}>
