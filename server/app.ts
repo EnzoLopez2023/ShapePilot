@@ -37,7 +37,6 @@ import { createToolTrayRouter } from './routes/toolTrays.ts'
 import { createSettingsRouter } from './routes/settings.ts'
 import { createVersionRouter } from './routes/version.ts'
 import { ElementMonitor } from './element/monitor.ts'
-import { createIntegrationRouter } from './routes/integrations.ts'
 import { createLibraryRouter, createLibrarySyncRouter } from './routes/library.ts'
 import { createElementStatisticsRouter } from './routes/elementStatistics.ts'
 import { createElementDisplayAdminRouter, createElementDisplayRouter } from './routes/elementDisplays.ts'
@@ -124,7 +123,6 @@ export function createApp(options: CreateAppOptions): Express {
   app.use(createVersionRouter(identity))
   // Service key, not Entra: read-only print history for Workshop's Library, until
   // Workshop stops calling it now that the Library lives here.
-  app.use('/api/integrations', createIntegrationRouter({ repos, config: config.integration }))
   const elementMonitor = options.elementMonitor ?? new ElementMonitor({
     repository: repos.elementStatistics, config: config.element, logger: options.logger,
   })

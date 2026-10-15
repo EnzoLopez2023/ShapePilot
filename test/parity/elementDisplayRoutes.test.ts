@@ -88,7 +88,7 @@ test('pairing is admin-approved, private, single-use and stores no raw credentia
 test('display key cannot call app APIs or use query authentication', async () => {
   const { body } = await start()
   await approve(body.code)
-  for (const path of ['/api/admin/element-statistics/status', '/api/admin/element-displays', '/api/settings', '/api/integrations/print-jobs']) {
+  for (const path of ['/api/admin/element-statistics/status', '/api/admin/element-displays', '/api/settings']) {
     const response = await server.fetchJson(path, { headers: { authorization: `Display ${body.credential}` } })
     expect([401, 503]).toContain(response.status)
   }

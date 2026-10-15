@@ -29,7 +29,8 @@ import { cleanWorkshopBundle, isWorkshopBundleError } from '../../lib/contracts/
 import type { WorkshopBundle } from '../../lib/contracts/libraryWorkshop.ts'
 import { ownerOf } from '../auth/requireAuth.ts'
 import { ApiError } from '../errors/ApiError.ts'
-import { integrationPrintJob } from './integrations.ts'
+import { elementElapsedSeconds } from '../../lib/contracts/elementStatistics.ts'
+import type { ElementJob } from '../../lib/contracts/elementStatistics.ts'
 
 interface LibraryRouterOptions {
   repos: Repositories
@@ -53,6 +54,25 @@ export const libraryThumbKey = (owner: Owner, hash: string): string =>
 const text = (value: unknown, max: number): string | null =>
   value == null ? null : String(value).slice(0, max)
 
+/** One ledger job as the Library stores it; the key is (connection, cloud job), both needed to be unique. */
+function ledgerJob(job: ElementJob): LibraryImportedJob {
+  return {
+    key: `${job.connectionId}:${job.id}`,
+    title: job.title,
+    result: job.result === 'completed' ? 'completed'
+      : job.result === 'failed_or_aborted' ? 'failed'
+        : job.result === 'active' ? 'active' : 'unknown',
+    startedAt: job.startedAt,
+    endedAt: job.endedAt,
+    seconds: job.actualDurationSeconds
+      ?? elementElapsedSeconds(job.result, job.startedAt, job.endedAt, job.lastSeenAt),
+    grams: job.estimatedWeightGrams,
+    materials: job.materials.map(m => ({
+      material: m.material, color: m.color, grams: m.estimatedWeightGrams,
+    })),
+  }
+}
+
 /**
  * Copies the household printer's jobs into the owner's Library and re-matches
  * them. Reads from just before the last cursor, so the overlap catches jobs
@@ -65,21 +85,7 @@ export async function importPrintHistory(repos: Repositories, owner: Owner): Pro
   const jobs = await repos.elementStatistics.listJobs(null, HISTORY_LIMIT, Number.isFinite(since)
     ? { fromInclusive: new Date(since - HISTORY_OVERLAP_MS).toISOString() }
     : undefined)
-  const imported: LibraryImportedJob[] = jobs.map(job => {
-    const projected = integrationPrintJob(job)
-    return {
-      key: projected.id,
-      title: projected.title,
-      result: projected.result === 'completed' ? 'completed'
-        : projected.result === 'failed_or_aborted' ? 'failed'
-          : projected.result === 'active' ? 'active' : 'unknown',
-      startedAt: projected.startedAt,
-      endedAt: projected.endedAt,
-      seconds: projected.seconds,
-      grams: projected.grams,
-      materials: projected.materials,
-    }
-  })
+  const imported: LibraryImportedJob[] = jobs.map(ledgerJob)
   const counts = await repos.library.importJobs(owner, imported, now, now)
   return { imported: imported.length, ...counts }
 }
