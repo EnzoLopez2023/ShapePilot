@@ -94,7 +94,8 @@ describe('device tokens', () => {
     expect((await server.fetchJson('/api/library/sync/edits', { token: OWNER })).status).toBe(401)
     const device = await deviceToken()
     expect((await sync(device, '/edits', undefined, 'GET')).status).toBe(200)
-    expect((await sync(`${device.slice(0, -1)}A`, '/edits', undefined, 'GET')).status).toBe(401)
+    // A different last character, never the token itself (it is one of 16 values, 'A' among them).
+    expect((await sync(`${device.slice(0, -1)}${device.endsWith('A') ? 'B' : 'A'}`, '/edits', undefined, 'GET')).status).toBe(401)
 
     const [listed] = (await server.fetchJson<{ id: string }[]>('/api/library/devices', { token: OWNER })).body
     // Another account cannot revoke it; its owner can.
