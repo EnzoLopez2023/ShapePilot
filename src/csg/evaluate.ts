@@ -160,7 +160,7 @@ function buildNode(
 
 /** manifold Mesh -> the app's Mesh. `numProp` is the vertex stride; the first
  *  three properties are always the position. */
-function toAppMesh(solid: Manifold): Mesh {
+export function toAppMesh(solid: Manifold): Mesh {
   const mm = solid.getMesh()
   const stride = mm.numProp
   const vertexCount = mm.vertProperties.length / stride

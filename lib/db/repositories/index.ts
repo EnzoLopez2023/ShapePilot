@@ -9,6 +9,7 @@ import { createFilamentInventoryRepository } from './filaments.ts'
 import { createFilamentPriceRepository } from './filamentPrices.ts'
 import { createFilamentOrderRepository } from './filamentOrders.ts'
 import { createFilamentUsageMappingRepository } from './filamentUsageMappings.ts'
+import { createGridfinityRepository } from './gridfinity.ts'
 import { createLibraryRepository } from './library.ts'
 import { createKeycapProjectRepository } from './keycapProjects.ts'
 import { createKeycapTrayRepository } from './keycapTrays.ts'
@@ -27,6 +28,7 @@ export const createRepositories = (database: AppDatabase): Repositories => ({
   keycapTrays: createKeycapTrayRepository(database.handle),
   switchTrays: createSwitchTrayRepository(database.handle),
   toolTrays: createToolTrayRepository(database.handle),
+  gridfinity: createGridfinityRepository(database.handle),
   keycapProjects: createKeycapProjectRepository(database.handle),
   designDocuments: createDesignDocumentRepository(database.handle),
   designAssets: createDesignAssetRepository(database.handle),

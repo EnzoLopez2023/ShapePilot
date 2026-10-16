@@ -11,6 +11,7 @@ import { LoadingState } from '../components/LoadingState.tsx'
 const HomePage = lazy(() => import('../features/home/HomePage.tsx'))
 const KeycapTrayPage = lazy(() => import('../features/keycap-tray/KeycapTrayPage.tsx'))
 const SwitchTrayPage = lazy(() => import('../features/switch-tray/SwitchTrayPage.tsx'))
+const GridfinityPage = lazy(() => import('../features/gridfinity/GridfinityPage.tsx'))
 const ToolTrayPage = lazy(() => import('../features/tool-tray/ToolTrayPage.tsx'))
 const CabinetPage = lazy(() => import('../features/cabinet/CabinetPage.tsx'))
 const ProjectsPage = lazy(() => import('../features/keycap-projects/ProjectsPage.tsx'))
@@ -99,6 +100,26 @@ export function AppRoutes() {
               <Box sx={{ flex: 1, minHeight: 0 }}>
                 <Suspense fallback={<LoadingState label="Loading the designer…" />}>
                   <SwitchTrayPage />
+                </Suspense>
+              </Box>
+            }
+          />
+          <Route
+            path="/gridfinity"
+            element={
+              <Box sx={{ flex: 1, minHeight: 0 }}>
+                <Suspense fallback={<LoadingState label="Loading the designer…" />}>
+                  <GridfinityPage />
+                </Suspense>
+              </Box>
+            }
+          />
+          <Route
+            path="/gridfinity/:designId"
+            element={
+              <Box sx={{ flex: 1, minHeight: 0 }}>
+                <Suspense fallback={<LoadingState label="Loading the designer…" />}>
+                  <GridfinityPage />
                 </Suspense>
               </Box>
             }

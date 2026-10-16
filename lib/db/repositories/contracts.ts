@@ -346,6 +346,65 @@ export interface SwitchTrayRepository {
   deleteDesign(owner: Owner, id: string): Promise<boolean>
 }
 
+export type GridfinityKind = 'bin' | 'baseplate'
+
+export interface GridfinityDesignRecord {
+  id: string
+  name: string
+  notes?: string
+  kind: GridfinityKind
+  /** Bin or baseplate parameters, by `kind`; validated on the way in. */
+  params: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+  revision: number
+}
+
+export interface GridfinityDesignSummary {
+  id: string
+  name: string
+  notes?: string
+  kind: GridfinityKind
+  params: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface GridfinityDesignInput {
+  name: string
+  notes?: string | null
+  kind: GridfinityKind
+  params: Record<string, unknown>
+}
+
+export interface GridfinityLabelList {
+  id: string
+  name: string
+  items: string[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface GridfinityLabelListInput {
+  name: string
+  items: string[]
+}
+
+export interface GridfinityRepository {
+  listDesigns(owner: Owner): Promise<GridfinityDesignSummary[]>
+  getDesign(owner: Owner, id: string): Promise<GridfinityDesignRecord | null>
+  createDesign(owner: Owner, input: GridfinityDesignInput): Promise<{ id: string }>
+  updateDesign(owner: Owner, id: string, input: GridfinityDesignInput): Promise<boolean>
+  cloneDesign(owner: Owner, id: string, name?: string): Promise<{ id: string } | null>
+  deleteDesign(owner: Owner, id: string): Promise<boolean>
+  /** Every list the owner has, giving them the built-in starter lists once. */
+  listLabelLists(owner: Owner): Promise<GridfinityLabelList[]>
+  getLabelList(owner: Owner, id: string): Promise<GridfinityLabelList | null>
+  createLabelList(owner: Owner, input: GridfinityLabelListInput): Promise<{ id: string }>
+  updateLabelList(owner: Owner, id: string, input: GridfinityLabelListInput): Promise<boolean>
+  deleteLabelList(owner: Owner, id: string): Promise<boolean>
+}
+
 export interface ToolTrayRecord {
   id: string
   name: string
@@ -802,6 +861,7 @@ export interface Repositories {
   keycapTrays: KeycapTrayRepository
   switchTrays: SwitchTrayRepository
   toolTrays: ToolTrayRepository
+  gridfinity: GridfinityRepository
   keycapProjects: KeycapProjectRepository
   designDocuments: DesignDocumentRepository
   designAssets: DesignAssetRepository

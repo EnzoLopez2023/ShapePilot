@@ -150,6 +150,12 @@ const ROLLBACK_COMPATIBLE_LEDGER = [
     name: 'model library',
     checksum: '6a1255da0945135d471bd7d89547d8611f3a9b18b4d2b7f29fa1c881581c09ab',
   },
+  {
+    ordinal: 20,
+    id: '021-gridfinity',
+    name: 'gridfinity',
+    checksum: 'd91a70c3cc366b942f5ef41e2e8dabeeedd04da8445a642d276f8db9b7895ac8',
+  },
 ] as const
 
 const REQUIRED_TABLES = [
@@ -172,6 +178,9 @@ const REQUIRED_TABLES = [
   'filament_prices',
   'filament_roll_adjustments',
   'filament_usage_mappings',
+  'gridfinity_designs',
+  'gridfinity_label_lists',
+  'gridfinity_label_seeds',
   'filament_reorder_alerts',
   'maintenance_events',
   'maintenance_profile',

@@ -877,3 +877,51 @@ export const LIBRARY_STATEMENTS: readonly string[] = [
   PRIMARY KEY (owner_tenant_id, owner_oid, key)
 )`,
 ]
+
+/**
+ * Gridfinity: storage bins, drawer baseplates and the label lists a bin's
+ * raised name is picked from.
+ *
+ *   `gridfinity_designs`     one bin or one baseplate. Both are generated from a
+ *                            handful of parameters, so the row stores those and
+ *                            nothing else; `kind` says which set `params_json` is.
+ *   `gridfinity_label_lists` a named list of label texts, e.g. every Kreg screw.
+ *                            Items are one blob -- they are only ever read whole.
+ *   `gridfinity_label_seeds` which built-in lists this account has been given,
+ *                            so a starter list is added once and stays deleted
+ *                            if the owner removes it.
+ */
+export const GRIDFINITY_STATEMENTS: readonly string[] = [
+  `CREATE TABLE gridfinity_designs (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_tenant_id  TEXT    NOT NULL,
+  owner_oid        TEXT    NOT NULL,
+  name             TEXT    NOT NULL,
+  notes            TEXT,
+  kind             TEXT    NOT NULL CHECK (kind IN ('bin', 'baseplate')),
+  params_json      TEXT    NOT NULL,
+  created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at       TEXT    NOT NULL DEFAULT (datetime('now'))
+)`,
+  `CREATE INDEX idx_gridfinity_designs_owner
+  ON gridfinity_designs (owner_tenant_id, owner_oid, updated_at DESC)`,
+  `CREATE TABLE gridfinity_label_lists (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  owner_tenant_id  TEXT    NOT NULL,
+  owner_oid        TEXT    NOT NULL,
+  name             TEXT    NOT NULL,
+  items_json       TEXT    NOT NULL,
+  item_count       INTEGER NOT NULL,
+  created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at       TEXT    NOT NULL DEFAULT (datetime('now'))
+)`,
+  `CREATE INDEX idx_gridfinity_label_lists_owner
+  ON gridfinity_label_lists (owner_tenant_id, owner_oid)`,
+  `CREATE TABLE gridfinity_label_seeds (
+  owner_tenant_id  TEXT    NOT NULL,
+  owner_oid        TEXT    NOT NULL,
+  seed_key         TEXT    NOT NULL,
+  seeded_at        TEXT    NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (owner_tenant_id, owner_oid, seed_key)
+)`,
+]

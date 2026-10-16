@@ -33,6 +33,7 @@ import { createNotificationRouter } from './routes/notifications.ts'
 import { createWebPushSender } from './notifications/reorderAlerts.ts'
 import type { PushSender } from './notifications/reorderAlerts.ts'
 import { createSwitchTrayRouter } from './routes/switchTrays.ts'
+import { createGridfinityRouter } from './routes/gridfinity.ts'
 import { createToolTrayRouter } from './routes/toolTrays.ts'
 import { createSettingsRouter } from './routes/settings.ts'
 import { createVersionRouter } from './routes/version.ts'
@@ -143,6 +144,7 @@ export function createApp(options: CreateAppOptions): Express {
 
   app.use('/api/keycap-trays', authenticated, createKeycapTrayRouter(repos))
   app.use('/api/switch-trays', authenticated, createSwitchTrayRouter(repos))
+  app.use('/api/gridfinity', authenticated, createGridfinityRouter(repos))
   app.use('/api/tool-trays', authenticated, createToolTrayRouter(repos))
   app.use('/api/keycap-projects', authenticated, createKeycapProjectRouter(repos))
   app.use('/api/design-documents', authenticated, createDesignDocumentRouter(repos))

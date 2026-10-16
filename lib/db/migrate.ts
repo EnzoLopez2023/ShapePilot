@@ -32,6 +32,7 @@ import { migration017 } from './migrations/017-filament-prices.ts'
 import { migration018 } from './migrations/018-element-displays.ts'
 import { migration019 } from './migrations/019-filament-orders.ts'
 import { migration020 } from './migrations/020-library.ts'
+import { migration021 } from './migrations/021-gridfinity.ts'
 import {
   APP_MARKER, SCHEMA_MARKER_FORMAT, schemaMarkerOf, schemaObjectsHash,
 } from './identity.ts'
@@ -50,7 +51,7 @@ export const MIGRATIONS: readonly Migration[] =
   [migration001, migration002, migration003, migration004, migration005, migration006, migration007,
     migration008, migration009, migration010, migration011, migration012, migration013,
     migration014, migration015, migration016, migration017, migration018, migration019,
-    migration020]
+    migration020, migration021]
 
 export const migrationChecksum = (migration: Migration): string =>
   createHash('sha256')

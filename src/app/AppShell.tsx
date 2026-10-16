@@ -11,6 +11,7 @@ import MenuOpenRoundedIcon from '@mui/icons-material/MenuOpenRounded'
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded'
 import KeyboardRoundedIcon from '@mui/icons-material/KeyboardRounded'
 import HandymanRoundedIcon from '@mui/icons-material/HandymanRounded'
+import AppsRoundedIcon from '@mui/icons-material/AppsRounded'
 import HomeRoundedIcon from '@mui/icons-material/HomeRounded'
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded'
 import WarehouseRoundedIcon from '@mui/icons-material/WarehouseRounded'
@@ -48,6 +49,7 @@ const NAV: NavItem[] = [
   { to: '/keycap-tray', label: 'Keycap tray', icon: GridViewRoundedIcon },
   { to: '/switch-tray', label: 'Switch tray', icon: KeyboardRoundedIcon },
   { to: '/tool-tray', label: 'Tool tray', icon: HandymanRoundedIcon },
+  { to: '/gridfinity', label: 'Gridfinity', icon: AppsRoundedIcon },
   { to: '/cabinet', label: 'Tray cabinet', icon: WarehouseRoundedIcon },
   { to: '/shaper-designer', label: 'Shaper designer', icon: ArchitectureRoundedIcon },
   { to: '/bambu-designer', label: 'Bambu designer', icon: ViewInArRoundedIcon },
