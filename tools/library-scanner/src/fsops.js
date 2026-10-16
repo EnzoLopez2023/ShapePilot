@@ -73,10 +73,26 @@ export function sameFile(a, b) {
   }
 }
 
+/**
+ * Renames a file or folder. OneDrive's File Provider refuses to move a folder
+ * out of its domain when the caller is a launchd agent (errno -11), though each
+ * file moves fine, so a folder that cannot move whole moves file by file.
+ */
+export function renameTree(from, to) {
+  try {
+    renameSync(from, to)
+  } catch (err) {
+    if (err.code === 'ENOENT' || existsSync(to) || !statSync(from).isDirectory()) throw err
+    mkdirSync(to)
+    for (const name of readdirSync(from)) renameTree(join(from, name), join(to, name))
+    rmdirSync(from)
+  }
+}
+
 /** Moves to the user's Trash (recoverable, and reversible via undo). */
 export function trash(log, path, trashDir, reason) {
   const to = join(trashDir, uniqueName(basename(path), (n) => existsSync(join(trashDir, n))))
-  if (!log.dryRun) renameSync(path, to)
+  if (!log.dryRun) renameTree(path, to)
   log.record({ op: 'trash', from: path, to, reason })
   return to
 }
@@ -169,7 +185,7 @@ export function undoBatch(libraryRoot, batch, { dryRun = false } = {}) {
         if (!dryRun) {
           mkdirSync(dirname(e.from), { recursive: true })
           if (existsSync(e.from) && !sameFile(e.from, e.to)) throw new Error(`Cannot undo: ${e.from} exists again`)
-          renameSync(e.to, e.from)
+          renameTree(e.to, e.from)
         }
         break
       case 'write':
