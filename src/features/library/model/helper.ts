@@ -17,6 +17,9 @@ export interface HelperHealth {
 /** Helper version that added category management (create/rename/merge/delete). */
 export const HELPER_CATEGORY_VERSION = 2
 
+/** Helper version that can move a whole model folder to the Trash. */
+export const HELPER_DELETE_VERSION = 3
+
 export const HELPER_RESTART = 'launchctl kickstart -k gui/$(id -u)/com.nintek.workshop-library.helper'
 
 export interface HelperCategory {
@@ -53,6 +56,7 @@ export const libraryHelper = {
   file: (modelId: string, category: string, status?: LibraryStatus) =>
     call<{ batch: string; dir: string }>('/file', { modelId, category, status }),
   trashFile: (modelId: string, relPath: string) => call<{ batch: string }>('/trash-file', { modelId, relPath }),
+  trashModel: (modelId: string) => call<{ batch: string }>('/trash-model', { modelId }),
   applyPlan: (ids: string[]) =>
     call<{ batch: string; results: { id: string; title: string; ok: boolean; error?: string }[] }>('/apply-plan', { ids }),
   undo: (batch: string) => call<{ reversed: number }>('/undo', { batch }),

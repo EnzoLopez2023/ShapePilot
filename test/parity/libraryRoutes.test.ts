@@ -280,6 +280,23 @@ describe('the pages', () => {
     expect((await server.fetchJson(`/api/library/prints/${logged.body.id}`, { method: 'DELETE', token: OWNER })).status).toBe(204)
   })
 
+  test('a deleted model leaves the Library with its prints and memberships', async () => {
+    await server.fetchJson(`/api/library/models/${MODEL_ID}/prints`, { method: 'POST', token: OWNER, body: JSON.stringify({}) })
+    const gifts = await server.fetchJson<LibraryCollection>('/api/library/collections', {
+      method: 'POST', token: OWNER, body: JSON.stringify({ name: 'Gifts', kind: 'manual', modelIds: [MODEL_ID, SECOND_ID] }),
+    })
+    const remove = (token: string) => server.fetchJson(`/api/library/models/${MODEL_ID}`, { method: 'DELETE', token })
+
+    expect((await remove(OTHER)).status).toBe(404)
+    expect((await remove(OWNER)).status).toBe(204)
+    expect((await remove(OWNER)).status).toBe(404)
+    expect((await server.fetchJson(`/api/library/models/${MODEL_ID}`, { token: OWNER })).status).toBe(404)
+    const left = await server.fetchJson<LibraryModelPage>('/api/library/models', { token: OWNER })
+    expect(left.body.items.map(m => m.id)).toEqual([SECOND_ID])
+    const collections = await server.fetchJson<LibraryCollection[]>('/api/library/collections', { token: OWNER })
+    expect(collections.body.find(c => c.id === gifts.body.id)?.count).toBe(1)
+  })
+
   test('same geometry across models is reported as a duplicate group', async () => {
     const device = await deviceToken()
     const copy = syncedModel().files[0]

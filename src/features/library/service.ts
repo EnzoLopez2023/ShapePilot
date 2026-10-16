@@ -43,6 +43,9 @@ export interface ModelUpdate {
 export const updateModel = (id: string, update: ModelUpdate) =>
   apiRequest<LibraryModel>(`${base}/models/${encodeURIComponent(id)}`, { method: 'PUT', body: update })
 
+export const deleteModel = (id: string) =>
+  apiRequest<void>(`${base}/models/${encodeURIComponent(id)}`, { method: 'DELETE' })
+
 export const logPrint = (id: string, print: { result: 'completed' | 'failed'; notes?: string }) =>
   apiRequest<LibraryPrint>(`${base}/models/${encodeURIComponent(id)}/prints`, { method: 'POST', body: print })
 

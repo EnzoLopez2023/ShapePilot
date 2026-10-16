@@ -120,6 +120,14 @@ export function trashModelFile(config, modelId, relPath) {
   return { batch: log.batch }
 }
 
+/** Moves a whole model folder to the Trash; undo from History brings it (and the model) back. */
+export function trashModel(config, modelId) {
+  const dir = modelDir(config, modelId)
+  const log = withKind(new OpLog(config.libraryRoot), 'trash')
+  trash(log, dir, config.trashDir, 'deleted from the Library')
+  return { batch: log.batch }
+}
+
 export function resolveModelTarget(config, modelId, relPath) {
   return relPath ? modelFilePath(config, modelId, relPath).full : modelDir(config, modelId)
 }

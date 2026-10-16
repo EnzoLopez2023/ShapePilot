@@ -14,10 +14,10 @@ import { ScanCache } from './scan.js'
 import { listBatches, undoBatch } from './fsops.js'
 import { createCategory, deleteCategory, listCategoryDetails, mergeCategory, renameCategory } from './categories.js'
 import {
-  applySavedPlan, exclusive, fileModel, listCategories, modelFilePath, resolveModelTarget, runSync, trashModelFile,
+  applySavedPlan, exclusive, fileModel, listCategories, modelFilePath, resolveModelTarget, runSync, trashModel, trashModelFile,
 } from './run.js'
 
-const VERSION = 2
+const VERSION = 3
 const MAX_BODY = 64 * 1024
 
 export function allowedOrigins(config) {
@@ -112,6 +112,11 @@ export function createHelper(config, { cache = new ScanCache(config.cacheDir), a
     },
     'POST /trash-file': async ({ modelId, relPath }) => {
       const result = await exclusive(() => trashModelFile(config, modelId, relPath))
+      resync()
+      return result
+    },
+    'POST /trash-model': async ({ modelId }) => {
+      const result = await exclusive(() => trashModel(config, modelId))
       resync()
       return result
     },

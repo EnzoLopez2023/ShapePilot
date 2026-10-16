@@ -36,9 +36,9 @@ import {
   sourceLabel,
 } from './model/format.ts'
 import { filtersQuery, readFilters } from './model/filters.ts'
-import { libraryHelper, useLibraryHelper } from './model/helper.ts'
+import { HELPER_DELETE_VERSION, libraryHelper, useLibraryHelper } from './model/helper.ts'
 import {
-  createCollection, deletePrint, getModel, listCollections, listModelIds, logPrint, setMembership, updateModel,
+  createCollection, deleteModel, deletePrint, getModel, listCollections, listModelIds, logPrint, setMembership, updateModel,
 } from './service.ts'
 import type { ModelUpdate } from './service.ts'
 
@@ -107,8 +107,16 @@ export default function ModelPage() {
     </Stack>
   ) : null
 
+  // After a delete, carry on through the filtered list (or back to the Library at its end).
+  const onDeleted = useCallback(() => {
+    const destination = nextId ?? prevId
+    setIds(current => current && current.filter(id => id !== modelId))
+    if (destination) go(destination)
+    else navigate('/library', { replace: true })
+  }, [nextId, prevId, modelId, go, navigate])
+
   // Keyed by id so per-model state (pictures, viewer file, drafts) starts fresh on each step.
-  return <ModelDetail key={modelId} id={modelId} stepper={stepper} />
+  return <ModelDetail key={modelId} id={modelId} stepper={stepper} onDeleted={onDeleted} />
 }
 
 function Section({ title, aside, children }: { title: string; aside?: ReactNode; children: ReactNode }) {
@@ -132,7 +140,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
-function ModelDetail({ id, stepper }: { id: string; stepper: ReactNode }) {
+function ModelDetail({ id, stepper, onDeleted }: { id: string; stepper: ReactNode; onDeleted: () => void }) {
   const helper = useLibraryHelper()
   const confirm = useConfirm()
   const toast = useToast()
@@ -272,6 +280,29 @@ function ModelDetail({ id, stepper }: { id: string; stepper: ReactNode }) {
     })
   }
 
+  const removeModel = async () => {
+    if (!model) return
+    const onDisk = model.state === 'present'
+    const ok = await confirm({
+      title: 'Delete this model?',
+      message: onDisk
+        ? `The “${model.folder ?? model.title}” folder goes to the macOS Trash and the model leaves the Library, with its notes, collections and hand-logged prints. Undoing it from Organize → History brings the folder back as a new model.`
+        : `“${model.title}” leaves the Library, with its notes, collections and hand-logged prints. Its folder is already gone from the Mac.`,
+      confirmLabel: onDisk ? 'Move to Trash and delete' : 'Delete',
+      destructive: true,
+    })
+    if (!ok) return
+    setBusy(true)
+    try {
+      if (onDisk) await libraryHelper.trashModel(model.id)
+      await deleteModel(model.id)
+      onDeleted()
+    } catch (cause) {
+      toast.failure('Could not delete the model', cause)
+      setBusy(false)
+    }
+  }
+
   if (error) {
     return (
       <Stack spacing={2} sx={{ p: { xs: 1.5, md: 0 }, maxWidth: 1100 }}>
@@ -287,6 +318,11 @@ function ModelDetail({ id, stepper }: { id: string; stepper: ReactNode }) {
   const canView = helper.available && viewable(viewerFile)
   const needsHelper = helper.available ? '' : 'Available on your Mac while the Library helper is running'
   const source = sourceLabel(model.sourceSite)
+  // A folder still on disk must be trashed through the helper, or the next sync brings the model back.
+  const helperCanTrash = helper.available && (helper.health?.version ?? 0) >= HELPER_DELETE_VERSION
+  const canDelete = model.state === 'missing' || helperCanTrash
+  const deleteHint = canDelete ? ''
+    : helper.available ? 'Restart the Library helper to delete models from here' : needsHelper
 
   return (
     <Stack spacing={2.5} sx={{ p: { xs: 1.5, md: 0 }, maxWidth: 1100 }}>
@@ -378,6 +414,14 @@ function ModelDetail({ id, stepper }: { id: string; stepper: ReactNode }) {
                 <Button fullWidth startIcon={<CheckCircleRoundedIcon />} onClick={() => void recordPrint('completed')}>Printed it</Button>
                 <Button fullWidth startIcon={<CancelRoundedIcon />} onClick={() => void recordPrint('failed')}>Print failed</Button>
               </Stack>
+              <Tooltip title={deleteHint}>
+                <span>
+                  <Button fullWidth color="error" startIcon={<DeleteOutlineRoundedIcon />} disabled={!canDelete || busy}
+                    onClick={() => void removeModel()}>
+                    Delete model
+                  </Button>
+                </span>
+              </Tooltip>
               {!helper.available && !helper.checking && (
                 <Typography variant="body2" color="text.secondary">
                   File actions work on the Mac that holds your library, while <code>npm run library -- serve</code> is running.

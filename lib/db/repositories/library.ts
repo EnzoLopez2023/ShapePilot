@@ -86,6 +86,8 @@ export interface LibraryRepository {
   queryModels(owner: Owner, query: LibraryModelQuery): Promise<LibraryModel[]>
   getModel(owner: Owner, id: string): Promise<LibraryModelDetail | null>
   editModel(owner: Owner, id: string, edit: LibraryModelEdit): Promise<LibraryModel | null>
+  /** Forgets the model here; its folder on the Mac is the organizer's to trash. */
+  deleteModel(owner: Owner, id: string): Promise<boolean>
 
   logPrint(owner: Owner, modelId: string, input: {
     result: 'completed' | 'failed'
@@ -606,6 +608,26 @@ export function createLibraryRepository(db: SqliteDatabase): LibraryRepository {
       edit_version = edit_version + 1, updated_at = ${NOW}
     WHERE owner_tenant_id = @tenant AND owner_oid = @oid AND id = @id`)
 
+  // Deleting a model keeps the printer's jobs (they are the ledger's, not the
+  // model's) but unlinks them, and drops what only made sense for this model.
+  const deleteModelPrints = db.prepare<[...O, string]>(
+    `DELETE FROM library_prints WHERE ${WHERE_OWNER} AND model_id = ? AND source = 'manual'`)
+  const unlinkModelJobs = db.prepare<[...O, string]>(`
+    UPDATE library_prints SET model_id = NULL, match_score = NULL,
+      match_state = CASE match_state WHEN 'rejected' THEN 'rejected' ELSE 'unmatched' END
+    WHERE ${WHERE_OWNER} AND model_id = ?`)
+  const deleteModelMemberships = db.prepare<[string, ...O]>(`
+    DELETE FROM library_collection_models WHERE model_id = ?
+      AND collection_id IN (SELECT id FROM library_collections WHERE ${WHERE_OWNER})`)
+  const deleteModelRow = db.prepare<[...O, string]>(`DELETE FROM library_models WHERE ${WHERE_OWNER} AND id = ?`)
+  const deleteModel = db.transaction((owner: Owner, id: string): boolean => {
+    if (!getModelRow.get(...own(owner), id)) return false
+    deleteModelPrints.run(...own(owner), id)
+    unlinkModelJobs.run(...own(owner), id)
+    deleteModelMemberships.run(id, ...own(owner))
+    return deleteModelRow.run(...own(owner), id).changes === 1
+  })
+
   // ── Prints ──
 
   const insertManualPrint = db.prepare(`
@@ -938,6 +960,8 @@ export function createLibraryRepository(db: SqliteDatabase): LibraryRepository {
       })
       return toModel(getModelRow.get(...own(owner), id)!, statsMap(owner))
     },
+
+    async deleteModel(owner, id) { return deleteModel(owner, id) },
 
     async logPrint(owner, modelId, input) {
       const row = getModelRow.get(...own(owner), modelId)

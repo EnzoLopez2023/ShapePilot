@@ -285,6 +285,12 @@ export function createLibraryRouter({ repos, store }: LibraryRouterOptions): Rou
     res.json(model)
   })
 
+  // The page trashes the folder through the Mac's helper first; otherwise the next sync brings the model back.
+  router.delete('/models/:id', async (req, res) => {
+    if (!await repos.library.deleteModel(ownerOf(req), req.params.id)) throw ApiError.notFound('Model not found.')
+    res.status(204).end()
+  })
+
   router.post('/models/:id/prints', async (req, res) => {
     const b = (req.body ?? {}) as Record<string, unknown>
     const print = await repos.library.logPrint(ownerOf(req), req.params.id, {
