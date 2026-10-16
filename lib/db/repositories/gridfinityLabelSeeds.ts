@@ -45,4 +45,76 @@ export const KREG_POCKET_SCREWS: LabelSeed = {
   ],
 }
 
-export const LABEL_SEEDS: readonly LabelSeed[] = [KREG_POCKET_SCREWS]
+/** Sizes transcribed from the three assortment-box labels. */
+export const HANTOF_SELF_TAPPING_SCREWS: LabelSeed = {
+  key: 'hantof-self-tapping-screws-1200-v1',
+  name: 'HanTof self-tapping screws (1200 pcs)',
+  items: [
+    'M2 x 6 Self-tap',
+    'M2 x 8 Self-tap',
+    'M2 x 10 Self-tap',
+    'M2 x 12 Self-tap',
+    'M2.5 x 6 Self-tap',
+    'M2.5 x 8 Self-tap',
+    'M2.5 x 10 Self-tap',
+    'M2.5 x 12 Self-tap',
+    'M3 x 6 Self-tap',
+    'M3 x 8 Self-tap',
+    'M3 x 10 Self-tap',
+    'M3 x 12 Self-tap',
+  ],
+}
+
+export const FGRUH_M3_BOLT_ASSORTMENT: LabelSeed = {
+  key: 'fgruh-m3-bolt-assortment-2300-v1',
+  name: 'Fgruh M3 bolts, nuts and washers (2300 pcs)',
+  items: [
+    'M3 x 6 Button',
+    'M3 x 8 Button',
+    'M3 x 10 Button',
+    'M3 x 12 Button',
+    'M3 x 16 Button',
+    'M3 x 20 Button',
+    'M3 x 25 Button',
+    'M3 x 30 Button',
+    'M3 x 35 Button',
+    'M3 x 4 Socket cap',
+    'M3 x 6 Socket cap',
+    'M3 x 8 Socket cap',
+    'M3 x 12 Socket cap',
+    'M3 x 16 Socket cap',
+    'M3 x 20 Socket cap',
+    'M3 x 25 Socket cap',
+    'M3 x 30 Socket cap',
+    'M3 x 35 Socket cap',
+    'M3 Hex nuts',
+    'M3 Flat washers',
+    'M3 Split washers',
+  ],
+}
+
+export const KADRICK_THREADED_INSERTS: LabelSeed = {
+  key: 'kadrick-threaded-inserts-520-v1',
+  name: 'Kadrick threaded inserts (520 pcs)',
+  items: [
+    'M2 Insert H2 mm',
+    'M2 Insert H3 mm',
+    'M2 Insert H4 mm',
+    'M3 Insert H3 mm',
+    'M3 Insert H4 mm',
+    'M3 Insert H5 mm',
+    'M3 Insert H6 mm',
+    'M3 Insert H8 mm',
+    'M4 Insert H8 mm',
+    'M4 Insert H10 mm',
+    'M5 Insert H10 mm',
+    'M5 Insert H12 mm',
+  ],
+}
+
+export const LABEL_SEEDS: readonly LabelSeed[] = [
+  KREG_POCKET_SCREWS,
+  HANTOF_SELF_TAPPING_SCREWS,
+  FGRUH_M3_BOLT_ASSORTMENT,
+  KADRICK_THREADED_INSERTS,
+]

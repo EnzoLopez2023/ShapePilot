@@ -26,9 +26,23 @@ export interface GridfinityBinParams {
   /** Cap height of the label; the text shrinks to fit the tab if it must. */
   textSizeMm: number
   magnets: boolean
+  /**
+   * Export the raised label as its own body so it can print in a second
+   * filament. Absent on bins saved before this existed: one body.
+   */
+  labelSeparate?: boolean
 }
 
+/**
+ * What the baseplate sits in. A drawer is measured; a Systainer is a known
+ * outline (the SYS3 S 76 insert shared with the tray designers), so its size,
+ * clearance and tiling are fixed. Absent on plates saved before this: a drawer.
+ */
+export const BASEPLATE_CONTAINERS = ['drawer', 'systainer-s76-notched', 'systainer-s76-plain'] as const
+export type GridfinityContainer = (typeof BASEPLATE_CONTAINERS)[number]
+
 export interface GridfinityBaseplateParams {
+  container?: GridfinityContainer
   drawerWidthMm: number
   drawerDepthMm: number
   /** Total play left between the plate and the drawer, per axis. */
@@ -70,9 +84,11 @@ export const DEFAULT_BIN: GridfinityBinParams = {
   labelText: '',
   textSizeMm: 7,
   magnets: false,
+  labelSeparate: false,
 }
 
 export const DEFAULT_BASEPLATE: GridfinityBaseplateParams = {
+  container: 'drawer',
   drawerWidthMm: 457.2,
   drawerDepthMm: 406.4,
   clearanceMm: 1,

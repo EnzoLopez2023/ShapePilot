@@ -1,10 +1,13 @@
 // Gridfinity designer routes: designs round-trip, ownership isolation, label
-// lists, and the Kreg starter list being given exactly once per account.
+// lists, and starter lists being given exactly once per account.
 import assert from 'node:assert/strict'
 import { afterAll, beforeAll, describe, test } from 'vitest'
 import { OTHER_OID, startTestServer, stubVerifier, validClaims } from '../helpers/server.ts'
 import type { TestServer } from '../helpers/server.ts'
 import { DEFAULT_BASEPLATE, DEFAULT_BIN } from '../../lib/contracts/gridfinity.ts'
+import {
+  HANTOF_SELF_TAPPING_SCREWS, FGRUH_M3_BOLT_ASSORTMENT, KADRICK_THREADED_INSERTS,
+} from '../../lib/db/repositories/gridfinityLabelSeeds.ts'
 
 const OWNER = 'owner-token'
 const OTHER = 'other-token'
@@ -60,6 +63,20 @@ describe('gridfinity routes', () => {
     assert.equal((await get(`/designs/${clone.body.id}`)).status, 200)
   })
 
+  test('a Systainer plate and a two-colour bin round-trip; older params still load', async () => {
+    const plate = { ...DEFAULT_BASEPLATE, container: 'systainer-s76-notched' as const }
+    const a = await send<{ id: string }>('/designs', 'POST', { name: 'Sys', kind: 'baseplate', params: plate })
+    assert.equal(a.status, 201)
+    assert.equal((await get<Record_>(`/designs/${a.body.id}`)).body.params.container, 'systainer-s76-notched')
+    const bin = { ...DEFAULT_BIN, labelText: 'No. 8', labelSeparate: true }
+    const b = await send<{ id: string }>('/designs', 'POST', { name: 'Two', kind: 'bin', params: bin })
+    assert.equal((await get<Record_>(`/designs/${b.body.id}`)).body.params.labelSeparate, true)
+    const { container: _c, ...oldPlate } = DEFAULT_BASEPLATE
+    const { labelSeparate: _l, ...oldBin } = DEFAULT_BIN
+    assert.equal((await send('/designs', 'POST', { name: 'Old', kind: 'baseplate', params: oldPlate })).status, 201)
+    assert.equal((await send('/designs', 'POST', { name: 'Old', kind: 'bin', params: oldBin })).status, 201)
+  })
+
   test('another account cannot see or change a design', async () => {
     const { body } = await send<{ id: string }>('/designs', 'POST', { name: 'Mine', kind: 'bin', params: DEFAULT_BIN })
     assert.equal((await get(`/designs/${body.id}`, OTHER)).status, 404)
@@ -76,6 +93,8 @@ describe('gridfinity routes', () => {
       { name: 'x', kind: 'bin', params: { ...DEFAULT_BIN, heightUnits: 99 } },
       { name: 'x', kind: 'bin', params: { ...DEFAULT_BIN, labelText: 'x'.repeat(61) } },
       { name: 'x', kind: 'baseplate', params: { ...DEFAULT_BASEPLATE, bedMm: 5 } },
+      { name: 'x', kind: 'baseplate', params: { ...DEFAULT_BASEPLATE, container: 'systainer-s99' } },
+      { name: 'x', kind: 'bin', params: { ...DEFAULT_BIN, labelSeparate: 'yes' } },
     ]
     for (const body of bad) assert.equal((await send('/designs', 'POST', body)).status, 400, JSON.stringify(body))
   })
@@ -90,6 +109,31 @@ describe('gridfinity routes', () => {
     assert.equal((await send(`/label-lists/${kreg[0].id}`, 'DELETE', {}, FRESH)).status, 200)
     const after = await get<List[]>('/label-lists', FRESH)
     assert.ok(!after.body.some(l => l.name === 'Kreg pocket screws'))
+  })
+
+  test('the Amazon assortments seed all pictured sizes once and respect edits and deletion', async () => {
+    const seeds = [
+      HANTOF_SELF_TAPPING_SCREWS, FGRUH_M3_BOLT_ASSORTMENT, KADRICK_THREADED_INSERTS,
+    ]
+    assert.deepEqual(seeds.map(s => s.items.length), [12, 21, 12])
+    assert.ok(FGRUH_M3_BOLT_ASSORTMENT.items.includes('M3 x 4 Socket cap'))
+    assert.ok(!FGRUH_M3_BOLT_ASSORTMENT.items.includes('M3 x 10 Socket cap'))
+    const first = await get<List[]>('/label-lists')
+    for (const seed of seeds) {
+      const matches = first.body.filter(l => l.name === seed.name)
+      assert.equal(matches.length, 1)
+      assert.deepEqual(matches[0].items, seed.items)
+    }
+    const second = await get<List[]>('/label-lists')
+    assert.deepEqual(second.body, first.body)
+    const screws = first.body.find(l => l.name === seeds[0].name)!
+    assert.equal((await send(`/label-lists/${screws.id}`, 'PUT',
+      { name: 'My self-tapping screws', items: screws.items })).status, 200)
+    const inserts = first.body.find(l => l.name === seeds[2].name)!
+    assert.equal((await send(`/label-lists/${inserts.id}`, 'DELETE', {})).status, 200)
+    const after = await get<List[]>('/label-lists')
+    assert.ok(after.body.some(l => l.name === 'My self-tapping screws'))
+    assert.ok(!after.body.some(l => l.name === seeds[0].name || l.name === seeds[2].name))
   })
 
   test('uploaded lists save, edit, and stay private', async () => {

@@ -3,7 +3,7 @@ import { parse } from 'opentype.js'
 import { describe, expect, it } from 'vitest'
 import { checkManifold } from '../../../geometry/mesh.ts'
 import { DEFAULT_BASEPLATE, DEFAULT_BIN, parseLabelFile } from '../../../../lib/contracts/gridfinity.ts'
-import { buildBin, binDimensions, LIP_HEIGHT_MM } from './bin.ts'
+import { buildBin, buildBinParts, binDimensions, LIP_HEIGHT_MM, TEXT_RAISE_MM } from './bin.ts'
 import { buildBaseplate, planBaseplate, splitAxis, BASEPLATE_HEIGHT_MM } from './baseplate.ts'
 
 const font = (() => {
@@ -34,6 +34,27 @@ describe('gridfinity bin', () => {
     expect(checkManifold(labelled).nonManifoldEdges).toBe(0)
     // Text stands below the lip so a stacked bin never sits on it.
     expect(binDimensions(params).tabTopMm).toBeLessThan(binDimensions(params).wallTopMm)
+  })
+
+  it('splits the label into its own body for a second filament', async () => {
+    const params = { ...DEFAULT_BIN, labelText: 'No. 8', labelSeparate: true }
+    const { body, label } = await buildBinParts(params, font)
+    const merged = await buildBin(params, font)
+    const bare = await buildBin({ ...params, labelText: '' })
+    expect(label).not.toBeNull()
+    for (const mesh of [body, label!]) {
+      expect(checkManifold(mesh).ok).toBe(true)
+      expect(checkManifold(mesh).nonManifoldEdges).toBe(0)
+    }
+    // The body is the plain bin; the label sits exactly on the tab top.
+    expect(body.triangleCount).toBe(bare.triangleCount)
+    const tabTop = binDimensions(params).tabTopMm
+    expect(label!.bbox[2]).toBeCloseTo(tabTop, 3)
+    expect(label!.bbox[5]).toBeCloseTo(tabTop + TEXT_RAISE_MM, 3)
+    // buildBin ignores the flag and merges, so one-body exports still work.
+    expect(merged.triangleCount).toBeGreaterThan(bare.triangleCount)
+    // No text, nothing separate.
+    expect((await buildBinParts({ ...params, labelText: '' })).label).toBeNull()
   })
 
   it('builds every option combination without errors', async () => {
@@ -98,4 +119,20 @@ describe('label files', () => {
     expect(items).toEqual(['M3 x 8', 'M4', 'x'.repeat(60)])
     expect(truncated).toBe(1)
   })
+
+  it.each(['systainer-s76-notched', 'systainer-s76-plain'] as const)(
+    'fits a %s insert in one tile, grid clear of the notches', async container => {
+      const plan = planBaseplate({ ...DEFAULT_BASEPLATE, container })
+      expect(plan.problem).toBeUndefined()
+      expect([plan.cellsX, plan.cellsY]).toEqual([5, 3])
+      expect(plan.tiles).toHaveLength(1)
+      expect(plan.outline).toBeDefined()
+      const [tile] = await buildBaseplate(plan)
+      const [w, d, h] = size(tile.mesh.bbox)
+      expect(w).toBeCloseTo(plan.plateWidthMm, 0)
+      expect(d).toBeCloseTo(plan.plateDepthMm, 0)
+      expect(h).toBeCloseTo(BASEPLATE_HEIGHT_MM, 3)
+      expect(checkManifold(tile.mesh).ok).toBe(true)
+      expect(checkManifold(tile.mesh).nonManifoldEdges).toBe(0)
+    })
 })

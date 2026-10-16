@@ -5,7 +5,7 @@ import type {
   GridfinityDesignInput, GridfinityLabelListInput,
 } from '../../lib/db/repositories/contracts.ts'
 import {
-  ALIGNMENTS, BASEPLATE_LIMITS, BIN_LIMITS, LABEL_LIST_LIMITS,
+  ALIGNMENTS, BASEPLATE_CONTAINERS, BASEPLATE_LIMITS, BIN_LIMITS, LABEL_LIST_LIMITS,
   type GridfinityBaseplateParams, type GridfinityBinParams,
 } from '../../lib/contracts/gridfinity.ts'
 import {
@@ -35,7 +35,7 @@ export function validateBinParams(value: unknown): GridfinityBinParams {
   const p = requireObject(value, 'params')
   rejectUnknownKeys(p, [
     'gridX', 'gridY', 'heightUnits', 'stackingLip', 'scoop', 'labelTab', 'labelText',
-    'labelListId', 'textSizeMm', 'magnets',
+    'labelListId', 'textSizeMm', 'magnets', 'labelSeparate',
   ], 'params')
   const L = BIN_LIMITS
   const labelListId = optionalString(p.labelListId, 'params.labelListId', 40)
@@ -50,13 +50,14 @@ export function validateBinParams(value: unknown): GridfinityBinParams {
     ...(labelListId ? { labelListId } : {}),
     textSizeMm: requireNumber(p.textSizeMm, 'params.textSizeMm', { min: L.minTextMm, max: L.maxTextMm }),
     magnets: requireBoolean(p.magnets, 'params.magnets'),
+    ...(absent(p.labelSeparate) ? {} : { labelSeparate: requireBoolean(p.labelSeparate, 'params.labelSeparate') }),
   }
 }
 
 export function validateBaseplateParams(value: unknown): GridfinityBaseplateParams {
   const p = requireObject(value, 'params')
   rejectUnknownKeys(p, [
-    'drawerWidthMm', 'drawerDepthMm', 'clearanceMm', 'alignX', 'alignY', 'bedMm',
+    'container', 'drawerWidthMm', 'drawerDepthMm', 'clearanceMm', 'alignX', 'alignY', 'bedMm',
   ], 'params')
   const L = BASEPLATE_LIMITS
   const drawer = (v: unknown, field: string) => {
@@ -64,6 +65,7 @@ export function validateBaseplateParams(value: unknown): GridfinityBaseplatePara
     return mm
   }
   return {
+    ...(absent(p.container) ? {} : { container: requireEnum(p.container, 'params.container', BASEPLATE_CONTAINERS) }),
     drawerWidthMm: drawer(p.drawerWidthMm, 'params.drawerWidthMm'),
     drawerDepthMm: drawer(p.drawerDepthMm, 'params.drawerDepthMm'),
     clearanceMm: requireNumber(p.clearanceMm, 'params.clearanceMm', { min: 0, max: L.maxClearanceMm }),

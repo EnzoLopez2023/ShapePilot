@@ -27,12 +27,13 @@ export interface LibraryFilters {
   category: string
   format: string
   sort: LibrarySort
+  favorite: boolean
   /** A manual collection to show (smart collections apply their filters instead). */
   collection: number | null
 }
 
 export const DEFAULT_FILTERS: LibraryFilters = {
-  search: '', status: '', category: '', format: '', sort: 'recent', collection: null,
+  search: '', status: '', category: '', format: '', sort: 'recent', favorite: false, collection: null,
 }
 
 export function readFilters(): LibraryFilters {
@@ -45,6 +46,7 @@ export function readFilters(): LibraryFilters {
       category: typeof saved.category === 'string' ? saved.category : '',
       format: FORMAT_OPTIONS.some(f => f.value === saved.format) ? saved.format! : '',
       sort: SORT_OPTIONS.find(s => s.value === saved.sort)?.value ?? 'recent',
+      favorite: saved.favorite === true,
       collection: Number.isSafeInteger(saved.collection) && saved.collection! > 0 ? saved.collection! : null,
     }
   } catch {
@@ -61,8 +63,8 @@ export function writeFilters(filters: LibraryFilters): void {
 }
 
 export function filtersQuery(filters: LibraryFilters): LibraryModelQuery {
-  const { search, status, category, format, sort, collection } = filters
-  return { q: search.trim(), status, category, format, sort, ...(collection ? { collection } : {}) }
+  const { search, status, category, format, sort, favorite, collection } = filters
+  return { q: search.trim(), status, category, format, sort, ...(favorite ? { favorite: true } : {}), ...(collection ? { collection } : {}) }
 }
 
 /** The hub view a collection opens: a manual one by membership, a smart one by its saved filters. */
@@ -75,6 +77,7 @@ export function filtersForCollection(collection: LibraryCollection): LibraryFilt
     category: q.category ?? '',
     format: q.format ?? '',
     sort: q.sort ?? 'recent',
+    favorite: q.favorite === true,
     collection: null,
   }
 }
@@ -85,6 +88,7 @@ export function filtersMatchSmart(filters: LibraryFilters, collection: LibraryCo
   const saved = filtersForCollection(collection)
   return saved.search.trim() === filters.search.trim() && saved.status === filters.status
     && saved.category === filters.category && saved.format === filters.format && saved.sort === filters.sort
+    && saved.favorite === filters.favorite
 }
 
 /** Keeps the hub's remembered category pointing at the right folder after a rename or merge. */

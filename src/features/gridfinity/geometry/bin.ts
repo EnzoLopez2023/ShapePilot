@@ -130,7 +130,7 @@ function labelTab(wasm: ManifoldToplevel, d: BinDimensions): Manifold {
  * down -- never up -- until it fits the tab with a margin all round.
  */
 function labelText(
-  wasm: ManifoldToplevel, font: Font, p: GridfinityBinParams, d: BinDimensions,
+  wasm: ManifoldToplevel, font: Font, p: GridfinityBinParams, d: BinDimensions, separate: boolean,
 ): Manifold | null {
   const text = p.labelText.trim()
   if (!text) return null
@@ -148,7 +148,10 @@ function labelText(
   const outline = wasm.CrossSection.union(sections)
   const cx = d.widthMm / 2
   const cy = d.depthMm - WALL_MM - d.tabDepthMm / 2
-  return outline.extrude(TEXT_RAISE_MM + 0.05).translate([cx, cy, d.tabTopMm - 0.05])
+  // Merged, it sinks a hair into the tab so the union welds. Separate, it sits
+  // exactly on the tab: two parts that touch, which is what a slicer wants.
+  const sink = separate ? 0 : 0.05
+  return outline.extrude(TEXT_RAISE_MM + sink).translate([cx, cy, d.tabTopMm - sink])
 }
 
 /** How much of the tab top the text may use. */
@@ -168,11 +171,25 @@ function magnetHoles(wasm: ManifoldToplevel, p: GridfinityBinParams): Manifold {
   return wasm.Manifold.union(holes)
 }
 
-/** `withFont` is for tests, which read the font from disk rather than fetch it. */
-export async function buildBin(p: GridfinityBinParams, withFont?: Font): Promise<Mesh> {
+export interface BinParts {
+  /** The bin, without the label when that is a separate body. */
+  body: Mesh
+  /** The raised label as its own body, for a second filament. */
+  label: Mesh | null
+}
+
+/**
+ * The bin as the bodies it prints in. One body unless `labelSeparate` is set
+ * and there is text, in which case the label comes out on its own, sitting on
+ * the tab in the same frame so the two stay aligned in the slicer.
+ *
+ * `withFont` is for tests, which read the font from disk rather than fetch it.
+ */
+export async function buildBinParts(p: GridfinityBinParams, withFont?: Font): Promise<BinParts> {
   const wasm = await loadManifold()
   const wantsText = p.labelTab && p.labelText.trim() !== ''
   const font = wantsText ? withFont ?? await loadFont(DEFAULT_FONT_ID) : null
+  const separate = !!p.labelSeparate
   const d = binDimensions(p)
   const body: Outline = { x: 0, y: 0, w: d.widthMm, d: d.depthMm, r: OUTER_RADIUS_MM }
 
@@ -189,11 +206,17 @@ export async function buildBin(p: GridfinityBinParams, withFont?: Font): Promise
   }
   if (p.labelTab) extras.push(labelTab(wasm, d))
   if (extras.length) solid = solid.add(wasm.Manifold.union(extras).intersect(shell))
-  if (font) {
-    const text = labelText(wasm, font, p, d)
-    if (text) solid = solid.add(text)
-  }
+  const text = font ? labelText(wasm, font, p, d, separate) : null
+  if (text && !separate) solid = solid.add(text)
   if (p.magnets) solid = solid.subtract(magnetHoles(wasm, p))
 
-  return toAppMesh(finish(solid, 'The bin'))
+  return {
+    body: toAppMesh(finish(solid, 'The bin')),
+    label: text && separate ? toAppMesh(finish(text, 'The label')) : null,
+  }
+}
+
+/** The bin as one mesh -- the label merged in whatever `labelSeparate` says. */
+export async function buildBin(p: GridfinityBinParams, withFont?: Font): Promise<Mesh> {
+  return (await buildBinParts({ ...p, labelSeparate: false }, withFont)).body
 }

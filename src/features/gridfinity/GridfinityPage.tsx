@@ -10,9 +10,8 @@ import DeleteIcon from '@mui/icons-material/DeleteOutline'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import SaveIcon from '@mui/icons-material/SaveOutlined'
 import AddIcon from '@mui/icons-material/Add'
-import type { Mesh } from '../../geometry/mesh.ts'
 import { writeBinaryStl } from '../../export/stl.ts'
-import { writeThreeMf } from '../../export/threemf.ts'
+import { writeThreeMf, writeThreeMfParts } from '../../export/threemf.ts'
 import { safeFilename, triggerDownload } from '../../export/download.ts'
 import { zipParts } from '../../export/zip.ts'
 import { formatLength } from '../../units.ts'
@@ -20,7 +19,10 @@ import { GRID_PITCH_MM } from '../../../lib/contracts/gridfinity.ts'
 import { useConfirm } from '../../components/ConfirmDialogProvider.tsx'
 import { EmptyState, ErrorState, LoadingState } from '../../components/LoadingState.tsx'
 import { formatUpdated } from '../keycap-projects/model/formatUpdated.ts'
-import { buildBin } from './geometry/bin.ts'
+import { buildBinParts, type BinParts } from './geometry/bin.ts'
+import { useOwnedColors } from '../filaments/useOwnedColors.ts'
+import { useAmsTrays } from '../bambu-designer/useAmsTrays.ts'
+import { assignExtruders } from '../bambu-designer/amsTrays.ts'
 import { BASEPLATE_HEIGHT_MM, buildBaseplate, planBaseplate, type BuiltTile } from './geometry/baseplate.ts'
 import { mergeMeshes, translateMesh } from './geometry/place.ts'
 import {
@@ -40,6 +42,18 @@ const SolidViewer3D = lazy(() => import('../../components/viewport3d/SolidViewer
 const REBUILD_DELAY_MS = 200
 /** Space between tiles in the 3D preview, so the cuts read. */
 const TILE_GAP_MM = 6
+/** The label's preview colour when no owned filament is picked, so it still reads as its own body. */
+const LABEL_FALLBACK = '#e8b04a'
+
+/** STL carries no colour, so a two-colour bin is two files aligned by their shared origin. */
+function binFiles(parts: BinParts, stem: string, title: string): Record<string, Uint8Array> {
+  return parts.label
+    ? {
+        [`${stem}_bin.stl`]: new Uint8Array(writeBinaryStl(parts.body, `${title} bin`)),
+        [`${stem}_label.stl`]: new Uint8Array(writeBinaryStl(parts.label, `${title} label`)),
+      }
+    : { [`${stem}.stl`]: new Uint8Array(writeBinaryStl(parts.body, title)) }
+}
 
 type Built<T> = { status: 'idle' | 'building' } | { status: 'ready'; value: T } | { status: 'error'; message: string }
 
@@ -74,16 +88,16 @@ export default function GridfinityPage() {
 
   // ---- Geometry. Both are built off the main render, newest request wins. ----
 
-  const [bin, setBin] = useState<Built<Mesh>>({ status: 'idle' })
-  const [lastBin, setLastBin] = useState<Mesh | null>(null)
+  const [bin, setBin] = useState<Built<BinParts>>({ status: 'idle' })
+  const [lastBin, setLastBin] = useState<BinParts | null>(null)
   const binParams = design.bin
   useEffect(() => {
     if (!isBin) return
     let cancelled = false
     setBin({ status: 'building' })
     const timer = setTimeout(() => {
-      buildBin(binParams)
-        .then(mesh => { if (!cancelled) { setBin({ status: 'ready', value: mesh }); setLastBin(mesh) } })
+      buildBinParts(binParams)
+        .then(parts => { if (!cancelled) { setBin({ status: 'ready', value: parts }); setLastBin(parts) } })
         .catch((e: unknown) => {
           if (!cancelled) setBin({ status: 'error', message: (e as Error).message })
         })
@@ -134,14 +148,38 @@ export default function GridfinityPage() {
     })
   }, [d, design.bin.labelText])
 
+  // ---- Colours: an owned filament paints the preview, and its AMS tray sets the 3MF slot. ----
+
+  const ownedColors = useOwnedColors()
+  const ams = useAmsTrays()
+  const amsTrayFor = useCallback(
+    (key: string) => ams.trays?.find(tray => tray.key === key), [ams.trays])
+  const hexOf = useCallback(
+    (key: string | undefined) => ownedColors.find(c => c.key === key)?.hexes[0], [ownedColors])
+  const slotOf = useCallback(
+    (key: string | undefined) => (key ? amsTrayFor(key)?.slot : undefined), [amsTrayFor])
+  const maxSlot = ams.trays?.length ? Math.max(...ams.trays.map(tray => tray.slot)) : 4
+  const { colors } = settings
+
   // ---- Export ----
 
   const baseName = safeFilename(design.name)
 
   const downloadBin = (format: 'stl' | '3mf') => {
     if (bin.status !== 'ready') return
-    if (format === 'stl') triggerDownload(writeBinaryStl(bin.value, design.name), `${baseName}.stl`, 'model/stl')
-    else triggerDownload(writeThreeMf(bin.value, design.name), `${baseName}.3mf`, 'model/3mf')
+    const { body, label } = bin.value
+    if (format === 'stl') {
+      if (label) triggerDownload(zipParts(binFiles(bin.value, baseName, design.name)), `${baseName}_2-colour.zip`, 'application/zip')
+      else triggerDownload(writeBinaryStl(body, design.name), `${baseName}.stl`, 'model/stl')
+      return
+    }
+    if (!label) { triggerDownload(writeThreeMf(body, design.name), `${baseName}.3mf`, 'model/3mf'); return }
+    const [bodySlot, labelSlot] = assignExtruders(
+      [{ filamentSlot: slotOf(colors.bin) }, { filamentSlot: slotOf(colors.label) }], maxSlot)
+    triggerDownload(writeThreeMfParts([
+      { mesh: body, name: `${design.name} bin`, extruder: bodySlot },
+      { mesh: label, name: `${design.name} label`, extruder: labelSlot },
+    ], design.name), `${baseName}.3mf`, 'model/3mf')
   }
 
   const downloadBaseplate = async () => {
@@ -170,11 +208,11 @@ export default function GridfinityPage() {
     for (let i = 0; i < list.items.length; i++) {
       progress(i, list.items.length)
       const text = list.items[i]
-      const mesh = await buildBin({ ...design.bin, labelTab: true, labelText: text })
-      let name = `${String(i + 1).padStart(2, '0')}_${safeFilename(text)}_${size}.stl`
-      while (used.has(name)) name = `_${name}`
-      used.add(name)
-      files[name] = new Uint8Array(writeBinaryStl(mesh, text))
+      const parts = await buildBinParts({ ...design.bin, labelTab: true, labelText: text })
+      let stem = `${String(i + 1).padStart(2, '0')}_${safeFilename(text)}_${size}`
+      while (used.has(stem)) stem = `_${stem}`
+      used.add(stem)
+      Object.assign(files, binFiles(parts, stem, text))
       // Yield so the progress bar paints between bins.
       await new Promise(r => setTimeout(r, 0))
     }
@@ -271,7 +309,11 @@ export default function GridfinityPage() {
   // ---- Render ----
 
   const len = (mm: number) => `${formatLength(mm, settings.imperial)}${settings.imperial ? '' : ' mm'}`
-  const binMesh = bin.status === 'ready' ? bin.value : lastBin
+  const binParts = bin.status === 'ready' ? bin.value : lastBin
+  const binMesh = binParts?.body ?? null
+  const binExtras = useMemo(
+    () => (binParts?.label ? [{ mesh: binParts.label, color: hexOf(colors.label) ?? LABEL_FALLBACK }] : undefined),
+    [binParts, hexOf, colors.label])
   const exportReady = isBin ? bin.status === 'ready' : !plan.problem
 
   const canvas = isBin ? (
@@ -282,14 +324,18 @@ export default function GridfinityPage() {
       />
     ) : binMesh ? (
       <Suspense fallback={<LoadingState label="Loading the 3D view…" />}>
-        <SolidViewer3D mesh={binMesh} label="the Gridfinity bin" up="z" />
+        <SolidViewer3D
+          mesh={binMesh} color={hexOf(colors.bin)} extras={binExtras} label="the Gridfinity bin" up="z"
+        />
       </Suspense>
     ) : <LoadingState label="Building the bin…" />
   ) : plan.problem ? (
     <EmptyState title="No baseplate fits" description={plan.problem} />
   ) : settings.view === '2d' ? (
     <BaseplatePlanView
-      plan={plan} drawerWidthMm={plateParams.drawerWidthMm} drawerDepthMm={plateParams.drawerDepthMm}
+      plan={plan}
+      drawerWidthMm={plan.outline ? plan.plateWidthMm : plateParams.drawerWidthMm}
+      drawerDepthMm={plan.outline ? plan.plateDepthMm : plateParams.drawerDepthMm}
     />
   ) : tiles.status === 'error' ? (
     <ErrorState title="The baseplate could not be built" message={tiles.message} />
@@ -403,6 +449,8 @@ export default function GridfinityPage() {
             <BinPanel
               name={design.name} bin={design.bin} lists={lists} imperial={settings.imperial}
               onName={d.setName} onBin={d.setBin}
+              ownedColors={ownedColors} colors={colors} onColors={next => view({ colors: next })}
+              amsNote={key => { const tray = amsTrayFor(key); return tray ? `in ${tray.label}` : null }}
             />
           ) : (
             <BaseplatePanel
@@ -454,8 +502,9 @@ export default function GridfinityPage() {
                 {plan.tiles.length === 1 ? 'One tile' : `${plan.tiles.length} tiles`}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Each fits a {plateParams.bedMm} mm bed. Named column-row from the front-left corner;
-                lay them out the same way in the drawer.
+                {plan.tiles.length === 1
+                  ? `Prints in one piece on a ${plateParams.bedMm} mm bed.`
+                  : `Each fits a ${plateParams.bedMm} mm bed. Named column-row from the front-left corner; lay them out the same way in the ${plan.outline ? 'case' : 'drawer'}.`}
               </Typography>
               <Stack divider={<Divider />}>
                 {plan.tiles.map(t => (

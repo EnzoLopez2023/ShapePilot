@@ -15,6 +15,9 @@ import {
   GRID_PITCH_MM, type GridfinityAlign, type GridfinityBaseplateParams,
 } from '../../../../lib/contracts/gridfinity.ts'
 import { finish, profile, type Outline } from './shapes.ts'
+import { getPreset, profileToMulti } from '../../../model/trayProfile.ts'
+
+type Pt = [number, number]
 
 export const BASEPLATE_HEIGHT_MM = 4.65
 const POCKET_RADIUS_MM = 4
@@ -55,6 +58,11 @@ export interface BaseplatePlan {
   columns: TileSpan[]
   rows: TileSpan[]
   tiles: BaseplateTile[]
+  /**
+   * The plate's shape when it is not a plain rounded rectangle -- a Systainer
+   * insert. Rings in plate coordinates, the first the outside.
+   */
+  outline?: Pt[][]
   /** Set when the drawer cannot take a plate at all; nothing else is useful. */
   problem?: string
 }
@@ -104,18 +112,80 @@ export function splitAxis(cells: number, before: number, after: number, bed: num
   return null
 }
 
+/** Even-odd point-in-polygon over every ring. */
+function inside(rings: Pt[][], x: number, y: number): boolean {
+  let hit = false
+  for (const r of rings) {
+    for (let i = 0, j = r.length - 1; i < r.length; j = i++) {
+      const [xi, yi] = r[i]
+      const [xj, yj] = r[j]
+      if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) hit = !hit
+    }
+  }
+  return hit
+}
+
+/** Does a pocket's footprint, sampled round its edge, stay inside the outline? */
+function cellFits(rings: Pt[][], x: number, y: number): boolean {
+  const m = POCKET_TOP_INSET + 1.2
+  const lo = 0, hi = GRID_PITCH_MM
+  for (let s = 0; s <= hi; s += 2) {
+    const t = Math.min(Math.max(s, m), hi - m)
+    for (const [px, py] of [[t, lo + m], [t, hi - m], [lo + m, t], [hi - m, t]] as Pt[]) {
+      if (!inside(rings, x + px, y + py)) return false
+    }
+  }
+  return true
+}
+
+/** The plate's size and, for a Systainer, its fixed outline. */
+function container(p: GridfinityBaseplateParams): {
+  widthMm: number; depthMm: number; alignX: GridfinityAlign; alignY: GridfinityAlign
+  outline?: Pt[][]
+} {
+  const c = p.container ?? 'drawer'
+  if (c === 'drawer') {
+    return {
+      widthMm: Math.max(0, p.drawerWidthMm - p.clearanceMm),
+      depthMm: Math.max(0, p.drawerDepthMm - p.clearanceMm),
+      alignX: p.alignX,
+      alignY: p.alignY,
+    }
+  }
+  // The insert outline the tray designers cut to already fits the case, so it
+  // takes no clearance; the grid sits centred so the padding is even.
+  const profile = { kind: 'preset', id: c } as const
+  const preset = getPreset(c)
+  return {
+    widthMm: preset.widthMm,
+    depthMm: preset.heightMm,
+    alignX: 'center',
+    alignY: 'center',
+    outline: profileToMulti(profile)[0].map(r => r.map(([x, y]) => [x, y] as Pt)),
+  }
+}
+
 export function planBaseplate(p: GridfinityBaseplateParams): BaseplatePlan {
-  const plateWidthMm = Math.max(0, p.drawerWidthMm - p.clearanceMm)
-  const plateDepthMm = Math.max(0, p.drawerDepthMm - p.clearanceMm)
+  const box = container(p)
+  const plateWidthMm = box.widthMm
+  const plateDepthMm = box.depthMm
   const cellsX = Math.floor((plateWidthMm + 1e-6) / GRID_PITCH_MM)
   const cellsY = Math.floor((plateDepthMm + 1e-6) / GRID_PITCH_MM)
-  const gridX = offset(p.alignX, plateWidthMm - cellsX * GRID_PITCH_MM)
-  const gridY = offset(p.alignY, plateDepthMm - cellsY * GRID_PITCH_MM)
+  const gridX = offset(box.alignX, plateWidthMm - cellsX * GRID_PITCH_MM)
+  const gridY = offset(box.alignY, plateDepthMm - cellsY * GRID_PITCH_MM)
   const empty: BaseplatePlan = {
     plateWidthMm, plateDepthMm, cellsX, cellsY, gridX, gridY, columns: [], rows: [], tiles: [],
+    ...(box.outline ? { outline: box.outline } : {}),
   }
   if (cellsX < 1 || cellsY < 1) {
     return { ...empty, problem: `The drawer needs at least ${GRID_PITCH_MM} mm of room each way, after clearance.` }
+  }
+  if (box.outline) {
+    for (let i = 0; i < cellsX; i++) for (let j = 0; j < cellsY; j++) {
+      if (!cellFits(box.outline, gridX + i * GRID_PITCH_MM, gridY + j * GRID_PITCH_MM)) {
+        return { ...empty, problem: 'A pocket runs into the outline\'s notches.' }
+      }
+    }
   }
   const columns = splitAxis(cellsX, gridX, plateWidthMm - gridX - cellsX * GRID_PITCH_MM, p.bedMm)
   const rows = splitAxis(cellsY, gridY, plateDepthMm - gridY - cellsY * GRID_PITCH_MM, p.bedMm)
@@ -171,10 +241,13 @@ export async function buildBaseplate(plan: BaseplatePlan): Promise<BuiltTile[]> 
   if (plan.problem) return []
   const wasm = await loadManifold()
   const r = PLATE_CORNER_RADIUS_MM
-  const plateShape = wasm.CrossSection
-    .square([plan.plateWidthMm - 2 * r, plan.plateDepthMm - 2 * r])
-    .translate([r, r])
-    .offset(r, 'Round', 2, 32)
+  const section = plan.outline
+    ? new wasm.CrossSection(plan.outline, 'EvenOdd')
+    : wasm.CrossSection
+      .square([plan.plateWidthMm - 2 * r, plan.plateDepthMm - 2 * r])
+      .translate([r, r])
+      .offset(r, 'Round', 2, 32)
+  const plateShape = section
     .extrude(BASEPLATE_HEIGHT_MM + 2)
     .translate([0, 0, -1])
   return plan.tiles.map(tile => ({

@@ -17,6 +17,7 @@ import AddRoundedIcon from '@mui/icons-material/AddRounded'
 import ArrowForwardRoundedIcon from '@mui/icons-material/ArrowForwardRounded'
 import AutoAwesomeRoundedIcon from '@mui/icons-material/AutoAwesomeRounded'
 import FilterAltRoundedIcon from '@mui/icons-material/FilterAltRounded'
+import FavoriteRoundedIcon from '@mui/icons-material/FavoriteRounded'
 import InboxRoundedIcon from '@mui/icons-material/InboxRounded'
 import LaptopMacRoundedIcon from '@mui/icons-material/LaptopMacRounded'
 import LinkRoundedIcon from '@mui/icons-material/LinkRounded'
@@ -31,7 +32,7 @@ import type { ModelCardChange } from './components/ModelCard.tsx'
 import { useToast } from './components/useToast.tsx'
 import { STATUS_ORDER, categoryLabel, plural, relativeDate } from './model/format.ts'
 import {
-  DEFAULT_FILTERS, FORMAT_OPTIONS, SORT_OPTIONS, filtersForCollection, filtersMatchSmart, readFilters, writeFilters,
+  DEFAULT_FILTERS, FORMAT_OPTIONS, SORT_OPTIONS, filtersForCollection, filtersMatchSmart, filtersQuery, readFilters, writeFilters,
 } from './model/filters.ts'
 import type { LibraryFilters } from './model/filters.ts'
 import { createCollection, getOverview, listCollections, listModels, updateModel } from './service.ts'
@@ -77,10 +78,10 @@ export default function LibraryPage() {
   }, [])
   useEffect(loadCollections, [loadCollections])
 
-  const { status, category, format, sort, collection } = filters
+  const { status, category, format, sort, favorite, collection } = filters
   const query = useMemo<LibraryModelQuery>(
-    () => ({ q: debounced, status, category, format, sort, ...(collection ? { collection } : {}), limit: PAGE_SIZE }),
-    [debounced, status, category, format, sort, collection],
+    () => ({ ...filtersQuery({ search: debounced, status, category, format, sort, favorite, collection }), limit: PAGE_SIZE }),
+    [debounced, status, category, format, sort, favorite, collection],
   )
 
   const load = useCallback(async () => {
@@ -113,6 +114,7 @@ export default function LibraryPage() {
     swap({ ...model, ...change })
     try {
       swap(await updateModel(model.id, change))
+      if (favorite && 'favorite' in change && change.favorite === false) await load()
       if ('status' in change) getOverview().then(setOverview).catch(() => undefined)
     } catch (cause) {
       swap(model)
@@ -138,7 +140,7 @@ export default function LibraryPage() {
         kind: 'smart',
         query: {
           q: filters.search.trim() || undefined, status: status || undefined, category: category || undefined,
-          format: format || undefined, sort,
+          format: format || undefined, sort, ...(favorite ? { favorite: true } : {}),
         },
       })
       toast.success(`Saved “${name}”`)
@@ -152,7 +154,7 @@ export default function LibraryPage() {
   const counts = overview?.byStatus ?? {}
   const allCount = Object.values(counts).reduce((n, v) => n + (v ?? 0), 0)
   const pending = overview?.planSummary?.pending ?? 0
-  const filtered = Boolean(filters.search.trim() || status || category || format || sort !== 'recent')
+  const filtered = Boolean(filters.search.trim() || status || category || format || favorite || sort !== 'recent')
 
   return (
     <Stack spacing={2} sx={{ p: { xs: 1.5, md: 0 }, maxWidth: 1400 }}>
@@ -267,6 +269,11 @@ export default function LibraryPage() {
                 aria-pressed={status === key} onClick={() => patch({ status: key })}
               />
             ))}
+            <Chip
+              icon={<FavoriteRoundedIcon />} label="Favorites"
+              color={favorite ? 'primary' : 'default'} variant={favorite ? 'filled' : 'outlined'}
+              aria-pressed={favorite} onClick={() => patch({ favorite: !favorite })}
+            />
           </Stack>
           <Box sx={{ display: 'grid', gap: 1, gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, minmax(0, 220px))' } }}>
             <TextField select size="small" label="Category" value={category} onChange={e => patch({ category: e.target.value })}

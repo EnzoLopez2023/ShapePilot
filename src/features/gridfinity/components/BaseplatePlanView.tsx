@@ -27,6 +27,9 @@ export default function BaseplatePlanView({ plan, drawerWidthMm, drawerDepthMm }
   const line = theme.palette.divider
   const accent = theme.palette.primary.main
   const tileLabel = Math.max(6, Math.min(W, D) / 28)
+  const path = (rings: [number, number][][]) => rings
+    .map(r => r.map(([x, y], i) => `${i ? 'L' : 'M'}${(ox + x).toFixed(2)} ${(oy + fy(y)).toFixed(2)}`).join('') + 'Z')
+    .join('')
 
   return (
     <Box sx={{ position: 'absolute', inset: 0, p: 3, display: 'flex' }}>
@@ -35,11 +38,17 @@ export default function BaseplatePlanView({ plan, drawerWidthMm, drawerDepthMm }
         width="100%" height="100%" role="img"
         aria-label={`Drawer plan: ${plan.cellsX} by ${plan.cellsY} cells in ${plan.tiles.length} tiles`}
       >
-        <rect x={0} y={0} width={W} height={D} fill="none" stroke={muted} strokeDasharray="4 3" strokeWidth={0.8} />
-        <rect
-          x={ox} y={oy} width={plan.plateWidthMm} height={plan.plateDepthMm} rx={2}
-          fill={theme.palette.action.hover} stroke={ink} strokeWidth={0.8}
-        />
+        {plan.outline ? (
+          <path d={path(plan.outline)} fillRule="evenodd" fill={theme.palette.action.hover} stroke={ink} strokeWidth={0.8} />
+        ) : (
+          <>
+            <rect x={0} y={0} width={W} height={D} fill="none" stroke={muted} strokeDasharray="4 3" strokeWidth={0.8} />
+            <rect
+              x={ox} y={oy} width={plan.plateWidthMm} height={plan.plateDepthMm} rx={2}
+              fill={theme.palette.action.hover} stroke={ink} strokeWidth={0.8}
+            />
+          </>
+        )}
         {Array.from({ length: plan.cellsX }, (_, i) => Array.from({ length: plan.cellsY }, (_, j) => (
           <rect
             key={`${i}-${j}`}
@@ -76,7 +85,7 @@ export default function BaseplatePlanView({ plan, drawerWidthMm, drawerDepthMm }
           x={W / 2} y={D + margin * 0.7} textAnchor="middle" fontSize={Math.max(6, tileLabel * 0.7)}
           fill={muted} fontFamily={theme.typography.fontFamily}
         >
-          Front of drawer
+          {plan.outline ? 'Front of case' : 'Front of drawer'}
         </text>
       </svg>
     </Box>

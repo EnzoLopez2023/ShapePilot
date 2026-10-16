@@ -10,6 +10,9 @@ import {
 import { formatLength } from '../../../units.ts'
 import { binDimensions } from '../geometry/bin.ts'
 import type { LabelList } from '../model/types.ts'
+import type { BinColors } from '../state/viewSettings.ts'
+import OwnedColorSelect from '../../filaments/components/OwnedColorSelect.tsx'
+import type { OwnedColor } from '../../filaments/useOwnedColors.ts'
 
 export interface BinPanelProps {
   name: string
@@ -18,12 +21,28 @@ export interface BinPanelProps {
   imperial: boolean
   onName: (name: string) => void
   onBin: (patch: Partial<GridfinityBinParams>) => void
+  /** Filament you own, to paint the bin and label in. Empty hides the pickers. */
+  ownedColors: readonly OwnedColor[]
+  colors: BinColors
+  onColors: (colors: BinColors) => void
+  /** Where an owned colour sits in the AMS, e.g. "in AMS 1 · tray 2". */
+  amsNote: (key: string) => string | null
 }
 
 const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i)
 const NO_LIST = ''
 
-export default function BinPanel({ name, bin, lists, imperial, onName, onBin }: BinPanelProps) {
+export default function BinPanel(
+  { name, bin, lists, imperial, onName, onBin, ownedColors, colors, onColors, amsNote }: BinPanelProps,
+) {
+  const colorField = (part: keyof BinColors, label: string) => (
+    <OwnedColorSelect
+      label={label} colors={ownedColors} value={colors[part] ?? null}
+      onChange={choice => onColors({ ...colors, [part]: choice?.key })}
+      note={color => amsNote(color.key)}
+    />
+  )
+  const hasText = bin.labelTab && bin.labelText.trim() !== ''
   const dims = binDimensions(bin)
   const len = (mm: number) => `${+mm.toFixed(1)} mm${imperial ? ` (${formatLength(mm, true)})` : ''}`
   const list = lists.find(l => l.id === bin.labelListId)
@@ -158,6 +177,34 @@ export default function BinPanel({ name, bin, lists, imperial, onName, onBin }: 
           <MenuItem key={n} value={n}>{n} mm</MenuItem>
         ))}
       </TextField>
+      <FormControlLabel
+        disabled={!bin.labelTab}
+        control={(
+          <Switch
+            size="small" checked={!!bin.labelSeparate}
+            onChange={e => onBin({ labelSeparate: e.target.checked })}
+          />
+        )}
+        label="Print the text in a second colour"
+      />
+      {bin.labelSeparate && bin.labelTab && (
+        <Typography variant="body2" color="text.secondary">
+          {hasText
+            ? 'The text exports as its own body on the tab: one 3MF with two parts, or a zip of two STLs that line up.'
+            : 'Pick some text to get a second body.'}
+        </Typography>
+      )}
+
+      {ownedColors.length > 0 && (
+        <>
+          <Divider />
+          <Tooltip title="Paints each printed body in a filament you own. A colour loaded in the AMS also sets which tray that body prints from in the 3MF.">
+            <Typography variant="h3" component="h2">Filament colours</Typography>
+          </Tooltip>
+          {colorField('bin', 'Bin')}
+          {bin.labelSeparate && hasText && colorField('label', 'Label text')}
+        </>
+      )}
     </Stack>
   )
 }

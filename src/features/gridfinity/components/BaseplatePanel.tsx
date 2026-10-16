@@ -4,8 +4,15 @@ import {
 } from '@mui/material'
 import LengthField from '../../../components/LengthField.tsx'
 import {
-  BASEPLATE_LIMITS, type GridfinityAlign, type GridfinityBaseplateParams,
+  BASEPLATE_LIMITS, type GridfinityAlign, type GridfinityBaseplateParams, type GridfinityContainer,
 } from '../../../../lib/contracts/gridfinity.ts'
+import { getPreset } from '../../../model/trayProfile.ts'
+
+const CONTAINERS: { id: GridfinityContainer; label: string }[] = [
+  { id: 'drawer', label: 'A drawer I measure' },
+  { id: 'systainer-s76-notched', label: 'Systainer SYS3 S 76 — notched insert' },
+  { id: 'systainer-s76-plain', label: 'Systainer SYS3 S 76 — plain insert' },
+]
 
 export interface BaseplatePanelProps {
   name: string
@@ -22,6 +29,8 @@ const BEDS: { label: string; mm: number }[] = [
   { label: 'Prusa MK4 — 210 mm', mm: 210 },
   { label: 'Large format — 350 mm', mm: 350 },
 ]
+
+const DEFAULT_NAMES = ['Drawer baseplate', 'Systainer baseplate']
 
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
 
@@ -53,46 +62,72 @@ export default function BaseplatePanel(
 ) {
   const drawer = (mm: number) => clamp(mm, BASEPLATE_LIMITS.minDrawerMm, BASEPLATE_LIMITS.maxDrawerMm)
   const bedPreset = BEDS.find(b => b.mm === plate.bedMm)
+  const container = plate.container ?? 'drawer'
+  const systainerSize = container === 'drawer' ? '' : (() => {
+    const p = getPreset(container)
+    return `${+p.widthMm.toFixed(1)} × ${+p.heightMm.toFixed(1)} mm`
+  })()
   return (
     <Stack spacing={2} sx={{ p: 2, overflowY: { lg: 'auto' }, height: { lg: '100%' } }}>
       <TextField label="Name" size="small" value={name} onChange={e => onName(e.target.value)} />
 
-      <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
-        <Typography variant="h3" component="h2">Drawer</Typography>
-        <FormControlLabel
-          control={<Switch size="small" checked={imperial} onChange={e => onImperial(e.target.checked)} />}
-          label="Inches"
-        />
-      </Stack>
-      <LengthField
-        label="Inside width" imperial={imperial} valueMm={plate.drawerWidthMm}
-        onChangeMm={mm => onPlate({ drawerWidthMm: drawer(mm) })}
-        hint="Side to side, measured at the bottom of the drawer"
-      />
-      <LengthField
-        label="Inside depth" imperial={imperial} valueMm={plate.drawerDepthMm}
-        onChangeMm={mm => onPlate({ drawerDepthMm: drawer(mm) })}
-        hint="Front to back"
-      />
-      <LengthField
-        label="Clearance" imperial={imperial} valueMm={plate.clearanceMm}
-        onChangeMm={mm => onPlate({ clearanceMm: clamp(mm, 0, BASEPLATE_LIMITS.maxClearanceMm) })}
-        hint="Total play left each way so the plate drops in"
-      />
+      <TextField
+        select size="small" label="Fits in" value={container}
+        onChange={e => {
+          const next = e.target.value as GridfinityContainer
+          // Follow the choice with the name, unless it has been named by hand.
+          if (DEFAULT_NAMES.includes(name)) onName(next === 'drawer' ? DEFAULT_NAMES[0] : DEFAULT_NAMES[1])
+          onPlate({ container: next })
+        }}
+      >
+        {CONTAINERS.map(c => <MenuItem key={c.id} value={c.id}>{c.label}</MenuItem>)}
+      </TextField>
 
-      <Divider />
-      <Typography variant="h3" component="h2">Grid placement</Typography>
-      <Typography variant="body2" color="text.secondary">
-        Leftover space becomes solid plate. Choose which edge it goes to.
-      </Typography>
-      <AlignField
-        label="Left to right" value={plate.alignX} names={['Left', 'Centre', 'Right']}
-        onChange={alignX => onPlate({ alignX })}
-      />
-      <AlignField
-        label="Front to back" value={plate.alignY} names={['Front', 'Centre', 'Back']}
-        onChange={alignY => onPlate({ alignY })}
-      />
+      {container === 'drawer' ? (
+        <>
+          <Stack direction="row" sx={{ alignItems: 'center', justifyContent: 'space-between' }}>
+            <Typography variant="h3" component="h2">Drawer</Typography>
+            <FormControlLabel
+              control={<Switch size="small" checked={imperial} onChange={e => onImperial(e.target.checked)} />}
+              label="Inches"
+            />
+          </Stack>
+          <LengthField
+            label="Inside width" imperial={imperial} valueMm={plate.drawerWidthMm}
+            onChangeMm={mm => onPlate({ drawerWidthMm: drawer(mm) })}
+            hint="Side to side, measured at the bottom of the drawer"
+          />
+          <LengthField
+            label="Inside depth" imperial={imperial} valueMm={plate.drawerDepthMm}
+            onChangeMm={mm => onPlate({ drawerDepthMm: drawer(mm) })}
+            hint="Front to back"
+          />
+          <LengthField
+            label="Clearance" imperial={imperial} valueMm={plate.clearanceMm}
+            onChangeMm={mm => onPlate({ clearanceMm: clamp(mm, 0, BASEPLATE_LIMITS.maxClearanceMm) })}
+            hint="Total play left each way so the plate drops in"
+          />
+
+          <Divider />
+          <Typography variant="h3" component="h2">Grid placement</Typography>
+          <Typography variant="body2" color="text.secondary">
+            Leftover space becomes solid plate. Choose which edge it goes to.
+          </Typography>
+          <AlignField
+            label="Left to right" value={plate.alignX} names={['Left', 'Centre', 'Right']}
+            onChange={alignX => onPlate({ alignX })}
+          />
+          <AlignField
+            label="Front to back" value={plate.alignY} names={['Front', 'Centre', 'Back']}
+            onChange={alignY => onPlate({ alignY })}
+          />
+        </>
+      ) : (
+        <Typography variant="body2" color="text.secondary">
+          Cut to the same {systainerSize} outline as the keycap and switch trays,
+          with the grid centred. Nothing to measure.
+        </Typography>
+      )}
 
       <Divider />
       <Typography variant="h3" component="h2">Printer</Typography>

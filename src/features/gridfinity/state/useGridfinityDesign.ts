@@ -12,7 +12,8 @@ export function useGridfinityDesign() {
     (kind: GridfinityKind) => replace(d => {
       if (d.kind === kind) return d
       // A name nobody chose follows the kind; one they typed stays.
-      const name = d.name === emptyDesign(d.kind).name ? emptyDesign(kind).name : d.name
+      const untouched = d.name === emptyDesign(d.kind).name || d.name === 'Systainer baseplate'
+      const name = untouched ? emptyDesign(kind).name : d.name
       return { ...d, kind, name }
     }), [replace])
   const setName = useCallback((name: string) => replace(d => ({ ...d, name })), [replace])
