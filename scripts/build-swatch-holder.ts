@@ -50,14 +50,22 @@ if (!['skadis', 'pad', 'all'].includes(back)) {
   process.exit(1)
 }
 const columns = Number(flag('--columns') ?? 5)
-const slots = Number(flag('--slots') ?? 1)
+// A comma list, because one pad size rarely covers a shelf: a single travels
+// with a spool, a 4-up sits over a row of them, and a folder that holds both
+// should describe both rather than let the README go stale around whichever
+// was generated last.
+const slots = (flag('--slots') ?? '1,4').split(',').map(v => Number(v.trim()))
+if (slots.some(n => !Number.isInteger(n) || n < 1 || n > 8)) {
+  console.error('--slots wants whole numbers of cards, 1 to 8, e.g. 1,4')
+  process.exit(1)
+}
 const outDir = resolve(flag('--out') ?? (coupon ? 'models/swatch-holder-coupon' : 'models/swatch-holder'))
 
 const specs: HolderSpec[] = coupon
   ? [{ back: 'skadis', count: 1 }, { back: 'pad', count: 1 }]
   : [
       ...(back === 'pad' ? [] : [{ back: 'skadis' as const, count: columns }]),
-      ...(back === 'skadis' ? [] : [{ back: 'pad' as const, count: slots }]),
+      ...(back === 'skadis' ? [] : slots.map(n => ({ back: 'pad' as const, count: n }))),
     ]
 
 const issues = specs.flatMap(spec =>
@@ -100,7 +108,7 @@ for (const { name, holder } of built) {
 
 const hang = cardHang(CARD_50x30)
 const bar = derive(HOLDER, { back: 'skadis', count: columns })
-const pad = derive(HOLDER, { back: 'pad', count: slots })
+const pads = slots.map(n => ({ n, d: derive(HOLDER, { back: 'pad', count: n }) }))
 
 const readme = [
   coupon ? 'Swatch holder fit coupons' : 'Swatch card holders',
@@ -134,7 +142,7 @@ const readme = [
   '        starts ON the bed and from there material only ever ends as the',
   '        print rises. The first layer is a long thin strip plus one island',
   '        per blade, so a brim is not optional.',
-  `  Pad:  ${printNote({ back: 'pad', count: slots })}`,
+  `  Pads: ${printNote({ back: 'pad', count: slots[0]! })}`,
   '',
   '  No supports on either. PETG, not PLA, for anything that goes on a dryer or',
   '  the AMS: a dryer runs 50-70 C and PLA starts creeping at 55.',
@@ -153,14 +161,16 @@ const readme = [
   '  thickness ladder is in the bottom 13 mm of a hanging card and it is the only',
   '  thing on the card that is not also printed on the label.',
   '',
-  'Sticking the pad',
-  '----------------',
-  `  ${pad.widthMm} x ${pad.heightMm} mm, for 3M VHB or similar.`,
+  'Sticking the pads',
+  '-----------------',
+  ...pads.map(({ n, d }) =>
+    `  ${n} card${n === 1 ? ' ' : 's'}: ${d.widthMm} x ${d.heightMm} mm, needs a face no rounder `
+    + `than about ${Math.round(d.minFlatRadiusMm)} mm radius`),
   '',
-  '  FLAT FACES ONLY. A pad this wide needs a surface no rounder than about',
-  `  ${Math.round(pad.minFlatRadiusMm)} mm radius before its edges lift further than the foam`,
-  '  takes up. A dryer\'s flat side or a tub\'s lid is fine; the wall of a round',
-  '  tub is not, and the tape will creep off over weeks rather than fail at once.',
+  '  FLAT FACES ONLY, and the longer the pad the flatter the face has to be --',
+  '  the numbers above are what the foam can take up before the ends lift. A',
+  '  single will sit on a dryer\'s side; a 4-up wants something genuinely flat,',
+  '  and the tape creeps off over weeks rather than failing at once.',
   '',
   '  Sunlu and Eibos boxes and most food tubs are polypropylene or polyethylene.',
   '  VHB does not bond to those without 3M Primer 94 -- this is the most likely',

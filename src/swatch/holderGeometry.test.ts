@@ -56,7 +56,7 @@ test('every back emits the identical blade', () => {
   // The design's whole promise: a card comes off one mount and goes onto
   // another with the same motion, because the thing it engages is the same
   // thing. Normalise each blade to its own origin and they must agree.
-  const round = (mp: MultiPolygon) =>
+  const round = (mp: MultiPolygon): MultiPolygon =>
     mp.map(p => p.map(r => r.map(([px, py]) => [
       Math.round(px * 1e4) / 1e4, Math.round(py * 1e4) / 1e4,
     ])))
@@ -73,6 +73,20 @@ test('every back emits the identical blade', () => {
   const pad = normalise(PAD)
   assert.deepEqual(bar.trough, pad.trough)
   assert.deepEqual(bar.lip, pad.lip)
+  // And a multi-card pad is no exception -- every blade on it, not just the
+  // first, has to be the same blade, or a card would transfer differently
+  // depending which slot it came from.
+  const four: HolderSpec = { back: 'pad', count: 4 }
+  const d = derive(HOLDER, four)
+  const { trough, lip } = bladeBands(HOLDER, four)
+  for (let i = 0; i < 4; i++) {
+    const cx = d.bladeCentresMm[i]!
+    const shift = (mp: MultiPolygon, k: number): MultiPolygon =>
+      [mp[k]!].map(p => p.map(r => r.map(([px, py]) =>
+        [px - cx, py - d.bladeTopMm] as const)))
+    assert.deepEqual(round(shift(trough, i)), bar.trough, `blade ${i} trough`)
+    assert.deepEqual(round(shift(lip, i)), bar.lip, `blade ${i} lip`)
+  }
 })
 
 test('a blade passes through the card own hang slot', () => {

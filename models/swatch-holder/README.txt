@@ -19,6 +19,7 @@ Printing
 --------
   swatch_bar_5col        200.0 x 22.0 x 14.9 mm   20.4 g
   swatch_pad_1up         30.0 x 24.0 x 6.7 mm   3.0 g
+  swatch_pad_4up         150.0 x 24.0 x 6.7 mm   14.8 g
 
   Bar:  stand it on its top edge (the face the lips are flush with), brim on, no supports
         It has features on BOTH faces -- blades forward, prongs back -- so
@@ -26,7 +27,7 @@ Printing
         starts ON the bed and from there material only ever ends as the
         print rises. The first layer is a long thin strip plus one island
         per blade, so a brim is not optional.
-  Pad:  back face down on the bed, so the adhesive face is the bed face. No supports.
+  Pads: back face down on the bed, so the adhesive face is the bed face. No supports.
 
   No supports on either. PETG, not PLA, for anything that goes on a dryer or
   the AMS: a dryer runs 50-70 C and PLA starts creeping at 55.
@@ -45,14 +46,15 @@ Hanging the bar
   thickness ladder is in the bottom 13 mm of a hanging card and it is the only
   thing on the card that is not also printed on the label.
 
-Sticking the pad
-----------------
-  30 x 24 mm, for 3M VHB or similar.
+Sticking the pads
+-----------------
+  1 card : 30 x 24 mm, needs a face no rounder than about 322 mm radius
+  4 cards: 150 x 24 mm, needs a face no rounder than about 8036 mm radius
 
-  FLAT FACES ONLY. A pad this wide needs a surface no rounder than about
-  322 mm radius before its edges lift further than the foam
-  takes up. A dryer's flat side or a tub's lid is fine; the wall of a round
-  tub is not, and the tape will creep off over weeks rather than fail at once.
+  FLAT FACES ONLY, and the longer the pad the flatter the face has to be --
+  the numbers above are what the foam can take up before the ends lift. A
+  single will sit on a dryer's side; a 4-up wants something genuinely flat,
+  and the tape creeps off over weeks rather than failing at once.
 
   Sunlu and Eibos boxes and most food tubs are polypropylene or polyethylene.
   VHB does not bond to those without 3M Primer 94 -- this is the most likely

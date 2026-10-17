@@ -133,6 +133,30 @@ test('the lift that releases a card is under a millimetre', () => {
   assert.ok(d.releaseLiftMm <= hang.slotWidthMm - HOLDER.bladeThicknessMm)
 })
 
+test('a pad carries one blade per card, on the same pitch as the bar', () => {
+  const four = derive(HOLDER, { back: 'pad', count: 4 })
+  assert.equal(four.bladeCentresMm.length, 4)
+  assert.deepEqual(four.bladeCentresMm, [15, 55, 95, 135])
+  // Same pitch as the Skadis bar, so a card sits the same distance from its
+  // neighbour wherever it is and the gap rule means the same thing.
+  assert.equal(four.cardPitchMm, derive(HOLDER, BAR).cardPitchMm)
+  assert.equal(four.cardGapMm, derive(HOLDER, BAR).cardGapMm)
+  // The body grows by exactly one pitch per extra card.
+  const one = derive(HOLDER, PAD)
+  assert.equal(four.widthMm - one.widthMm, 3 * four.cardPitchMm)
+})
+
+test('a longer pad needs a flatter face, and says so', () => {
+  // The limit is not a constant: a flat plate's edges lift as its width grows,
+  // so a 4-up is honest about needing something much flatter than a single.
+  const one = derive(HOLDER, PAD).minFlatRadiusMm
+  const four = derive(HOLDER, { back: 'pad', count: 4 }).minFlatRadiusMm
+  assert.ok(four > one * 10, `${four.toFixed(0)} is not much flatter than ${one.toFixed(0)}`)
+  for (const n of [1, 2, 4, 8]) {
+    assert.deepEqual(checkConfig(HOLDER, { back: 'pad', count: n }), [], `${n}-up`)
+  }
+})
+
 test('the pad says how flat a face it needs rather than pretending', () => {
   const d = derive(HOLDER, PAD)
   // Invert it: at that radius the standoff is exactly what the foam takes up.
