@@ -156,6 +156,12 @@ const ROLLBACK_COMPATIBLE_LEDGER = [
     name: 'gridfinity',
     checksum: 'd91a70c3cc366b942f5ef41e2e8dabeeedd04da8445a642d276f8db9b7895ac8',
   },
+  {
+    ordinal: 21,
+    id: '022-tray-printed',
+    name: 'keycap tray printed mark',
+    checksum: '15c1f1e6135775010afaba8ad079106ed926fba2e1c8459d8bea8a0541fa126a',
+  },
 ] as const
 
 const REQUIRED_TABLES = [
