@@ -51,6 +51,24 @@ const modelXml = (objects: readonly string[], items: readonly string[], title: s
 </model>`
 
 /**
+ * Bambu's default sparse infill is grid, which is the one pattern not worth
+ * printing: it crosses itself every layer, so the nozzle jolts over each
+ * junction. Gyroid has no crossings and is isotropic. It is written as an
+ * object-level override, so it wins over whatever process preset is loaded.
+ */
+const INFILL_PATTERN = 'gyroid'
+
+/** Sidecar for a lone part: nothing to colour, but the infill override still
+ *  needs an object entry to hang on. */
+const singleSettingsXml = (title: string): string => `<?xml version="1.0" encoding="UTF-8"?>
+<config>
+<object id="1">
+<metadata key="name" value="${esc(title)}"/>
+<metadata key="sparse_infill_pattern" value="${INFILL_PATTERN}"/>
+</object>
+</config>`
+
+/**
  * `Metadata/model_settings.config` is Bambu's own sidecar, and the only thing
  * that makes a multi-body 3MF useful: without it the slicer has no part names
  * and no per-part filament, so an imported model is one uncolourable lump.
@@ -65,6 +83,7 @@ const modelSettingsXml = (
 <object id="${groupId}">
 <metadata key="name" value="${esc(title)}"/>
 <metadata key="extruder" value="${parts[0].extruder ?? 1}"/>
+<metadata key="sparse_infill_pattern" value="${INFILL_PATTERN}"/>
 ${parts.map((part, i) => `<part id="${i + 1}" subtype="normal_part">
 <metadata key="name" value="${esc(part.name)}"/>
 <metadata key="matrix" value="${IDENTITY}"/>
@@ -128,7 +147,9 @@ export function writeThreeMfParts(
     `<object id="${i + 1}" type="model" name="${esc(part.name)}">${meshXml(part.mesh)}</object>`)
 
   if (parts.length < 2) {
-    return pack(modelXml(objects, parts.map((_, i) => `<item objectid="${i + 1}"/>`), title))
+    return pack(
+      modelXml(objects, parts.map((_, i) => `<item objectid="${i + 1}"/>`), title),
+      singleSettingsXml(parts[0].name))
   }
 
   const groupId = parts.length + 1
