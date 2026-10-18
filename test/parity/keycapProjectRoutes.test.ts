@@ -417,6 +417,40 @@ describe('keycap project routes', () => {
     assert.equal((await get<Project>(`${BASE}/${mine.body.id}`)).body.name, 'Private')
   })
 
+  test('print history matches trays exactly, and the manual mark toggles', async () => {
+    const project = await post<{ id: string }>(BASE, projectPayload({ name: 'History set' }))
+    const middle = await post<{ id: string }>(TRAYS, trayPayload({ name: 'Wormier - Middle', projectId: project.body.id }))
+    const middle2 = await post<{ id: string }>(TRAYS, trayPayload({ name: 'Wormier - Middle 2', projectId: project.body.id }))
+
+    const db = server.database.handle
+    db.prepare(`INSERT INTO element_statistics_connections
+      (id, account_id, region, printer_id, printer_name, created_at, updated_at)
+      VALUES ('c1', 'a', 'global', 'p', 'X2D', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`).run()
+    const job = (id: string, title: string, result: string, endedAt: string) => db.prepare(`
+      INSERT INTO element_statistics_jobs (connection_id, cloud_job_id, title, result, started_at,
+        ended_at, materials_json, warnings_json, first_seen_at, last_seen_at)
+      VALUES ('c1', ?, ?, ?, ?, ?, '[]', '[]', ?, ?)`).run(id, title, result, endedAt, endedAt, endedAt, endedAt)
+    job('j1', 'Wormier_-_Middle_plate_1.3mf', 'completed', '2026-10-03T16:12:00.000Z')
+    job('j2', 'Wormier - Middle 2', 'failed_or_aborted', '2026-10-04T10:00:00.000Z')
+
+    const found = await get<Record<string, { printedAt: string; jobTitle: string }>>(
+      `${BASE}/${project.body.id}/print-history`)
+    assert.equal(found.status, 200)
+    assert.equal(found.body[middle.body.id].printedAt, '2026-10-03T16:12:00.000Z')
+    // A failed print does not count, and "Middle" never claims "Middle 2".
+    assert.equal(found.body[middle2.body.id], undefined)
+
+    const marked = await put<{ printedAt: string }>(`${TRAYS}/${middle2.body.id}/printed`, { printed: true })
+    assert.equal(marked.status, 200)
+    const list = await get<{ id: string; printedAt?: string }[]>(`${TRAYS}?projectId=${project.body.id}`)
+    assert.ok(list.body.find(t => t.id === middle2.body.id)?.printedAt)
+    await put(`${TRAYS}/${middle2.body.id}/printed`, { printed: false })
+    const again = await get<{ id: string; printedAt?: string }[]>(`${TRAYS}?projectId=${project.body.id}`)
+    assert.equal(again.body.find(t => t.id === middle2.body.id)?.printedAt, undefined)
+    assert.equal((await put(`${TRAYS}/${middle2.body.id}/printed`, { printed: 'yes' })).status, 400)
+    assert.equal((await put(`${TRAYS}/${middle2.body.id}/printed`, { printed: true }, OTHER_TOKEN)).status, 404)
+  })
+
   test('the routes require authentication', async () => {
     assert.equal((await server.fetchJson(BASE)).status, 401)
     assert.equal((await server.fetchJson(BASE, {

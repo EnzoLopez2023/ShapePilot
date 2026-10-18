@@ -316,6 +316,15 @@ export const KEYCAP_PROJECT_STATEMENTS: readonly string[] = [
  * column, same shape as `sizing_json`: `{"heightMm":7,"sizeMm":10}` or NULL for
  * a tray with no spacers, which is every tray imported from Hearth.
  */
+/**
+ * `printed_at` on `keycap_tray_designs`: when the owner marked a tray printed
+ * by hand. Printer history is matched live and never stored here, so this
+ * column is only the manual mark. Nullable: every existing tray is unmarked.
+ */
+export const TRAY_PRINTED_STATEMENTS: readonly string[] = [
+  `ALTER TABLE keycap_tray_designs ADD COLUMN printed_at TEXT`,
+]
+
 export const CORNER_SPACER_STATEMENTS: readonly string[] = [
   `ALTER TABLE keycap_tray_designs ADD COLUMN corner_spacers_json TEXT`,
 ]

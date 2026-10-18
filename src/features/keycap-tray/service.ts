@@ -18,6 +18,8 @@ export interface DesignSummary {
   notes?: string
   profileKind: TrayProfile['kind']
   pocketCount: number
+  /** When the owner marked it printed by hand. */
+  printedAt?: string
   createdAt: string
   updatedAt: string
 }
@@ -78,6 +80,11 @@ export const cloneDesign = (id: string, name?: string, projectId?: string | null
   apiRequest<{ id: string }>(`${base}/${id}/clone`, {
     method: 'POST',
     body: projectId === undefined ? { name } : { name, projectId },
+  })
+
+export const setPrinted = (id: string, printed: boolean) =>
+  apiRequest<{ printedAt: string | null }>(`${base}/${id}/printed`, {
+    method: 'PUT', body: { printed },
   })
 
 export const deleteDesign = (id: string) =>

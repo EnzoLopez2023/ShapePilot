@@ -16,8 +16,8 @@
 // through the app's one confirm dialog.
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton,
-  Menu, MenuItem, Stack, TextField, Typography,
+  Box, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, IconButton,
+  FormControlLabel, Menu, MenuItem, Stack, TextField, Tooltip, Typography,
 } from '@mui/material'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
@@ -28,13 +28,14 @@ import * as trays from '../../keycap-tray/service.ts'
 import * as projectsApi from '../service.ts'
 import type { TrayDesign } from '../../keycap-tray/model/types.ts'
 import type { ProjectSummary } from '../model/types.ts'
+import type { PrintHistoryMatches } from '../service.ts'
 import { errorMessage } from '../../../services/errors.ts'
 import { useConfirm } from '../../../components/ConfirmDialogProvider.tsx'
 import { LoadingState } from '../../../components/LoadingState.tsx'
 import TrayThumbnail from './TrayThumbnail.tsx'
 
 export interface TrayPreviewsProps {
-  trays: { id: string; name: string; pocketCount: number }[]
+  trays: { id: string; name: string; pocketCount: number; printedAt?: string }[]
   /** The set this list belongs to -- offered as "this set" when duplicating. */
   currentProjectId: string
   currentProjectName: string
@@ -61,6 +62,30 @@ export default function TrayPreviews({
   const [destination, setDestination] = useState('')
 
   const ids = summaries.map(s => s.id).join(',')
+
+  // What the printer's history says was printed, and the manual marks made
+  // this session (the summaries carry the saved ones until the next reload).
+  const [history, setHistory] = useState<PrintHistoryMatches>({})
+  const [manual, setManual] = useState<Record<string, string | null>>({})
+
+  // History is a convenience like the drawings: if the printer sync is off or
+  // the request fails, trays simply show their manual state.
+  useEffect(() => {
+    let cancelled = false
+    void projectsApi.getPrintHistory(currentProjectId)
+      .then(found => { if (!cancelled) setHistory(found) })
+      .catch(() => { if (!cancelled) setHistory({}) })
+    return () => { cancelled = true }
+  }, [currentProjectId, ids])
+
+  const togglePrinted = useCallback(async (id: string, printed: boolean) => {
+    try {
+      const { printedAt } = await trays.setPrinted(id, printed)
+      setManual(prev => ({ ...prev, [id]: printedAt }))
+    } catch (cause) {
+      onError(errorMessage(cause))
+    }
+  }, [onError])
 
   useEffect(() => {
     if (!ids) { setDesigns({}); return }
@@ -193,6 +218,11 @@ export default function TrayPreviews({
                 <Typography variant="body2" color="text.secondary">
                   {summary.pocketCount} {summary.pocketCount === 1 ? 'pocket' : 'pockets'}
                 </Typography>
+                <PrintedRow
+                  fromHistory={history[summary.id]}
+                  manualAt={summary.id in manual ? manual[summary.id] : summary.printedAt}
+                  onToggle={printed => void togglePrinted(summary.id, printed)}
+                />
               </Box>
               <IconButton
                 size="small"
@@ -281,5 +311,55 @@ export default function TrayPreviews({
         </DialogActions>
       </Dialog>
     </>
+  )
+}
+
+/** "Oct 3, 2026, 4:12 PM" -- date and time, as the printer recorded it. */
+const formatPrinted = (iso: string): string => {
+  const parsed = new Date(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(iso) ? `${iso.replace(' ', 'T')}Z` : iso)
+  return Number.isNaN(parsed.getTime())
+    ? iso
+    : parsed.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+interface PrintedRowProps {
+  fromHistory?: { printedAt: string; jobTitle: string }
+  manualAt?: string | null
+  onToggle: (printed: boolean) => void
+}
+
+/**
+ * Printed state for one tray. Printer history is authoritative and cannot be
+ * unchecked here (the print happened); otherwise the box is the manual mark.
+ * Sits inside the card's click target, so its events must not open the tray.
+ */
+function PrintedRow({ fromHistory, manualAt, onToggle }: PrintedRowProps) {
+  const stop = (e: { stopPropagation: () => void }) => e.stopPropagation()
+  const detail = fromHistory
+    ? `Printed ${formatPrinted(fromHistory.printedAt)} · from printer history`
+    : manualAt ? `Marked printed ${formatPrinted(manualAt)}` : null
+  const checkbox = (
+    <Checkbox
+      size="small"
+      checked={Boolean(fromHistory || manualAt)}
+      disabled={Boolean(fromHistory)}
+      onChange={e => onToggle(e.target.checked)}
+    />
+  )
+  return (
+    <Box onClick={stop} onKeyDown={stop} sx={{ mt: 0.5 }}>
+      <FormControlLabel
+        sx={{ m: 0, alignItems: 'flex-start' }}
+        control={fromHistory
+          ? <Tooltip title={`Matched to the print "${fromHistory.jobTitle}"`}><span>{checkbox}</span></Tooltip>
+          : checkbox}
+        label={(
+          <Box sx={{ pt: 0.5 }}>
+            <Typography variant="body2">Printed</Typography>
+            {detail && <Typography variant="caption" color="text.secondary">{detail}</Typography>}
+          </Box>
+        )}
+      />
+    </Box>
   )
 }

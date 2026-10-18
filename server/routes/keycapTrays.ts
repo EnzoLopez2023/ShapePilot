@@ -159,6 +159,19 @@ export function createKeycapTrayRouter(repos: Repositories): Router {
     res.status(201).json(created)
   }))
 
+  router.put('/:id/printed', asyncRoute(async (req, res) => {
+    const owner = ownerOf(req)
+    const printed = (req.body as { printed?: unknown } | undefined)?.printed
+    if (typeof printed !== 'boolean') {
+      throw ApiError.badRequest('printed must be a boolean', { field: 'printed' })
+    }
+    const printedAt = printed ? new Date().toISOString() : null
+    const ok = await keycapTrays.setPrinted(owner, pathId(req.params.id), printedAt)
+    if (!ok) throw ApiError.notFound('design not found')
+    note(req, owner, printed ? 'design_marked_printed' : 'design_unmarked_printed', pathId(req.params.id))
+    res.json({ printedAt })
+  }))
+
   router.delete('/:id', asyncRoute(async (req, res) => {
     const owner = ownerOf(req)
     const removed = await keycapTrays.deleteDesign(owner, pathId(req.params.id))

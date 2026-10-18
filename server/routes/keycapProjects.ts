@@ -31,9 +31,20 @@ const pathId = (value: string | string[]): string => (Array.isArray(value) ? val
 /** Row ids are integers in SQLite and strings on the wire. */
 const ROW_ID = /^[0-9]{1,19}$/
 
+/** Letters and digits, lower case; the slicer's decorations stripped first. */
+const normaliseTitle = (value: string): string => value
+  .replace(/\.(3mf|stl|gcode(\.3mf)?)$/i, '')
+  .replace(/[_\s-]*plate[_\s-]*\d+$/i, '')
+  .replace(/[_\s-]*\(\d+\)$/, '')
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, '')
+
+/** How many recorded jobs are read when matching; far beyond a household's history. */
+const HISTORY_LIMIT = 20_000
+
 export function createKeycapProjectRouter(repos: Repositories): Router {
   const router = Router()
-  const { keycapProjects, designAssets, audit } = repos
+  const { keycapProjects, keycapTrays, elementStatistics, designAssets, audit } = repos
 
   const note = (
     req: { method: string; path: string; requestId?: string },
@@ -68,6 +79,36 @@ export function createKeycapProjectRouter(repos: Repositories): Router {
       ownerOf(req), pathId(req.params.id), excludeTrayId)
     if (!project) throw ApiError.notFound('project not found')
     res.json(project)
+  }))
+
+  // Which of the project's trays the printer's history says were printed.
+  //
+  // Nothing in a job record names a design; the only thread is the title, the
+  // file the slicer was given, which an export names after the tray. The match
+  // is an exact normalised one (Studio's "plate_1" / ".3mf" decorations
+  // stripped) and never a substring: "Middle" must not claim "Middle 2". Only
+  // completed jobs count, and the latest wins.
+  router.get('/:id/print-history', asyncRoute(async (req, res) => {
+    const owner = ownerOf(req)
+    const projectId = pathId(req.params.id)
+    const project = await keycapProjects.get(owner, projectId)
+    if (!project) throw ApiError.notFound('project not found')
+    const trays = await keycapTrays.listDesigns(owner, projectId)
+    const jobs = (await elementStatistics.listJobs(null, HISTORY_LIMIT))
+      .filter(job => job.result === 'completed' && job.title)
+    const matches: Record<string, { printedAt: string; jobTitle: string }> = {}
+    for (const tray of trays) {
+      const needle = normaliseTitle(tray.name)
+      if (needle.length < 3) continue
+      let best: { at: string; title: string } | null = null
+      for (const job of jobs) {
+        if (normaliseTitle(job.title ?? '') !== needle) continue
+        const at = job.endedAt ?? job.startedAt
+        if (at && (!best || at > best.at)) best = { at, title: job.title ?? '' }
+      }
+      if (best) matches[tray.id] = { printedAt: best.at, jobTitle: best.title }
+    }
+    res.json(matches)
   }))
 
   router.post('/', asyncRoute(async (req, res) => {

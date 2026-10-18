@@ -50,6 +50,7 @@ interface DesignRow {
   engrave_mm: number
   corner_spacers_json: string | null
   nameplate_json: string | null
+  printed_at: string | null
   created_at: string
   updated_at: string
 }
@@ -315,6 +316,7 @@ export function createKeycapTrayRepository(db: SqliteDatabase): KeycapTrayReposi
         notes: r.notes ?? undefined,
         profileKind: r.profile_kind as TrayProfileKind,
         pocketCount: r.pocket_count,
+        ...(r.printed_at ? { printedAt: r.printed_at } : {}),
         createdAt: r.created_at,
         updatedAt: r.updated_at,
       }))
@@ -346,6 +348,16 @@ export function createKeycapTrayRepository(db: SqliteDatabase): KeycapTrayReposi
       // id moves it, the route having already checked the caller owns that one.
       const target = projectId === undefined ? src.project_id : projectId
       return { id: String(cloneTx(owner, src, name || `${src.name} (copy)`, target)) }
+    },
+
+    async setPrinted(owner, id, printedAt) {
+      // Deliberately leaves updated_at alone: a mark is not an edit, and the
+      // list is ordered by recency of editing.
+      const info = db.prepare(`
+        UPDATE keycap_tray_designs SET printed_at = ?
+         WHERE owner_tenant_id = ? AND owner_oid = ? AND id = ?`)
+        .run(printedAt, owner.tenantId, owner.oid, id)
+      return info.changes > 0
     },
 
     async deleteDesign(owner, id) {

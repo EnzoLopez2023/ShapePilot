@@ -55,4 +55,10 @@ export const addProjectPhoto = (id: string, hash: string, caption?: string) =>
 export const removeProjectPhoto = (id: string, hash: string) =>
   apiRequest<{ ok: true }>(`${base}/${id}/photos/${hash}`, { method: 'DELETE' })
 
+/** Trays the printer's history says were printed, keyed by tray id. */
+export type PrintHistoryMatches = Record<string, { printedAt: string; jobTitle: string }>
+
+export const getPrintHistory = (id: string) =>
+  apiRequest<PrintHistoryMatches>(`${base}/${id}/print-history`)
+
 export type { KeycapProject, ProjectInput, ProjectSummary, SetItem }

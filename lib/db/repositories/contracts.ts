@@ -198,6 +198,8 @@ export interface TrayDesignSummary {
   notes?: string
   profileKind: TrayProfileKind
   pocketCount: number
+  /** When the owner marked this tray printed by hand; absent if never. */
+  printedAt?: string
   createdAt: string
   updatedAt: string
 }
@@ -277,6 +279,8 @@ export interface KeycapTrayRepository {
     owner: Owner, id: string, name?: string, projectId?: string | null,
   ): Promise<{ id: string } | null>
   deleteDesign(owner: Owner, id: string): Promise<boolean>
+  /** Sets or (null) clears the manual printed mark. False when the tray is not the caller's. */
+  setPrinted(owner: Owner, id: string, printedAt: string | null): Promise<boolean>
   listLibraryPockets(owner: Owner): Promise<LibraryPocketRecord[]>
   createLibraryPocket(owner: Owner, input: LibraryPocketInput): Promise<{ id: string }>
   deleteLibraryPocket(owner: Owner, id: string): Promise<boolean>
