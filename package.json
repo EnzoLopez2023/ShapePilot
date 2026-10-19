@@ -25,6 +25,7 @@
     "swatch:build": "node scripts/build-filament-swatch.ts",
     "swatch:labels": "node scripts/build-label-csv.ts",
     "swatch:holder": "node scripts/build-swatch-holder.ts",
+    "caliper:holder": "node scripts/build-caliper-holder.ts",
     "boards:build": "node scripts/build-cutting-boards.ts",
     "kitchen:build": "node scripts/build-kitchen-pieces.ts",
     "coupon:fasteners": "vite-node scripts/build-fastener-coupon.ts",
