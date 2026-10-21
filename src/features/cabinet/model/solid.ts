@@ -15,7 +15,8 @@ import type { Band } from '../../../geometry/bands.ts'
 import type { Mesh } from '../../../geometry/mesh.ts'
 import type { MultiPolygon, Ring } from '../../../geometry/vec.ts'
 import type { CutDrawing } from '../../../export/cutLayers.ts'
-import { backDrawing, sideDrawing, topBottomDrawing } from '../export/cutDrawing.ts'
+import { PANEL_DRAWINGS, backDrawing, sideDrawing, topBottomDrawing } from '../export/cutDrawing.ts'
+import type { PanelId } from '../export/cutDrawing.ts'
 import { cabinetDims } from './cabinet.ts'
 import type { CabinetParams } from './cabinet.ts'
 
@@ -151,4 +152,10 @@ export function cabinetSolid(p: CabinetParams): CabinetSolid {
       ? placeAll([{ mesh: extrude(d.cleat.wallProfile, d.cleat.lengthMm), place: across }])
       : null,
   }
+}
+
+/** One panel lying flat, inner face up, in its own drawing frame -- the piece as it sits on the spoilboard. */
+export function panelMesh(panel: PanelId, p: CabinetParams): Mesh {
+  const thickness = panel === 'back' ? p.backMm : p.stockMm
+  return meshFromBands(drawingBands(PANEL_DRAWINGS[panel](p), thickness))
 }

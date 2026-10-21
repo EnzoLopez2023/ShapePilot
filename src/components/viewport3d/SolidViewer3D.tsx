@@ -14,6 +14,14 @@ export interface SolidViewerBody {
   color?: string
 }
 
+/** A flat rectangular outline drawn in the XY plane, e.g. a machine's reach. */
+export interface SolidViewerOutline {
+  x0: number; y0: number; x1: number; y1: number
+  z?: number
+  /** CSS colour. */
+  color?: string
+}
+
 export interface SolidViewer3DProps {
   mesh: SolidMesh
   /** Announced to screen readers -- "tray", "switch tray plate", ... */
@@ -28,6 +36,8 @@ export interface SolidViewer3DProps {
    * once, when the viewer mounts.
    */
   up?: 'y' | 'z'
+  /** Reference outlines drawn alongside the body; they do not affect framing. */
+  outlines?: readonly SolidViewerOutline[]
 }
 
 /**
@@ -37,7 +47,7 @@ export interface SolidViewer3DProps {
  * Shared by every tray-shaped designer -- it only ever needed a `Mesh`.
  */
 export default function SolidViewer3D(
-  { mesh, label = 'the model', color, extras, up = 'y' }: SolidViewer3DProps,
+  { mesh, label = 'the model', color, extras, up = 'y', outlines }: SolidViewer3DProps,
 ) {
   const upRef = useRef(up)
   const theme = useTheme()
@@ -159,6 +169,28 @@ export default function SolidViewer3D(
     state.camera.updateProjectionMatrix()
     state.controls.update()
   }, [mesh, color, extras, dark])
+
+  useEffect(() => {
+    const state = stateRef.current
+    if (!state || !outlines?.length) return
+    const group = new THREE.Group()
+    for (const o of outlines) {
+      const geom = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(o.x0, o.y0, o.z ?? 0), new THREE.Vector3(o.x1, o.y0, o.z ?? 0),
+        new THREE.Vector3(o.x1, o.y1, o.z ?? 0), new THREE.Vector3(o.x0, o.y1, o.z ?? 0),
+      ])
+      group.add(new THREE.LineLoop(geom, new THREE.LineBasicMaterial({ color: o.color ?? '#3b82f6' })))
+    }
+    state.scene.add(group)
+    return () => {
+      state.scene.remove(group)
+      group.traverse(child => {
+        const line = child as Partial<THREE.Line>
+        line.geometry?.dispose()
+        ;(line.material as THREE.Material | undefined)?.dispose()
+      })
+    }
+  }, [outlines])
 
   return (
     <Box

@@ -44,6 +44,8 @@ export interface Canvas2DProps {
   snapMm: number
   /** Stock outline to draw behind the design, if the machine defines one. */
   stockMm?: { widthMm: number; heightMm: number } | null
+  /** Optional labelled reach outline, drawn from the same corner as the stock. */
+  reachMm?: { widthMm: number; heightMm: number; label: string } | null
   /** Panels frame the canvas, so fit() has to account for them. */
   inset?: Inset
   /** Bumping this re-runs fit-to-content. */
@@ -109,7 +111,7 @@ const zRotation = (o: SceneObject): number => o.transform.rotationDeg[2]
 
 export default function Canvas2D(props: Canvas2DProps) {
   const {
-    shapes, objects, selection, gridMm, snapMm, stockMm, inset = NO_INSET, fitToken,
+    shapes, objects, selection, gridMm, snapMm, stockMm, reachMm, inset = NO_INSET, fitToken,
     imperial = false,
     onSelect, onClearSelection, onMove, onRotate, onResize, onDropPaletteItem, emptyHint,
   } = props
@@ -496,6 +498,22 @@ export default function Canvas2D(props: Canvas2DProps) {
               fill="none" stroke={colours.stock} strokeWidth={stroke * 1.5}
               strokeDasharray={`${stroke * 6} ${stroke * 4}`}
             />
+          )}
+          {reachMm && (
+            <g>
+              <rect
+                x={0} y={0} width={reachMm.widthMm} height={reachMm.heightMm}
+                fill={theme.palette.info.main} fillOpacity={0.06}
+                stroke={theme.palette.info.main} strokeWidth={stroke * 1.5}
+              />
+              <text
+                x={view.w / 100} y={-reachMm.heightMm + view.w / 50}
+                transform="scale(1, -1)" fontSize={view.w / 60}
+                fill={theme.palette.info.main}
+              >
+                {reachMm.label}
+              </text>
+            </g>
           )}
 
           {drag?.guideX != null && (

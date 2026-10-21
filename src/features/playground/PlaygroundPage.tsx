@@ -6,17 +6,14 @@
 // a corner of the inspector.
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  Alert, Box, Button, Chip, Divider, IconButton, Paper, Popover, Snackbar, Stack,
+  Alert, Box, Button, Chip, Divider, Paper, Popover, Snackbar, Stack,
   ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material'
-import UndoRoundedIcon from '@mui/icons-material/UndoRounded'
-import RedoRoundedIcon from '@mui/icons-material/RedoRounded'
-import ArchitectureRoundedIcon from '@mui/icons-material/ArchitectureRounded'
-import ViewInArRoundedIcon from '@mui/icons-material/ViewInArRounded'
 import LayersRoundedIcon from '@mui/icons-material/LayersRounded'
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded'
 import { useNavigate } from 'react-router-dom'
 
+import { standardMenu, useAppMenu } from '../../components/menu/AppMenu.tsx'
 import AiPanel from '../../components/designer/AiPanel.tsx'
 import type { Proposal } from '../../components/designer/useAiDesigner.ts'
 import { appendChat, useAiDesigner } from '../../components/designer/useAiDesigner.ts'
@@ -224,6 +221,31 @@ export default function PlaygroundPage() {
     if (id) navigate(`${path}?open=${id}`)
   }, [lifecycle, navigate])
 
+  useAppMenu(standardMenu({
+    onNew: lifecycle.create,
+    onOpen: () => setOpenDialog(true),
+    // A never-saved design has no name but a default one, and writing that
+    // default is how a shelf of "Untitled model" gets made. The first save
+    // asks; every save after it just saves.
+    onSave: () => (lifecycle.savedId ? void lifecycle.save() : setSaveAsOpen(true)),
+    onSaveAs: () => setSaveAsOpen(true),
+    saveDisabled: lifecycle.busy || (!objects.length && !lifecycle.savedId),
+    onUndo: doc.undo,
+    onRedo: doc.redo,
+    canUndo: doc.canUndo,
+    canRedo: doc.canRedo,
+    exports: [
+      { label: 'Export SVG', onClick: exportSvg, disabled: !twoD },
+      { label: 'Export STL', onClick: () => void exportMesh('stl'), disabled: !objects.length },
+      { label: 'Export 3MF', onClick: () => void exportMesh('3mf'), disabled: !objects.length },
+    ],
+    file: [
+      { label: 'Continue in Shaper', onClick: () => void handOff('shaper'), disabled: !objects.length },
+      { label: 'Continue in Bambu', onClick: () => void handOff('bambu'), disabled: !objects.length },
+    ],
+    view: [{ label: 'Fit to view', onClick: () => setFitToken(t => t + 1) }],
+  }))
+
   return (
     <>
       <Box
@@ -244,17 +266,11 @@ export default function PlaygroundPage() {
               AI Imagination Playground
             </Typography>
             <DocumentNameField name={doc.doc.name} onRename={doc.rename} />
-            <Tooltip title="Undo" describeChild><span>
-              <IconButton size="small" aria-label="Undo" disabled={!doc.canUndo} onClick={doc.undo}>
-                <UndoRoundedIcon fontSize="small" />
-              </IconButton>
-            </span></Tooltip>
-            <Tooltip title="Redo" describeChild><span>
-              <IconButton size="small" aria-label="Redo" disabled={!doc.canRedo} onClick={doc.redo}>
-                <RedoRoundedIcon fontSize="small" />
-              </IconButton>
-            </span></Tooltip>
-            <Button size="small" onClick={() => setFitToken(t => t + 1)}>Fit</Button>
+            {lifecycle.hasUnsavedChanges && (
+              <Tooltip title="Unsaved changes" describeChild>
+                <Typography component="span" aria-label="Unsaved changes" sx={{ color: 'text.secondary', mx: -0.5 }}>*</Typography>
+              </Tooltip>
+            )}
             {flat && (
               <>
                 <Button
@@ -276,46 +292,6 @@ export default function PlaygroundPage() {
               </>
             )}
 
-            <Box sx={{ flex: 1 }} />
-
-            <Button
-              size="small" startIcon={<ArchitectureRoundedIcon />}
-              disabled={!objects.length}
-              onClick={() => void handOff('shaper')}
-            >
-              Continue in Shaper
-            </Button>
-            <Button
-              size="small" startIcon={<ViewInArRoundedIcon />}
-              disabled={!objects.length}
-              onClick={() => void handOff('bambu')}
-            >
-              Continue in Bambu
-            </Button>
-            <Button size="small" disabled={!twoD} onClick={exportSvg}>
-              SVG
-            </Button>
-            <Button size="small" disabled={!objects.length} onClick={() => void exportMesh('stl')}>
-              STL
-            </Button>
-            <Button size="small" disabled={!objects.length} onClick={() => void exportMesh('3mf')}>
-              3MF
-            </Button>
-
-            <Divider orientation="vertical" flexItem />
-
-            <Button size="small" onClick={lifecycle.create}>New</Button>
-            <Button size="small" onClick={() => setOpenDialog(true)}>Open</Button>
-            <Button size="small" onClick={() => setSaveAsOpen(true)}>Save as</Button>
-            <Button
-              size="small" variant="contained" disabled={lifecycle.busy || (!objects.length && !lifecycle.savedId)}
-              // A never-saved design has no name but a default one, and writing
-        // that default is how a shelf of "Untitled model" gets made. The
-        // first save asks; every save after it just saves.
-        onClick={() => (lifecycle.savedId ? void lifecycle.save() : setSaveAsOpen(true))}
-            >
-              {lifecycle.hasUnsavedChanges ? 'Save *' : 'Save'}
-            </Button>
           </Stack>
         </Paper>
 

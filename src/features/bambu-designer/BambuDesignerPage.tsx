@@ -1,22 +1,15 @@
 // Bambu Designer: a Tinkercad-style 3D modeller for the Bambu Lab X2D.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Alert, Box, Button, Divider, IconButton, Menu, MenuItem, Popover, Snackbar, Stack, TextField,
+  Alert, Box, Button, Divider, IconButton, MenuItem, Popover, Snackbar, Stack, TextField,
   ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material'
-import UndoRoundedIcon from '@mui/icons-material/UndoRounded'
-import RedoRoundedIcon from '@mui/icons-material/RedoRounded'
-import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
-import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
-import CallMergeRoundedIcon from '@mui/icons-material/CallMergeRounded'
-import CallSplitRoundedIcon from '@mui/icons-material/CallSplitRounded'
-import FlipRoundedIcon from '@mui/icons-material/FlipRounded'
-import ArchitectureRoundedIcon from '@mui/icons-material/ArchitectureRounded'
 import VerticalAlignBottomRoundedIcon from '@mui/icons-material/VerticalAlignBottomRounded'
 import KeyboardRoundedIcon from '@mui/icons-material/KeyboardRounded'
 import BadgeRoundedIcon from '@mui/icons-material/BadgeRounded'
 import { useNavigate } from 'react-router-dom'
 
+import { standardMenu, useAppMenu } from '../../components/menu/AppMenu.tsx'
 import DesignerLayout from '../../components/designer/DesignerLayout.tsx'
 import { OpenDocumentDialog, SaveAsDialog } from '../../components/designer/DocumentDialogs.tsx'
 import DocumentNameField from '../../components/designer/DocumentNameField.tsx'
@@ -183,7 +176,6 @@ export default function BambuDesignerPage() {
     { spec: CardSpec; editing: FoundCard | null } | null>(null)
   const [cardKit, setCardKit] = useState<CardKit | null>(null)
   const [cardBusy, setCardBusy] = useState(false)
-  const [mirrorAnchor, setMirrorAnchor] = useState<HTMLElement | null>(null)
   const [shortcutsAnchor, setShortcutsAnchor] = useState<HTMLElement | null>(null)
   const [showOverhangs, setShowOverhangs] = useState(false)
   const shortcutsButton = useRef<HTMLButtonElement>(null)
@@ -679,6 +671,62 @@ export default function BambuDesignerPage() {
     }))
   }, [assistant, doc])
 
+  useAppMenu(standardMenu({
+    onNew: lifecycle.create,
+    onOpen: () => setOpenDialog(true),
+    // A never-saved design has no name but a default one, and writing that
+    // default is how a shelf of "Untitled model" gets made. The first save
+    // asks; every save after it just saves. An empty design that was never
+    // saved has nothing to keep, but a saved one may have been emptied on purpose.
+    onSave: () => (lifecycle.savedId ? void lifecycle.save() : setSaveAsOpen(true)),
+    onSaveAs: () => setSaveAsOpen(true),
+    saveDisabled: lifecycle.busy || (!objects.length && !lifecycle.savedId),
+    onUndo: doc.undo,
+    onRedo: doc.redo,
+    canUndo: doc.canUndo,
+    canRedo: doc.canRedo,
+    onDuplicate: () => doc.duplicateObjects(doc.selection),
+    canDuplicate: doc.selection.size > 0,
+    onDelete: () => void removeSelected(),
+    canDelete: doc.selection.size > 0,
+    exports: [
+      { label: 'Export STL', onClick: () => void exportMesh('stl') },
+      { label: 'Export 3MF', onClick: () => void exportMesh('3mf') },
+    ],
+    file: [{
+      label: 'To Shaper',
+      onClick: () => {
+        void (async () => {
+          const id = await lifecycle.handOff('shaper')
+          if (id) navigate(`/shaper-designer?open=${id}`)
+        })()
+      },
+    }],
+    edit: [
+      { label: 'Group', shortcut: 'G', onClick: () => doc.groupObjects(doc.selection), disabled: doc.selection.size < 2 },
+      {
+        label: 'Ungroup',
+        onClick: () => { if (selectedObject) doc.ungroupObject(selectedObject.id) },
+        disabled: !selectedObject || selectedObject.type !== 'group',
+      },
+      ...AXES.map(({ axis, label }) => ({
+        label: `Mirror across ${label}`,
+        shortcut: ['M', 'Shift+M', 'Alt+M'][axis],
+        onClick: () => mirror(axis),
+        disabled: !doc.selection.size,
+        dividerBefore: axis === 0,
+      })),
+      {
+        label: doc.selection.size ? 'Drop selection to plate' : 'Drop everything to plate',
+        shortcut: 'D',
+        onClick: () => dropToPlate(),
+        disabled: !objects.length,
+        dividerBefore: true,
+      },
+    ],
+    view: [{ label: 'Fit to view', onClick: () => setFitToken(t => t + 1) }],
+  }))
+
   const toolbar = (
     <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
       <Typography variant="h1" component="h1" sx={{ fontSize: '1.0625rem', pr: 1.5, borderRight: 1, borderColor: 'divider' }}>
@@ -686,61 +734,11 @@ export default function BambuDesignerPage() {
       </Typography>
       <DocumentNameField name={doc.doc.name} onRename={doc.rename} />
 
-      <Tooltip title="Undo" describeChild><span>
-        <IconButton size="small" aria-label="Undo" disabled={!doc.canUndo} onClick={doc.undo}>
-          <UndoRoundedIcon fontSize="small" />
-        </IconButton>
-      </span></Tooltip>
-      <Tooltip title="Redo" describeChild><span>
-        <IconButton size="small" aria-label="Redo" disabled={!doc.canRedo} onClick={doc.redo}>
-          <RedoRoundedIcon fontSize="small" />
-        </IconButton>
-      </span></Tooltip>
-      <Tooltip title="Duplicate (⌘D)" describeChild><span>
-        <IconButton
-          size="small" aria-label="Duplicate" disabled={!doc.selection.size}
-          onClick={() => doc.duplicateObjects(doc.selection)}
-        ><ContentCopyRoundedIcon fontSize="small" /></IconButton>
-      </span></Tooltip>
-      <Tooltip title="Group (G) — solids merge, holes are subtracted" describeChild><span>
-        <IconButton
-          size="small" aria-label="Group" disabled={doc.selection.size < 2}
-          onClick={() => doc.groupObjects(doc.selection)}
-        ><CallMergeRoundedIcon fontSize="small" /></IconButton>
-      </span></Tooltip>
-      <Tooltip title="Ungroup" describeChild><span>
-        <IconButton
-          size="small" aria-label="Ungroup"
-          disabled={!selectedObject || selectedObject.type !== 'group'}
-          onClick={() => selectedObject && doc.ungroupObject(selectedObject.id)}
-        ><CallSplitRoundedIcon fontSize="small" /></IconButton>
-      </span></Tooltip>
-      <Tooltip title="Mirror (M, ⇧M, ⌥M)" describeChild><span>
-        <IconButton
-          size="small" aria-label="Mirror" disabled={!doc.selection.size}
-          aria-haspopup="menu" aria-expanded={Boolean(mirrorAnchor)}
-          onClick={e => setMirrorAnchor(e.currentTarget)}
-        ><FlipRoundedIcon fontSize="small" /></IconButton>
-      </span></Tooltip>
-      <Menu anchorEl={mirrorAnchor} open={Boolean(mirrorAnchor)} onClose={() => setMirrorAnchor(null)}>
-        {AXES.map(({ axis, label }) => (
-          <MenuItem key={axis} onClick={() => { setMirrorAnchor(null); mirror(axis) }}>
-            Mirror across {label}
-          </MenuItem>
-        ))}
-      </Menu>
-      <Tooltip title={doc.selection.size ? 'Drop selection to plate (D)' : 'Drop everything to plate (D)'} describeChild><span>
-        <IconButton
-          size="small" aria-label="Drop to plate" disabled={!objects.length}
-          onClick={() => dropToPlate()}
-        ><VerticalAlignBottomRoundedIcon fontSize="small" /></IconButton>
-      </span></Tooltip>
-      <Tooltip title="Delete" describeChild><span>
-        <IconButton
-          size="small" aria-label="Delete" disabled={!doc.selection.size}
-          onClick={() => void removeSelected()}
-        ><DeleteOutlineRoundedIcon fontSize="small" /></IconButton>
-      </span></Tooltip>
+      {lifecycle.hasUnsavedChanges && (
+        <Tooltip title="Unsaved changes" describeChild>
+          <Typography component="span" aria-label="Unsaved changes" sx={{ color: 'text.secondary', mx: -0.5 }}>*</Typography>
+        </Tooltip>
+      )}
 
       <Divider orientation="vertical" flexItem />
 
@@ -779,7 +777,6 @@ export default function BambuDesignerPage() {
         <ToggleButton value={false} aria-label="Millimetres">mm</ToggleButton>
         <ToggleButton value aria-label="Inches">in</ToggleButton>
       </ToggleButtonGroup>
-      <Button size="small" onClick={() => setFitToken(t => t + 1)}>Fit</Button>
       <Tooltip title="Keyboard shortcuts (?)" describeChild>
         <IconButton
           ref={shortcutsButton} size="small" aria-label="Keyboard shortcuts"
@@ -812,34 +809,6 @@ export default function BambuDesignerPage() {
         onImported={added => doc.addObjects(added)}
         onError={lifecycle.setError}
       />
-      <Button
-        size="small" startIcon={<ArchitectureRoundedIcon />}
-        onClick={async () => {
-          const id = await lifecycle.handOff('shaper')
-          if (id) navigate(`/shaper-designer?open=${id}`)
-        }}
-      >
-        To Shaper
-      </Button>
-      <Button size="small" onClick={() => void exportMesh('stl')}>STL</Button>
-      <Button size="small" onClick={() => void exportMesh('3mf')}>3MF</Button>
-
-      <Divider orientation="vertical" flexItem />
-
-      <Button size="small" onClick={lifecycle.create}>New</Button>
-      <Button size="small" onClick={() => setOpenDialog(true)}>Open</Button>
-      <Button size="small" onClick={() => setSaveAsOpen(true)}>Save as</Button>
-      <Button
-        size="small" variant="contained" disabled={lifecycle.busy || (!objects.length && !lifecycle.savedId)}
-        // A never-saved design has no name but a default one, and writing
-        // that default is how a shelf of "Untitled model" gets made. The
-        // first save asks; every save after it just saves. An empty design
-        // that was never saved has nothing to keep, but a saved one may have
-        // been emptied on purpose.
-        onClick={() => (lifecycle.savedId ? void lifecycle.save() : setSaveAsOpen(true))}
-      >
-        {lifecycle.hasUnsavedChanges ? 'Save *' : 'Save'}
-      </Button>
     </Stack>
   )
 

@@ -1,16 +1,9 @@
 // Shaper Designer: 2D CNC design for the Shaper Origin.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Alert, Box, Button, Divider, IconButton, ListItemText, ListSubheader, Menu, MenuItem, Snackbar, Stack,
-  TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
+  Alert, Box, Button, Checkbox, Divider, FormControlLabel, ListItemText, ListSubheader, Menu,
+  MenuItem, Snackbar, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography,
 } from '@mui/material'
-import UndoRoundedIcon from '@mui/icons-material/UndoRounded'
-import RedoRoundedIcon from '@mui/icons-material/RedoRounded'
-import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded'
-import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded'
-import CallMergeRoundedIcon from '@mui/icons-material/CallMergeRounded'
-import CallSplitRoundedIcon from '@mui/icons-material/CallSplitRounded'
-import ViewInArRoundedIcon from '@mui/icons-material/ViewInArRounded'
 import { useNavigate } from 'react-router-dom'
 
 import Canvas2D from '../../components/canvas2d/Canvas2D.tsx'
@@ -22,8 +15,11 @@ import Inspector from '../../components/designer/Inspector.tsx'
 import ObjectTree from '../../components/designer/ObjectTree.tsx'
 import { useDocumentLifecycle } from '../../components/designer/useDocumentLifecycle.ts'
 import { useConfirm } from '../../components/ConfirmDialogProvider.tsx'
+import { standardMenu, useAppMenu } from '../../components/menu/AppMenu.tsx'
 import { compileObject } from '../../geometry/sceneShapes.ts'
 import type { SceneObject } from '../../model/document.ts'
+import { BENCHPILOT_REACH } from '../../model/benchpilot.ts'
+import type { BenchPilotMount } from '../../model/benchpilot.ts'
 import { SHAPER_ORIGIN } from '../../model/machines.ts'
 import { createShape2D, createText, findObject } from '../../model/scene.ts'
 import { useDesignDocument } from '../../state/useDesignDocument.ts'
@@ -65,6 +61,8 @@ export default function ShaperDesignerPage() {
     })
     return () => { cancelled = true }
   }, [])
+  const [showBenchPilot, setShowBenchPilot] = useState(false)
+  const [benchPilotMount, setBenchPilotMount] = useState<BenchPilotMount>('workstation')
   const [fitToken, setFitToken] = useState(0)
   const [openDialog, setOpenDialog] = useState(false)
   const [saveAsOpen, setSaveAsOpen] = useState(false)
@@ -201,68 +199,73 @@ export default function ShaperDesignerPage() {
 
   const stock = useMemo(() => ({ widthMm: 300, heightMm: 200 }), [])
 
+  const saveDisabled = lifecycle.busy || (!objects.length && !lifecycle.savedId)
+  const selectedGroup = selectedObject?.type === 'group' ? selectedObject : null
+
+  useAppMenu(standardMenu({
+    onNew: lifecycle.create,
+    onOpen: () => setOpenDialog(true),
+    // A never-saved design has no name but a default one, and writing that
+    // default is how a shelf of "Untitled model" gets made. The first save
+    // asks; every save after it just saves. An empty design that was never
+    // saved has nothing to keep, but a saved one may have been emptied on
+    // purpose.
+    onSave: () => (lifecycle.savedId ? void lifecycle.save() : setSaveAsOpen(true)),
+    onSaveAs: () => setSaveAsOpen(true),
+    saveDisabled,
+    exports: [
+      { label: 'Export SVG', onClick: () => exportFile('svg') },
+      { label: 'Export DXF', onClick: () => exportFile('dxf') },
+    ],
+    file: [{
+      label: 'To Bambu Designer',
+      onClick: () => {
+        void (async () => {
+          const id = await lifecycle.handOff('bambu')
+          // The clone's id rides along so the target opens it rather than a
+          // fresh empty document.
+          if (id) navigate(`/bambu-designer?open=${id}`)
+        })()
+      },
+    }],
+    onUndo: doc.undo,
+    onRedo: doc.redo,
+    canUndo: doc.canUndo,
+    canRedo: doc.canRedo,
+    onDuplicate: () => doc.duplicateObjects(doc.selection),
+    onDelete: () => void removeSelected(),
+    canDuplicate: doc.selection.size > 0,
+    canDelete: doc.selection.size > 0,
+    edit: [
+      {
+        label: 'Group',
+        onClick: () => doc.groupObjects(doc.selection),
+        disabled: doc.selection.size < 2,
+      },
+      {
+        label: 'Ungroup',
+        onClick: () => { if (selectedGroup) doc.ungroupObject(selectedGroup.id) },
+        disabled: !selectedGroup,
+      },
+    ],
+    view: [
+      { label: 'Fit to window', onClick: () => setFitToken(t => t + 1) },
+      { label: 'Units: millimetres', onClick: () => setImperial(false), dividerBefore: true },
+      { label: 'Units: inches', onClick: () => setImperial(true) },
+    ],
+  }))
+
   const toolbar = (
     <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
       <Typography variant="h1" component="h1" sx={{ fontSize: '1.0625rem', pr: 1.5, borderRight: 1, borderColor: 'divider' }}>
         Shaper Designer
       </Typography>
       <DocumentNameField name={doc.doc.name} onRename={doc.rename} />
-
-      <Tooltip title="Undo" describeChild>
-        <span>
-          <IconButton size="small" aria-label="Undo" disabled={!doc.canUndo} onClick={doc.undo}>
-            <UndoRoundedIcon fontSize="small" />
-          </IconButton>
-        </span>
-      </Tooltip>
-      <Tooltip title="Redo" describeChild>
-        <span>
-          <IconButton size="small" aria-label="Redo" disabled={!doc.canRedo} onClick={doc.redo}>
-            <RedoRoundedIcon fontSize="small" />
-          </IconButton>
-        </span>
-      </Tooltip>
-      <Tooltip title="Duplicate" describeChild>
-        <span>
-          <IconButton
-            size="small" aria-label="Duplicate" disabled={!doc.selection.size}
-            onClick={() => doc.duplicateObjects(doc.selection)}
-          >
-            <ContentCopyRoundedIcon fontSize="small" />
-          </IconButton>
-        </span>
-      </Tooltip>
-      <Tooltip title="Group" describeChild>
-        <span>
-          <IconButton
-            size="small" aria-label="Group" disabled={doc.selection.size < 2}
-            onClick={() => doc.groupObjects(doc.selection)}
-          >
-            <CallMergeRoundedIcon fontSize="small" />
-          </IconButton>
-        </span>
-      </Tooltip>
-      <Tooltip title="Ungroup" describeChild>
-        <span>
-          <IconButton
-            size="small" aria-label="Ungroup"
-            disabled={!selectedObject || selectedObject.type !== 'group'}
-            onClick={() => selectedObject && doc.ungroupObject(selectedObject.id)}
-          >
-            <CallSplitRoundedIcon fontSize="small" />
-          </IconButton>
-        </span>
-      </Tooltip>
-      <Tooltip title="Delete" describeChild>
-        <span>
-          <IconButton
-            size="small" aria-label="Delete" disabled={!doc.selection.size}
-            onClick={() => void removeSelected()}
-          >
-            <DeleteOutlineRoundedIcon fontSize="small" />
-          </IconButton>
-        </span>
-      </Tooltip>
+      {lifecycle.hasUnsavedChanges && (
+        <Typography component="span" title="Unsaved changes" aria-label="Unsaved changes" sx={{ color: 'text.secondary' }}>
+          *
+        </Typography>
+      )}
 
       <Divider orientation="vertical" flexItem />
 
@@ -290,7 +293,6 @@ export default function ShaperDesignerPage() {
         <ToggleButton value={false} aria-label="Millimetres">mm</ToggleButton>
         <ToggleButton value aria-label="Inches">in</ToggleButton>
       </ToggleButtonGroup>
-      <Button size="small" onClick={() => setFitToken(t => t + 1)}>Fit</Button>
 
       <Box sx={{ flex: 1 }} />
 
@@ -299,23 +301,6 @@ export default function ShaperDesignerPage() {
         onImported={objects => doc.addObjects(objects)}
         onError={lifecycle.setError}
       />
-      <Button
-        size="small" startIcon={<ViewInArRoundedIcon />}
-        onClick={async () => {
-          const id = await lifecycle.handOff('bambu')
-          // The clone's id rides along so the target opens it rather than a
-          // fresh empty document.
-          if (id) navigate(`/bambu-designer?open=${id}`)
-        }}
-      >
-        To Bambu
-      </Button>
-      <Button size="small" onClick={() => exportFile('svg')}>SVG</Button>
-      <Button size="small" onClick={() => exportFile('dxf')}>DXF</Button>
-
-      <Divider orientation="vertical" flexItem />
-
-      <Button size="small" onClick={lifecycle.create}>New</Button>
       <Button
         size="small" aria-haspopup="menu" aria-expanded={Boolean(templatesAnchor)}
         onClick={e => setTemplatesAnchor(e.currentTarget)}
@@ -337,19 +322,6 @@ export default function ShaperDesignerPage() {
           )),
         ])}
       </Menu>
-      <Button size="small" onClick={() => setOpenDialog(true)}>Open</Button>
-      <Button size="small" onClick={() => setSaveAsOpen(true)}>Save as</Button>
-      <Button
-        size="small" variant="contained" disabled={lifecycle.busy || (!objects.length && !lifecycle.savedId)}
-        // A never-saved design has no name but a default one, and writing
-        // that default is how a shelf of "Untitled model" gets made. The
-        // first save asks; every save after it just saves. An empty design
-        // that was never saved has nothing to keep, but a saved one may have
-        // been emptied on purpose.
-        onClick={() => (lifecycle.savedId ? void lifecycle.save() : setSaveAsOpen(true))}
-      >
-        {lifecycle.hasUnsavedChanges ? 'Save *' : 'Save'}
-      </Button>
     </Stack>
   )
 
@@ -381,6 +353,7 @@ export default function ShaperDesignerPage() {
             gridMm={gridMm}
             snapMm={snapMm}
             stockMm={stock}
+            reachMm={showBenchPilot ? BENCHPILOT_REACH[benchPilotMount] : null}
             fitToken={fitToken}
             imperial={imperial}
             onSelect={doc.toggleSelection}
@@ -420,6 +393,24 @@ export default function ShaperDesignerPage() {
             <Typography variant="body2" sx={{ color: 'text.secondary' }}>
               {SHAPER_ORIGIN.label} · {SHAPER_ORIGIN.toolDiameterMm} mm bit
             </Typography>
+            <FormControlLabel
+              control={
+                <Checkbox
+                  size="small" checked={showBenchPilot}
+                  onChange={e => setShowBenchPilot(e.target.checked)}
+                />
+              }
+              label="Show BenchPilot cut area"
+            />
+            {showBenchPilot && (
+              <TextField
+                select size="small" label="BenchPilot mounted" value={benchPilotMount}
+                onChange={e => setBenchPilotMount(e.target.value as BenchPilotMount)}
+              >
+                <MenuItem value="workstation">On Workstation</MenuItem>
+                <MenuItem value="bench">Directly on bench</MenuItem>
+              </TextField>
+            )}
             {depthConflict.length > 0 && (
               <Alert severity="warning" variant="outlined">
                 Pockets are set to different depths ({depthConflict.join(', ')} mm). An SVG

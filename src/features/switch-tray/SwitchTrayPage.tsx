@@ -5,12 +5,7 @@ import {
   DialogTitle, Divider, IconButton, Paper, Snackbar, Stack, ToggleButton,
   ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material'
-import RedoIcon from '@mui/icons-material/Redo'
-import UndoIcon from '@mui/icons-material/Undo'
 import DeleteIcon from '@mui/icons-material/DeleteOutline'
-import ContentCopyIcon from '@mui/icons-material/ContentCopy'
-import SaveIcon from '@mui/icons-material/SaveOutlined'
-import AddIcon from '@mui/icons-material/Add'
 import type { MultiPolygon } from '../../geometry/vec.ts'
 import { profileToMulti } from '../../model/trayProfile.ts'
 import { DEFAULT_FONT_ID, loadFont, traceTextPolys } from '../../text/fonts.ts'
@@ -36,6 +31,8 @@ import SwitchPanel from './components/SwitchPanel.tsx'
 import FillPanel from './components/FillPanel.tsx'
 import SwitchExportPanel from './components/SwitchExportPanel.tsx'
 import type { ExtraPart } from './components/SwitchExportPanel.tsx'
+import { switchExportActions } from './components/useSwitchExportActions.ts'
+import { standardMenu, useAppMenu } from '../../components/menu/AppMenu.tsx'
 
 // three.js is a third of the bundle and the 2D layout is the default view, so
 // the viewer is only fetched when someone actually switches to 3D.
@@ -279,6 +276,26 @@ export default function SwitchTrayPage() {
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }, [savedId, refresh, confirm, startNew])
 
+  // File / Edit / View live in the shared menu bar. Save As does not exist
+  // here, so it is left undefined and shows disabled.
+  useAppMenu(standardMenu({
+    onNew: startNew,
+    onOpen: () => { setOpenDialog(true); void refresh() },
+    onSave: () => void save(),
+    saveDisabled: busy,
+    exports: switchExportActions({ design, mesh: bodyMesh, extraParts }),
+    file: [{ label: 'Clone', onClick: () => void clone(), disabled: !savedId || busy }],
+    onUndo: d.undo,
+    onRedo: d.redo,
+    canUndo: d.canUndo,
+    canRedo: d.canRedo,
+    view: [
+      { label: 'Layout view', onClick: () => view({ view: '2d' }) },
+      { label: '3D view', onClick: () => view({ view: '3d' }) },
+      { label: 'Fit', onClick: () => setFitToken(t => t + 1), dividerBefore: true },
+    ],
+  }))
+
   return (
     <Stack sx={{ height: '100%', minHeight: 0 }}>
       <Paper
@@ -287,7 +304,7 @@ export default function SwitchTrayPage() {
       >
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 1 }}>
           <Typography variant="h3" component="h1" sx={{ mr: 1 }}>
-            {design.name || 'Untitled switch tray'}
+            {design.name || 'Untitled switch tray'}{hasUnsavedChanges ? ' *' : ''}
           </Typography>
 
           <ToggleButtonGroup
@@ -299,48 +316,7 @@ export default function SwitchTrayPage() {
             <ToggleButton value="3d">3D</ToggleButton>
           </ToggleButtonGroup>
 
-          <Tooltip title="Undo">
-            <span>
-              <IconButton size="small" disabled={!d.canUndo} onClick={d.undo} aria-label="Undo">
-                <UndoIcon fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
-          <Tooltip title="Redo">
-            <span>
-              <IconButton size="small" disabled={!d.canRedo} onClick={d.redo} aria-label="Redo">
-                <RedoIcon fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
-          <Button size="small" onClick={() => setFitToken(t => t + 1)}>Fit</Button>
-
-          <Divider orientation="vertical" flexItem />
-
-          <SwitchExportPanel
-            design={design} mesh={bodyMesh} extraParts={extraParts} issues={issues}
-          />
-
-          <Box sx={{ flex: 1 }} />
-
-          <Button size="small" startIcon={<AddIcon />} onClick={startNew}>New tray</Button>
-          <Button size="small" onClick={() => { setOpenDialog(true); void refresh() }}>Open</Button>
-          <Tooltip title="Save first — a clone copies the saved tray.">
-            <span>
-              <Button
-                size="small" startIcon={<ContentCopyIcon />}
-                disabled={!savedId || busy} onClick={() => void clone()}
-              >
-                Clone
-              </Button>
-            </span>
-          </Tooltip>
-          <Button
-            variant="contained" size="small" startIcon={<SaveIcon />}
-            disabled={busy} onClick={() => void save()}
-          >
-            {savedId ? (hasUnsavedChanges ? 'Save changes' : 'Saved') : 'Save'}
-          </Button>
+          <SwitchExportPanel mesh={bodyMesh} issues={issues} />
         </Stack>
       </Paper>
 

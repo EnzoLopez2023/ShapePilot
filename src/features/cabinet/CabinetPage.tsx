@@ -7,13 +7,14 @@
 // same panels assembled, built from those cut drawings (model/solid.ts).
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import {
-  Alert, Box, Button, Divider, FormControlLabel, Paper, Stack, Switch, Table, TableBody,
-  TableCell, TableHead, TableRow, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
-  useTheme,
+  Alert, Box, Checkbox, Divider, FormControlLabel, List, ListItemButton, ListItemText,
+  MenuItem, Paper, Stack, Switch, Table, TableBody, TableCell, TableHead, TableRow, TextField,
+  ToggleButton, ToggleButtonGroup, Typography, useTheme,
 } from '@mui/material'
 import { zipSync, strToU8 } from 'fflate'
 import LengthField from '../../components/LengthField.tsx'
 import HoverTooltip from '../../components/HoverTooltip.tsx'
+import { standardMenu, useAppMenu } from '../../components/menu/AppMenu.tsx'
 import { writeShaperSvg } from '../../export/shaperSvg.ts'
 import { writeDxf } from '../../export/dxf.ts'
 import { safeFilename, triggerDownload } from '../../export/download.ts'
@@ -26,7 +27,10 @@ import {
 } from './state/params.ts'
 import type { CabinetSettings } from './state/params.ts'
 import CabinetElevations from './components/CabinetElevations.tsx'
-import { cabinetSolid } from './model/solid.ts'
+import CabinetPartView from './components/CabinetPartView.tsx'
+import { cabinetSolid, panelMesh } from './model/solid.ts'
+import { BENCHPILOT_REACH } from '../../model/benchpilot.ts'
+import type { BenchPilotMount } from '../../model/benchpilot.ts'
 import type { CabinetParams } from './model/cabinet.ts'
 import { LoadingState } from '../../components/LoadingState.tsx'
 
@@ -35,6 +39,9 @@ import { LoadingState } from '../../components/LoadingState.tsx'
 const SolidViewer3D = lazy(() => import('../../components/viewport3d/SolidViewer3D.tsx'))
 
 const PANEL_IDS: PanelId[] = ['side', 'top-bottom', 'back']
+
+/** The parts list: the assembled case first, then each panel to be cut. */
+type PartChoice = 'case' | PanelId
 
 /** The wall half of the cleat: not part of the case, so not in the case colour. */
 const WALL_CLEAT_COLOUR = '#8c7a62'
@@ -45,6 +52,11 @@ export default function CabinetPage() {
 
   useEffect(() => { setSettings(loadCabinetSettings()); setLoaded(true) }, [])
   useEffect(() => { if (loaded) saveCabinetSettings(settings) }, [loaded, settings])
+
+  const [part, setPart] = useState<PartChoice>('case')
+  const [showBenchPilot, setShowBenchPilot] = useState(false)
+  const [benchPilotMount, setBenchPilotMount] = useState<BenchPilotMount>('workstation')
+  const reach = showBenchPilot ? BENCHPILOT_REACH[benchPilotMount] : null
 
   const { imperial, view, ...rawParams } = settings
   const set = (patch: Partial<CabinetSettings>) =>
@@ -61,6 +73,13 @@ export default function CabinetPage() {
 
   const theme = useTheme()
   const solid = useMemo(() => (view === '3d' ? cabinetSolid(params) : null), [view, params])
+  const partMesh = useMemo(
+    () => (view === '3d' && part !== 'case' ? panelMesh(part, params) : null), [view, part, params])
+  const partOutlines = useMemo(
+    () => (reach && partMesh
+      ? [{ x0: 0, y0: 0, x1: reach.widthMm, y1: reach.heightMm }]
+      : undefined),
+    [reach, partMesh])
   const extras = useMemo(() => solid && [
     { mesh: solid.trays, color: theme.palette.primary.main },
     ...(solid.wallCleat ? [{ mesh: solid.wallCleat, color: WALL_CLEAT_COLOUR }] : []),
@@ -110,13 +129,33 @@ export default function CabinetPage() {
       'application/zip')
   }
 
+  // Settings are remembered in the browser, so there is nothing to open or
+  // save; those entries stay disabled to keep the File menu's shape.
+  useAppMenu(standardMenu({
+    exports: [
+      { label: 'All panels (zip)', onClick: downloadAll },
+      ...PANEL_IDS.map(id => ({ label: `${PANEL_LABELS[id]} SVG`, onClick: () => download(id, 'svg') })),
+      ...PANEL_IDS.map(id => ({ label: `${PANEL_LABELS[id]} DXF`, onClick: () => download(id, 'dxf') })),
+    ],
+    canUndo: false,
+    canRedo: false,
+    canDuplicate: false,
+    canDelete: false,
+    view: [
+      { label: 'Drawings', onClick: () => set({ view: '2d' }) },
+      { label: '3D', onClick: () => set({ view: '3d' }) },
+      { label: 'Whole case', onClick: () => setPart('case'), dividerBefore: true },
+      ...PANEL_IDS.map(id => ({ label: PANEL_LABELS[id], onClick: () => setPart(id) })),
+    ],
+  }))
+
   const panel = { display: 'flex', flexDirection: 'column', minHeight: 0, overflow: 'hidden' } as const
 
   return (
     <Box
       sx={{
         display: 'grid',
-        gridTemplateColumns: { xs: '1fr', md: 'minmax(0, 1fr) 320px' },
+        gridTemplateColumns: { xs: '1fr', md: '200px minmax(0, 1fr) 320px' },
         gridTemplateRows: 'auto minmax(0, 1fr)',
         gap: 1.5,
         height: '100%',
@@ -143,23 +182,60 @@ export default function CabinetPage() {
             {len(dims.panelDepthMm)} · {dims.dadoFloorsMm.length} dados a side
             {dims.cleat ? ' · French cleat' : ''}
           </Typography>
-          <Stack direction="row" spacing={0.5} sx={{ flexWrap: 'wrap', rowGap: 0.5 }}>
-            <Tooltip title="Every panel as a Shaper SVG, plus the cut list as a text file.">
-              <Button size="small" variant="contained" onClick={downloadAll}>
-                All panels (zip)
-              </Button>
-            </Tooltip>
+        </Stack>
+      </Paper>
+
+      <Paper sx={{ ...panel, order: { xs: -1, md: 0 } }}>
+        <Stack spacing={1} sx={{ p: 1.5, overflowY: 'auto', minHeight: 0 }}>
+          <Typography variant="h3" component="h2">Parts</Typography>
+          <List dense disablePadding aria-label="Parts">
+            <ListItemButton selected={part === 'case'} onClick={() => setPart('case')}>
+              <ListItemText primary="Whole case" secondary={`${settings.trayCount} trays`} />
+            </ListItemButton>
             {PANEL_IDS.map(id => (
-              <Button key={id} size="small" variant="outlined" onClick={() => download(id, 'svg')}>
-                {PANEL_LABELS[id]}
-              </Button>
+              <ListItemButton key={id} selected={part === id} onClick={() => setPart(id)}>
+                <ListItemText primary={PANEL_LABELS[id]} />
+              </ListItemButton>
             ))}
-          </Stack>
+          </List>
+          <Divider />
+          <FormControlLabel
+            control={
+              <Checkbox
+                size="small" checked={showBenchPilot}
+                onChange={e => setShowBenchPilot(e.target.checked)}
+              />
+            }
+            label="Show BenchPilot cut area"
+          />
+          {showBenchPilot && (
+            <TextField
+              select size="small" label="BenchPilot mounted" value={benchPilotMount}
+              onChange={e => setBenchPilotMount(e.target.value as BenchPilotMount)}
+            >
+              <MenuItem value="workstation">On Workstation</MenuItem>
+              <MenuItem value="bench">Directly on bench</MenuItem>
+            </TextField>
+          )}
+          {showBenchPilot && part === 'case' && (
+            <Typography variant="caption" color="text.secondary">
+              Pick a panel to see it inside the cut area.
+            </Typography>
+          )}
         </Stack>
       </Paper>
 
       <Paper sx={{ ...panel }}>
-        {view === '3d' && solid && extras ? (
+        {view === '3d' && partMesh ? (
+          <Box sx={{ position: 'relative', flex: 1, minHeight: 360 }}>
+            <Suspense fallback={<LoadingState label="Loading the 3D view…" />}>
+              <SolidViewer3D
+                key={part} mesh={partMesh} up="z" outlines={partOutlines}
+                label={PANEL_LABELS[part as PanelId]}
+              />
+            </Suspense>
+          </Box>
+        ) : view === '3d' && solid && extras ? (
           <Box sx={{ position: 'relative', flex: 1, minHeight: 360 }}>
             <Suspense fallback={<LoadingState label="Loading the 3D view…" />}>
               <SolidViewer3D mesh={solid.caseMesh} extras={extras} up="z" label="the tray cabinet"
@@ -173,6 +249,8 @@ export default function CabinetPage() {
               {dims.cleat ? ' · wall cleat shown hung, in brown' : ''}
             </Typography>
           </Box>
+        ) : part !== 'case' ? (
+          <CabinetPartView panel={part} params={params} reach={reach} />
         ) : (
           <CabinetElevations params={params} />
         )}

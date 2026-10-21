@@ -1,21 +1,11 @@
 import { useMemo } from 'react'
-import { strToU8 } from 'fflate'
-import { Box, Button, Stack, ToggleButton, ToggleButtonGroup, Tooltip } from '@mui/material'
+import { Box, Stack, ToggleButton, ToggleButtonGroup, Tooltip } from '@mui/material'
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline'
 import WarningAmberIcon from '@mui/icons-material/WarningAmber'
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline'
 import type { Issue, Target } from '../geometry/validate.ts'
 import { issuesFor } from '../geometry/validate.ts'
 import type { Mesh } from '../../../geometry/mesh.ts'
-import type { FabricationSettings, TrayDesign } from '../model/types.ts'
-import { tileTray } from '../geometry/tiling.ts'
-import { writeBinaryStl } from '../../../export/stl.ts'
-import { zipParts } from '../../../export/zip.ts'
-import { writeThreeMf, writeThreeMfParts } from '../../../export/threemf.ts'
-import { writeShaperSvg } from '../export/svg.ts'
-import { writeDxf } from '../export/dxf.ts'
-import { safeFilename, triggerDownload } from '../../../export/download.ts'
-import { assignExtruders } from '../../bambu-designer/amsTrays.ts'
 
 /** A body split off the tray for a second filament -- the nameplate text, the
  *  corner spacers. `suffix` names the STL file, `label` the 3MF object. */
@@ -28,59 +18,21 @@ export interface ExtraPart {
 }
 
 export interface ExportPanelProps {
-  design: TrayDesign
-  /** The tray body. Excludes any body listed in `extraParts` -- a
-   *  two-filament tray ships as separate bodies, not one welded mesh. */
+  /** The tray body, for the triangle count in the status text. */
   mesh: Mesh
-  /** Bodies split off for a second filament. When non-empty, STL exports as a
-   *  zip and 3MF as a multi-object model. */
-  extraParts: ExtraPart[]
-  /** AMS filament number the tray body prints in, when its colour is loaded. */
-  bodySlot?: number
-  /** Highest filament number an unassigned body may be given. */
-  maxSlot?: number
   issues: Issue[]
-  fab: FabricationSettings
   /** Lifted so the toolbar can hide printer-only controls for the CNC target. */
   target: Target
   onTarget: (target: Target) => void
 }
 
-const FORMATS: { id: string; label: string; target: Target; ext: string; mime: string }[] = [
-  { id: 'stl', label: 'STL', target: 'print', ext: 'stl', mime: 'model/stl' },
-  { id: '3mf', label: '3MF', target: 'print', ext: '3mf', mime: 'model/3mf' },
-  { id: 'svg', label: 'SVG', target: 'cnc', ext: 'svg', mime: 'image/svg+xml' },
-  { id: 'dxf', label: 'DXF', target: 'cnc', ext: 'dxf', mime: 'image/vnd.dxf' },
-]
-
-// Lives in the header toolbar rather than a full side panel, so status is a
-// single icon with the detail in its tooltip instead of a stack of Alerts.
-export default function ExportPanel(
-  { design, mesh, extraParts, bodySlot, maxSlot = 4, issues, fab, target, onTarget }: ExportPanelProps,
-) {
+// The export buttons themselves live in the File menu (`useExportActions`);
+// what stays in the toolbar is the fabrication target and the status icon, so
+// status is a single icon with the detail in its tooltip.
+export default function ExportPanel({ mesh, issues, target, onTarget }: ExportPanelProps) {
   const scoped = useMemo(() => issuesFor(issues, target), [issues, target])
   const errors = scoped.filter(i => i.severity === 'error')
   const warnings = scoped.filter(i => i.severity === 'warning')
-
-  const tiles = useMemo(
-    () => (target === 'print'
-      ? tileTray(design, { plateWidthMm: fab.plateWidthMm, plateDepthMm: fab.plateDepthMm })
-      : []),
-    [design, fab.plateWidthMm, fab.plateDepthMm, target])
-
-  const downloadTiles = () => {
-    const files: Record<string, Uint8Array> = {}
-    for (const t of tiles) {
-      files[`${safeFilename(design.name)}_${t.label}.stl`] =
-        new Uint8Array(writeBinaryStl(t.mesh, `${design.name} ${t.label}`))
-    }
-    files['README.txt'] = strToU8(
-      `${design.name}\n${tiles.length} pieces, ${tiles[0]?.widthMm.toFixed(0)} x ` +
-      `${tiles[0]?.depthMm.toFixed(0)} mm or smaller. Interior edges interlock with finger ` +
-      `joints -- press together and glue. Labels are row then column from the front-left.\n`)
-    triggerDownload(
-      zipParts(files), `${safeFilename(design.name)}_pieces.zip`, 'application/zip')
-  }
 
   const statusText = errors.length
     ? errors.map(i => i.message).join(' ')
@@ -89,45 +41,6 @@ export default function ExportPanel(
       : (target === 'print'
           ? `Watertight mesh, ${mesh.triangleCount.toLocaleString()} triangles. Files are generated in the browser; nothing is uploaded.`
           : 'All pockets are machinable with the current bit. Files are generated in the browser; nothing is uploaded.')
-
-  const download = (id: string) => {
-    const fmt = FORMATS.find(f => f.id === id)!
-    const base = safeFilename(design.name)
-    const name = `${base}.${fmt.ext}`
-    if (id === 'stl') {
-      if (extraParts.length) {
-        // STL carries no colour, so a two-filament tray is separate files the
-        // slicer aligns by their shared origin.
-        const files: Record<string, Uint8Array> = {
-          [`${base}_tray.stl`]: new Uint8Array(writeBinaryStl(mesh, `${design.name} tray`)),
-        }
-        for (const part of extraParts) {
-          files[`${base}_${part.suffix}.stl`] =
-            new Uint8Array(writeBinaryStl(part.mesh, `${design.name} ${part.suffix}`))
-        }
-        triggerDownload(zipParts(files), `${base}_2-colour.zip`, 'application/zip')
-      } else {
-        triggerDownload(writeBinaryStl(mesh, design.name), name, fmt.mime)
-      }
-    }
-    if (id === '3mf') {
-      // A body whose colour is loaded in the AMS prints from that tray; the
-      // rest take the lowest numbers nobody chose, in order.
-      const extruders = assignExtruders(
-        [{ filamentSlot: bodySlot }, ...extraParts], maxSlot)
-      triggerDownload(
-        extraParts.length
-          ? writeThreeMfParts([
-            { mesh, name: `${design.name} tray`, extruder: extruders[0] },
-            ...extraParts.map((p, i) => (
-              { mesh: p.mesh, name: `${design.name} ${p.label}`, extruder: extruders[i + 1] })),
-          ], design.name)
-          : writeThreeMf(mesh, design.name),
-        name, fmt.mime)
-    }
-    if (id === 'svg') triggerDownload(writeShaperSvg(design), name, fmt.mime)
-    if (id === 'dxf') triggerDownload(writeDxf(design), name, fmt.mime)
-  }
 
   return (
     <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 0.5 }}>
@@ -149,21 +62,6 @@ export default function ExportPanel(
               : <CheckCircleOutlineIcon color="success" fontSize="small" role="img" aria-label={statusText} />}
         </Tooltip>
       </Box>
-
-      <Stack direction="row" spacing={0.5}>
-        {FORMATS.filter(f => f.target === target).map(f => (
-          <Button key={f.id} variant="contained" size="small" onClick={() => download(f.id)}>
-            {f.label}
-          </Button>
-        ))}
-        {tiles.length > 1 && (
-          <Tooltip title={`Too big for the plate. Download ${tiles.length} interlocking pieces as a zip of STLs.`}>
-            <Button variant="outlined" size="small" onClick={downloadTiles}>
-              Split ×{tiles.length}
-            </Button>
-          </Tooltip>
-        )}
-      </Stack>
     </Stack>
   )
 }

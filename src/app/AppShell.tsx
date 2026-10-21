@@ -25,6 +25,7 @@ import AdminPanelSettingsRoundedIcon from '@mui/icons-material/AdminPanelSetting
 import CollectionsBookmarkRoundedIcon from '@mui/icons-material/CollectionsBookmarkRounded'
 import { EASE_IOS, glassFor, SHADOW } from '../theme/theme.ts'
 import { PageBackdrop } from '../components/PageBackdrop.tsx'
+import { AppMenuBar, AppMenuProvider } from '../components/menu/AppMenu.tsx'
 import { getSettings } from '../features/settings/preferences.ts'
 import type { AccountProfile } from '../features/settings/preferences.ts'
 import { AUTH_ENABLED } from '../auth/msal.ts'
@@ -95,6 +96,14 @@ const readCollapsed = (): boolean => {
  * is real routes throughout — the back button and a copied URL both work.
  */
 export function AppShell() {
+  return (
+    <AppMenuProvider>
+      <AppShellFrame />
+    </AppMenuProvider>
+  )
+}
+
+function AppShellFrame() {
   const theme = useTheme()
   const { instance } = useMsal()
   const { pathname } = useLocation()
@@ -280,6 +289,8 @@ export function AppShell() {
             </Typography>
           </Box>
         )}
+
+        <AppMenuBar />
 
         <Box
           component="main"

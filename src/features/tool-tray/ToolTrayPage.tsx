@@ -5,12 +5,11 @@ import {
   DialogTitle, Divider, IconButton, MenuItem, Paper, Snackbar, Stack, TextField,
   ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material'
-import RedoIcon from '@mui/icons-material/Redo'
-import UndoIcon from '@mui/icons-material/Undo'
 import DeleteIcon from '@mui/icons-material/DeleteOutline'
-import ContentCopyIcon from '@mui/icons-material/ContentCopy'
-import SaveIcon from '@mui/icons-material/SaveOutlined'
-import AddIcon from '@mui/icons-material/Add'
+import { standardMenu, useAppMenu } from '../../components/menu/AppMenu.tsx'
+import { writeBinaryStl } from '../../export/stl.ts'
+import { writeThreeMf } from '../../export/threemf.ts'
+import { safeFilename, triggerDownload } from '../../export/download.ts'
 import { useConfirm } from '../../components/ConfirmDialogProvider.tsx'
 import { EmptyState, LoadingState } from '../../components/LoadingState.tsx'
 import { formatUpdated } from '../keycap-projects/model/formatUpdated.ts'
@@ -203,6 +202,36 @@ export default function ToolTrayPage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [d, selection])
 
+  const downloadMesh = (format: 'stl' | '3mf') => {
+    const base = safeFilename(design.name)
+    if (format === 'stl') {
+      triggerDownload(writeBinaryStl(mesh, design.name), `${base}.stl`, 'model/stl')
+      return
+    }
+    triggerDownload(writeThreeMf(mesh, design.name), `${base}.3mf`, 'model/3mf')
+  }
+
+  useAppMenu(standardMenu({
+    onNew: startNew,
+    onOpen: () => { setOpenDialog(true); void refresh() },
+    onSave: () => void save(),
+    saveDisabled: busy,
+    exports: [
+      { label: 'Export STL', onClick: () => downloadMesh('stl') },
+      { label: 'Export 3MF', onClick: () => downloadMesh('3mf') },
+    ],
+    file: [
+      { label: 'Make a copy', onClick: savedId ? () => void clone() : undefined, disabled: busy },
+    ],
+    onUndo: d.undo,
+    onRedo: d.redo,
+    canUndo: d.canUndo,
+    canRedo: d.canRedo,
+    onDelete: () => d.removePockets(selection),
+    canDelete: selection.size > 0,
+    view: [{ label: 'Fit to window', onClick: () => setFitToken(t => t + 1) }],
+  }))
+
   return (
     <Stack sx={{ height: '100%', minHeight: 0 }}>
       <Paper
@@ -212,6 +241,7 @@ export default function ToolTrayPage() {
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 1 }}>
           <Typography variant="h3" component="h1" sx={{ mr: 1 }}>
             {design.name || 'Untitled tool tray'}
+            {hasUnsavedChanges || savedId === null ? ' •' : ''}
           </Typography>
 
           <ToggleButtonGroup
@@ -223,22 +253,6 @@ export default function ToolTrayPage() {
             <ToggleButton value="3d">3D</ToggleButton>
           </ToggleButtonGroup>
 
-          <Tooltip title="Undo">
-            <span>
-              <IconButton size="small" aria-label="Undo" disabled={!d.canUndo} onClick={d.undo}>
-                <UndoIcon fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
-          <Tooltip title="Redo">
-            <span>
-              <IconButton size="small" aria-label="Redo" disabled={!d.canRedo} onClick={d.redo}>
-                <RedoIcon fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
-          <Button size="small" onClick={() => setFitToken(t => t + 1)}>Fit</Button>
-
           <TextField
             select size="small" label="Snap" value={settings.snapMm}
             onChange={e => view({ snapMm: Number(e.target.value) })}
@@ -249,28 +263,7 @@ export default function ToolTrayPage() {
             ))}
           </TextField>
 
-          <ToolExportPanel design={design} mesh={mesh} issues={issues} />
-
-          <Box sx={{ flex: 1 }} />
-
-          <Button size="small" startIcon={<AddIcon />} onClick={startNew}>New tray</Button>
-          <Button size="small" onClick={() => { setOpenDialog(true); void refresh() }}>Open</Button>
-          <Tooltip title={savedId ? 'Make a copy' : 'Save the tray first'}>
-            <span>
-              <Button
-                size="small" startIcon={<ContentCopyIcon />}
-                disabled={!savedId || busy} onClick={() => void clone()}
-              >
-                Clone
-              </Button>
-            </span>
-          </Tooltip>
-          <Button
-            variant="contained" size="small" startIcon={<SaveIcon />}
-            disabled={busy} onClick={() => void save()}
-          >
-            {savedId ? (hasUnsavedChanges ? 'Save changes' : 'Saved') : 'Save'}
-          </Button>
+          <ToolExportPanel mesh={mesh} issues={issues} />
         </Stack>
       </Paper>
 

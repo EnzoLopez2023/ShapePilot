@@ -5,6 +5,7 @@
 // the way the Shaper SVG draws it (inner face up, front edge left), so the
 // screen and the cut file agree.
 import { Box, Stack, Typography } from '@mui/material'
+import type { Theme } from '@mui/material'
 import { cabinetDims } from '../model/cabinet.ts'
 import type { CabinetParams } from '../model/cabinet.ts'
 
@@ -14,6 +15,18 @@ const n = (v: number): string => {
 }
 
 const PAD = 26
+
+/** Colours shared by every drawing in the cabinet designer. */
+export const CABINET_VARS = {
+  '--cab-case': (theme: Theme) => (theme.palette.mode === 'dark' ? '#3a342c' : '#e8e2d6'),
+  '--cab-void': (theme: Theme) => theme.palette.background.default,
+  '--cab-line': (theme: Theme) => theme.palette.text.primary,
+  '--cab-dado': (theme: Theme) => (theme.palette.mode === 'dark' ? '#6f6a5e' : '#b9b3a6'),
+  '--cab-tray': (theme: Theme) => theme.palette.primary.main,
+  '--cab-tray-line': (theme: Theme) => theme.palette.primary.dark,
+  '--cab-text': (theme: Theme) => theme.palette.text.secondary,
+  '--cab-reach': (theme: Theme) => theme.palette.info.main,
+}
 
 export default function CabinetElevations({ params }: { params: CabinetParams }) {
   const p = params
@@ -115,13 +128,7 @@ export default function CabinetElevations({ params }: { params: CabinetParams })
   return (
     <Box
       sx={{
-        '--cab-case': theme => (theme.palette.mode === 'dark' ? '#3a342c' : '#e8e2d6'),
-        '--cab-void': theme => theme.palette.background.default,
-        '--cab-line': theme => theme.palette.text.primary,
-        '--cab-dado': theme => (theme.palette.mode === 'dark' ? '#6f6a5e' : '#b9b3a6'),
-        '--cab-tray': theme => theme.palette.primary.main,
-        '--cab-tray-line': theme => theme.palette.primary.dark,
-        '--cab-text': theme => theme.palette.text.secondary,
+        ...CABINET_VARS,
         display: 'grid',
         gridTemplateColumns: { xs: '1fr', lg: '1.3fr 1fr' },
         gap: 2,

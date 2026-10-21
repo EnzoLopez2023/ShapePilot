@@ -6,12 +6,7 @@ import {
   ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMoreRounded'
-import RedoIcon from '@mui/icons-material/Redo'
-import UndoIcon from '@mui/icons-material/Undo'
 import DeleteIcon from '@mui/icons-material/DeleteOutline'
-import ContentCopyIcon from '@mui/icons-material/ContentCopy'
-import SaveIcon from '@mui/icons-material/SaveOutlined'
-import AddIcon from '@mui/icons-material/Add'
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined'
 import SettingsIcon from '@mui/icons-material/SettingsRounded'
 import { buildCornerSpacersMesh, buildNameplateMesh, buildTrayMesh } from './geometry/layers.ts'
@@ -40,6 +35,8 @@ import PocketPalette from './components/PocketPalette.tsx'
 import PropertiesPanel from './components/PropertiesPanel.tsx'
 import ExportPanel from './components/ExportPanel.tsx'
 import type { ExtraPart } from './components/ExportPanel.tsx'
+import { useExportActions } from './components/useExportActions.ts'
+import { standardMenu, useAppMenu } from '../../components/menu/AppMenu.tsx'
 import ProjectGate from './components/ProjectGate.tsx'
 import { useConfirm } from '../../components/ConfirmDialogProvider.tsx'
 import { EmptyState, LoadingState } from '../../components/LoadingState.tsx'
@@ -452,6 +449,32 @@ export default function KeycapTrayPage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [d, selection])
 
+  const exports = useExportActions({
+    design, mesh: bodyMesh, extraParts, bodySlot: slotOf(colors.tray), maxSlot, fab, target,
+  })
+
+  // File / Edit / View live in the shared menu bar. New, Open and Save do
+  // nothing on the project gate, where no tray is open yet.
+  useAppMenu(standardMenu({
+    onNew: busy ? undefined : () => void newTrayInProject(),
+    onOpen: busy || !designId ? undefined : () => { setOpenDialog(true); void refresh() },
+    onSave: designId ? () => void save() : undefined,
+    saveDisabled: busy,
+    exports,
+    file: [{ label: 'Clone', onClick: () => void clone(), disabled: !savedId || busy }],
+    onUndo: d.undo,
+    onRedo: d.redo,
+    canUndo: d.canUndo,
+    canRedo: d.canRedo,
+    onDelete: () => d.removePockets(selection),
+    canDelete: selection.size > 0,
+    view: [
+      { label: 'Layout view', onClick: () => patch({ view: '2d' }) },
+      { label: '3D view', onClick: () => patch({ view: '3d' }) },
+      { label: 'Fit', onClick: () => setFitToken(t => t + 1), dividerBefore: true },
+    ],
+  }))
+
   const panel = {
     display: 'flex',
     flexDirection: 'column' as const,
@@ -494,7 +517,7 @@ export default function KeycapTrayPage() {
               borderColor: { sm: 'divider' },
             }}
           >
-            {design.name}
+            {design.name}{hasUnsavedChanges ? ' *' : ''}
           </Typography>
 
           <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
@@ -575,68 +598,14 @@ export default function KeycapTrayPage() {
             <ToggleButton value="3d">3D</ToggleButton>
           </ToggleButtonGroup>
 
-          <Stack direction="row" spacing={0.5} sx={{ alignItems: 'center' }}>
-            <Tooltip title="Undo (⌘Z)"><span>
-              <IconButton size="small" aria-label="Undo" disabled={!d.canUndo} onClick={d.undo}>
-                <UndoIcon fontSize="small" />
-              </IconButton>
-            </span></Tooltip>
-            <Tooltip title="Redo (⇧⌘Z)"><span>
-              <IconButton size="small" aria-label="Redo" disabled={!d.canRedo} onClick={d.redo}>
-                <RedoIcon fontSize="small" />
-              </IconButton>
-            </span></Tooltip>
-            <Tooltip title="Delete selected (⌫)"><span>
-              <IconButton
-                size="small" aria-label="Delete selected pockets"
-                disabled={!selection.size} onClick={() => d.removePockets(selection)}
-              >
-                <DeleteIcon fontSize="small" />
-              </IconButton>
-            </span></Tooltip>
-            <Tooltip title="Zoom and centre the view on the tray outline">
-              <Button size="small" onClick={() => setFitToken(t => t + 1)}>Fit</Button>
-            </Tooltip>
-          </Stack>
-
           <Stack
             direction="row" spacing={1}
             sx={{ ml: 'auto', alignItems: 'center', flexWrap: 'wrap', rowGap: 1 }}
           >
             <ExportPanel
-              design={design} mesh={bodyMesh} extraParts={extraParts} issues={issues} fab={fab}
-              bodySlot={slotOf(colors.tray)} maxSlot={maxSlot}
+              mesh={bodyMesh} issues={issues}
               target={target} onTarget={next => patch({ target: next })}
             />
-
-            <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', rowGap: 1 }}>
-            <Button
-              size="small" startIcon={<AddIcon />}
-              disabled={busy}
-              onClick={() => void newTrayInProject()}
-            >
-              New tray
-            </Button>
-            <Button
-              size="small"
-              disabled={busy}
-              onClick={() => { setOpenDialog(true); void refresh() }}
-            >
-              Open
-            </Button>
-            <Button
-              size="small" startIcon={<ContentCopyIcon />} disabled={!savedId || busy}
-              onClick={() => void clone()}
-            >
-              Clone
-            </Button>
-            <Button
-              size="small" variant="contained" onClick={() => void save()} disabled={busy}
-              startIcon={busy ? <CircularProgress size={14} color="inherit" /> : <SaveIcon />}
-            >
-              {hasUnsavedChanges ? 'Save changes' : 'Save'}
-            </Button>
-            </Stack>
           </Stack>
         </Stack>
         )}

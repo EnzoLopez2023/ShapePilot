@@ -4,12 +4,8 @@ import {
   Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
   Divider, IconButton, Paper, Snackbar, Stack, ToggleButton, ToggleButtonGroup, Tooltip, Typography,
 } from '@mui/material'
-import RedoIcon from '@mui/icons-material/Redo'
-import UndoIcon from '@mui/icons-material/Undo'
 import DeleteIcon from '@mui/icons-material/DeleteOutline'
-import ContentCopyIcon from '@mui/icons-material/ContentCopy'
-import SaveIcon from '@mui/icons-material/SaveOutlined'
-import AddIcon from '@mui/icons-material/Add'
+import { standardMenu, useAppMenu } from '../../components/menu/AppMenu.tsx'
 import { writeBinaryStl } from '../../export/stl.ts'
 import { writeThreeMf, writeThreeMfParts } from '../../export/threemf.ts'
 import { safeFilename, triggerDownload } from '../../export/download.ts'
@@ -351,12 +347,39 @@ export default function GridfinityPage() {
     ? (bin.status === 'building' && binMesh ? 'Rebuilding…' : binMesh ? `${binMesh.triangleCount.toLocaleString()} triangles` : '')
     : plan.problem ? '' : `${plan.cellsX} × ${plan.cellsY} cells · ${plan.tiles.length} ${plan.tiles.length === 1 ? 'tile' : 'tiles'}`
 
+  useAppMenu(standardMenu({
+    onNew: () => startNew(),
+    onOpen: () => { setOpenDialog(true); void refresh() },
+    onSave: () => void save(),
+    saveDisabled: busy,
+    exports: isBin
+      ? [
+          { label: 'Export STL', onClick: () => downloadBin('stl'), disabled: !exportReady },
+          { label: 'Export 3MF', onClick: () => downloadBin('3mf'), disabled: !exportReady },
+        ]
+      : [
+          {
+            label: plan.tiles.length > 1 ? `Export ${plan.tiles.length} tiles (STL zip)` : 'Export STL',
+            onClick: () => void downloadBaseplate(),
+            disabled: !exportReady || busy,
+          },
+        ],
+    file: [
+      { label: 'Make a copy', onClick: savedId ? () => void clone() : undefined, disabled: busy },
+    ],
+    onUndo: d.undo,
+    onRedo: d.redo,
+    canUndo: d.canUndo,
+    canRedo: d.canRedo,
+  }))
+
   return (
     <Stack sx={{ height: '100%', minHeight: 0, overflowY: { xs: 'auto', lg: 'visible' } }}>
       <Paper variant="outlined" sx={{ p: 1, borderRadius: 0, borderLeft: 0, borderRight: 0, borderTop: 0 }}>
         <Stack direction="row" spacing={1} sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 1 }}>
           <Typography variant="h3" component="h1" sx={{ mr: 1 }}>
             {design.name || 'Untitled'}
+            {hasUnsavedChanges || savedId === null ? ' •' : ''}
           </Typography>
 
           <ToggleButtonGroup
@@ -377,61 +400,6 @@ export default function GridfinityPage() {
             </ToggleButtonGroup>
           )}
 
-          <Tooltip title="Undo">
-            <span>
-              <IconButton size="small" disabled={!d.canUndo} onClick={d.undo} aria-label="Undo">
-                <UndoIcon fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
-          <Tooltip title="Redo">
-            <span>
-              <IconButton size="small" disabled={!d.canRedo} onClick={d.redo} aria-label="Redo">
-                <RedoIcon fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
-
-          <Divider orientation="vertical" flexItem />
-
-          {isBin ? (
-            <Stack direction="row" spacing={0.5}>
-              <Button variant="contained" size="small" disabled={!exportReady} onClick={() => downloadBin('stl')}>
-                STL
-              </Button>
-              <Button variant="contained" size="small" disabled={!exportReady} onClick={() => downloadBin('3mf')}>
-                3MF
-              </Button>
-            </Stack>
-          ) : (
-            <Button
-              variant="contained" size="small" disabled={!exportReady || busy}
-              onClick={() => void downloadBaseplate()}
-            >
-              {plan.tiles.length > 1 ? `Download ${plan.tiles.length} tiles (STL zip)` : 'Download STL'}
-            </Button>
-          )}
-
-          <Box sx={{ flex: 1 }} />
-
-          <Button size="small" startIcon={<AddIcon />} onClick={() => startNew()}>New</Button>
-          <Button size="small" onClick={() => { setOpenDialog(true); void refresh() }}>Open</Button>
-          <Tooltip title={savedId ? 'Save a copy and edit it' : 'Save first — a clone copies the saved design'}>
-            <span>
-              <Button
-                size="small" startIcon={<ContentCopyIcon />}
-                disabled={!savedId || busy} onClick={() => void clone()}
-              >
-                Clone
-              </Button>
-            </span>
-          </Tooltip>
-          <Button
-            variant="contained" size="small" startIcon={<SaveIcon />}
-            disabled={busy} onClick={() => void save()}
-          >
-            {savedId ? (hasUnsavedChanges ? 'Save changes' : 'Saved') : 'Save'}
-          </Button>
         </Stack>
       </Paper>
 
