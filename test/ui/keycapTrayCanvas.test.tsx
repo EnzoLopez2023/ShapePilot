@@ -14,7 +14,8 @@ import assert from 'node:assert/strict'
 import { describe, expect, test, vi } from 'vitest'
 import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { installHarness, renderWorkbench, state } from './keycapTrayHarness.tsx'
+import { installHarness, renderWorkbench, SAVE_ITEM, state } from './keycapTrayHarness.tsx'
+import { chooseMenu } from './menuHelpers.tsx'
 //
 // TIMEOUT. Longer than the 30 s default. The cost here is real work, not
 // waste: mounting the designer is ~570 ms and any interaction reaching the
@@ -187,7 +188,7 @@ describe('designer canvas', () => {
     await user.tab()
     await waitFor(() => assert.equal((angle as HTMLInputElement).value, '40'))
 
-    await user.click(screen.getByRole('button', { name: /^Save/ }))
+    await chooseMenu(user, 'File', SAVE_ITEM)
     await waitFor(() => {
       const put = state.calls.find(c => c.method === 'PUT' && c.path === '/api/keycap-trays/1')
       const pocket = (put?.body as { pockets: { rotationDeg: number }[] }).pockets[0]
@@ -204,7 +205,7 @@ describe('designer canvas', () => {
     await user.click(await screen.findByRole('switch', { name: 'Mirror' }))
     await user.click(screen.getByRole('switch', { name: 'Flip' }))
 
-    await user.click(screen.getByRole('button', { name: /^Save/ }))
+    await chooseMenu(user, 'File', SAVE_ITEM)
     await waitFor(() => {
       const put = state.calls.find(c => c.method === 'PUT' && c.path === '/api/keycap-trays/1')
       const pocket = (put?.body as {

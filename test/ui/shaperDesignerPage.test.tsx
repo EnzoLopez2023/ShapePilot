@@ -11,11 +11,14 @@ import { MemoryRouter } from 'react-router-dom'
 import { ThemeModeProvider } from '../../src/theme/ThemeModeProvider.tsx'
 import { ConfirmDialogProvider } from '../../src/components/ConfirmDialogProvider.tsx'
 import ShaperDesignerPage from '../../src/features/shaper-designer/ShaperDesignerPage.tsx'
+import { WithMenuBar, chooseMenu, menuItemDisabled } from './menuHelpers.tsx'
 
 const renderPage = (path = '/shaper-designer') => render(
   <ThemeModeProvider initialPreference="light">
     <ConfirmDialogProvider>
-      <MemoryRouter initialEntries={[path]}><ShaperDesignerPage /></MemoryRouter>
+      <MemoryRouter initialEntries={[path]}>
+        <WithMenuBar><ShaperDesignerPage /></WithMenuBar>
+      </MemoryRouter>
     </ConfirmDialogProvider>
   </ThemeModeProvider>,
 )
@@ -85,14 +88,13 @@ test('a newly added shape defaults to an exterior cut, the only one that frees a
 test('undo and redo are disabled until there is history', async () => {
   const user = userEvent.setup()
   renderPage()
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Undo' })).toBeTruthy())
+  await waitFor(() => expect(screen.getByRole('button', { name: /Square/ })).toBeTruthy())
 
-  assert.ok(screen.getByRole('button', { name: 'Undo' }).hasAttribute('disabled'))
-  assert.ok(screen.getByRole('button', { name: 'Redo' }).hasAttribute('disabled'))
+  assert.equal(await menuItemDisabled(user, 'Edit', 'Undo'), true)
+  assert.equal(await menuItemDisabled(user, 'Edit', 'Redo'), true)
 
   await user.click(screen.getByRole('button', { name: /Square/ }))
-  await waitFor(() => expect(
-    screen.getByRole('button', { name: 'Undo' }).hasAttribute('disabled')).toBe(false))
+  await waitFor(async () => expect(await menuItemDisabled(user, 'Edit', 'Undo')).toBe(false))
 })
 
 test('undo removes the object that was just added', async () => {
@@ -103,7 +105,7 @@ test('undo removes the object that was just added', async () => {
   await user.click(screen.getByRole('button', { name: /Triangle/ }))
   await waitFor(() => expect(screen.getByText('1 object', { exact: false })).toBeTruthy())
 
-  await user.click(screen.getByRole('button', { name: 'Undo' }))
+  await chooseMenu(user, 'Edit', 'Undo')
   await waitFor(() => expect(screen.getByText('0 objects', { exact: false })).toBeTruthy())
 })
 
@@ -113,7 +115,7 @@ test('group needs two objects, and collapses them into one when it has them', as
   await waitFor(() => expect(screen.getByRole('button', { name: /Square/ })).toBeTruthy())
 
   await user.click(screen.getByRole('button', { name: /Square/ }))
-  assert.ok(screen.getByRole('button', { name: 'Group' }).hasAttribute('disabled'),
+  assert.equal(await menuItemDisabled(user, 'Edit', 'Group'), true,
     'one object cannot be grouped')
 
   await user.click(screen.getByRole('button', { name: /Circle/ }))
@@ -129,9 +131,8 @@ test('group needs two objects, and collapses them into one when it has them', as
   await user.click(squareRow)
   await user.keyboard('{/Shift}')
 
-  await waitFor(() => expect(
-    screen.getByRole('button', { name: 'Group' }).hasAttribute('disabled')).toBe(false))
-  await user.click(screen.getByRole('button', { name: 'Group' }))
+  await waitFor(async () => expect(await menuItemDisabled(user, 'Edit', 'Group')).toBe(false))
+  await chooseMenu(user, 'Edit', 'Group')
 
   // Two top-level objects became one; both survive as its children.
   await waitFor(() => expect(screen.getByText('1 object', { exact: false })).toBeTruthy())

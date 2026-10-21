@@ -17,8 +17,9 @@ import { screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import KeycapTrayPage from '../../src/features/keycap-tray/KeycapTrayPage.tsx'
 import {
-  awaitTrayLoaded, installHarness, renderPage, renderWorkbench, state,
+  awaitTrayLoaded, closeOpenMenu, installHarness, renderPage, renderWorkbench, SAVE_ITEM, state,
 } from './keycapTrayHarness.tsx'
+import { chooseMenu, menuItemDisabled, openMenuItem } from './menuHelpers.tsx'
 //
 // TIMEOUT. Longer than the 30 s default. The cost here is real work, not
 // waste: mounting the designer is ~570 ms and any interaction reaching the
@@ -38,11 +39,11 @@ describe('designer page', () => {
   })
 
   test('undo, redo and delete are disabled until there is something to act on', async () => {
+    const user = userEvent.setup()
     renderWorkbench()
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
-    for (const name of ['Undo', 'Redo', 'Delete selected pockets']) {
-      assert.equal(
-        (screen.getByRole('button', { name }) as HTMLButtonElement).disabled, true, name)
+    for (const name of ['Undo', 'Redo', 'Delete']) {
+      assert.equal(await menuItemDisabled(user, 'Edit', name), true, name)
     }
   })
 
@@ -54,10 +55,9 @@ describe('designer page', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Add a 1u pocket' }))
     await waitFor(() => expect(screen.getByText(/^1 pockets/)).toBeTruthy())
-    assert.equal(
-      (screen.getByRole('button', { name: 'Undo' }) as HTMLButtonElement).disabled, false)
+    assert.equal(await menuItemDisabled(user, 'Edit', 'Undo'), false)
 
-    await user.click(screen.getByRole('button', { name: 'Undo' }))
+    await chooseMenu(user, 'Edit', 'Undo')
     await waitFor(() => expect(screen.getByText(/^0 pockets/)).toBeTruthy())
   })
 
@@ -70,7 +70,7 @@ describe('designer page', () => {
     await awaitTrayLoaded()
 
     await user.click(await screen.findByRole('button', { name: 'Add a 1u pocket' }))
-    await user.click(screen.getByRole('button', { name: /^Save/ }))
+    await chooseMenu(user, 'File', SAVE_ITEM)
     await waitFor(() => expect(
       state.calls.some(c => c.method === 'PUT' && c.path === '/api/keycap-trays/1')).toBe(true))
     assert.ok(!state.calls.some(c => c.method === 'POST' && c.path === '/api/keycap-trays'))
@@ -84,18 +84,16 @@ describe('designer page', () => {
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
     await awaitTrayLoaded()
 
-    await user.click(screen.getByRole('button', { name: 'New tray' }))
+    await chooseMenu(user, 'File', 'New')
     await waitFor(() => expect(
       state.calls.some(c => c.method === 'POST' && c.path === '/api/keycap-trays')).toBe(true))
-    for (const name of ['New tray', 'Open', 'Clone']) {
-      assert.equal((screen.getByRole('button', { name }) as HTMLButtonElement).disabled, true, name)
+    for (const name of ['New', 'Open', 'Clone']) {
+      assert.equal(await menuItemDisabled(user, 'File', name), true, name)
     }
 
     releaseCreate()
-    await waitFor(() => expect(
-      (screen.getByRole('button', { name: 'New tray' }) as HTMLButtonElement).disabled).toBe(false))
-    assert.equal(
-      (screen.getByRole('button', { name: 'Clone' }) as HTMLButtonElement).disabled, false)
+    await waitFor(async () => expect(await menuItemDisabled(user, 'File', 'New')).toBe(false))
+    assert.equal(await menuItemDisabled(user, 'File', 'Clone'), false)
   })
 
   test('edits made during save remain explicitly unsaved', async () => {
@@ -107,14 +105,15 @@ describe('designer page', () => {
     await awaitTrayLoaded()
 
     await user.click(await screen.findByRole('button', { name: 'Add a 1u pocket' }))
-    await user.click(screen.getByRole('button', { name: /^Save/ }))
+    await chooseMenu(user, 'File', SAVE_ITEM)
     await waitFor(() => expect(
       state.calls.some(c => c.method === 'PUT' && c.path === '/api/keycap-trays/1')).toBe(true))
     await user.click(await screen.findByRole('button', { name: 'Add a 2u pocket' }))
     releaseUpdate()
 
     assert.ok(await screen.findByText('Saved earlier changes — newer edits are still unsaved'))
-    assert.ok(screen.getByRole('button', { name: 'Save changes' }))
+    // The title carries the asterisk for unsaved edits; Save's label is fixed.
+    assert.match(screen.getByRole('heading', { level: 1 }).textContent ?? '', / *$/)
     assert.ok(screen.getByText(/^2 pockets/))
   })
 
@@ -127,7 +126,7 @@ describe('designer page', () => {
     assert.equal(floor.value, '3/32"')
     await user.click(floor)
     await user.tab()
-    await user.click(screen.getByRole('button', { name: /^Save/ }))
+    await chooseMenu(user, 'File', SAVE_ITEM)
     await waitFor(() => expect(
       state.calls.some(c => c.method === 'PUT' && c.path === '/api/keycap-trays/1')).toBe(true))
     const update = state.calls.find(c => c.method === 'PUT' && c.path === '/api/keycap-trays/1')
@@ -149,7 +148,7 @@ describe('designer page', () => {
     await awaitTrayLoaded()
     assert.ok(screen.getByText(/^0 pockets/))
 
-    await user.click(screen.getByRole('button', { name: 'Open' }))
+    await chooseMenu(user, 'File', 'Open')
     const dialog = await screen.findByRole('dialog')
     assert.ok(await within(dialog).findByText('Saved tray'))
     await user.click((await within(dialog).findAllByRole('button', { name: 'Open' }))[0])
@@ -172,7 +171,7 @@ describe('designer page', () => {
     let releaseLoad: () => void = () => {}
     state.loadGate = new Promise<void>((resolveLoad) => { releaseLoad = resolveLoad })
 
-    await user.click(screen.getByRole('button', { name: 'Open' }))
+    await chooseMenu(user, 'File', 'Open')
     const dialog = await screen.findByRole('dialog')
     const openButtons = within(dialog).getAllByRole('button', { name: 'Open' })
     await user.click(openButtons[1])
@@ -200,7 +199,7 @@ describe('designer page', () => {
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
     await awaitTrayLoaded()
 
-    await user.click(screen.getByRole('button', { name: 'Open' }))
+    await chooseMenu(user, 'File', 'Open')
     const dialog = await screen.findByRole('dialog')
     await user.click(await within(dialog).findByRole('button', { name: 'Delete Doomed tray' }))
 
@@ -255,14 +254,16 @@ describe('designer page', () => {
     renderWorkbench()
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
 
-    assert.ok(screen.getByRole('button', { name: 'STL' }))
-    assert.ok(screen.getByRole('button', { name: '3MF' }))
-    assert.equal(screen.queryByRole('button', { name: 'SVG' }), null)
+    assert.ok(await openMenuItem(user, 'File', 'Export STL'))
+    assert.ok(screen.getByRole('menuitem', { name: /^Export 3MF/ }))
+    assert.equal(screen.queryByRole('menuitem', { name: /^Export SVG/ }), null)
+    await closeOpenMenu(user)
 
     await user.click(screen.getByRole('button', { name: 'Shaper Origin' }))
-    assert.ok(await screen.findByRole('button', { name: 'SVG' }))
-    assert.ok(screen.getByRole('button', { name: 'DXF' }))
-    assert.equal(screen.queryByRole('button', { name: 'STL' }), null)
+    assert.ok(await openMenuItem(user, 'File', 'Export SVG'))
+    assert.ok(screen.getByRole('menuitem', { name: /^Export DXF/ }))
+    assert.equal(screen.queryByRole('menuitem', { name: /^Export STL/ }), null)
+    await closeOpenMenu(user)
   })
 
   test('an export writes a file through the browser download path', async () => {
@@ -281,7 +282,7 @@ describe('designer page', () => {
 
     renderWorkbench()
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
-    await user.click(screen.getByRole('button', { name: 'STL' }))
+    await chooseMenu(user, 'File', 'Export STL')
 
     assert.deepEqual(clicks, ['Untitled_tray.stl'])
     expect(window.URL.createObjectURL).toHaveBeenCalled()

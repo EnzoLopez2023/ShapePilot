@@ -12,6 +12,7 @@ import { unzipSync, strFromU8 } from 'fflate'
 import { ThemeModeProvider } from '../../src/theme/ThemeModeProvider.tsx'
 import { ConfirmDialogProvider } from '../../src/components/ConfirmDialogProvider.tsx'
 import type * as AssetsModule from '../../src/import/assets.ts'
+import { WithMenuBar, chooseMenu, menuItemDisabled, openMenuItem } from './menuHelpers.tsx'
 
 vi.mock('../../src/components/viewport3d/Viewport3D.tsx', () => ({
   default: ({ parts }: { parts: { id: string }[] }) =>
@@ -52,7 +53,7 @@ function oneTriangleStl(): ArrayBuffer {
 const renderPage = () => render(
   <ThemeModeProvider initialPreference="light">
     <ConfirmDialogProvider>
-      <MemoryRouter><BambuDesignerPage /></MemoryRouter>
+      <WithMenuBar><MemoryRouter><BambuDesignerPage /></MemoryRouter></WithMenuBar>
     </ConfirmDialogProvider>
   </ThemeModeProvider>,
 )
@@ -204,7 +205,7 @@ test('undo removes the object that was just added', async () => {
   const tree = await screen.findByRole('list', { name: 'Objects' })
   assert.ok(within(tree).getByText('Sphere'))
 
-  await user.click(screen.getByRole('button', { name: 'Undo' }))
+  await chooseMenu(user, 'Edit', 'Undo')
   await waitFor(() => expect(screen.getAllByText(/0 objects/).length).toBeGreaterThan(0))
 })
 
@@ -246,7 +247,7 @@ test('the first save asks for a name instead of writing the default one', async 
   await waitFor(() => expect(screen.getByRole('button', { name: /^Box/ })).toBeTruthy())
   await user.click(screen.getByRole('button', { name: /^Box/ }))
 
-  await user.click(screen.getByRole('button', { name: /^Save$/ }))
+  await chooseMenu(user, 'File', /^Save(?! As)/)
 
   // Nothing is written until the name is given.
   assert.equal(posted.length, 0)
@@ -309,7 +310,7 @@ test('renaming in the toolbar reaches the document, not just the field', async (
 
   // The field keeping its own text proves nothing -- it is its own state. What
   // matters is that the save dialog and the request agree with it.
-  await user.click(screen.getByRole('button', { name: /^Save$/ }))
+  await chooseMenu(user, 'File', /^Save(?! As)/)
   const dialog = within(screen.getByRole('dialog'))
   assert.equal((dialog.getByLabelText('Name') as HTMLInputElement).value, 'bench dog')
 
@@ -354,7 +355,7 @@ test('a 3MF export gives every object its own colourable part', async () => {
     await user.click(screen.getByRole('button', { name: /^Box/ }))
     await user.click(screen.getByRole('button', { name: /^Cylinder/ }))
 
-    await user.click(screen.getByRole('button', { name: '3MF' }))
+    await chooseMenu(user, 'File', 'Export 3MF')
     await waitFor(() => expect(blobs.length).toBe(1), { timeout: 20_000 })
 
     const zip = unzipSync(new Uint8Array(await blobs[0].arrayBuffer()))
@@ -408,7 +409,7 @@ test('a burst of nudges is one undo step', async () => {
   await user.keyboard('{ArrowRight}{ArrowRight}{ArrowRight}')
   expect(positionX()).toBeGreaterThan(0)
 
-  await user.click(screen.getByRole('button', { name: 'Undo' }))
+  await chooseMenu(user, 'Edit', 'Undo')
   // Back to where the burst started, with the box still there.
   expect(positionX()).toBe(0)
   expect(screen.getAllByText(/1 object/).length).toBeGreaterThan(0)
@@ -432,9 +433,12 @@ test('mirror offers every axis', async () => {
   await waitFor(() => expect(screen.getByRole('button', { name: /^Box/ })).toBeTruthy())
   await user.click(screen.getByRole('button', { name: /^Box/ }))
 
-  await user.click(screen.getByRole('button', { name: 'Mirror' }))
+  await openMenuItem(user, 'Edit', 'Mirror across X')
   const menu = await screen.findByRole('menu')
-  expect(within(menu).getAllByRole('menuitem').map(item => item.textContent))
+  // Items carry their shortcut after the label, so read just the label.
+  expect(within(menu).getAllByRole('menuitem')
+    .map(item => item.textContent?.match(/^Mirror across [XYZ]/)?.[0])
+    .filter(Boolean))
     .toEqual(['Mirror across X', 'Mirror across Y', 'Mirror across Z'])
 })
 
@@ -449,9 +453,10 @@ test('? opens the keyboard shortcuts', async () => {
 })
 
 test('save waits for something to save in a design that was never saved', async () => {
+  const user = userEvent.setup()
   renderPage()
-  await waitFor(() => expect(screen.getByRole('button', { name: 'Save' })).toBeTruthy())
-  expect(screen.getByRole('button', { name: 'Save' }).hasAttribute('disabled')).toBe(true)
+  await screen.findByLabelText('Design name')
+  expect(await menuItemDisabled(user, 'File', /^Save(?! As)/)).toBe(true)
 })
 
 test('a part set to an AMS tray exports on that filament; the rest fill in around it', async () => {
@@ -479,7 +484,7 @@ test('a part set to an AMS tray exports on that filament; the rest fill in aroun
     await user.click(await screen.findByLabelText('Filament'))
     await user.click(await screen.findByRole('option', { name: 'A3' }))
 
-    await user.click(screen.getByRole('button', { name: '3MF' }))
+    await chooseMenu(user, 'File', 'Export 3MF')
     await waitFor(() => expect(blobs.length).toBe(1), { timeout: 20_000 })
 
     const zip = unzipSync(new Uint8Array(await blobs[0].arrayBuffer()))

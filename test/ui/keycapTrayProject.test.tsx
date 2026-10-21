@@ -21,6 +21,7 @@ import KeycapTrayPage from '../../src/features/keycap-tray/KeycapTrayPage.tsx'
 import {
   awaitTrayLoaded, installHarness, renderPage, renderWorkbench, state,
 } from './keycapTrayHarness.tsx'
+import { chooseMenu } from './menuHelpers.tsx'
 //
 // TIMEOUT. Longer than the 30 s default. The cost here is real work, not
 // waste: mounting the designer is ~570 ms and any interaction reaching the
@@ -81,7 +82,7 @@ describe('project gate', () => {
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
     await awaitTrayLoaded()
 
-    await user.click(screen.getByRole('button', { name: 'New tray' }))
+    await chooseMenu(user, 'File', 'New')
     await waitFor(() => {
       const tray = state.calls.find(c => c.method === 'POST' && c.path === '/api/keycap-trays')
       assert.ok(tray)
@@ -217,12 +218,11 @@ test('a new tray in the project opens fresh, not the last tray’s working state
   }]
   const user = userEvent.setup()
   renderPage(<KeycapTrayPage />, '/keycap-tray/1')
-  await waitFor(() => expect(
-    (screen.getByRole('button', { name: 'Clone' }) as HTMLButtonElement).disabled).toBe(false))
+  await awaitTrayLoaded()
   await user.click(screen.getByRole('button', { name: 'Hide labels' }))
   await waitFor(() => expect(screen.getByRole('button', { name: 'Show labels' })).toBeTruthy())
 
-  await user.click(screen.getByRole('button', { name: 'New tray' }))
+  await chooseMenu(user, 'File', 'New')
   // The new tray is created in the same project and opened. It starts from the
   // designer defaults -- labels shown -- not the toggled state of Top tray.
   await waitFor(() => expect(

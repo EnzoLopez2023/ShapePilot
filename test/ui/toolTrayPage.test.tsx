@@ -13,6 +13,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import ToolTrayPage from '../../src/features/tool-tray/ToolTrayPage.tsx'
 import { ThemeModeProvider } from '../../src/theme/ThemeModeProvider.tsx'
 import { ConfirmDialogProvider } from '../../src/components/ConfirmDialogProvider.tsx'
+import { WithMenuBar, chooseMenu } from './menuHelpers.tsx'
 
 interface StubState {
   designs: { id: string; name: string; profileKind: string; pocketCount: number; updatedAt: string }[]
@@ -52,11 +53,13 @@ const renderPage = () => render(
   <ThemeModeProvider initialPreference="light">
     <ConfirmDialogProvider>
       <MemoryRouter initialEntries={['/tool-tray']}>
-        <Routes>
-          <Route path="/tool-tray" element={<ToolTrayPage />} />
-          <Route path="/tool-tray/:designId" element={<ToolTrayPage />} />
-          <Route path="*" element={<ToolTrayPage />} />
-        </Routes>
+        <WithMenuBar>
+          <Routes>
+            <Route path="/tool-tray" element={<ToolTrayPage />} />
+            <Route path="/tool-tray/:designId" element={<ToolTrayPage />} />
+            <Route path="*" element={<ToolTrayPage />} />
+          </Routes>
+        </WithMenuBar>
       </MemoryRouter>
     </ConfirmDialogProvider>
   </ThemeModeProvider>,
@@ -285,7 +288,7 @@ test('saving sends exactly the fields the server accepts', async () => {
   renderPage()
   await waitFor(() => expect(screen.getByText(/pockets ·/)).toBeTruthy())
   await drop(user, 'Hotend')
-  await user.click(screen.getByRole('button', { name: /^Save$/ }))
+  await chooseMenu(user, 'File', /^Save(?! As)/)
 
   await waitFor(() => expect(
     state.calls.some(c => c.method === 'POST' && c.path === '/api/tool-trays')).toBe(true))
@@ -302,7 +305,7 @@ test('a dropped preset carries its provenance but is stored whole', async () => 
   renderPage()
   await waitFor(() => expect(screen.getByText(/pockets ·/)).toBeTruthy())
   await drop(user, 'Lubricant tube')
-  await user.click(screen.getByRole('button', { name: /^Save$/ }))
+  await chooseMenu(user, 'File', /^Save(?! As)/)
 
   await waitFor(() => expect(
     state.calls.some(c => c.method === 'POST')).toBe(true))

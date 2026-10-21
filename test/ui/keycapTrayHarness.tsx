@@ -22,7 +22,9 @@ import KeycapTrayPage from '../../src/features/keycap-tray/KeycapTrayPage.tsx'
 import { PYTHON_SIZING } from '../../src/features/keycap-tray/geometry/shapes.ts'
 import { ThemeModeProvider } from '../../src/theme/ThemeModeProvider.tsx'
 import { ConfirmDialogProvider } from '../../src/components/ConfirmDialogProvider.tsx'
+import userEvent from '@testing-library/user-event'
 import type { ReactElement } from 'react'
+import { WithMenuBar, menuItemDisabled } from './menuHelpers.tsx'
 
 export interface StubState {
   designs: {
@@ -171,11 +173,13 @@ const renderPage = (ui: ReactElement = <KeycapTrayPage />, route = '/keycap-tray
   <ThemeModeProvider initialPreference="light">
     <ConfirmDialogProvider>
       <MemoryRouter initialEntries={[route]}>
-        <Routes>
-          <Route path="/keycap-tray" element={ui} />
-          <Route path="/keycap-tray/:designId" element={ui} />
-          <Route path="*" element={ui} />
-        </Routes>
+        <WithMenuBar>
+          <Routes>
+            <Route path="/keycap-tray" element={ui} />
+            <Route path="/keycap-tray/:designId" element={ui} />
+            <Route path="*" element={ui} />
+          </Routes>
+        </WithMenuBar>
       </MemoryRouter>
     </ConfirmDialogProvider>
   </ThemeModeProvider>,
@@ -197,11 +201,22 @@ const renderWorkbench = (route = '/keycap-tray/1') => {
   return renderPage(<KeycapTrayPage />, route)
 }
 
-/** Resolves once the tray in the URL has finished loading -- Clone flips on
- *  when `savedId` is set and `busy` clears, so it is a clean "load done" gate
- *  before clicking a `disabled={busy}` toolbar action. */
-const awaitTrayLoaded = () => waitFor(() => expect(
-  (screen.getByRole('button', { name: 'Clone' }) as HTMLButtonElement).disabled).toBe(false))
+/** Resolves once the tray in the URL has finished loading -- File > Clone
+ *  enables when `savedId` is set and `busy` clears, so it is a clean "load done"
+ *  gate before choosing a menu action that is disabled while `busy`. */
+const awaitTrayLoaded = async () => {
+  const user = userEvent.setup()
+  await waitFor(async () => expect(await menuItemDisabled(user, 'File', 'Clone')).toBe(false))
+}
+
+/** File > Save. `Save` is also a prefix of `Save As…`, so exclude that. */
+const SAVE_ITEM = /^Save(?!\s*As)/
+
+/** Closes whatever menu a test left open. */
+const closeOpenMenu = async (user: ReturnType<typeof userEvent.setup>) => {
+  await user.keyboard('{Escape}')
+  await waitFor(() => expect(screen.queryByRole('menu')).toBeNull())
+}
 
 /** Everything a suite needs installed around each test. */
 export function installHarness(): void {
@@ -240,4 +255,4 @@ export function installHarness(): void {
   })
 }
 
-export { installFetchStub, renderPage, renderWorkbench, awaitTrayLoaded }
+export { installFetchStub, renderPage, renderWorkbench, awaitTrayLoaded, SAVE_ITEM, closeOpenMenu }

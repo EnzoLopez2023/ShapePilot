@@ -22,6 +22,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import SwitchTrayPage from '../../src/features/switch-tray/SwitchTrayPage.tsx'
 import { ThemeModeProvider } from '../../src/theme/ThemeModeProvider.tsx'
 import { ConfirmDialogProvider } from '../../src/components/ConfirmDialogProvider.tsx'
+import { WithMenuBar, chooseMenu } from './menuHelpers.tsx'
 
 interface StubState {
   designs: { id: string; name: string; profileKind: string; switchLabel: string; updatedAt: string }[]
@@ -71,11 +72,13 @@ const renderPage = () => render(
   <ThemeModeProvider initialPreference="light">
     <ConfirmDialogProvider>
       <MemoryRouter initialEntries={['/switch-tray']}>
-        <Routes>
-          <Route path="/switch-tray" element={<SwitchTrayPage />} />
-          <Route path="/switch-tray/:designId" element={<SwitchTrayPage />} />
-          <Route path="*" element={<SwitchTrayPage />} />
-        </Routes>
+        <WithMenuBar>
+          <Routes>
+            <Route path="/switch-tray" element={<SwitchTrayPage />} />
+            <Route path="/switch-tray/:designId" element={<SwitchTrayPage />} />
+            <Route path="*" element={<SwitchTrayPage />} />
+          </Routes>
+        </WithMenuBar>
       </MemoryRouter>
     </ConfirmDialogProvider>
   </ThemeModeProvider>,
@@ -193,7 +196,8 @@ test('saving posts every parameter and nothing that is generated', async () => {
   renderPage()
   await waitFor(() => expect(capacity()).toBeGreaterThan(80))
 
-  await user.click(screen.getByRole('button', { name: 'Save' }))
+  // Not "Save As…", which shares the prefix.
+  await chooseMenu(user, 'File', /^Save(?! As)/)
   await waitFor(() => expect(
     state.calls.some(c => c.method === 'POST' && c.path === '/api/switch-trays')).toBe(true))
 
@@ -218,7 +222,7 @@ test('the Open dialog lists saved trays by their switch', async () => {
   renderPage()
   await waitFor(() => expect(capacity()).toBeGreaterThan(80))
 
-  await user.click(screen.getByRole('button', { name: 'Open' }))
+  await chooseMenu(user, 'File', 'Open')
   const dialog = await screen.findByRole('dialog')
   assert.ok(within(dialog).getByText('MX spares'))
   assert.ok(within(dialog).getByText(/Cherry MX/))

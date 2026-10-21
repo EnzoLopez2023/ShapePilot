@@ -10,6 +10,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeModeProvider } from '../../src/theme/ThemeModeProvider.tsx'
 import { ConfirmDialogProvider } from '../../src/components/ConfirmDialogProvider.tsx'
+import { WithMenuBar, chooseMenu, menuItemDisabled } from './menuHelpers.tsx'
 
 vi.mock('../../src/components/viewport3d/Viewport3D.tsx', () => ({
   default: ({ parts }: { parts: { id: string }[] }) =>
@@ -85,7 +86,9 @@ let holdShapeReply: Promise<void> | null = null
 const renderPage = (path = '/playground') => render(
   <ThemeModeProvider initialPreference="light">
     <ConfirmDialogProvider>
-      <MemoryRouter initialEntries={[path]}><PlaygroundPage /></MemoryRouter>
+      <WithMenuBar>
+        <MemoryRouter initialEntries={[path]}><PlaygroundPage /></MemoryRouter>
+      </WithMenuBar>
     </ConfirmDialogProvider>
   </ThemeModeProvider>,
 )
@@ -166,7 +169,7 @@ test('a turn produces a proposal that is not applied on its own', async () => {
   // The proposal is previewed, but nothing has reached the document: the
   // assistant proposes, it never mutates. No parts list means no objects.
   assert.equal(screen.queryByRole('list', { name: 'Objects' }), null)
-  assert.ok(screen.getByRole('button', { name: /Continue in Bambu/ }).hasAttribute('disabled'))
+  assert.equal(await menuItemDisabled(user, 'File', 'Continue in Bambu'), true)
 })
 
 test('applying puts the named part into the document', async () => {
@@ -233,11 +236,11 @@ test('a follow-up turn sends the current design so the edit can be targeted', as
 })
 
 test('handoff and export stay disabled until there is something to hand off', async () => {
+  const user = userEvent.setup()
   renderPage()
-  await waitFor(() => expect(
-    screen.getByRole('button', { name: /Continue in Bambu/ })).toBeTruthy())
-  assert.ok(screen.getByRole('button', { name: /Continue in Bambu/ }).hasAttribute('disabled'))
-  assert.ok(screen.getByRole('button', { name: 'STL' }).hasAttribute('disabled'))
+  await screen.findByRole('menubar')
+  assert.equal(await menuItemDisabled(user, 'File', 'Continue in Bambu'), true)
+  assert.equal(await menuItemDisabled(user, 'File', 'Export STL'), true)
 })
 
 test('an unavailable assistant is reported, not hidden', async () => {
@@ -261,7 +264,7 @@ test('tracing a photo produces a drawing proposal that is not applied on its own
   assert.deepEqual((vectorCalls[0] as { hashes: string[] }).hashes.length, 1)
   // Nothing has reached the document.
   assert.equal(screen.queryByRole('list', { name: 'Objects' }), null)
-  assert.ok(screen.getByRole('button', { name: 'SVG' }).hasAttribute('disabled'))
+  assert.equal(await menuItemDisabled(user, 'File', 'Export SVG'), true)
 })
 
 test('applying a trace puts path objects in the document and switches to the 2D canvas', async () => {
@@ -278,7 +281,7 @@ test('applying a trace puts path objects in the document and switches to the 2D 
   // The 3D viewport gave way to the 2D canvas, and SVG export is now live.
   assert.ok(screen.getByTestId('canvas2d'))
   assert.equal(screen.queryByTestId('viewport'), null)
-  assert.equal(screen.getByRole('button', { name: 'SVG' }).hasAttribute('disabled'), false)
+  assert.equal(await menuItemDisabled(user, 'File', 'Export SVG'), false)
   assert.equal(screen.queryByText('Proposed drawing'), null)
 })
 
@@ -322,7 +325,7 @@ test('undo takes back the turn along with the geometry it made', async () => {
   await user.click(screen.getByRole('button', { name: 'Apply' }))
   await waitFor(() => expect(screen.getByText(shapeResponse.notes)).toBeTruthy())
 
-  await user.click(screen.getByRole('button', { name: 'Undo' }))
+  await chooseMenu(user, 'Edit', 'Undo')
 
   await waitFor(() => expect(screen.queryByText(shapeResponse.notes)).toBeNull())
   assert.equal(screen.queryByRole('list', { name: 'Objects' }), null)
@@ -352,7 +355,7 @@ test('starting a new idea leaves a pending proposal behind', async () => {
   await user.click(screen.getByRole('button', { name: /phone stand for my iPhone/ }))
   await waitFor(() => expect(screen.getByText('Proposed change')).toBeTruthy())
 
-  await user.click(screen.getByRole('button', { name: 'New' }))
+  await chooseMenu(user, 'File', 'New')
 
   // Apply would otherwise merge a proposal about one design into another.
   await waitFor(() => expect(screen.queryByText('Proposed change')).toBeNull())
@@ -372,7 +375,7 @@ test('a reply that lands after switching designs is ignored', async () => {
   await user.click(screen.getByRole('button', { name: /phone stand for my iPhone/ }))
   await waitFor(() => expect(shapeCalls.length).toBe(1))
 
-  await user.click(screen.getByRole('button', { name: 'New' }))
+  await chooseMenu(user, 'File', 'New')
   release()
 
   // Give the stale reply every chance to land before asserting it did not.
