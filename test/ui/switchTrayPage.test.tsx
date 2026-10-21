@@ -222,7 +222,7 @@ test('the Open dialog lists saved trays by their switch', async () => {
   renderPage()
   await waitFor(() => expect(capacity()).toBeGreaterThan(80))
 
-  await chooseMenu(user, 'File', 'Open')
+  await chooseMenu(user, 'File', 'Open…')
   const dialog = await screen.findByRole('dialog')
   assert.ok(within(dialog).getByText('MX spares'))
   assert.ok(within(dialog).getByText(/Cherry MX/))

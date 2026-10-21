@@ -87,7 +87,7 @@ describe('designer page', () => {
     await chooseMenu(user, 'File', 'New')
     await waitFor(() => expect(
       state.calls.some(c => c.method === 'POST' && c.path === '/api/keycap-trays')).toBe(true))
-    for (const name of ['New', 'Open', 'Clone']) {
+    for (const name of ['New', 'Open…', 'Clone']) {
       assert.equal(await menuItemDisabled(user, 'File', name), true, name)
     }
 
@@ -148,7 +148,7 @@ describe('designer page', () => {
     await awaitTrayLoaded()
     assert.ok(screen.getByText(/^0 pockets/))
 
-    await chooseMenu(user, 'File', 'Open')
+    await chooseMenu(user, 'File', 'Open…')
     const dialog = await screen.findByRole('dialog')
     assert.ok(await within(dialog).findByText('Saved tray'))
     await user.click((await within(dialog).findAllByRole('button', { name: 'Open' }))[0])
@@ -171,7 +171,7 @@ describe('designer page', () => {
     let releaseLoad: () => void = () => {}
     state.loadGate = new Promise<void>((resolveLoad) => { releaseLoad = resolveLoad })
 
-    await chooseMenu(user, 'File', 'Open')
+    await chooseMenu(user, 'File', 'Open…')
     const dialog = await screen.findByRole('dialog')
     const openButtons = within(dialog).getAllByRole('button', { name: 'Open' })
     await user.click(openButtons[1])
@@ -199,7 +199,7 @@ describe('designer page', () => {
     await waitFor(() => expect(screen.getByRole('application')).toBeTruthy())
     await awaitTrayLoaded()
 
-    await chooseMenu(user, 'File', 'Open')
+    await chooseMenu(user, 'File', 'Open…')
     const dialog = await screen.findByRole('dialog')
     await user.click(await within(dialog).findByRole('button', { name: 'Delete Doomed tray' }))
 
@@ -260,7 +260,7 @@ describe('designer page', () => {
     await closeOpenMenu(user)
 
     await user.click(screen.getByRole('button', { name: 'Shaper Origin' }))
-    assert.ok(await openMenuItem(user, 'File', 'Export SVG'))
+    assert.ok(await openMenuItem(user, 'File', 'Export SVG (Shaper Origin)'))
     assert.ok(screen.getByRole('menuitem', { name: /^Export DXF/ }))
     assert.equal(screen.queryByRole('menuitem', { name: /^Export STL/ }), null)
     await closeOpenMenu(user)
