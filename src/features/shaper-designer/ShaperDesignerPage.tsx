@@ -18,7 +18,7 @@ import { useConfirm } from '../../components/ConfirmDialogProvider.tsx'
 import { standardMenu, useAppMenu } from '../../components/menu/AppMenu.tsx'
 import { compileObject } from '../../geometry/sceneShapes.ts'
 import type { SceneObject } from '../../model/document.ts'
-import { BENCHPILOT_REACH } from '../../model/benchpilot.ts'
+import { BENCHPILOT_REACH, fitsReach } from '../../model/benchpilot.ts'
 import type { BenchPilotMount } from '../../model/benchpilot.ts'
 import { SHAPER_ORIGIN } from '../../model/machines.ts'
 import { createShape2D, createText, findObject } from '../../model/scene.ts'
@@ -103,6 +103,42 @@ export default function ShaperDesignerPage() {
       .filter(s => s.polygons.length),
     [objects, compileOptions],
   )
+
+  const reach = showBenchPilot ? BENCHPILOT_REACH[benchPilotMount] : null
+  const designBounds = useMemo(() => {
+    const pts = shapes.flatMap(sh => sh.polygons.flat(2))
+    if (!pts.length) return null
+    const xs = pts.map(pt => pt[0]), ys = pts.map(pt => pt[1])
+    const minX = Math.min(...xs), minY = Math.min(...ys)
+    return { minX, minY, w: Math.max(...xs) - minX, h: Math.max(...ys) - minY }
+  }, [shapes])
+  const needsTurn = !!reach && !!designBounds
+    && fitsReach(reach, designBounds.w, designBounds.h)
+    && !(designBounds.w <= reach.widthMm && designBounds.h <= reach.heightMm)
+
+  // Quarter-turn the whole design about its centre, then slide it back onto the
+  // reach's origin corner: each object turns about its own origin, so its
+  // position has to orbit the centre as well.
+  const turnToFit = useCallback(() => {
+    if (!designBounds) return
+    const cx = designBounds.minX + designBounds.w / 2
+    const cy = designBounds.minY + designBounds.h / 2
+    const dx = designBounds.h / 2 - cx
+    const dy = designBounds.w / 2 - cy
+    for (const o of objects) {
+      if (o.locked) continue
+      const [px, py] = o.transform.position
+      const r = o.transform.rotationDeg
+      doc.updateObject(o.id, {
+        transform: {
+          ...o.transform,
+          position: [cx - (py - cy) + dx, cy + (px - cx) + dy, o.transform.position[2]],
+          rotationDeg: [r[0], r[1], r[2] + 90],
+        },
+      })
+    }
+    setFitToken(t => t + 1)
+  }, [designBounds, objects, doc])
 
   const depthConflict = useMemo(() => conflictingPocketDepths(doc.doc), [doc.doc])
 
@@ -353,7 +389,7 @@ export default function ShaperDesignerPage() {
             gridMm={gridMm}
             snapMm={snapMm}
             stockMm={stock}
-            reachMm={showBenchPilot ? BENCHPILOT_REACH[benchPilotMount] : null}
+            reachMm={reach}
             fitToken={fitToken}
             imperial={imperial}
             onSelect={doc.toggleSelection}
@@ -410,6 +446,14 @@ export default function ShaperDesignerPage() {
                 <MenuItem value="workstation">On Workstation</MenuItem>
                 <MenuItem value="bench">Directly on bench</MenuItem>
               </TextField>
+            )}
+            {showBenchPilot && needsTurn && (
+              <Alert
+                severity="info" variant="outlined"
+                action={<Button size="small" onClick={turnToFit}>Turn</Button>}
+              >
+                The design fits the cut area only turned a quarter.
+              </Alert>
             )}
             {depthConflict.length > 0 && (
               <Alert severity="warning" variant="outlined">
