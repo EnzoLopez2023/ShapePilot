@@ -53,6 +53,7 @@ function boundsOf(layers: readonly CutLayer[], guideRings: readonly Ring[]): Svg
   }
   for (const layer of layers) {
     for (const polygon of layer.polygons) for (const ring of polygon) for (const [x, y] of ring) see(x, y)
+    for (const ring of layer.openPaths ?? []) for (const [x, y] of ring) see(x, y)
   }
   for (const ring of guideRings) for (const [x, y] of ring) see(x, y)
   if (!Number.isFinite(minX)) return { minX: 0, maxY: 0, widthMm: 0, heightMm: 0 }
@@ -64,6 +65,11 @@ function ringToPath(ring: Ring, bounds: SvgBounds, wantCCW: boolean): string {
   const oriented = (signedArea(flipped) > 0) === wantCCW ? flipped : [...flipped].reverse()
   const parts = oriented.map(([x, y], i) => `${i === 0 ? 'M' : 'L'} ${n(x)},${n(y)}`)
   return `${parts.join(' ')} Z`
+}
+
+/** An open polyline: no closing segment, and no winding to restore. */
+function openToPath(ring: Ring, bounds: SvgBounds): string {
+  return ring.map(([x, y], i) => `${i === 0 ? 'M' : 'L'} ${n(x - bounds.minX)},${n(bounds.maxY - y)}`).join(' ')
 }
 
 /** Holes ride as extra subpaths in one `d`, distinguished by opposite winding. */
@@ -99,7 +105,10 @@ export function writeShaperSvg(drawing: CutDrawing): string {
     const extra = layer.cutType === 'pocket' && layer.depthMm !== undefined
       ? ` shaper:cutDepth="${n(layer.depthMm)}mm"`
       : ''
-    body += group(layer.id, style, multiToPath(layer.polygons, bounds), extra)
+    body += group(layer.id, style, [
+      multiToPath(layer.polygons, bounds),
+      ...(layer.openPaths ?? []).map(r => openToPath(r, bounds)),
+    ].filter(Boolean).join(' '), extra)
   }
   if (guideRings.length) {
     body += group('labels', CUT_STYLE.guide, guideRings.map(r => ringToPath(r, bounds, true)).join(' '))

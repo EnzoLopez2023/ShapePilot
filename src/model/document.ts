@@ -127,6 +127,12 @@ export interface PathObject extends SceneObjectBase {
   type: 'path'
   /** [outer CCW, ...holes CW], millimetres, object-local. */
   rings: Contour[]
+  /**
+   * Indices into `rings` of contours that are open polylines: the last point
+   * does not join the first, so they enclose nothing. Only a line cut can follow
+   * one, which is why opening a contour switches the object to `online`.
+   */
+  openRings?: number[]
   thicknessMm?: number
   /** Where it came from, for the inspector and for re-import. */
   source?: { format: ImportFormat; filename: string }

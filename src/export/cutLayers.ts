@@ -9,6 +9,8 @@ export interface CutLayer {
   id: string
   cutType: CutType
   polygons: MultiPolygon
+  /** Open polylines, written without a closing segment. Line cuts and guides only. */
+  openPaths?: Ring[]
   /** Pocket depth in mm. Ignored by every cut type except `pocket`. */
   depthMm?: number
 }
@@ -23,4 +25,4 @@ export interface CutDrawing {
 }
 
 export const nonEmptyLayers = (layers: readonly CutLayer[]): CutLayer[] =>
-  layers.filter(l => l.polygons.some(p => p.length))
+  layers.filter(l => l.polygons.some(p => p.length) || l.openPaths?.length)

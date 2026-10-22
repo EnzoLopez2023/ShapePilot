@@ -32,9 +32,9 @@ const pair = (code: number | string, value: string | number): string => `${code}
 let handleSeq = 0x100
 const handle = (): string => (++handleSeq).toString(16).toUpperCase()
 
-function lwpolyline(ring: Ring, layer: DxfLayer): string {
+function lwpolyline(ring: Ring, layer: DxfLayer, closed = true): string {
   let s = pair(0, 'LWPOLYLINE') + pair(5, handle()) + pair(100, 'AcDbEntity') + pair(8, layer) +
-    pair(100, 'AcDbPolyline') + pair(90, ring.length) + pair(70, 1) // 1 = closed
+    pair(100, 'AcDbPolyline') + pair(90, ring.length) + pair(70, closed ? 1 : 0)
   for (const [x, y] of ring) s += pair(10, n(x)) + pair(20, n(y))
   return s
 }
@@ -83,7 +83,10 @@ export function writeDxf(drawing: CutDrawing, opts: DxfOptions = {}): string {
   }
   if (!Number.isFinite(minX)) { minX = 0; minY = 0; maxX = 0; maxY = 0 }
 
-  for (const layer of drawing.layers) addMulti(layer.polygons, DXF_LAYER_FOR[layer.cutType])
+  for (const layer of drawing.layers) {
+    addMulti(layer.polygons, DXF_LAYER_FOR[layer.cutType])
+    for (const ring of layer.openPaths ?? []) entities.push(lwpolyline(ring, DXF_LAYER_FOR[layer.cutType], false))
+  }
   for (const ring of drawing.guideRings ?? []) entities.push(lwpolyline(ring, 'LABELS'))
 
   const header =

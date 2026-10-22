@@ -11,7 +11,7 @@ import {
 import {
   SKADIS_DEFAULT_HEIGHT_MM, SKADIS_DEFAULT_WIDTH_MM, skadisRings,
 } from './skadis.ts'
-import type { PathObject, SceneObject, Shape2DObject, TextObject } from '../model/document.ts'
+import type { Contour, PathObject, SceneObject, Shape2DObject, TextObject } from '../model/document.ts'
 
 /**
  * Glyph outlines need a font binary, which loads asynchronously. Callers resolve
@@ -73,7 +73,17 @@ function shape2dRings(o: Shape2DObject): Ring[] {
 }
 
 /** Imported outlines arrive already normalised by the importer. */
-const pathRings = (o: PathObject): Ring[] => o.rings.map(r => r.map(([x, y]) => [x, y] as const))
+const copyRing = (r: Contour): Ring => r.map(([x, y]) => [x, y] as const)
+
+/** Closed contours only: an open one encloses nothing, so it has no polygon. */
+const pathRings = (o: PathObject): Ring[] =>
+  o.rings.filter((_, i) => !o.openRings?.includes(i)).map(copyRing)
+
+/** A path object's open polylines in document space; empty for everything else. */
+export function openPathRings(o: SceneObject): Ring[] {
+  if (o.type !== 'path' || !o.visible || !o.openRings?.length) return []
+  return place(o.rings.filter((_, i) => o.openRings!.includes(i)).map(copyRing), o)
+}
 
 const textRings = (o: TextObject, opts: CompileOptions): Ring[] =>
   [...(opts.textOutlines?.get(o.id) ?? [])]

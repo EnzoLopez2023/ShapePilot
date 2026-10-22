@@ -82,3 +82,17 @@ test('the Shaper SVG writes the bore as an opposite-wound subpath', async () => 
   assert.equal(windings.length, 2)
   assert.notEqual(windings[0], windings[1], 'the bore must wind against the outline')
 })
+
+test('an open path is written as an unclosed on-line stroke, whatever its cut type', () => {
+  const path: PathObject = {
+    id: 'p', name: 'Open', type: 'path', mode: 'solid', visible: true, locked: false,
+    transform: IDENTITY_TRANSFORM, cut: { type: 'exterior' },
+    rings: [[[0, 0], [10, 0], [10, 10]]], openRings: [0],
+  }
+  const drawing = sceneCutDrawing(docWith(path))
+  assert.equal(drawing.layers.length, 1)
+  assert.equal(drawing.layers[0].cutType, 'online')
+  const svg = writeShaperSvg(drawing)
+  assert.match(svg, /shaper:cutType="online"/)
+  assert.doesNotMatch(svg, / Z"/)
+})

@@ -4,9 +4,9 @@
 // encoding is per-cut-type: Origin reads the colour of a group to decide what
 // the bit does. Order matters -- exterior last would have the profile drawn
 // over its own pockets.
-import type { MultiPolygon } from '../../geometry/vec.ts'
+import type { MultiPolygon, Ring } from '../../geometry/vec.ts'
 import { union } from '../../geometry/boolean.ts'
-import { compileObject } from '../../geometry/sceneShapes.ts'
+import { compileObject, openPathRings } from '../../geometry/sceneShapes.ts'
 import type { CompileOptions } from '../../geometry/sceneShapes.ts'
 import type { CutType, DesignDocument, SceneObject } from '../../model/document.ts'
 import type { CutDrawing, CutLayer } from '../../export/cutLayers.ts'
@@ -47,10 +47,18 @@ function cutContributions(o: SceneObject, polygons: MultiPolygon): [CutType, Mul
 
 export function sceneCutDrawing(doc: DesignDocument, opts: CompileOptions = {}): CutDrawing {
   const byType = new Map<CutType, MultiPolygon[]>()
+  const openByType = new Map<CutType, Ring[]>()
   const depths = new Map<CutType, number>()
 
   for (const object of doc.objects) {
     if (!object.visible) continue
+    // Origin follows an open path with the bit centred on it and nothing else,
+    // so it is a line cut whatever the object's own cut type says.
+    const open = openPathRings(object)
+    if (open.length) {
+      const type: CutType = cutTypeOf(object) === 'guide' ? 'guide' : 'online'
+      openByType.set(type, [...(openByType.get(type) ?? []), ...open])
+    }
     const polygons = compileObject(object, opts)
     if (!polygons.length) continue
     for (const [type, contribution] of cutContributions(object, polygons)) {
@@ -70,11 +78,13 @@ export function sceneCutDrawing(doc: DesignDocument, opts: CompileOptions = {}):
   const layers: CutLayer[] = []
   for (const type of LAYER_ORDER) {
     const bucket = byType.get(type)
-    if (!bucket?.length) continue
+    const openPaths = openByType.get(type)
+    if (!bucket?.length && !openPaths?.length) continue
     layers.push({
       id: LAYER_LABEL[type],
       cutType: type,
-      polygons: union(...bucket),
+      polygons: bucket?.length ? union(...bucket) : [],
+      ...(openPaths?.length ? { openPaths } : {}),
       ...(type === 'pocket' ? { depthMm: depths.get(type) ?? 3 } : {}),
     })
   }

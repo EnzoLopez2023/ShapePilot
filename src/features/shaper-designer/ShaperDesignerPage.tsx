@@ -16,7 +16,7 @@ import ObjectTree from '../../components/designer/ObjectTree.tsx'
 import { useDocumentLifecycle } from '../../components/designer/useDocumentLifecycle.ts'
 import { useConfirm } from '../../components/ConfirmDialogProvider.tsx'
 import { standardMenu, useAppMenu } from '../../components/menu/AppMenu.tsx'
-import { compileObject } from '../../geometry/sceneShapes.ts'
+import { compileObject, openPathRings } from '../../geometry/sceneShapes.ts'
 import type { SceneObject } from '../../model/document.ts'
 import { BENCHPILOT_REACH, fitsReach } from '../../model/benchpilot.ts'
 import type { BenchPilotMount } from '../../model/benchpilot.ts'
@@ -28,6 +28,7 @@ import { writeShaperSvg } from '../../export/shaperSvg.ts'
 import { writeDxf } from '../../export/dxf.ts'
 import { DEFAULT_FONT_ID, resolveTextOutlines } from '../../text/fonts.ts'
 import type { Ring } from '../../geometry/vec.ts'
+import { nearestRing, openRingBetween } from '../../geometry/openPath.ts'
 import { SHAPER_IMPORT_FORMATS } from '../../import/index.ts'
 import ShapePalette from './components/ShapePalette.tsx'
 import type { PaletteKind } from './components/paletteEntries.ts'
@@ -92,14 +93,20 @@ export default function ShaperDesignerPage() {
   const shapes = useMemo<CanvasShape[]>(
     () => objects
       .filter(o => o.visible)
-      .map(o => ({
-        id: o.id,
-        name: o.name,
-        polygons: compileObject(o, compileOptions),
-        mode: o.mode,
-        cutType: o.cut?.type,
-        locked: o.locked,
-      }))
+      .map(o => {
+        const open = openPathRings(o)
+        return {
+          id: o.id,
+          name: o.name,
+          // An open polyline has no area, but it still needs a box to be picked
+          // and framed by, so it rides along as a one-ring polygon.
+          polygons: [...compileObject(o, compileOptions), ...open.map(r => [r])],
+          ...(open.length ? { openRings: open } : {}),
+          mode: o.mode,
+          cutType: open.length ? (o.cut?.type === 'guide' ? 'guide' as const : 'online' as const) : o.cut?.type,
+          locked: o.locked,
+        }
+      })
       .filter(s => s.polygons.length),
     [objects, compileOptions],
   )
@@ -139,6 +146,42 @@ export default function ShaperDesignerPage() {
     }
     setFitToken(t => t + 1)
   }, [designBounds, objects, doc])
+
+  // Opening a contour: two clicks on the outline mark the section to remove.
+  const [gapPicks, setGapPicks] = useState<[number, number][] | null>(null)
+  useEffect(() => {
+    if (!gapPicks) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setGapPicks(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [gapPicks])
+
+  const openAt = useCallback((object: SceneObject, a: [number, number], b: [number, number]) => {
+    if (object.type !== 'path') return false
+    const { position: [px, py], rotationDeg: [, , rz], scale: [sx, sy] } = object.transform
+    const rad = (-rz * Math.PI) / 180
+    const cos = Math.cos(rad), sin = Math.sin(rad)
+    const local = (p: [number, number]): [number, number] => {
+      const dx = p[0] - px, dy = p[1] - py
+      return [(dx * cos - dy * sin) / (sx || 1), (dx * sin + dy * cos) / (sy || 1)]
+    }
+    const already = new Set(object.openRings ?? [])
+    const index = nearestRing(object.rings, already, local(a))
+    if (index < 0) return false
+    const open = openRingBetween(object.rings[index], local(a), local(b))
+    if (!open) return false
+    doc.updateObject(object.id, {
+      rings: object.rings.map((r, i) => (i === index ? open : r)),
+      openRings: [...already, index],
+      cut: { type: 'online' },
+    } as Partial<SceneObject>)
+    return true
+  }, [doc])
+
+  const closeOpenRings = useCallback((object: SceneObject) => {
+    if (object.type !== 'path') return
+    doc.updateObject(object.id, { openRings: [] } as Partial<SceneObject>)
+  }, [doc])
 
   const depthConflict = useMemo(() => conflictingPocketDepths(doc.doc), [doc.doc])
 
@@ -390,6 +433,15 @@ export default function ShaperDesignerPage() {
             snapMm={snapMm}
             stockMm={stock}
             reachMm={reach}
+            pickPoints={gapPicks && selectedObject ? {
+              markers: gapPicks,
+              onPick: (x, y) => {
+                const next: [number, number][] = [...gapPicks, [x, y]]
+                if (next.length < 2) { setGapPicks(next); return }
+                openAt(selectedObject, next[0], next[1])
+                setGapPicks(null)
+              },
+            } : null}
             fitToken={fitToken}
             imperial={imperial}
             onSelect={doc.toggleSelection}
@@ -425,6 +477,38 @@ export default function ShaperDesignerPage() {
               onPatch={patchSelected}
             />
             <Divider />
+            {selectedObject?.type === 'path' && (
+              <>
+                <Typography variant="h3">Outline</Typography>
+                {gapPicks ? (
+                  <Alert
+                    severity="info" variant="outlined"
+                    action={<Button size="small" onClick={() => setGapPicks(null)}>Cancel</Button>}
+                  >
+                    {gapPicks.length === 0
+                      ? 'Click where the removed section starts.'
+                      : 'Click where it ends. The shorter way round is removed.'}
+                  </Alert>
+                ) : (
+                  <Stack direction="row" spacing={1}>
+                    <Button
+                      size="small" variant="outlined" disabled={selectedObject.locked}
+                      onClick={() => setGapPicks([])}
+                    >
+                      Remove a section…
+                    </Button>
+                    {!!selectedObject.openRings?.length && (
+                      <Button size="small" onClick={() => closeOpenRings(selectedObject)}>
+                        Close path
+                      </Button>
+                    )}
+                  </Stack>
+                )}
+                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                  Removing a section leaves an open path and switches the cut to On line.
+                </Typography>
+              </>
+            )}
             <Typography variant="h3">Machine</Typography>
             <Typography variant="body2" sx={{ color: 'text.secondary' }}>
               {SHAPER_ORIGIN.label} · {SHAPER_ORIGIN.toolDiameterMm} mm bit

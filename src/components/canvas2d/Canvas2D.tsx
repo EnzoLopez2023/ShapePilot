@@ -29,6 +29,8 @@ export interface CanvasShape {
   id: string
   name: string
   polygons: MultiPolygon
+  /** Rings of `polygons` that are open polylines: drawn without a closing segment. */
+  openRings?: readonly Ring[]
   mode: 'solid' | 'hole'
   cutType?: CutType
   locked: boolean
@@ -46,6 +48,8 @@ export interface Canvas2DProps {
   stockMm?: { widthMm: number; heightMm: number } | null
   /** Optional labelled reach outline, drawn from the same corner as the stock. */
   reachMm?: { widthMm: number; heightMm: number; label: string } | null
+  /** While set, clicks pick points instead of selecting or dragging. */
+  pickPoints?: { markers: readonly (readonly [number, number])[]; onPick: (x: number, y: number) => void } | null
   /** Panels frame the canvas, so fit() has to account for them. */
   inset?: Inset
   /** Bumping this re-runs fit-to-content. */
@@ -100,8 +104,11 @@ const ringToPath = (ring: Ring): string =>
     ? `${ring.map(([x, y], i) => `${i === 0 ? 'M' : 'L'} ${x} ${y}`).join(' ')} Z`
     : ''
 
-const multiToPath = (mp: MultiPolygon): string =>
-  mp.flat().map(ringToPath).join(' ')
+const ringToOpenPath = (ring: Ring): string =>
+  ring.map(([x, y], i) => `${i === 0 ? 'M' : 'L'} ${x} ${y}`).join(' ')
+
+const multiToPath = (mp: MultiPolygon, open: readonly Ring[] = []): string =>
+  mp.flat().map(r => (open.includes(r) ? ringToOpenPath(r) : ringToPath(r))).join(' ')
 
 const bearingDeg = (dx: number, dy: number): number => (Math.atan2(dy, dx) * 180) / Math.PI
 
@@ -111,7 +118,7 @@ const zRotation = (o: SceneObject): number => o.transform.rotationDeg[2]
 
 export default function Canvas2D(props: Canvas2DProps) {
   const {
-    shapes, objects, selection, gridMm, snapMm, stockMm, reachMm, inset = NO_INSET, fitToken,
+    shapes, objects, selection, gridMm, snapMm, stockMm, reachMm, pickPoints, inset = NO_INSET, fitToken,
     imperial = false,
     onSelect, onClearSelection, onMove, onRotate, onResize, onDropPaletteItem, emptyHint,
   } = props
@@ -135,7 +142,7 @@ export default function Canvas2D(props: Canvas2DProps) {
   } | null>(null)
 
   const paths = useMemo(
-    () => shapes.map(s => ({ shape: s, d: multiToPath(s.polygons) })), [shapes])
+    () => shapes.map(s => ({ shape: s, d: multiToPath(s.polygons, s.openRings) })), [shapes])
 
   const contentBBox = useMemo(() => {
     const all = shapes.flatMap(s => s.polygons)
@@ -499,6 +506,14 @@ export default function Canvas2D(props: Canvas2DProps) {
               strokeDasharray={`${stroke * 6} ${stroke * 4}`}
             />
           )}
+          {stockMm && (
+            <text
+              x={view.w / 100} y={-stockMm.heightMm - view.w / 100}
+              transform="scale(1, -1)" fontSize={view.w / 60} fill={colours.stock}
+            >
+              {`Stock ${stockMm.widthMm} × ${stockMm.heightMm} mm`}
+            </text>
+          )}
           {reachMm && (
             <g>
               <rect
@@ -632,6 +647,25 @@ export default function Canvas2D(props: Canvas2DProps) {
               </g>
             )
           })()}
+          {pickPoints && (
+            <g>
+              <rect
+                x={view.x - view.w} y={view.y - view.h} width={view.w * 3} height={view.h * 3}
+                fill="transparent" style={{ cursor: 'crosshair' }}
+                onPointerDown={e => {
+                  e.stopPropagation()
+                  const m = toModel(e.clientX, e.clientY)
+                  pickPoints.onPick(m.x, m.y)
+                }}
+              />
+              {pickPoints.markers.map(([mx, my], i) => (
+                <circle
+                  key={i} cx={mx} cy={my} r={stroke * 4} fill={theme.palette.error.main}
+                  stroke={colours.label} strokeWidth={stroke} pointerEvents="none"
+                />
+              ))}
+            </g>
+          )}
         </g>
       </Box>
 

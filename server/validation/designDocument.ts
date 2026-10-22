@@ -241,7 +241,7 @@ function validateObject(value: unknown, field: string, depth: number, state: Wal
       return base
 
     case 'path': {
-      rejectUnknownKeys(raw, [...BASE_KEYS, 'rings', 'thicknessMm', 'source'], field)
+      rejectUnknownKeys(raw, [...BASE_KEYS, 'rings', 'openRings', 'thicknessMm', 'source'], field)
       if (!Array.isArray(raw.rings)) bad(`${field}.rings`, `${field}.rings must be an array`)
       const rings = raw.rings as unknown[]
       if (!rings.length) bad(`${field}.rings`, `${field}.rings must not be empty`)
@@ -249,6 +249,11 @@ function validateObject(value: unknown, field: string, depth: number, state: Wal
         bad(`${field}.rings`, `${field}.rings must have at most ${LIMITS.maxContoursPerObject} contours`)
       }
       base.rings = rings.map((r, i) => validateContour(r, `${field}.rings[${i}]`))
+      if (raw.openRings !== undefined && raw.openRings !== null) {
+        if (!Array.isArray(raw.openRings)) bad(`${field}.openRings`, `${field}.openRings must be an array`)
+        base.openRings = (raw.openRings as unknown[]).map((v, i) =>
+          requireNumber(v, `${field}.openRings[${i}]`, { min: 0, max: rings.length - 1, integer: true }))
+      }
       thickness()
       if (raw.source !== undefined && raw.source !== null) {
         const src = requireObject(raw.source, `${field}.source`)
