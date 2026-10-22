@@ -51,11 +51,11 @@ export default function DisplayPanel() {
         {message && <Alert severity="success">{message}</Alert>}
         <Stack component="form" direction={{ xs: 'column', sm: 'row' }} spacing={2}
           onSubmit={event => { event.preventDefault(); void action() }}>
-          <TextField label="Display pairing code" value={code} onChange={event => setCode(event.target.value)}
-            slotProps={{ htmlInput: { maxLength: 11, autoComplete: 'off' } }} required />
+          <TextField label="4-digit display code" value={code} onChange={event => setCode(event.target.value.replace(/[^0-9]/g, ''))}
+            slotProps={{ htmlInput: { maxLength: 4, inputMode: 'numeric', autoComplete: 'off' } }} required />
           <TextField label="Display name" value={label} onChange={event => setLabel(event.target.value)}
             slotProps={{ htmlInput: { maxLength: 80 } }} required />
-          <Button type="submit" variant="contained" disabled={busy || !/^[a-f0-9]{10}$/i.test(code.replace(/\s/g, '')) || !label.trim()}>
+          <Button type="submit" variant="contained" disabled={busy || !/^[0-9]{4}$/.test(code) || !label.trim()}>
             Approve display
           </Button>
         </Stack>

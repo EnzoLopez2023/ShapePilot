@@ -46,7 +46,7 @@ export function readDisplayPairing(): DisplayPairing | null {
   if (!value || typeof value !== 'object') throw new Error('Saved display access is invalid. Reset this display and pair again.')
   const record = value as Record<string, unknown>
   if (typeof record.credential !== 'string' || !/^[a-f0-9]{64}$/.test(record.credential)
-    || typeof record.code !== 'string' || !/^[A-F0-9]{10}$/.test(record.code)
+    || typeof record.code !== 'string' || !/^([0-9]{4}|[A-F0-9]{10})$/.test(record.code)
     || typeof record.expiresAt !== 'string' || !Number.isFinite(Date.parse(record.expiresAt))) {
     throw new Error('Saved display access is invalid. Reset this display and pair again.')
   }

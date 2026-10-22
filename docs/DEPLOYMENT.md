@@ -280,7 +280,7 @@ After owner-approved deployment through the normal immutable-image pipeline:
    **ShapePilot - EL-ement EDGE**. Click **Start pairing** on the display.
 2. On a normal browser/device, sign in as a ShapePilot administrator, enable
    the selected household printer in **Admin → EL-ement Statistics**, then
-   enter the displayed 10-character code and name under **EDGE displays**.
+   enter the displayed 4-digit code and name under **EDGE displays**.
    Approve only a code visible on your own physical display.
 3. The code expires after 10 minutes and is single-use. Approved access lasts
    90 days. Use **Revoke** in the same panel before retiring/sharing a display;
