@@ -55,7 +55,7 @@ test('pairing is admin-approved, private, single-use and stores no raw credentia
   const pairing = await start()
   expect(pairing.status).toBe(201)
   expect(pairing.body.credential).toMatch(/^[a-f0-9]{64}$/)
-  expect(pairing.body.code).toMatch(/^[A-F0-9]{10}$/)
+  expect(pairing.body.code).toMatch(/^[0-9]{4}$/)
   const pending = await read(pairing.body.credential)
   expect(pending.body.paired).toBe(false)
   expect(pending.body.snapshot).toBeNull()

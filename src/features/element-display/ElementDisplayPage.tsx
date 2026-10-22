@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import type { DisplayPairing, DisplayStatus } from '../../../lib/contracts/elementDisplay.ts'
 import { ApiRequestError, errorMessage } from '../../services/errors.ts'
 import { getDisplayStatus, readDisplayPairing, saveDisplayPairing, startDisplayPairing } from './service.ts'
+import { parsePersonalization, personalizationStyle } from './personalization.ts'
 import './element-display.css'
 
 const connectionLabels = {
@@ -64,6 +65,19 @@ export default function ElementDisplayPage() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    // The iCUE wrapper forwards Page Personalization; accept it only from the embedding window.
+    const apply = (event: MessageEvent) => {
+      if (event.source !== window.parent || window.parent === window) return
+      const value = parsePersonalization(event.data)
+      if (!value) return
+      for (const [name, color] of Object.entries(personalizationStyle(value))) {
+        document.documentElement.style.setProperty(name, color)
+      }
+    }
+    window.addEventListener('message', apply)
+    return () => window.removeEventListener('message', apply)
+  }, [])
   useEffect(() => {
     document.title = 'EL-ement / EDGE'
     try { setPairing(readDisplayPairing()) }
@@ -142,7 +156,7 @@ export default function ElementDisplayPage() {
       <h2>{pairing ? expired ? 'Pairing expired' : 'Approve this display' : 'Pair your printer display'}</h2>
       <p>Read-only current job. No printer controls, history or spool data.</p>
       {pairing && !expired && <>
-        <p className="edge-code" aria-label={`Pairing code ${pairing.code}`}>{pairing.code.slice(0, 5)} {pairing.code.slice(5)}</p>
+        <p className="edge-code" aria-label={`Pairing code ${pairing.code}`}>{pairing.code}</p>
         <p>On another device, sign in to ShapePilot. Open Admin → EL-ement Statistics → EDGE displays and approve this code.</p>
         <p>Expires at {new Date(status?.expiresAt ?? pairing.expiresAt).toLocaleTimeString()}.</p>
       </>}

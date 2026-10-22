@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID } from 'node:crypto'
+import { createHash, randomBytes, randomInt, randomUUID } from 'node:crypto'
 import { Router } from 'express'
 import type { RequestHandler } from 'express'
 import type { Repositories } from '../../lib/db/repositories/contracts.ts'
@@ -58,12 +58,19 @@ export function createElementDisplayRouter({ repos, monitor }: Options): Router 
     }
     const now = Date.now()
     const credential = randomBytes(32).toString('hex')
-    const code = randomBytes(5).toString('hex').toUpperCase()
     const expiresAt = iso(now + 10 * MINUTE)
-    if (!await repos.elementDisplays.create(randomUUID(), hash(credential), code, iso(now), expiresAt)) {
-      throw ApiError.unavailable('Display pairing capacity reached. Wait for pending codes to expire.')
+    // A 4-digit code is only acceptable because it is single use, expires in ten minutes, needs an
+    // authenticated administrator to approve it, and creation is rate limited.
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const code = randomInt(0, 10_000).toString().padStart(4, '0')
+      const result = await repos.elementDisplays.create(randomUUID(), hash(credential), code, iso(now), expiresAt)
+      if (result === 'created') {
+        res.status(201).json({ credential, code, expiresAt })
+        return
+      }
+      if (result === 'full') break
     }
-    res.status(201).json({ credential, code, expiresAt })
+    throw ApiError.unavailable('Display pairing capacity reached. Wait for pending codes to expire.')
   })
   router.get('/status', budget(600), async (req, res) => {
     const match = /^Display ([a-f0-9]{64})$/.exec(req.get('authorization') ?? '')
@@ -106,9 +113,9 @@ export function createElementDisplayAdminRouter({ repos, monitor }: Options): Ro
     if (!body || typeof body !== 'object' || Array.isArray(body)) throw ApiError.badRequest('A JSON object is required.')
     const value = body as Record<string, unknown>
     if (Object.keys(value).some(key => !['code', 'label'].includes(key))
-      || typeof value.code !== 'string' || !/^[A-F0-9]{10}$/.test(value.code)
+      || typeof value.code !== 'string' || !/^[0-9]{4}$/.test(value.code)
       || typeof value.label !== 'string' || !value.label.trim() || value.label.trim().length > 80) {
-      throw ApiError.badRequest('Enter the 10-character display code and a name of 1–80 characters.')
+      throw ApiError.badRequest('Enter the 4-digit display code and a name of 1–80 characters.')
     }
     const status = await monitor.status()
     if (!status.settings.enabled || !status.settings.activeConnectionId) {

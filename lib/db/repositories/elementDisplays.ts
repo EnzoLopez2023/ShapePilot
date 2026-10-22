@@ -9,7 +9,7 @@ export interface DisplayRecord extends DisplayGrant {
 }
 
 export interface ElementDisplayRepository {
-  create(id: string, tokenHash: string, code: string, now: string, expiresAt: string): Promise<boolean>
+  create(id: string, tokenHash: string, code: string, now: string, expiresAt: string): Promise<'created' | 'full' | 'duplicate'>
   find(tokenHash: string, now: string): Promise<DisplayRecord | null>
   approve(code: string, owner: Owner, connectionId: string, label: string, now: string, expiresAt: string): Promise<boolean>
   list(owner: Owner, now: string): Promise<DisplayGrant[]>
@@ -39,11 +39,13 @@ export function createElementDisplayRepository(db: SqliteDatabase): ElementDispl
   const create = db.transaction((id: string, hash: string, code: string, now: string, expiry: string) => {
     db.prepare('DELETE FROM element_displays WHERE expires_at <= ?').run(now)
     const count = db.prepare<[], { count: number }>('SELECT COUNT(*) AS count FROM element_displays').get()
-    if (!count || count.count >= 100) return false
+    if (!count || count.count >= 100) return 'full' as const
+    // Short pairing codes must stay unique among live pending displays; the caller redraws on a clash.
+    if (db.prepare('SELECT 1 FROM element_displays WHERE pairing_code = ?').get(code)) return 'duplicate' as const
     db.prepare(`INSERT INTO element_displays
       (id, token_hash, pairing_code, created_at, expires_at) VALUES (?, ?, ?, ?, ?)`)
       .run(id, hash, code, now, expiry)
-    return true
+    return 'created' as const
   })
   return {
     async create(id, hash, code, now, expiry) { return create(id, hash, code, now, expiry) },
