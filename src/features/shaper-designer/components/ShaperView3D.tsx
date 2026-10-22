@@ -17,7 +17,7 @@ export interface ShaperView3DProps {
   snapMm: number
   imperial: boolean
   fitToken: number
-  onSelect: (id: string | null, additive: boolean) => void
+  onSelect: (id: string, additive: boolean) => void
   onMove: (id: string, dx: number, dy: number) => void
   onClearSelection: () => void
 }

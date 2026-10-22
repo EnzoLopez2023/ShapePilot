@@ -1,8 +1,7 @@
 // Opening a closed outline: remove one section of it and keep the rest as an
 // open polyline, which is what an on-line cut follows.
-import type { Ring } from './vec.ts'
-
 type Pt = readonly [number, number]
+type Ring = readonly Pt[]
 
 interface Located { s: number; distSq: number }
 
