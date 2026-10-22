@@ -1,5 +1,5 @@
 // Shaper Designer: 2D CNC design for the Shaper Origin.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Alert, Box, Button, Checkbox, Divider, FormControlLabel, ListItemText, ListSubheader, Menu,
   MenuItem, Snackbar, Stack, TextField, ToggleButton, ToggleButtonGroup, Typography,
@@ -16,12 +16,14 @@ import ObjectTree from '../../components/designer/ObjectTree.tsx'
 import { useDocumentLifecycle } from '../../components/designer/useDocumentLifecycle.ts'
 import { useConfirm } from '../../components/ConfirmDialogProvider.tsx'
 import { standardMenu, useAppMenu } from '../../components/menu/AppMenu.tsx'
+import { union, difference } from '../../geometry/boolean.ts'
+import { LoadingState } from '../../components/LoadingState.tsx'
 import { compileObject, openPathRings } from '../../geometry/sceneShapes.ts'
-import type { SceneObject } from '../../model/document.ts'
+import type { PathObject, SceneObject } from '../../model/document.ts'
 import { BENCHPILOT_REACH, fitsReach } from '../../model/benchpilot.ts'
 import type { BenchPilotMount } from '../../model/benchpilot.ts'
 import { SHAPER_ORIGIN } from '../../model/machines.ts'
-import { createShape2D, createText, findObject } from '../../model/scene.ts'
+import { IDENTITY_TRANSFORM, createShape2D, createText, findObject, newId } from '../../model/scene.ts'
 import { useDesignDocument } from '../../state/useDesignDocument.ts'
 import { safeFilename, triggerDownload } from '../../export/download.ts'
 import { writeShaperSvg } from '../../export/shaperSvg.ts'
@@ -40,6 +42,9 @@ import { SHAPER_TEMPLATES, TEMPLATE_CATEGORIES } from './templates/index.ts'
 
 const SNAP_OPTIONS = [0, 0.5, 1, 5, 10]
 const GRID_OPTIONS = [0, 5, 10, 25]
+
+// three.js and the CSG kernel only load when someone switches to 3D.
+const ShaperView3D = lazy(() => import('./components/ShaperView3D.tsx'))
 
 export default function ShaperDesignerPage() {
   const navigate = useNavigate()
@@ -65,6 +70,7 @@ export default function ShaperDesignerPage() {
   const [showBenchPilot, setShowBenchPilot] = useState(false)
   const [benchPilotMount, setBenchPilotMount] = useState<BenchPilotMount>('workstation')
   const [fitToken, setFitToken] = useState(0)
+  const [view, setView] = useState<'2d' | '3d'>('2d')
   const [openDialog, setOpenDialog] = useState(false)
   const [saveAsOpen, setSaveAsOpen] = useState(false)
   const [templatesAnchor, setTemplatesAnchor] = useState<HTMLElement | null>(null)
@@ -182,6 +188,38 @@ export default function ShaperDesignerPage() {
     if (object.type !== 'path') return
     doc.updateObject(object.id, { openRings: [] } as Partial<SceneObject>)
   }, [doc])
+
+  // Merge: the selection resolved the way a group resolves -- solids joined,
+  // holes subtracted -- and kept as one outline in place of the parts.
+  const selectedObjects = useMemo(
+    () => objects.filter(o => doc.selection.has(o.id)), [objects, doc.selection])
+  const canMerge = selectedObjects.length >= 2
+    && selectedObjects.some(o => o.mode !== 'hole')
+    && selectedObjects.every(o => !(o.type === 'path' && o.openRings?.length) && !o.locked)
+
+  const mergeSelected = useCallback(() => {
+    if (!canMerge) return
+    const solids = selectedObjects.filter(o => o.mode !== 'hole')
+      .map(o => compileObject(o, compileOptions)).filter(mp => mp.length)
+    const holes = selectedObjects.filter(o => o.mode === 'hole')
+      .map(o => compileObject({ ...o, mode: 'solid' }, compileOptions)).filter(mp => mp.length)
+    if (!solids.length) return
+    const joined = union(...solids)
+    const result = holes.length ? difference(joined, ...holes) : joined
+    if (!result.length) return
+    const first = selectedObjects.find(o => o.mode !== 'hole')!
+    const thickness = Math.max(
+      ...selectedObjects.map(o => (o.type === 'path' || o.type === 'shape2d' || o.type === 'text'
+        ? o.thicknessMm : undefined) ?? 5))
+    const merged: PathObject = {
+      id: newId(), name: 'Merged outline', type: 'path', mode: 'solid', visible: true, locked: false,
+      transform: IDENTITY_TRANSFORM, color: first.color, cut: first.cut ?? { type: 'exterior' },
+      rings: result.flat(), thicknessMm: thickness,
+    }
+    doc.removeObjects(selectedObjects.map(o => o.id))
+    const id = doc.addObject(merged)
+    doc.setSelection([id])
+  }, [canMerge, selectedObjects, compileOptions, doc])
 
   const depthConflict = useMemo(() => conflictingPocketDepths(doc.doc), [doc.doc])
 
@@ -373,6 +411,15 @@ export default function ShaperDesignerPage() {
         <ToggleButton value aria-label="Inches">in</ToggleButton>
       </ToggleButtonGroup>
 
+      <ToggleButtonGroup
+        size="small" exclusive value={view}
+        onChange={(_e, v: '2d' | '3d' | null) => { if (v) { setView(v); setFitToken(t => t + 1) } }}
+        aria-label="View"
+      >
+        <ToggleButton value="2d">2D</ToggleButton>
+        <ToggleButton value="3d">3D</ToggleButton>
+      </ToggleButtonGroup>
+
       <Box sx={{ flex: 1 }} />
 
       <ImportButton
@@ -424,7 +471,21 @@ export default function ShaperDesignerPage() {
             />
           </Stack>
         }
-        canvas={
+        canvas={view === '3d' ? (
+          <Suspense fallback={<LoadingState label="Loading the 3D view…" />}>
+            <ShaperView3D
+              doc={doc.doc}
+              textOutlines={textOutlines}
+              selection={doc.selection}
+              snapMm={snapMm}
+              imperial={imperial}
+              fitToken={fitToken}
+              onSelect={doc.toggleSelection}
+              onClearSelection={doc.clearSelection}
+              onMove={(id, dx, dy) => doc.moveObjects([id], dx, dy, 0)}
+            />
+          </Suspense>
+        ) : (
           <Canvas2D
             shapes={shapes}
             objects={objects}
@@ -464,7 +525,7 @@ export default function ShaperDesignerPage() {
             }}
             emptyHint="Add a shape from the left, or import an SVG or DXF."
           />
-        }
+        )}
         right={
           <Stack spacing={1.5}>
             <Typography variant="h3">Properties</Typography>
@@ -474,9 +535,21 @@ export default function ShaperDesignerPage() {
               imperial={imperial}
               showCut
               showZ={false}
+              showThickness
               onPatch={patchSelected}
             />
             <Divider />
+            {doc.selection.size >= 2 && (
+              <>
+                <Typography variant="h3">Merge</Typography>
+                <Button size="small" variant="outlined" disabled={!canMerge} onClick={mergeSelected}>
+                  Merge {doc.selection.size} objects
+                </Button>
+                <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                  Joins them into one outline; a hole object is cut out of the rest.
+                </Typography>
+              </>
+            )}
             {selectedObject?.type === 'path' && (
               <>
                 <Typography variant="h3">Outline</Typography>

@@ -28,6 +28,8 @@ export interface InspectorProps {
   showCut?: boolean
   /** 2D designers have no z axis to edit. */
   showZ?: boolean
+  /** Thickness of a flat outline. Defaults to `showZ`; Shaper turns it on for the 3D view. */
+  showThickness?: boolean
   /**
    * The selection's measured extent, when the caller has evaluated it. An
    * imported mesh and a group have no dimensions of their own to edit, so
@@ -53,7 +55,7 @@ const CUT_TYPES: { value: CutType; label: string; hint: string }[] = [
 
 export default function Inspector(props: InspectorProps) {
   const {
-    object, selectionCount, imperial, showCut = false, showZ = true,
+    object, selectionCount, imperial, showCut = false, showZ = true, showThickness = showZ,
     measuredMm = null, keepProportions = true, onKeepProportions, onPatch,
   } = props
 
@@ -134,7 +136,7 @@ export default function Inspector(props: InspectorProps) {
         onChangeDeg={v => setTransform('rotationDeg', 2, v)}
       />
 
-      {objectDimensions(object, imperial, showZ, setParam, onPatch)}
+      {objectDimensions(object, imperial, showThickness, setParam, onPatch)}
       {showZ && measuredMm && onKeepProportions && (
         <ResizeFields
           object={object} measuredMm={measuredMm} imperial={imperial}

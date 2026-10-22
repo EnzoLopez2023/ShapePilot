@@ -119,8 +119,25 @@ export function objectNode(o: SceneObject, opts: FromSceneOptions = {}): PartNod
     }
 
     case 'path': {
-      const [outer, ...holes] = o.rings
-      if (!outer?.length) return null
+      // Open polylines enclose nothing, so they have no solid. A merged object
+      // can hold several separate islands, which nesting sorts out; a single
+      // island keeps its rings exactly as they were stored.
+      const closed = o.rings.filter((_, i) => !o.openRings?.includes(i))
+      if (!closed[0]?.length) return null
+      const islands = closed.length > 1 ? nestRings(closed.map(r => r.map(([x, y]) => [x, y] as const))) : []
+      if (islands.length > 1) {
+        const children: PartNode[] = islands.map(([outer, ...holes], i) => ({
+          id: `${o.id}:${i}`, name: `${o.name} ${i + 1}`, op: 'extrude' as const,
+          params: {
+            profile: toProfile(outer),
+            ...(holes.length ? { holes: holes.map(toProfile) } : {}),
+            heightMm: o.thicknessMm ?? 5,
+          },
+          transform: IDENTITY,
+        }))
+        return { id: o.id, name: o.name, op: 'union', children, transform }
+      }
+      const [outer, ...holes] = closed
       return {
         id: o.id, name: o.name, op: 'extrude', transform,
         params: {
