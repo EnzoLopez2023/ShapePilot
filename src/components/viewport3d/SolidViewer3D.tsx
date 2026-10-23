@@ -22,6 +22,14 @@ export interface SolidViewerOutline {
   color?: string
 }
 
+/** A measured span drawn as a dimension line with its text beside it. */
+export interface SolidViewerDimension {
+  from: readonly [number, number, number]
+  to: readonly [number, number, number]
+  /** Already formatted, so the caller owns the unit toggle. */
+  text: string
+}
+
 export interface SolidViewer3DProps {
   mesh: SolidMesh
   /** Announced to screen readers -- "tray", "switch tray plate", ... */
@@ -38,6 +46,8 @@ export interface SolidViewer3DProps {
   up?: 'y' | 'z'
   /** Reference outlines drawn alongside the body; they do not affect framing. */
   outlines?: readonly SolidViewerOutline[]
+  /** Dimension lines with text labels; like outlines they do not affect framing. */
+  dimensions?: readonly SolidViewerDimension[]
 }
 
 /**
@@ -47,7 +57,7 @@ export interface SolidViewer3DProps {
  * Shared by every tray-shaped designer -- it only ever needed a `Mesh`.
  */
 export default function SolidViewer3D(
-  { mesh, label = 'the model', color, extras, up = 'y', outlines }: SolidViewer3DProps,
+  { mesh, label = 'the model', color, extras, up = 'y', outlines, dimensions }: SolidViewer3DProps,
 ) {
   const upRef = useRef(up)
   const theme = useTheme()
@@ -62,6 +72,8 @@ export default function SolidViewer3D(
     /** The mesh the camera was last framed on; a recolour keeps the view. */
     framed?: SolidMesh
     raf: number
+    /** Dimension texts follow their 3D anchor; moved every frame. */
+    labels: { pos: THREE.Vector3; el: HTMLElement }[]
   } | null>(null)
 
   // Scene setup runs once; the mesh is swapped separately below.
@@ -99,12 +111,24 @@ export default function SolidViewer3D(
     ro.observe(host)
 
     const state: NonNullable<typeof stateRef.current> =
-      { renderer, scene, camera, controls, bodies: [], raf: 0 }
+      { renderer, scene, camera, controls, bodies: [], raf: 0, labels: [] }
     stateRef.current = state
     const loop = () => {
       state.raf = requestAnimationFrame(loop)
       controls.update()
       renderer.render(scene, camera)
+      const { clientWidth: w, clientHeight: h } = host
+      const v = new THREE.Vector3()
+      for (const l of state.labels) {
+        v.copy(l.pos).project(camera)
+        const behind = v.z > 1
+        l.el.style.display = behind ? 'none' : ''
+        // Kept inside the view, so a line near the edge never loses its text.
+        const hw = l.el.offsetWidth / 2, hh = l.el.offsetHeight / 2
+        const x = Math.min(Math.max((v.x + 1) / 2 * w, hw), w - hw)
+        const y = Math.min(Math.max((1 - v.y) / 2 * h, hh), h - hh)
+        l.el.style.transform = `translate(-50%, -50%) translate(${x}px, ${y}px)`
+      }
     }
     loop()
 
@@ -191,6 +215,50 @@ export default function SolidViewer3D(
       })
     }
   }, [outlines])
+
+  useEffect(() => {
+    const state = stateRef.current
+    const host = hostRef.current
+    if (!state || !host || !dimensions?.length) return
+    const colour = dark ? '#e6dfd2' : '#2b2722'
+    const pts: THREE.Vector3[] = []
+    const labels: typeof state.labels = []
+    const size = Math.max(...dimensions.map(d =>
+      Math.hypot(d.to[0] - d.from[0], d.to[1] - d.from[1], d.to[2] - d.from[2])))
+    const tick = size * 0.015
+    for (const d of dimensions) {
+      const a = new THREE.Vector3(...d.from), b = new THREE.Vector3(...d.to)
+      const axis = b.clone().sub(a).normalize()
+      // A short cross-tick at each end, perpendicular to the line.
+      const side = new THREE.Vector3(0, 0, 1)
+      if (Math.abs(axis.z) > 0.9) side.set(1, 0, 0)
+      const t = axis.clone().cross(side).normalize().multiplyScalar(tick)
+      pts.push(a, b, a.clone().sub(t), a.clone().add(t), b.clone().sub(t), b.clone().add(t))
+      const el = document.createElement('span')
+      el.textContent = d.text
+      Object.assign(el.style, {
+        position: 'absolute', left: '0', top: '0', pointerEvents: 'none', whiteSpace: 'nowrap',
+        font: '12px system-ui, sans-serif', color: colour, padding: '0 4px', borderRadius: '3px',
+        background: dark ? 'rgba(30,27,23,0.7)' : 'rgba(250,247,240,0.8)',
+      })
+      host.appendChild(el)
+      labels.push({ pos: a.clone().add(b).multiplyScalar(0.5), el })
+    }
+    const lines = new THREE.LineSegments(
+      new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineBasicMaterial({ color: colour, depthTest: false }),
+    )
+    lines.renderOrder = 10
+    state.scene.add(lines)
+    state.labels = labels
+    return () => {
+      state.scene.remove(lines)
+      lines.geometry.dispose()
+      ;(lines.material as THREE.Material).dispose()
+      for (const l of labels) l.el.remove()
+      state.labels = []
+    }
+  }, [dimensions, dark])
 
   return (
     <Box

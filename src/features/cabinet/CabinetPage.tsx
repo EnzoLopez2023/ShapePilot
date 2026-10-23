@@ -18,7 +18,8 @@ import { standardMenu, useAppMenu } from '../../components/menu/AppMenu.tsx'
 import { writeShaperSvg } from '../../export/shaperSvg.ts'
 import { writeDxf } from '../../export/dxf.ts'
 import { safeFilename, triggerDownload } from '../../export/download.ts'
-import { formatLength } from '../../units.ts'
+import { bboxDimensions } from '../../components/viewport3d/dimensions.ts'
+import { formatLength, formatMeasure, formatSize } from '../../units.ts'
 import { cabinetDims, checkCabinet, cutList, screwPositionsMm } from './model/cabinet.ts'
 import { PANEL_DRAWINGS, PANEL_LABELS } from './export/cutDrawing.ts'
 import type { PanelId } from './export/cutDrawing.ts'
@@ -31,7 +32,7 @@ import { OpenCabinetDialog, SaveCabinetDialog } from './components/SavedCabinetD
 import { loadCabinet, saveCabinet } from './state/saved.ts'
 import CabinetPartView from './components/CabinetPartView.tsx'
 import { cabinetSolid, panelMesh } from './model/solid.ts'
-import { BENCHPILOT_REACH } from '../../model/benchpilot.ts'
+import { BENCHPILOT_REACH, fitsReach } from '../../model/benchpilot.ts'
 import type { BenchPilotMount } from '../../model/benchpilot.ts'
 import type { CabinetParams } from './model/cabinet.ts'
 import { LoadingState } from '../../components/LoadingState.tsx'
@@ -77,11 +78,37 @@ export default function CabinetPage() {
   const solid = useMemo(() => (view === '3d' ? cabinetSolid(params) : null), [view, params])
   const partMesh = useMemo(
     () => (view === '3d' && part !== 'case' ? panelMesh(part, params) : null), [view, part, params])
+  // With the reach shown, a panel that only fits turned is stood a quarter turn
+  // (as the flat drawing does), and every panel is moved to the reach's corner.
+  const partView = useMemo(() => {
+    if (!partMesh) return null
+    const [x0, y0, z0, x1, y1, z1] = partMesh.bbox
+    const w = x1 - x0, h = y1 - y0
+    const turned = !!reach && fitsReach(reach, w, h) && !(w <= reach.widthMm && h <= reach.heightMm)
+    const positions = new Float32Array(partMesh.positions.length)
+    for (let i = 0; i < positions.length; i += 3) {
+      const x = partMesh.positions[i] - x0, y = partMesh.positions[i + 1] - y0
+      positions[i] = turned ? y : x
+      positions[i + 1] = turned ? w - x : y
+      positions[i + 2] = partMesh.positions[i + 2] - z0
+    }
+    const size: [number, number, number] = turned ? [h, w, z1 - z0] : [w, h, z1 - z0]
+    const mesh = {
+      ...partMesh, positions, bbox: [0, 0, 0, ...size] as typeof partMesh.bbox,
+    }
+    return { mesh, size, turned }
+  }, [partMesh, reach])
+  const partDimensions = useMemo(
+    () => partView && bboxDimensions(partView.mesh.bbox, v => formatMeasure(v, imperial)),
+    [partView, imperial])
+  const caseDimensions = useMemo(
+    () => solid && bboxDimensions(solid.caseMesh.bbox, v => formatMeasure(v, imperial)),
+    [solid, imperial])
   const partOutlines = useMemo(
-    () => (reach && partMesh
+    () => (reach && partView
       ? [{ x0: 0, y0: 0, x1: reach.widthMm, y1: reach.heightMm }]
       : undefined),
-    [reach, partMesh])
+    [reach, partView])
   const extras = useMemo(() => solid && [
     { mesh: solid.trays, color: theme.palette.primary.main },
     ...(solid.wallCleat ? [{ mesh: solid.wallCleat, color: WALL_CLEAT_COLOUR }] : []),
@@ -249,33 +276,42 @@ export default function CabinetPage() {
       </Paper>
 
       <Paper sx={{ ...panel }}>
-        {view === '3d' && partMesh ? (
+        {view === '3d' && partView ? (
           <Box sx={{ position: 'relative', flex: 1, minHeight: 360 }}>
             <Suspense fallback={<LoadingState label="Loading the 3D view…" />}>
               <SolidViewer3D
-                key={part} mesh={partMesh} up="z" outlines={partOutlines}
+                key={part} mesh={partView.mesh} up="z" outlines={partOutlines} dimensions={partDimensions ?? undefined}
                 label={PANEL_LABELS[part as PanelId]}
-              />
-            </Suspense>
-          </Box>
-        ) : view === '3d' && solid && extras ? (
-          <Box sx={{ position: 'relative', flex: 1, minHeight: 360 }}>
-            <Suspense fallback={<LoadingState label="Loading the 3D view…" />}>
-              <SolidViewer3D mesh={solid.caseMesh} extras={extras} up="z" label="the tray cabinet"
               />
             </Suspense>
             <Typography
               variant="body2" color="text.secondary"
               sx={{ position: 'absolute', left: 12, bottom: 8, pointerEvents: 'none' }}
             >
-              {settings.trayCount} trays seated
+              {PANEL_LABELS[part as PanelId]} · {formatSize(partView.size, imperial)}
+              {' '}(W × H × thick)
+              {reach ? (partView.turned ? ' · turned a quarter to fit the cut area' : ' · inside the cut area') : ''}
+            </Typography>
+          </Box>
+        ) : view === '3d' && solid && extras ? (
+          <Box sx={{ position: 'relative', flex: 1, minHeight: 360 }}>
+            <Suspense fallback={<LoadingState label="Loading the 3D view…" />}>
+              <SolidViewer3D mesh={solid.caseMesh} extras={extras} up="z" label="the tray cabinet"
+                dimensions={caseDimensions ?? undefined}
+              />
+            </Suspense>
+            <Typography
+              variant="body2" color="text.secondary"
+              sx={{ position: 'absolute', left: 12, bottom: 8, pointerEvents: 'none' }}
+            >
+              {settings.trayCount} trays seated · {formatSize([dims.overallWidthMm, dims.overallHeightMm, dims.panelDepthMm], imperial)} (W × H × D)
               {dims.cleat ? ' · wall cleat shown hung, in brown' : ''}
             </Typography>
           </Box>
         ) : part !== 'case' ? (
-          <CabinetPartView panel={part} params={params} reach={reach} />
+          <CabinetPartView panel={part} params={params} reach={reach} imperial={imperial} />
         ) : (
-          <CabinetElevations params={params} />
+          <CabinetElevations params={params} imperial={imperial} />
         )}
       </Paper>
 

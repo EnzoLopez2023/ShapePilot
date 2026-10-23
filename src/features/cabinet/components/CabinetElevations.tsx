@@ -8,11 +8,7 @@ import { Box, Stack, Typography } from '@mui/material'
 import type { Theme } from '@mui/material'
 import { cabinetDims } from '../model/cabinet.ts'
 import type { CabinetParams } from '../model/cabinet.ts'
-
-const n = (v: number): string => {
-  const s = v.toFixed(2)
-  return s.includes('.') ? s.replace(/0+$/, '').replace(/\.$/, '') : s
-}
+import { formatMeasure, formatLength, formatSize } from '../../../units.ts'
 
 const PAD = 26
 
@@ -28,8 +24,10 @@ export const CABINET_VARS = {
   '--cab-reach': (theme: Theme) => theme.palette.info.main,
 }
 
-export default function CabinetElevations({ params }: { params: CabinetParams }) {
+export default function CabinetElevations({ params, imperial }: { params: CabinetParams; imperial: boolean }) {
   const p = params
+  const mm = (v: number) => formatMeasure(v, imperial)
+  const sizeLabel = (a: number, b: number) => formatSize([a, b], imperial).replace(' × ', ' by ')
   const d = cabinetDims(p)
 
   // -- front elevation: X across the case, Y down from the top ---------------
@@ -49,7 +47,7 @@ export default function CabinetElevations({ params }: { params: CabinetParams })
     <svg
       viewBox={`${-PAD} ${-PAD} ${fw + PAD * 2} ${fh + PAD * 2}`}
       role="img"
-      aria-label={`Front elevation, ${n(fw)} by ${n(fh)} millimetres, ${p.trayCount} slots`}
+      aria-label={`Front elevation, ${sizeLabel(fw, fh)}, ${p.trayCount} slots`}
       style={{ width: '100%', height: 'auto', maxHeight: 460 }}
     >
       <rect x={0} y={0} width={fw} height={fh} fill="var(--cab-case)" stroke="var(--cab-line)" strokeWidth={0.8} />
@@ -72,25 +70,26 @@ export default function CabinetElevations({ params }: { params: CabinetParams })
         </g>
       ))}
       <text x={fw / 2} y={-8} textAnchor="middle" fontSize={11} fill="var(--cab-text)">
-        {n(fw)} mm
+        {mm(fw)}
       </text>
       <text
         x={-10} y={fh / 2} textAnchor="middle" fontSize={11} fill="var(--cab-text)"
         transform={`rotate(-90 ${-10} ${fh / 2})`}
       >
-        {n(fh)} mm
+        {mm(fh)}
       </text>
     </svg>
   )
 
   // -- the side panel, flat: X is the case depth, Y the height ---------------
   const sw = d.panelDepthMm
+  const sidePad = imperial ? PAD + 22 : PAD
   const sh = d.overallHeightMm
   const side = (
     <svg
-      viewBox={`${-PAD} ${-PAD} ${sw + PAD * 2} ${sh + PAD * 2}`}
+      viewBox={`${-PAD} ${-PAD} ${sw + PAD + sidePad} ${sh + PAD * 2}`}
       role="img"
-      aria-label={`Side panel, ${n(sw)} by ${n(sh)} millimetres, with ${d.dadoFloorsMm.length} dados`}
+      aria-label={`Side panel, ${sizeLabel(sw, sh)}, with ${d.dadoFloorsMm.length} dados`}
       style={{ width: '100%', height: 'auto', maxHeight: 460 }}
     >
       <rect x={0} y={0} width={sw} height={sh} fill="var(--cab-case)" stroke="var(--cab-line)" strokeWidth={0.8} />
@@ -106,7 +105,7 @@ export default function CabinetElevations({ params }: { params: CabinetParams })
             fill="var(--cab-dado)"
           />
           <text x={sw + 3} y={sh - floor - 1} fontSize={9} fill="var(--cab-text)">
-            {n(floor)}
+            {formatLength(floor, imperial)}
           </text>
         </g>
       ))}
@@ -120,7 +119,7 @@ export default function CabinetElevations({ params }: { params: CabinetParams })
         />
       ))}
       <text x={sw / 2} y={-8} textAnchor="middle" fontSize={11} fill="var(--cab-text)">
-        {n(sw)} mm · front edge left
+        {mm(sw)} · front edge left
       </text>
     </svg>
   )

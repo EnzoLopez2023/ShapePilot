@@ -11,6 +11,7 @@ import type { PanelId } from '../export/cutDrawing.ts'
 import type { CabinetParams } from '../model/cabinet.ts'
 import { fitsReach } from '../../../model/benchpilot.ts'
 import type { BenchPilotReach } from '../../../model/benchpilot.ts'
+import { formatSize } from '../../../units.ts'
 import type { Ring } from '../../../geometry/vec.ts'
 
 const PAD = 24
@@ -25,7 +26,7 @@ const bounds = (rings: Ring[]) => {
 }
 
 export default function CabinetPartView(
-  { panel, params, reach }: { panel: PanelId; params: CabinetParams; reach: BenchPilotReach | null },
+  { panel, params, reach, imperial }: { panel: PanelId; params: CabinetParams; reach: BenchPilotReach | null; imperial: boolean },
 ) {
   const drawing = PANEL_DRAWINGS[panel](params)
   const outline = drawing.layers.find(l => l.cutType === 'exterior')?.polygons.flat() ?? []
@@ -44,7 +45,7 @@ export default function CabinetPartView(
   return (
     <Box sx={{ ...CABINET_VARS, p: 2, minHeight: 0, overflow: 'auto' }}>
       <Typography variant="subtitle2" component="h2" sx={{ mb: 1 }}>
-        {PANEL_LABELS[panel]} · {w.toFixed(1)} × {h.toFixed(1)} mm
+        {PANEL_LABELS[panel]} · {formatSize([w, h], imperial)}
       </Typography>
       {reach && (
         <Alert severity={fits ? 'success' : 'warning'} variant="outlined" sx={{ mb: 1, py: 0 }}>
@@ -56,7 +57,7 @@ export default function CabinetPartView(
       <svg
         viewBox={`${-PAD} ${-PAD} ${vw + PAD * 2} ${vh + PAD * 2}`}
         role="img"
-        aria-label={`${PANEL_LABELS[panel]}, ${w.toFixed(1)} by ${h.toFixed(1)} millimetres`}
+        aria-label={`${PANEL_LABELS[panel]}, ${formatSize([w, h], imperial).replace(' × ', ' by ')}`}
         style={{ width: '100%', height: 'auto', maxHeight: '70vh' }}
       >
         {reach && (
