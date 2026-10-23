@@ -8,7 +8,7 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import {
   Alert, Box, Checkbox, Divider, FormControlLabel, List, ListItemButton, ListItemText,
-  MenuItem, Paper, Stack, Switch, Table, TableBody, TableCell, TableHead, TableRow, TextField,
+  MenuItem, Paper, Snackbar, Stack, Switch, Table, TableBody, TableCell, TableHead, TableRow, TextField,
   ToggleButton, ToggleButtonGroup, Typography, useTheme,
 } from '@mui/material'
 import { zipSync, strToU8 } from 'fflate'
@@ -27,6 +27,8 @@ import {
 } from './state/params.ts'
 import type { CabinetSettings } from './state/params.ts'
 import CabinetElevations from './components/CabinetElevations.tsx'
+import { OpenCabinetDialog, SaveCabinetDialog } from './components/SavedCabinetDialogs.tsx'
+import { loadCabinet, saveCabinet } from './state/saved.ts'
 import CabinetPartView from './components/CabinetPartView.tsx'
 import { cabinetSolid, panelMesh } from './model/solid.ts'
 import { BENCHPILOT_REACH } from '../../model/benchpilot.ts'
@@ -58,7 +60,7 @@ export default function CabinetPage() {
   const [benchPilotMount, setBenchPilotMount] = useState<BenchPilotMount>('workstation')
   const reach = showBenchPilot ? BENCHPILOT_REACH[benchPilotMount] : null
 
-  const { imperial, view, ...rawParams } = settings
+  const { imperial, view, label, ...rawParams } = settings
   const set = (patch: Partial<CabinetSettings>) =>
     setSettings(current => ({ ...current, ...patch }))
 
@@ -85,9 +87,21 @@ export default function CabinetPage() {
     ...(solid.wallCleat ? [{ mesh: solid.wallCleat, color: WALL_CLEAT_COLOUR }] : []),
   ], [solid, theme.palette.primary.main])
 
+  // Every export starts with the label, so two cabinets never write the same names.
+  const stem = safeFilename(label.trim() || `cabinet_${settings.trayCount}`)
+  const [dialog, setDialog] = useState<'saveAs' | 'open' | null>(null)
+  const [saved, setSaved] = useState<string | null>(null)
+
+  const saveNamed = (name: string) => {
+    const next = { ...settings, label: name }
+    setSettings(next)
+    setSaved(saveCabinet(name, next) ? `Saved “${name}”.` : 'Could not save: browser storage is unavailable.')
+    setDialog(null)
+  }
+
   const download = (panel: PanelId, format: 'svg' | 'dxf') => {
     const drawing = PANEL_DRAWINGS[panel](settings)
-    const base = safeFilename(`cabinet_${settings.trayCount}_${panel}`)
+    const base = `${stem}_${panel}`
     if (format === 'svg') {
       triggerDownload(writeShaperSvg(drawing), `${base}.svg`, 'image/svg+xml')
     } else {
@@ -98,11 +112,11 @@ export default function CabinetPage() {
   const downloadAll = () => {
     const files: Record<string, Uint8Array> = {}
     for (const panel of PANEL_IDS) {
-      files[`${safeFilename(`cabinet_${panel}`)}.svg`] =
+      files[`${stem}_${panel}.svg`] =
         strToU8(writeShaperSvg(PANEL_DRAWINGS[panel](settings)))
     }
     files['CUT_LIST.txt'] = strToU8(
-      `Keycap tray cabinet — ${settings.trayCount} trays\n` +
+      `${label.trim() ? `${label.trim()} — ` : ''}Keycap tray cabinet — ${settings.trayCount} trays\n` +
       `Overall ${len(dims.overallWidthMm)} wide × ${len(dims.overallHeightMm)} high × ` +
       `${len(dims.panelDepthMm)} deep\n\n` +
       rows.map(r =>
@@ -125,13 +139,15 @@ export default function CabinetPage() {
       `${len(settings.stockMm / 2)} in from each end.\n`)
     triggerDownload(
       zipSync(files, { level: 6 }),
-      `${safeFilename(`cabinet_${settings.trayCount}_trays`)}.zip`,
+      `${stem}.zip`,
       'application/zip')
   }
 
-  // Settings are remembered in the browser, so there is nothing to open or
-  // save; those entries stay disabled to keep the File menu's shape.
+  // Working settings are remembered automatically; Save As keeps a named copy.
   useAppMenu(standardMenu({
+    onOpen: () => setDialog('open'),
+    onSave: () => (label.trim() ? saveNamed(label.trim()) : setDialog('saveAs')),
+    onSaveAs: () => setDialog('saveAs'),
     exports: [
       { label: 'All panels (zip)', onClick: downloadAll },
       ...PANEL_IDS.map(id => ({ label: `${PANEL_LABELS[id]} SVG`, onClick: () => download(id, 'svg') })),
@@ -169,6 +185,13 @@ export default function CabinetPage() {
           sx={{ alignItems: 'center', flexWrap: 'wrap', rowGap: 1 }}
         >
           <Typography variant="h3" component="h1">Tray cabinet</Typography>
+          <TextField
+            size="small" label="Label" value={label} sx={{ width: 220 }}
+            placeholder={`cabinet_${settings.trayCount}`}
+            onChange={e => set({ label: e.target.value.slice(0, 60) })}
+            helperText=" "
+            slotProps={{ htmlInput: { 'aria-label': 'Label, used to name exported files' } }}
+          />
           <ToggleButtonGroup
             exclusive size="small" value={view}
             aria-label="Canvas view"
@@ -417,6 +440,20 @@ export default function CabinetPage() {
           </Typography>
         </Stack>
       </Paper>
+      {dialog === 'saveAs' && (
+        <SaveCabinetDialog initial={label} onSave={saveNamed} onClose={() => setDialog(null)} />
+      )}
+      {dialog === 'open' && (
+        <OpenCabinetDialog
+          onClose={() => setDialog(null)}
+          onOpen={name => {
+            const opened = loadCabinet(name, DEFAULT_CABINET_SETTINGS)
+            if (opened) setSettings({ ...opened, imperial: settings.imperial, view: settings.view })
+            setDialog(null)
+          }}
+        />
+      )}
+      <Snackbar open={saved !== null} autoHideDuration={3000} onClose={() => setSaved(null)} message={saved} />
     </Box>
   )
 }
