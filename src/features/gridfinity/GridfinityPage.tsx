@@ -415,7 +415,7 @@ export default function GridfinityPage() {
         <Paper variant="outlined" sx={{ borderRadius: 0, borderTop: 0, borderLeft: 0, minHeight: 0 }}>
           {isBin ? (
             <BinPanel
-              name={design.name} bin={design.bin} lists={lists} imperial={settings.imperial}
+              name={design.name} bin={design.bin} lists={lists}
               onName={d.setName} onBin={d.setBin}
               ownedColors={ownedColors} colors={colors} onColors={next => view({ colors: next })}
               amsNote={key => { const tray = amsTrayFor(key); return tray ? `in ${tray.label}` : null }}
