@@ -53,10 +53,12 @@ const modelXml = (objects: readonly string[], items: readonly string[], title: s
 /**
  * Bambu's default sparse infill is grid, which is the one pattern not worth
  * printing: it crosses itself every layer, so the nozzle jolts over each
- * junction. Gyroid has no crossings and is isotropic. It is written as an
- * object-level override, so it wins over whatever process preset is loaded.
+ * junction. Adaptive cubic has no per-layer crossings either, and it spends
+ * infill only near the walls and top surfaces, so it prints faster and uses
+ * less filament on these chunky trays. It is written as an object-level
+ * override, so it wins over whatever process preset is loaded.
  */
-const INFILL_PATTERN = 'gyroid'
+const INFILL_PATTERN = 'adaptivecubic'
 
 /** Sidecar for a lone part: nothing to colour, but the infill override still
  *  needs an object entry to hang on. */

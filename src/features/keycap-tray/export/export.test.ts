@@ -84,7 +84,7 @@ test('a single-part 3MF stays a flat one-object file', () => {
   // Nothing to colour, so the sidecar carries only the infill override.
   const cfg = strFromU8(zip['Metadata/model_settings.config'])
   assert.match(cfg, /<object id="1">/)
-  assert.match(cfg, /key="sparse_infill_pattern" value="gyroid"/)
+  assert.match(cfg, /key="sparse_infill_pattern" value="adaptivecubic"/)
   assert.ok(!cfg.includes('<part '))
 })
 
@@ -110,7 +110,7 @@ test('a multi-part 3MF keeps the bodies separate and colourable', () => {
 
   const cfg = strFromU8(zip['Metadata/model_settings.config'])
   assert.match(cfg, /<object id="3">/)
-  assert.match(cfg, /key="sparse_infill_pattern" value="gyroid"/)
+  assert.match(cfg, /key="sparse_infill_pattern" value="adaptivecubic"/)
   // Split first, so each assertion is pinned inside its own <part> block and
   // cannot be satisfied by a match that runs on into the next one.
   const blocks = cfg.split('<part ').slice(1)
