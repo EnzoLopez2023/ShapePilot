@@ -7,6 +7,7 @@
 import { booleanOr, createViewSettingsStore, numberIn } from '../../../state/viewSettingsStore.ts'
 import { DEFAULT_CABINET } from '../model/cabinet.ts'
 import type { CabinetParams } from '../model/cabinet.ts'
+import { DEFAULT_ROUGH_MARGIN_MM } from '../model/guide.ts'
 
 export interface CabinetSettings extends CabinetParams {
   /** Show lengths in fractional inches. Stock comes in inches; cuts in mm. */
@@ -15,6 +16,8 @@ export interface CabinetSettings extends CabinetParams {
   label: string
   /** Flat drawings, or the assembled case in 3D. */
   view: '2d' | '3d'
+  /** How much bigger than its panel each blank is sawn, in total, before the Origin cuts it. */
+  roughMarginMm: number
 }
 
 export const DEFAULT_CABINET_SETTINGS: CabinetSettings = {
@@ -22,6 +25,7 @@ export const DEFAULT_CABINET_SETTINGS: CabinetSettings = {
   label: '',
   imperial: false,
   view: '2d',
+  roughMarginMm: DEFAULT_ROUGH_MARGIN_MM,
 }
 
 /** Rebuilt field by field: anything in storage was written by an older release. */
@@ -47,6 +51,7 @@ export function readCabinetSettings(
     label: typeof s.label === 'string' ? s.label.slice(0, 60) : baseline.label,
     imperial: booleanOr(s.imperial, baseline.imperial),
     view: s.view === '2d' || s.view === '3d' ? s.view : baseline.view,
+    roughMarginMm: numberIn(s.roughMarginMm, 0, 100, baseline.roughMarginMm),
   }
 }
 

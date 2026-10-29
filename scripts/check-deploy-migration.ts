@@ -162,6 +162,12 @@ const ROLLBACK_COMPATIBLE_LEDGER = [
     name: 'keycap tray printed mark',
     checksum: '15c1f1e6135775010afaba8ad079106ed926fba2e1c8459d8bea8a0541fa126a',
   },
+  {
+    ordinal: 22,
+    id: '023-cabinet-designs',
+    name: 'cabinet designs',
+    checksum: 'cffa7689de7f9ea6b075754c1e6719a84eec1263b8f724139c57dbf3a44433ab',
+  },
 ] as const
 
 const REQUIRED_TABLES = [
@@ -169,6 +175,7 @@ const REQUIRED_TABLES = [
   'app_memberships',
   'app_settings',
   'audit_events',
+  'cabinet_designs',
   'design_assets',
   'design_documents',
   'element_statistics_connections',

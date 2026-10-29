@@ -934,3 +934,21 @@ export const GRIDFINITY_STATEMENTS: readonly string[] = [
   PRIMARY KEY (owner_tenant_id, owner_oid, seed_key)
 )`,
 ]
+
+/**
+ * Cabinet designs: the named keycap-tray cabinets saved from the cabinet
+ * designer. A cabinet is a dozen numbers that derive every panel, so the row
+ * stores those and nothing else. The name is the identity -- Save As over an
+ * existing name replaces it -- so it is unique per owner.
+ */
+export const CABINET_STATEMENTS: readonly string[] = [
+  `CREATE TABLE cabinet_designs (
+  owner_tenant_id  TEXT    NOT NULL,
+  owner_oid        TEXT    NOT NULL,
+  name             TEXT    NOT NULL,
+  params_json      TEXT    NOT NULL,
+  created_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+  updated_at       TEXT    NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (owner_tenant_id, owner_oid, name)
+)`,
+]

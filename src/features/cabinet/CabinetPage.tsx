@@ -7,7 +7,7 @@
 // same panels assembled, built from those cut drawings (model/solid.ts).
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react'
 import {
-  Alert, Box, Checkbox, Divider, FormControlLabel, List, ListItemButton, ListItemText,
+  Alert, Box, Button, Checkbox, Divider, FormControlLabel, List, ListItemButton, ListItemText,
   MenuItem, Paper, Snackbar, Stack, Switch, Table, TableBody, TableCell, TableHead, TableRow, TextField,
   ToggleButton, ToggleButtonGroup, Typography, useTheme,
 } from '@mui/material'
@@ -29,12 +29,15 @@ import {
 import type { CabinetSettings } from './state/params.ts'
 import CabinetElevations from './components/CabinetElevations.tsx'
 import { OpenCabinetDialog, SaveCabinetDialog } from './components/SavedCabinetDialogs.tsx'
-import { loadCabinet, saveCabinet } from './state/saved.ts'
+import { saveCabinet } from './state/saved.ts'
 import CabinetPartView from './components/CabinetPartView.tsx'
 import { cabinetSolid, panelMesh } from './model/solid.ts'
 import { BENCHPILOT_REACH, fitsReach } from '../../model/benchpilot.ts'
 import type { BenchPilotMount } from '../../model/benchpilot.ts'
 import type { CabinetParams } from './model/cabinet.ts'
+import BuildGuideDialog from './components/BuildGuideDialog.tsx'
+import { guideHtml } from './export/guideHtml.ts'
+import { roughCutList } from './model/guide.ts'
 import { LoadingState } from '../../components/LoadingState.tsx'
 
 // three.js is a third of the bundle and the drawings are the default view, so
@@ -61,7 +64,7 @@ export default function CabinetPage() {
   const [benchPilotMount, setBenchPilotMount] = useState<BenchPilotMount>('workstation')
   const reach = showBenchPilot ? BENCHPILOT_REACH[benchPilotMount] : null
 
-  const { imperial, view, label, ...rawParams } = settings
+  const { imperial, view, label, roughMarginMm, ...rawParams } = settings
   const set = (patch: Partial<CabinetSettings>) =>
     setSettings(current => ({ ...current, ...patch }))
 
@@ -71,6 +74,7 @@ export default function CabinetPage() {
   const params = useMemo(() => JSON.parse(paramsKey) as CabinetParams, [paramsKey])
   const dims = useMemo(() => cabinetDims(params), [params])
   const rows = useMemo(() => cutList(params), [params])
+  const roughRows = useMemo(() => roughCutList(params, roughMarginMm), [params, roughMarginMm])
   const warnings = useMemo(() => checkCabinet(params), [params])
   const len = (mm: number) => formatLength(mm, imperial)
 
@@ -116,14 +120,16 @@ export default function CabinetPage() {
 
   // Every export starts with the label, so two cabinets never write the same names.
   const stem = safeFilename(label.trim() || `cabinet_${settings.trayCount}`)
-  const [dialog, setDialog] = useState<'saveAs' | 'open' | null>(null)
+  const [dialog, setDialog] = useState<'saveAs' | 'open' | 'guide' | null>(null)
   const [saved, setSaved] = useState<string | null>(null)
 
   const saveNamed = (name: string) => {
     const next = { ...settings, label: name }
     setSettings(next)
-    setSaved(saveCabinet(name, next) ? `Saved “${name}”.` : 'Could not save: browser storage is unavailable.')
     setDialog(null)
+    saveCabinet(name, next)
+      .then(() => setSaved(`Saved “${name}”.`))
+      .catch(() => setSaved('Could not save: the server is unreachable.'))
   }
 
   const download = (panel: PanelId, format: 'svg' | 'dxf') => {
@@ -142,6 +148,10 @@ export default function CabinetPage() {
       files[`${stem}_${panel}.svg`] =
         strToU8(writeShaperSvg(PANEL_DRAWINGS[panel](settings)))
     }
+    files[`${stem}_guide.html`] = strToU8(guideHtml(params, {
+      title: label.trim() || `Tray cabinet — ${settings.trayCount} trays`,
+      imperial, marginMm: roughMarginMm, reach,
+    }))
     files['CUT_LIST.txt'] = strToU8(
       `${label.trim() ? `${label.trim()} — ` : ''}Keycap tray cabinet — ${settings.trayCount} trays\n` +
       `Overall ${len(dims.overallWidthMm)} wide × ${len(dims.overallHeightMm)} high × ` +
@@ -177,6 +187,7 @@ export default function CabinetPage() {
     onSaveAs: () => setDialog('saveAs'),
     exports: [
       { label: 'All panels (zip)', onClick: downloadAll },
+      { label: 'Cut list and build guide…', onClick: () => setDialog('guide') },
       ...PANEL_IDS.map(id => ({ label: `${PANEL_LABELS[id]} SVG`, onClick: () => download(id, 'svg') })),
       ...PANEL_IDS.map(id => ({ label: `${PANEL_LABELS[id]} DXF`, onClick: () => download(id, 'dxf') })),
     ],
@@ -458,11 +469,30 @@ export default function CabinetPage() {
                     <Typography variant="caption" display="block" color="text.secondary">
                       {len(r.thicknessMm)} stock
                     </Typography>
+                    <Typography variant="caption" display="block" color="text.secondary">
+                      {(() => {
+                        const rough = roughRows.find(x => x.part.startsWith(r.part))
+                        return rough && rough.machine === 'origin'
+                          ? `saw blank ${len(rough.roughLengthMm)} × ${len(rough.roughWidthMm)}`
+                          : 'sawn to size'
+                      })()}
+                    </Typography>
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
+
+          <Stack direction="row" spacing={1} sx={{ alignItems: 'flex-start' }}>
+            <LengthField
+              label="Blank allowance" imperial={imperial} valueMm={roughMarginMm}
+              hint="How much bigger than its panel each blank is sawn, in total, so the Origin has stock to cut the outline from and tape to scan."
+              onChangeMm={v => set({ roughMarginMm: Math.max(0, v) })}
+            />
+            <Button variant="outlined" size="small" sx={{ whiteSpace: 'nowrap', mt: 0.5 }} onClick={() => setDialog('guide')}>
+              Cut list &amp; guide
+            </Button>
+          </Stack>
 
           <Typography variant="body2" color="text.secondary">
             Slots at {len(dims.pitchMm)} pitch, {len(dims.headroomMm)} clear above each seated
@@ -482,11 +512,17 @@ export default function CabinetPage() {
       {dialog === 'open' && (
         <OpenCabinetDialog
           onClose={() => setDialog(null)}
-          onOpen={name => {
-            const opened = loadCabinet(name, DEFAULT_CABINET_SETTINGS)
-            if (opened) setSettings({ ...opened, imperial: settings.imperial, view: settings.view })
+          onOpen={opened => {
+            setSettings({ ...opened, imperial: settings.imperial, view: settings.view })
             setDialog(null)
           }}
+        />
+      )}
+      {dialog === 'guide' && (
+        <BuildGuideDialog
+          params={params} imperial={imperial} marginMm={roughMarginMm} reach={reach}
+          title={label.trim() || `Tray cabinet — ${settings.trayCount} trays`}
+          onClose={() => setDialog(null)}
         />
       )}
       <Snackbar open={saved !== null} autoHideDuration={3000} onClose={() => setSaved(null)} message={saved} />

@@ -409,6 +409,20 @@ export interface GridfinityRepository {
   deleteLabelList(owner: Owner, id: string): Promise<boolean>
 }
 
+export interface CabinetDesign {
+  name: string
+  /** Cabinet parameters; the client rebuilds them field by field on load. */
+  params: Record<string, unknown>
+  updatedAt: string
+}
+
+export interface CabinetRepository {
+  list(owner: Owner): Promise<CabinetDesign[]>
+  /** Save under `name`, replacing any cabinet the owner already has by that name. */
+  put(owner: Owner, name: string, params: Record<string, unknown>): Promise<void>
+  remove(owner: Owner, name: string): Promise<boolean>
+}
+
 export interface ToolTrayRecord {
   id: string
   name: string
@@ -866,6 +880,7 @@ export interface Repositories {
   switchTrays: SwitchTrayRepository
   toolTrays: ToolTrayRepository
   gridfinity: GridfinityRepository
+  cabinets: CabinetRepository
   keycapProjects: KeycapProjectRepository
   designDocuments: DesignDocumentRepository
   designAssets: DesignAssetRepository

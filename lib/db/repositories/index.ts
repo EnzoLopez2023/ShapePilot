@@ -1,6 +1,7 @@
 import type { AppDatabase } from '../connection.ts'
 import type { Repositories } from './contracts.ts'
 import { createAuditRepository } from './audit.ts'
+import { createCabinetRepository } from './cabinets.ts'
 import { createDesignAssetRepository } from './designAssets.ts'
 import { createDesignDocumentRepository } from './designDocuments.ts'
 import { createElementStatisticsRepository } from './elementStatistics.ts'
@@ -29,6 +30,7 @@ export const createRepositories = (database: AppDatabase): Repositories => ({
   switchTrays: createSwitchTrayRepository(database.handle),
   toolTrays: createToolTrayRepository(database.handle),
   gridfinity: createGridfinityRepository(database.handle),
+  cabinets: createCabinetRepository(database.handle),
   keycapProjects: createKeycapProjectRepository(database.handle),
   designDocuments: createDesignDocumentRepository(database.handle),
   designAssets: createDesignAssetRepository(database.handle),
