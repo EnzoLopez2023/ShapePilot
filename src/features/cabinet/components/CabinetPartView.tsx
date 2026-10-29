@@ -11,10 +11,11 @@ import type { PanelId } from '../export/cutDrawing.ts'
 import type { CabinetParams } from '../model/cabinet.ts'
 import { fitsReach } from '../../../model/benchpilot.ts'
 import type { BenchPilotReach } from '../../../model/benchpilot.ts'
-import { formatSize } from '../../../units.ts'
+import { formatMeasure, formatSize } from '../../../units.ts'
 import type { Ring } from '../../../geometry/vec.ts'
 
-const PAD = 24
+const PAD = 46
+const TICK = 5
 
 const bounds = (rings: Ring[]) => {
   const xs = rings.flatMap(r => r.map(pt => pt[0]))
@@ -40,6 +41,10 @@ export default function CabinetPartView(
   const vh = Math.max(ph, reach?.heightMm ?? 0)
   const place = ([x, y]: [number, number]): [number, number] =>
     turned ? [y - minY, w - (x - minX)] : [x - minX, y - minY]
+  // The reach's own name carries its size in mm; say it in the units on screen.
+  const reachLabel = reach
+    ? `${reach.label.split(' (')[0]} (~${formatSize([reach.widthMm, reach.heightMm], imperial)})`
+    : ''
   const ring = (r: Ring) => r.map(pt => place(pt as [number, number])).map(([x, y]) => `${x},${vh - y}`).join(' ')
 
   return (
@@ -67,7 +72,7 @@ export default function CabinetPartView(
               fill="var(--cab-reach)" fillOpacity={0.07} stroke="var(--cab-reach)" strokeWidth={1.2}
             />
             <text x={4} y={vh - reach.heightMm - 6} fontSize={11} fill="var(--cab-reach)">
-              {reach.label}
+              {reachLabel}
             </text>
           </g>
         )}
@@ -82,6 +87,24 @@ export default function CabinetPartView(
         {(drawing.guideRings ?? []).map((r, i) => (
           <polygon key={`g${i}`} points={ring(r)} fill="none" stroke="var(--cab-tray)" strokeWidth={0.6} />
         ))}
+        {/* The part's own size, on the part as placed in the cut area. */}
+        <g stroke="var(--cab-text)" strokeWidth={0.8} fill="var(--cab-text)">
+          <line x1={0} y1={vh + 16} x2={pw} y2={vh + 16} />
+          <line x1={0} y1={vh + 16 - TICK} x2={0} y2={vh + 16 + TICK} />
+          <line x1={pw} y1={vh + 16 - TICK} x2={pw} y2={vh + 16 + TICK} />
+          <text x={pw / 2} y={vh + 33} textAnchor="middle" fontSize={13} stroke="none">
+            {formatMeasure(pw, imperial)}
+          </text>
+          <line x1={-16} y1={vh - ph} x2={-16} y2={vh} />
+          <line x1={-16 - TICK} y1={vh - ph} x2={-16 + TICK} y2={vh - ph} />
+          <line x1={-16 - TICK} y1={vh} x2={-16 + TICK} y2={vh} />
+          <text
+            x={-22} y={vh - ph / 2} textAnchor="middle" fontSize={13} stroke="none"
+            transform={`rotate(-90 -22 ${vh - ph / 2})`}
+          >
+            {formatMeasure(ph, imperial)}
+          </text>
+        </g>
       </svg>
     </Box>
   )

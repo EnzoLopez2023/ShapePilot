@@ -28,7 +28,7 @@ describe('the 12-tray sample case', () => {
     const order = cuttingOrder(rows)
     expect(order.map(g => g.thicknessMm)).toEqual([12.7, 6.35])
     expect(order[0].rips.map(r => r.widthMm)).toEqual([195])
-    expect(order.every(g => g.sheets === 1)).toBe(true)
+    expect(order.every(g => g.sheets.length === 1)).toBe(true)
   })
 
   test('the guide has no cleat steps without a cleat', () => {
@@ -65,4 +65,12 @@ test('the page flags a blank that will not fit the cut area', () => {
   expect(guideHtml(DEFAULT_CABINET, {
     title: '<x>', imperial: false, marginMm: 20, reach: null,
   })).toContain('&lt;x&gt;')
+})
+
+test('every step carries a picture, and the sheet picture places each blank', () => {
+  const guide = buildGuide(DEFAULT_CABINET, 20, mm)
+  expect(guide.steps.every(s => s.figures.length > 0)).toBe(true)
+  const html = guideHtml(DEFAULT_CABINET, { title: 'x', imperial: true, marginMm: 20, reach: null })
+  expect(html.match(/<svg/g)!.length).toBeGreaterThanOrEqual(guide.steps.length)
+  expect(html).not.toContain('NaN')
 })

@@ -57,35 +57,47 @@ export function roughCutList(p: CabinetParams, marginMm = DEFAULT_ROUGH_MARGIN_M
 
 export interface CrosscutSetting { lengthMm: number; qty: number; parts: string[] }
 export interface RipSetting { widthMm: number; strips: number; crosscuts: CrosscutSetting[] }
+
+export interface PlacedPiece { part: string; xMm: number; lengthMm: number }
+export interface PlacedStrip { yMm: number; widthMm: number; pieces: PlacedPiece[] }
+/** One full sheet: strips ripped along its length, each crosscut into blanks. */
+export interface SheetLayout { strips: PlacedStrip[] }
+
 export interface ThicknessOrder {
   thicknessMm: number
   rips: RipSetting[]
-  /** Sheets of this thickness, breaking every strip out of a full sheet. */
-  sheets: number
+  /** Every strip of this thickness laid out on full sheets, with kerf. */
+  sheets: SheetLayout[]
 }
 
 const same = (a: number, b: number): boolean => Math.abs(a - b) < 1e-6
 
-/** Strips of `stripMm` that these lengths come out of, longest first, first fit. */
-function stripsNeeded(lengths: number[], stripMm: number): number {
+/** Blanks of one width laid into strips along the sheet, longest first, first fit. */
+function packStrips(widthMm: number, blanks: { part: string; lengthMm: number }[]): PlacedStrip[] {
+  const strips: PlacedStrip[] = []
   const used: number[] = []
-  for (const length of [...lengths].sort((a, b) => b - a)) {
-    const room = used.findIndex(u => u + SAW_KERF_MM + length <= stripMm + 1e-9)
-    if (room >= 0) used[room] += SAW_KERF_MM + length
-    else used.push(length)
+  for (const b of [...blanks].sort((x, y) => y.lengthMm - x.lengthMm)) {
+    const room = used.findIndex(u => u + SAW_KERF_MM + b.lengthMm <= SHEET_MM.lengthMm + 1e-9)
+    const at = room >= 0 ? room : strips.length
+    if (room < 0) { strips.push({ yMm: 0, widthMm, pieces: [] }); used.push(-SAW_KERF_MM) }
+    strips[at].pieces.push({ part: b.part, xMm: used[at] + SAW_KERF_MM, lengthMm: b.lengthMm })
+    used[at] += SAW_KERF_MM + b.lengthMm
   }
-  return used.length
+  return strips
 }
 
-/** Sheets that these strip widths rip out of, first fit across the sheet. */
-function sheetsFor(stripWidths: number[]): number {
+/** Strips stacked across full sheets, widest first, first fit. */
+function packSheets(strips: PlacedStrip[]): SheetLayout[] {
+  const sheets: SheetLayout[] = []
   const used: number[] = []
-  for (const w of [...stripWidths].sort((a, b) => b - a)) {
-    const room = used.findIndex(u => u + SAW_KERF_MM + w <= SHEET_MM.widthMm + 1e-9)
-    if (room >= 0) used[room] += SAW_KERF_MM + w
-    else used.push(w)
+  for (const strip of [...strips].sort((a, b) => b.widthMm - a.widthMm)) {
+    const room = used.findIndex(u => u + SAW_KERF_MM + strip.widthMm <= SHEET_MM.widthMm + 1e-9)
+    const at = room >= 0 ? room : sheets.length
+    if (room < 0) { sheets.push({ strips: [] }); used.push(-SAW_KERF_MM) }
+    sheets[at].strips.push({ ...strip, yMm: used[at] + SAW_KERF_MM })
+    used[at] += SAW_KERF_MM + strip.widthMm
   }
-  return used.length
+  return sheets
 }
 
 /** Saw setups per thickness: one fence setting at a time, then the stop-block cuts. */
@@ -96,6 +108,7 @@ export function cuttingOrder(rows: RoughRow[]): ThicknessOrder[] {
     const ofThickness = rows.filter(r => same(r.thicknessMm, thicknessMm))
     const widths: number[] = []
     for (const r of ofThickness) if (!widths.some(w => same(w, r.roughWidthMm))) widths.push(r.roughWidthMm)
+    const allStrips: PlacedStrip[] = []
     const rips = widths.sort((a, b) => b - a).map(widthMm => {
       const atWidth = ofThickness.filter(r => same(r.roughWidthMm, widthMm))
       const crosscuts: CrosscutSetting[] = []
@@ -105,11 +118,12 @@ export function cuttingOrder(rows: RoughRow[]): ThicknessOrder[] {
         else crosscuts.push({ lengthMm: r.roughLengthMm, qty: r.count, parts: [r.part] })
       }
       crosscuts.sort((a, b) => b.lengthMm - a.lengthMm)
-      const lengths = atWidth.flatMap(r => Array.from({ length: r.count }, () => r.roughLengthMm))
-      return { widthMm, strips: stripsNeeded(lengths, SHEET_MM.lengthMm), crosscuts }
+      const strips = packStrips(widthMm, atWidth.flatMap(r =>
+        Array.from({ length: r.count }, () => ({ part: r.part, lengthMm: r.roughLengthMm }))))
+      allStrips.push(...strips)
+      return { widthMm, strips: strips.length, crosscuts }
     })
-    const stripWidths = rips.flatMap(r => Array.from({ length: r.strips }, () => r.widthMm))
-    return { thicknessMm, rips, sheets: sheetsFor(stripWidths) }
+    return { thicknessMm, rips, sheets: packSheets(allStrips) }
   })
 }
 
@@ -119,7 +133,11 @@ export interface GuideStep {
   summary: string
   instructions: string[]
   cautions: string[]
+  /** Pictures shown with the step; `guideHtml` draws each one. */
+  figures: Figure[]
 }
+
+export type Figure = 'breakdown' | 'case' | 'exploded' | 'side' | 'top-bottom' | 'back' | 'cleat'
 
 export interface BuildGuide {
   steps: GuideStep[]
@@ -143,6 +161,7 @@ export function buildGuide(
 
   steps.push({
     id: 'breakdown',
+    figures: ['breakdown'],
     title: 'Break down the plywood',
     summary: `Saw the blanks the Origin will cut the panels from. Each is ${f(marginMm)} bigger than its panel, rounded up to ${f(ROUGH_STEP_MM)}.`,
     instructions: order.flatMap(g => g.rips.flatMap(rip => [
@@ -159,6 +178,7 @@ export function buildGuide(
   if (d.cleat) {
     steps.push({
       id: 'cleat',
+    figures: ['cleat'],
       title: 'Rip the French cleats',
       summary: 'Both cleats and the spacer come from the same stock and are sawn, not routed.',
       instructions: [
@@ -172,6 +192,7 @@ export function buildGuide(
 
   steps.push({
     id: 'sides',
+    figures: ['side'],
     title: 'Cut the sides on the Origin',
     summary: `Two sides, ${f(d.overallHeightMm)} × ${f(d.panelDepthMm)}, with ${d.dadoFloorsMm.length} dados and the back ${back}.`,
     instructions: [
@@ -188,6 +209,7 @@ export function buildGuide(
 
   steps.push({
     id: 'top-bottom',
+    figures: ['top-bottom'],
     title: 'Cut the top and bottom',
     summary: `Two panels, ${f(d.interiorWidthMm)} × ${f(d.panelDepthMm)}, each with a back ${back} along the rear.`,
     instructions: [
@@ -200,6 +222,7 @@ export function buildGuide(
 
   steps.push({
     id: 'back',
+    figures: ['back'],
     title: 'Cut the back',
     summary: `One panel, ${f(d.backWidthMm)} × ${f(d.backHeightMm)}, from ${f(p.backMm)} stock.`,
     instructions: [
@@ -210,6 +233,7 @@ export function buildGuide(
 
   steps.push({
     id: 'dry-fit',
+    figures: ['case'],
     title: 'Dry fit',
     summary: 'Check everything before any glue.',
     instructions: [
@@ -222,6 +246,7 @@ export function buildGuide(
 
   steps.push({
     id: 'assemble',
+    figures: ['exploded'],
     title: 'Glue and screw the case',
     summary: `Sides to top and bottom, with the back captured in the ${back}s.`,
     instructions: [
@@ -238,6 +263,7 @@ export function buildGuide(
   if (d.cleat) {
     steps.push({
       id: 'cleat-fit',
+    figures: ['cleat'],
       title: 'Fit the cleats and hang the case',
       summary: 'The case half goes in the pocket behind the back; the wall half goes on the wall.',
       instructions: [

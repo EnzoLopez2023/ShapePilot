@@ -8,6 +8,8 @@ import { formatLength } from '../../../units.ts'
 import { cabinetDims } from '../model/cabinet.ts'
 import type { CabinetParams } from '../model/cabinet.ts'
 import { SHEET_MM, buildGuide, cuttingOrder, roughCutList } from '../model/guide.ts'
+import type { Figure } from '../model/guide.ts'
+import { breakdownSvg, caseSvg, cleatSvg, explodedSvg, panelSvg } from './guideSvg.ts'
 
 const esc = (s: string): string =>
   s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
@@ -25,6 +27,8 @@ const STYLE = `
   td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
   .step { break-inside: avoid; margin: 14px 0; padding-left: 12px; border-left: 3px solid #888; }
   .step ol, .step ul { margin: 6px 0 6px 18px; padding: 0; }
+  .figures { margin: 8px 0; }
+  figure { margin: 0; padding: 8px; background: #fafafa; border: 1px solid #e2e2e2; border-radius: 6px; text-align: center; }
   .caution { color: #7a4b00; }
   .muted { color: #666; }
   .no { color: #a11; font-weight: 600; }
@@ -44,6 +48,15 @@ export function guideHtml(p: CabinetParams, o: GuideOptions): string {
   const rows = roughCutList(p, o.marginMm)
   const order = cuttingOrder(rows)
   const guide = buildGuide(p, o.marginMm, f)
+  const figure = (id: Figure): string => ({
+    breakdown: () => breakdownSvg(order, f),
+    case: () => caseSvg(p, f),
+    exploded: () => explodedSvg(p),
+    side: () => panelSvg('side', p, f),
+    'top-bottom': () => panelSvg('top-bottom', p, f),
+    back: () => panelSvg('back', p, f),
+    cleat: () => cleatSvg(p, f),
+  })[id]()
 
   const rough = rows.map(r => {
     const fit = r.machine === 'saw' ? '—'
@@ -59,12 +72,13 @@ export function guideHtml(p: CabinetParams, o: GuideOptions): string {
   }).join('')
 
   const sheets = order.map(g =>
-    `<li>${f(g.thicknessMm)} plywood: ${g.sheets} sheet${g.sheets === 1 ? '' : 's'} of ${f(SHEET_MM.lengthMm)} × ${f(SHEET_MM.widthMm)}</li>`).join('')
+    `<li>${f(g.thicknessMm)} plywood: ${g.sheets.length} sheet${g.sheets.length === 1 ? '' : 's'} of ${f(SHEET_MM.lengthMm)} × ${f(SHEET_MM.widthMm)}</li>`).join('')
 
   const steps = guide.steps.map((s, i) => `
     <div class="step">
       <h3>${i + 1}. ${esc(s.title)}</h3>
       <div class="muted">${esc(s.summary)}</div>
+      <div class="figures">${s.figures.map(id => `<figure>${figure(id)}</figure>`).join('')}</div>
       <ol>${s.instructions.map(t => `<li>${esc(t)}</li>`).join('')}</ol>
       ${s.cautions.length ? `<ul class="caution">${s.cautions.map(t => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
     </div>`).join('')
