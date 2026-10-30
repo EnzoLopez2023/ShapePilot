@@ -33,6 +33,7 @@ import { saveCabinet } from './state/saved.ts'
 import CabinetPartView from './components/CabinetPartView.tsx'
 import { cabinetSolid, panelMesh } from './model/solid.ts'
 import { BENCHPILOT_REACH, fitsReach } from '../../model/benchpilot.ts'
+import { forReach } from '../../export/passThrough.ts'
 import type { BenchPilotMount } from '../../model/benchpilot.ts'
 import type { CabinetParams } from './model/cabinet.ts'
 import BuildGuideDialog from './components/BuildGuideDialog.tsx'
@@ -64,7 +65,7 @@ export default function CabinetPage() {
   const [benchPilotMount, setBenchPilotMount] = useState<BenchPilotMount>('workstation')
   const reach = showBenchPilot ? BENCHPILOT_REACH[benchPilotMount] : null
 
-  const { imperial, view, label, roughMarginMm, ...rawParams } = settings
+  const { imperial, view, label, roughMarginMm, passThroughBitMm, ...rawParams } = settings
   const set = (patch: Partial<CabinetSettings>) =>
     setSettings(current => ({ ...current, ...patch }))
 
@@ -132,8 +133,11 @@ export default function CabinetPage() {
       .catch(() => setSaved('Could not save: the server is unreachable.'))
   }
 
+  // With the cut area shown, a panel longer than it is exported split for pass-through.
+  const drawingFor = (panel: PanelId) => forReach(PANEL_DRAWINGS[panel](params), reach, passThroughBitMm)
+
   const download = (panel: PanelId, format: 'svg' | 'dxf') => {
-    const drawing = PANEL_DRAWINGS[panel](settings)
+    const drawing = drawingFor(panel)
     const base = `${stem}_${panel}`
     if (format === 'svg') {
       triggerDownload(writeShaperSvg(drawing), `${base}.svg`, 'image/svg+xml')
@@ -146,11 +150,11 @@ export default function CabinetPage() {
     const files: Record<string, Uint8Array> = {}
     for (const panel of PANEL_IDS) {
       files[`${stem}_${panel}.svg`] =
-        strToU8(writeShaperSvg(PANEL_DRAWINGS[panel](settings)))
+        strToU8(writeShaperSvg(drawingFor(panel)))
     }
     files[`${stem}_guide.html`] = strToU8(guideHtml(params, {
       title: label.trim() || `Tray cabinet — ${settings.trayCount} trays`,
-      imperial, marginMm: roughMarginMm, reach,
+      imperial, marginMm: roughMarginMm, reach, bitMm: passThroughBitMm,
     }))
     files['CUT_LIST.txt'] = strToU8(
       `${label.trim() ? `${label.trim()} — ` : ''}Keycap tray cabinet — ${settings.trayCount} trays\n` +
@@ -278,6 +282,13 @@ export default function CabinetPage() {
               <MenuItem value="bench">Directly on bench</MenuItem>
             </TextField>
           )}
+          {showBenchPilot && (
+            <LengthField
+              label="Pass-through bit" imperial={imperial} valueMm={passThroughBitMm}
+              hint="A panel longer than the cut area is exported in segments, and its outline becomes on-line cuts already offset for this bit. Cut the outline with this bit. 1/4 in = 6.35 mm."
+              onChangeMm={v => set({ passThroughBitMm: Math.min(25.4, Math.max(0.5, v)) })}
+            />
+          )}
           {showBenchPilot && part === 'case' && (
             <Typography variant="caption" color="text.secondary">
               Pick a panel to see it inside the cut area.
@@ -320,7 +331,7 @@ export default function CabinetPage() {
             </Typography>
           </Box>
         ) : part !== 'case' ? (
-          <CabinetPartView panel={part} params={params} reach={reach} imperial={imperial} />
+          <CabinetPartView panel={part} params={params} reach={reach} imperial={imperial} bitMm={passThroughBitMm} />
         ) : (
           <CabinetElevations params={params} imperial={imperial} />
         )}
@@ -520,7 +531,7 @@ export default function CabinetPage() {
       )}
       {dialog === 'guide' && (
         <BuildGuideDialog
-          params={params} imperial={imperial} marginMm={roughMarginMm} reach={reach}
+          params={params} imperial={imperial} marginMm={roughMarginMm} reach={reach} bitMm={passThroughBitMm}
           title={label.trim() || `Tray cabinet — ${settings.trayCount} trays`}
           onClose={() => setDialog(null)}
         />

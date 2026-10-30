@@ -57,11 +57,13 @@ describe('with a French cleat', () => {
 })
 
 test('the page flags a blank that will not fit the cut area', () => {
-  const big = { ...DEFAULT_CABINET, trayCount: 30 }
+  // A long side passes through; a back wider than the reach both ways cannot.
+  const big = { ...DEFAULT_CABINET, trayCount: 30, trayWidthMm: 500 }
   const html = guideHtml(big, {
     title: 'Big', imperial: false, marginMm: 20, reach: BENCHPILOT_REACH.workstation,
   })
   expect(html).toContain('Too big')
+  expect(html).toContain('Pass-through, 2 segments')
   expect(guideHtml(DEFAULT_CABINET, {
     title: '<x>', imperial: false, marginMm: 20, reach: null,
   })).toContain('&lt;x&gt;')

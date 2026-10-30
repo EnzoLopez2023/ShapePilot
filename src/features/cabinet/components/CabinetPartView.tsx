@@ -3,7 +3,8 @@
 // Same frame as the Shaper SVG (inner face up), so what is drawn here is what
 // the router sees. The reach is anchored at the panel's origin corner; a part
 // that fits only when turned is drawn turned a quarter, so the picture shows
-// how it would sit inside the cut area.
+// how it would sit inside the cut area. A part too long for it is laid along
+// the reach the way it passes through, with the export's seams drawn across it.
 import { Alert, Box, Typography } from '@mui/material'
 import { CABINET_VARS } from './CabinetElevations.tsx'
 import { PANEL_DRAWINGS, PANEL_LABELS } from '../export/cutDrawing.ts'
@@ -13,6 +14,7 @@ import { fitsReach } from '../../../model/benchpilot.ts'
 import type { BenchPilotReach } from '../../../model/benchpilot.ts'
 import { formatMeasure, formatSize } from '../../../units.ts'
 import type { Ring } from '../../../geometry/vec.ts'
+import { planPassThrough } from '../../../export/passThrough.ts'
 
 const PAD = 46
 const TICK = 5
@@ -27,7 +29,9 @@ const bounds = (rings: Ring[]) => {
 }
 
 export default function CabinetPartView(
-  { panel, params, reach, imperial }: { panel: PanelId; params: CabinetParams; reach: BenchPilotReach | null; imperial: boolean },
+  { panel, params, reach, imperial, bitMm }: {
+    panel: PanelId; params: CabinetParams; reach: BenchPilotReach | null; imperial: boolean; bitMm: number
+  },
 ) {
   const drawing = PANEL_DRAWINGS[panel](params)
   const outline = drawing.layers.find(l => l.cutType === 'exterior')?.polygons.flat() ?? []
@@ -35,7 +39,15 @@ export default function CabinetPartView(
   const pockets = drawing.layers.filter(l => l.cutType === 'pocket')
 
   const fits = reach ? fitsReach(reach, w, h) : true
-  const turned = !!reach && fits && !(w <= reach.widthMm && h <= reach.heightMm)
+  const plan = reach && !fits ? planPassThrough(drawing, reach, bitMm) : null
+  // The reach's width runs across the picture, so a part is turned when its
+  // length has to run the other way to fit -- or, passing through, to slide.
+  const turned = plan
+    ? plan.alongReachWidth === (plan.axis === 'y')
+    : !!reach && fits && !(w <= reach.widthMm && h <= reach.heightMm)
+  const seams: Ring[] = (plan?.seamsMm ?? []).map(s => (plan!.axis === 'y'
+    ? [[minX, s], [minX + w, s]]
+    : [[s, minY], [s, minY + h]]))
   const [pw, ph] = turned ? [h, w] : [w, h]
   const vw = Math.max(pw, reach?.widthMm ?? 0)
   const vh = Math.max(ph, reach?.heightMm ?? 0)
@@ -53,10 +65,14 @@ export default function CabinetPartView(
         {PANEL_LABELS[panel]} · {formatSize([w, h], imperial)}
       </Typography>
       {reach && (
-        <Alert severity={fits ? 'success' : 'warning'} variant="outlined" sx={{ mb: 1, py: 0 }}>
+        <Alert severity={fits ? 'success' : plan ? 'info' : 'warning'} variant="outlined" sx={{ mb: 1, py: 0 }}>
           {fits
             ? turned ? 'Fits inside the BenchPilot reach when turned a quarter (shown turned).' : 'Fits inside the BenchPilot reach.'
-            : 'Larger than the BenchPilot reach in both orientations.'}
+            : plan
+              ? `Longer than the reach: exported in ${plan.windows.length} pass-through segments, ` +
+                `split at ${plan.seamsMm.map(v => formatMeasure(v - plan.startMm, imperial)).join(', ')} (dashed). ` +
+                'Tape and scan the whole board, cut what is in reach, slide it along, cut the rest.'
+              : 'Larger than the BenchPilot reach in both orientations.'}
         </Alert>
       )}
       <svg
@@ -84,6 +100,11 @@ export default function CabinetPartView(
         {pockets.flatMap((l, li) => l.polygons.flat().map((r, i) => (
           <polygon key={`${li}-${i}`} points={ring(r)} fill="var(--cab-dado)" />
         )))}
+        {seams.map((r, i) => (
+          <polyline
+            key={`s${i}`} points={ring(r)} fill="none" stroke="var(--cab-reach)" strokeWidth={1.2} strokeDasharray="6 4"
+          />
+        ))}
         {(drawing.guideRings ?? []).map((r, i) => (
           <polygon key={`g${i}`} points={ring(r)} fill="none" stroke="var(--cab-tray)" strokeWidth={0.6} />
         ))}

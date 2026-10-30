@@ -4,6 +4,7 @@
 // are the same thing, and the downloaded file opens anywhere without the app.
 import { fitsReach } from '../../../model/benchpilot.ts'
 import type { BenchPilotReach } from '../../../model/benchpilot.ts'
+import { DEFAULT_PASS_THROUGH_BIT_MM, passThroughSegments } from '../../../export/passThrough.ts'
 import { formatLength } from '../../../units.ts'
 import { cabinetDims } from '../model/cabinet.ts'
 import type { CabinetParams } from '../model/cabinet.ts'
@@ -40,6 +41,8 @@ export interface GuideOptions {
   imperial: boolean
   marginMm: number
   reach: BenchPilotReach | null
+  /** The pass-through outline bit; only decides whether a long panel still splits. */
+  bitMm?: number
 }
 
 export function guideHtml(p: CabinetParams, o: GuideOptions): string {
@@ -59,9 +62,13 @@ export function guideHtml(p: CabinetParams, o: GuideOptions): string {
   })[id]()
 
   const rough = rows.map(r => {
+    const split = o.reach && passThroughSegments(
+      o.reach, r.finishedLengthMm, r.finishedWidthMm, o.bitMm ?? DEFAULT_PASS_THROUGH_BIT_MM)
     const fit = r.machine === 'saw' ? '—'
       : !o.reach ? ''
-        : fitsReach(o.reach, r.roughLengthMm, r.roughWidthMm) ? 'Fits' : '<span class="no">Too big</span>'
+        : fitsReach(o.reach, r.roughLengthMm, r.roughWidthMm) ? 'Fits'
+          : split ? `Pass-through, ${split.count} segments<div class="muted">tape the whole board; the SVG is split</div>`
+            : '<span class="no">Too big</span>'
     return `<tr>
       <td>${esc(r.part)}<div class="muted">${r.machine === 'origin' ? 'cut on the Origin' : 'sawn to size'}</div></td>
       <td class="n">${r.count}</td>

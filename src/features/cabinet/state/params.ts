@@ -8,6 +8,7 @@ import { booleanOr, createViewSettingsStore, numberIn } from '../../../state/vie
 import { DEFAULT_CABINET } from '../model/cabinet.ts'
 import type { CabinetParams } from '../model/cabinet.ts'
 import { DEFAULT_ROUGH_MARGIN_MM } from '../model/guide.ts'
+import { DEFAULT_PASS_THROUGH_BIT_MM } from '../../../export/passThrough.ts'
 
 export interface CabinetSettings extends CabinetParams {
   /** Show lengths in fractional inches. Stock comes in inches; cuts in mm. */
@@ -18,6 +19,8 @@ export interface CabinetSettings extends CabinetParams {
   view: '2d' | '3d'
   /** How much bigger than its panel each blank is sawn, in total, before the Origin cuts it. */
   roughMarginMm: number
+  /** Bit the pass-through outline is offset for; a split outline is an on-line cut. */
+  passThroughBitMm: number
 }
 
 export const DEFAULT_CABINET_SETTINGS: CabinetSettings = {
@@ -26,6 +29,7 @@ export const DEFAULT_CABINET_SETTINGS: CabinetSettings = {
   imperial: false,
   view: '2d',
   roughMarginMm: DEFAULT_ROUGH_MARGIN_MM,
+  passThroughBitMm: DEFAULT_PASS_THROUGH_BIT_MM,
 }
 
 /** Rebuilt field by field: anything in storage was written by an older release. */
@@ -52,6 +56,7 @@ export function readCabinetSettings(
     imperial: booleanOr(s.imperial, baseline.imperial),
     view: s.view === '2d' || s.view === '3d' ? s.view : baseline.view,
     roughMarginMm: numberIn(s.roughMarginMm, 0, 100, baseline.roughMarginMm),
+    passThroughBitMm: numberIn(s.passThroughBitMm, 0.5, 25.4, baseline.passThroughBitMm),
   }
 }
 

@@ -7,19 +7,20 @@ import { guideHtml } from '../export/guideHtml.ts'
 import type { CabinetParams } from '../model/cabinet.ts'
 
 export default function BuildGuideDialog(
-  { params, title, imperial, marginMm, reach, onClose }: {
+  { params, title, imperial, marginMm, reach, bitMm, onClose }: {
     params: CabinetParams
     title: string
     imperial: boolean
     marginMm: number
     reach: BenchPilotReach | null
+    bitMm: number
     onClose: () => void
   },
 ) {
   const frame = useRef<HTMLIFrameElement>(null)
   const html = useMemo(
-    () => guideHtml(params, { title, imperial, marginMm, reach }),
-    [params, title, imperial, marginMm, reach])
+    () => guideHtml(params, { title, imperial, marginMm, reach, bitMm }),
+    [params, title, imperial, marginMm, reach, bitMm])
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="md">
       <DialogTitle>Cut list and build guide</DialogTitle>
