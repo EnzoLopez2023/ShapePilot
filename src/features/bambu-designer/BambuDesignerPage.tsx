@@ -58,6 +58,14 @@ import type { CardKit } from './components/IdCardDialog.tsx'
 import type { CardSpec, FoundCard } from './idCard.ts'
 import { CARD_SIZES, DEFAULT_CARD_SPEC, layoutCard, measureWith, readCards } from './idCard.ts'
 import FastenerDialog from './components/FastenerDialog.tsx'
+import JigDialog from './components/JigDialog.tsx'
+import ClampSquareDialog from './components/ClampSquareDialog.tsx'
+import type { ClampSquareSpec } from './clampSquare.ts'
+import {
+  DEFAULT_CLAMP_SQUARE_SPEC, clampSquareColumns, clampSquaresFootprint, createClampSquares,
+} from './clampSquare.ts'
+import type { JigSpec } from './jig.ts'
+import { DEFAULT_JIG_SPEC, createJig, jigFootprint } from './jig.ts'
 import type { MetricSize } from './hardware.ts'
 import { createFastenerCutter } from './hardware.ts'
 import type { SolidPaletteKind } from './components/solidEntries.ts'
@@ -172,6 +180,11 @@ export default function BambuDesignerPage() {
   // unpriced, never guessed at.
   const priceOf = usePriceBook()
   const [fastener, setFastener] = useState<FastenerEntry | null>(null)
+  /** The jig being sized, and the last one made, which the next starts from. */
+  const [jigDialog, setJigDialog] = useState<JigSpec | null>(null)
+  const [lastJig, setLastJig] = useState<JigSpec>(DEFAULT_JIG_SPEC)
+  const [squareDialog, setSquareDialog] = useState<ClampSquareSpec | null>(null)
+  const [lastSquares, setLastSquares] = useState<ClampSquareSpec>(DEFAULT_CLAMP_SQUARE_SPEC)
   const [cardDialog, setCardDialog] = useState<
     { spec: CardSpec; editing: FoundCard | null } | null>(null)
   const [cardKit, setCardKit] = useState<CardKit | null>(null)
@@ -435,9 +448,38 @@ export default function BambuDesignerPage() {
 
   const addLibraryPart = useCallback((entry: LibraryEntry) => {
     if (entry.kind === 'fastener') setFastener(entry)
+    else if (entry.kind === 'jig') setJigDialog({ ...lastJig, kind: entry.jig })
+    else if (entry.kind === 'clamp-square') setSquareDialog(lastSquares)
     else if (entry.kind === 'template') openCardTemplate(null)
     else void addLibraryFile(entry)
-  }, [addLibraryFile, openCardTemplate])
+  }, [addLibraryFile, lastJig, lastSquares, openCardTemplate])
+
+  const addJig = useCallback((spec: JigSpec) => {
+    // Beside everything already on the plate, like a new card; centred on an empty one.
+    const overall = combinedBounds([...bounds.values()])
+    const [x, y] = jigFootprint(spec)
+    const jig = createJig(spec, overall
+      ? [overall.max[0] + CARD_SPACING_MM, overall.min[1], 0]
+      : [-x / 2, -y / 2, 0])
+    doc.addObject(jig)
+    doc.setSelection([jig.id])
+    setLastJig(spec)
+    setJigDialog(null)
+  }, [bounds, doc])
+
+  const addClampSquares = useCallback((spec: ClampSquareSpec) => {
+    const overall = combinedBounds([...bounds.values()])
+    const columns = clampSquareColumns(spec, machine.buildMm[0])
+    const [x, y] = clampSquaresFootprint(spec, columns)
+    const made = createClampSquares(spec, overall
+      ? [overall.max[0] + CARD_SPACING_MM, overall.min[1], 0]
+      : [-x / 2, -y / 2, 0], columns)
+    // One replace, so the whole row is a single undo step.
+    doc.replace(d => ({ ...d, objects: [...d.objects, ...made] }))
+    doc.setSelection(made.map(o => o.id))
+    setLastSquares(spec)
+    setSquareDialog(null)
+  }, [bounds, doc, machine.buildMm])
 
   /** The one top-level part a cutter would be sized to and placed in. */
   const fastenerTarget = useMemo(() => {
@@ -1068,6 +1110,18 @@ export default function BambuDesignerPage() {
         }}
         onAdd={addFastener}
         onClose={() => setFastener(null)}
+      />
+      <JigDialog
+        initial={jigDialog}
+        plateMm={[machine.buildMm[0], machine.buildMm[1]]}
+        onAdd={addJig}
+        onClose={() => setJigDialog(null)}
+      />
+      <ClampSquareDialog
+        initial={squareDialog}
+        plateMm={[machine.buildMm[0], machine.buildMm[1]]}
+        onAdd={addClampSquares}
+        onClose={() => setSquareDialog(null)}
       />
       <IdCardDialog
         initial={cardDialog && { spec: cardDialog.spec, editing: Boolean(cardDialog.editing) }}

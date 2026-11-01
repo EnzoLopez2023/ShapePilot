@@ -7,16 +7,23 @@
 // - a hardware cutter, generated from a size table (see ../hardware.ts), which
 //   asks for its size and the thickness it cuts before it is added;
 // - a template, which lays out several ordinary parts at once from a dialog
-//   (see ../idCard.ts).
+//   (see ../idCard.ts);
+// - a woodworking jig, sized to the panels it holds from a dialog (see
+//   ../jig.ts), or a run of clamping squares (see ../clampSquare.ts).
 import WorkspacePremiumRoundedIcon from '@mui/icons-material/WorkspacePremiumRounded'
 import HardwareRoundedIcon from '@mui/icons-material/HardwareRounded'
 import AdjustRoundedIcon from '@mui/icons-material/AdjustRounded'
 import HexagonOutlinedIcon from '@mui/icons-material/HexagonOutlined'
 import BadgeRoundedIcon from '@mui/icons-material/BadgeRounded'
+import BorderBottomRoundedIcon from '@mui/icons-material/BorderBottomRounded'
+import BorderStyleRoundedIcon from '@mui/icons-material/BorderStyleRounded'
+import ChangeHistoryRoundedIcon from '@mui/icons-material/ChangeHistoryRounded'
 import type { SvgIconComponent } from '@mui/icons-material'
 import type { ImportFormat } from '../../../model/document.ts'
 import type { FastenerKind } from '../hardware.ts'
 import { FASTENER_HINTS, FASTENER_LABELS } from '../hardware.ts'
+import type { JigKind } from '../jig.ts'
+import { JIG_LABELS } from '../jig.ts'
 
 interface EntryBase {
   id: string
@@ -44,7 +51,16 @@ export interface TemplateEntry extends EntryBase {
   template: 'id-card'
 }
 
-export type LibraryEntry = FileEntry | FastenerEntry | TemplateEntry
+export interface JigEntry extends EntryBase {
+  kind: 'jig'
+  jig: JigKind
+}
+
+export interface ClampSquareEntry extends EntryBase {
+  kind: 'clamp-square'
+}
+
+export type LibraryEntry = FileEntry | FastenerEntry | TemplateEntry | JigEntry | ClampSquareEntry
 
 const FASTENER_ICONS: Record<FastenerKind, SvgIconComponent> = {
   'clearance': HardwareRoundedIcon,
@@ -92,6 +108,14 @@ export const LIBRARY: readonly LibraryGroup[] = [
         icon: BadgeRoundedIcon,
         template: 'id-card',
       },
+    ],
+  },
+  {
+    label: 'Woodworking jigs',
+    entries: [
+      { kind: 'jig', id: 'jig-tee', label: JIG_LABELS.tee, hint: 'shelf to side panel, any thicknesses', icon: BorderBottomRoundedIcon, jig: 'tee' },
+      { kind: 'jig', id: 'jig-corner', label: JIG_LABELS.corner, hint: 'butt corner, any thicknesses', icon: BorderStyleRoundedIcon, jig: 'corner' },
+      { kind: 'clamp-square', id: 'clamp-square', label: 'Clamping squares', hint: 'hold an inside corner at 90°', icon: ChangeHistoryRoundedIcon },
     ],
   },
   {
