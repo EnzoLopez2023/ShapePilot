@@ -22,6 +22,8 @@ export const CABINET_VARS = {
   '--cab-tray-line': (theme: Theme) => theme.palette.primary.dark,
   '--cab-text': (theme: Theme) => theme.palette.text.secondary,
   '--cab-reach': (theme: Theme) => theme.palette.info.main,
+  // ShaperTape is black with white dominoes, in either theme.
+  '--cab-tape': (theme: Theme) => (theme.palette.mode === 'dark' ? '#0b0b0b' : '#262626'),
 }
 
 export default function CabinetElevations({ params, imperial }: { params: CabinetParams; imperial: boolean }) {

@@ -34,7 +34,7 @@ import CabinetPartView from './components/CabinetPartView.tsx'
 import { cabinetSolid, panelMesh } from './model/solid.ts'
 import { BENCHPILOT_REACH, fitsReach } from '../../model/benchpilot.ts'
 import { forReach } from '../../export/passThrough.ts'
-import type { BenchPilotMount } from '../../model/benchpilot.ts'
+import type { BenchPilotFeed, BenchPilotMount } from '../../model/benchpilot.ts'
 import type { CabinetParams } from './model/cabinet.ts'
 import BuildGuideDialog from './components/BuildGuideDialog.tsx'
 import { guideHtml } from './export/guideHtml.ts'
@@ -63,9 +63,10 @@ export default function CabinetPage() {
   const [part, setPart] = useState<PartChoice>('case')
   const [showBenchPilot, setShowBenchPilot] = useState(false)
   const [benchPilotMount, setBenchPilotMount] = useState<BenchPilotMount>('workstation')
+  const [showTape, setShowTape] = useState(true)
   const reach = showBenchPilot ? BENCHPILOT_REACH[benchPilotMount] : null
 
-  const { imperial, view, label, roughMarginMm, passThroughBitMm, ...rawParams } = settings
+  const { imperial, view, label, roughMarginMm, passThroughBitMm, passThroughFeed, ...rawParams } = settings
   const set = (patch: Partial<CabinetSettings>) =>
     setSettings(current => ({ ...current, ...patch }))
 
@@ -134,7 +135,7 @@ export default function CabinetPage() {
   }
 
   // With the cut area shown, a panel longer than it is exported split for pass-through.
-  const drawingFor = (panel: PanelId) => forReach(PANEL_DRAWINGS[panel](params), reach, passThroughBitMm)
+  const drawingFor = (panel: PanelId) => forReach(PANEL_DRAWINGS[panel](params), reach, passThroughBitMm, passThroughFeed)
 
   const download = (panel: PanelId, format: 'svg' | 'dxf') => {
     const drawing = drawingFor(panel)
@@ -154,7 +155,7 @@ export default function CabinetPage() {
     }
     files[`${stem}_guide.html`] = strToU8(guideHtml(params, {
       title: label.trim() || `Tray cabinet — ${settings.trayCount} trays`,
-      imperial, marginMm: roughMarginMm, reach, bitMm: passThroughBitMm,
+      imperial, marginMm: roughMarginMm, reach, bitMm: passThroughBitMm, feed: passThroughFeed,
     }))
     files['CUT_LIST.txt'] = strToU8(
       `${label.trim() ? `${label.trim()} — ` : ''}Keycap tray cabinet — ${settings.trayCount} trays\n` +
@@ -289,6 +290,22 @@ export default function CabinetPage() {
               onChangeMm={v => set({ passThroughBitMm: Math.min(25.4, Math.max(0.5, v)) })}
             />
           )}
+          {showBenchPilot && (
+            <TextField
+              select size="small" label="Pass-through feed" value={passThroughFeed}
+              onChange={e => set({ passThroughFeed: e.target.value as BenchPilotFeed })}
+              helperText="How a panel longer than the cut area slides through. The SVG is not turned: turn it in Shaper Studio to match."
+            >
+              <MenuItem value="sideways">Left to right</MenuItem>
+              <MenuItem value="front-to-back">Front to back</MenuItem>
+            </TextField>
+          )}
+          {showBenchPilot && (
+            <FormControlLabel
+              control={<Checkbox size="small" checked={showTape} onChange={e => setShowTape(e.target.checked)} />}
+              label="Show ShaperTape on the part"
+            />
+          )}
           {showBenchPilot && part === 'case' && (
             <Typography variant="caption" color="text.secondary">
               Pick a panel to see it inside the cut area.
@@ -331,7 +348,10 @@ export default function CabinetPage() {
             </Typography>
           </Box>
         ) : part !== 'case' ? (
-          <CabinetPartView panel={part} params={params} reach={reach} imperial={imperial} bitMm={passThroughBitMm} />
+          <CabinetPartView
+            panel={part} params={params} reach={reach} imperial={imperial} bitMm={passThroughBitMm}
+            feed={passThroughFeed} showTape={showTape}
+          />
         ) : (
           <CabinetElevations params={params} imperial={imperial} />
         )}
@@ -532,7 +552,7 @@ export default function CabinetPage() {
       {dialog === 'guide' && (
         <BuildGuideDialog
           params={params} imperial={imperial} marginMm={roughMarginMm} reach={reach} bitMm={passThroughBitMm}
-          title={label.trim() || `Tray cabinet — ${settings.trayCount} trays`}
+          feed={passThroughFeed} title={label.trim() || `Tray cabinet — ${settings.trayCount} trays`}
           onClose={() => setDialog(null)}
         />
       )}

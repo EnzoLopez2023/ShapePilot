@@ -9,6 +9,7 @@ import { DEFAULT_CABINET } from '../model/cabinet.ts'
 import type { CabinetParams } from '../model/cabinet.ts'
 import { DEFAULT_ROUGH_MARGIN_MM } from '../model/guide.ts'
 import { DEFAULT_PASS_THROUGH_BIT_MM } from '../../../export/passThrough.ts'
+import type { BenchPilotFeed } from '../../../model/benchpilot.ts'
 
 export interface CabinetSettings extends CabinetParams {
   /** Show lengths in fractional inches. Stock comes in inches; cuts in mm. */
@@ -21,6 +22,8 @@ export interface CabinetSettings extends CabinetParams {
   roughMarginMm: number
   /** Bit the pass-through outline is offset for; a split outline is an on-line cut. */
   passThroughBitMm: number
+  /** Which way a pass-through part slides through BenchPilot. */
+  passThroughFeed: BenchPilotFeed
 }
 
 export const DEFAULT_CABINET_SETTINGS: CabinetSettings = {
@@ -30,6 +33,7 @@ export const DEFAULT_CABINET_SETTINGS: CabinetSettings = {
   view: '2d',
   roughMarginMm: DEFAULT_ROUGH_MARGIN_MM,
   passThroughBitMm: DEFAULT_PASS_THROUGH_BIT_MM,
+  passThroughFeed: 'sideways',
 }
 
 /** Rebuilt field by field: anything in storage was written by an older release. */
@@ -57,6 +61,8 @@ export function readCabinetSettings(
     view: s.view === '2d' || s.view === '3d' ? s.view : baseline.view,
     roughMarginMm: numberIn(s.roughMarginMm, 0, 100, baseline.roughMarginMm),
     passThroughBitMm: numberIn(s.passThroughBitMm, 0.5, 25.4, baseline.passThroughBitMm),
+    passThroughFeed: s.passThroughFeed === 'sideways' || s.passThroughFeed === 'front-to-back'
+      ? s.passThroughFeed : baseline.passThroughFeed,
   }
 }
 

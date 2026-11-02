@@ -1,6 +1,11 @@
 // Shaper BenchPilot reach, from support.shapertools.com/benchpilot-faq. The
 // range is approximate, so it is drawn as a guide and never enforced.
 export type BenchPilotMount = 'workstation' | 'bench'
+/**
+ * Which way a part too long for the reach slides through it: left to right,
+ * along the reach's width, or front to back, along its depth.
+ */
+export type BenchPilotFeed = 'sideways' | 'front-to-back'
 
 export interface BenchPilotReach { widthMm: number; heightMm: number; label: string }
 

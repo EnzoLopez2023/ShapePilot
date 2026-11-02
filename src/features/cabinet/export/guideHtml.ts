@@ -3,7 +3,7 @@
 // A page rather than React so the dialog's preview, the print and the download
 // are the same thing, and the downloaded file opens anywhere without the app.
 import { fitsReach } from '../../../model/benchpilot.ts'
-import type { BenchPilotReach } from '../../../model/benchpilot.ts'
+import type { BenchPilotFeed, BenchPilotReach } from '../../../model/benchpilot.ts'
 import { DEFAULT_PASS_THROUGH_BIT_MM, passThroughSegments } from '../../../export/passThrough.ts'
 import { formatLength } from '../../../units.ts'
 import { cabinetDims } from '../model/cabinet.ts'
@@ -43,6 +43,8 @@ export interface GuideOptions {
   reach: BenchPilotReach | null
   /** The pass-through outline bit; only decides whether a long panel still splits. */
   bitMm?: number
+  /** Which way a pass-through panel slides; decides how many segments it takes. */
+  feed?: BenchPilotFeed
 }
 
 export function guideHtml(p: CabinetParams, o: GuideOptions): string {
@@ -63,7 +65,7 @@ export function guideHtml(p: CabinetParams, o: GuideOptions): string {
 
   const rough = rows.map(r => {
     const split = o.reach && passThroughSegments(
-      o.reach, r.finishedLengthMm, r.finishedWidthMm, o.bitMm ?? DEFAULT_PASS_THROUGH_BIT_MM)
+      o.reach, r.finishedLengthMm, r.finishedWidthMm, o.bitMm ?? DEFAULT_PASS_THROUGH_BIT_MM, o.feed)
     const fit = r.machine === 'saw' ? '—'
       : !o.reach ? ''
         : fitsReach(o.reach, r.roughLengthMm, r.roughWidthMm) ? 'Fits'

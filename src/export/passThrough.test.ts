@@ -83,3 +83,24 @@ test('a part too wide both ways cannot pass through', () => {
 test('a long part on the bench passes through in as many segments as it needs', () => {
   expect(passThroughSegments(BENCHPILOT_REACH.bench, 300, 1200, 6.35)?.count).toBe(3)
 })
+
+describe('fed front to back', () => {
+  const drawing = sideDrawing(tall)
+
+  test('the 18-tray side is split to fit the Workstation depth', () => {
+    const plan = planPassThrough(drawing, reach, 6.35, 'front-to-back')!
+    expect(plan.alongReachWidth).toBe(false)
+    for (const [a, b] of plan.windows) expect(b - a + 6.35 / 2).toBeLessThanOrEqual(reach.heightMm)
+  })
+
+  test('a longer side takes more segments front to back than sideways', () => {
+    const long = sideDrawing({ ...DEFAULT_CABINET, trayCount: 30 })
+    const along = planPassThrough(long, reach, 6.35, 'sideways')!.windows.length
+    expect(planPassThrough(long, reach, 6.35, 'front-to-back')!.windows.length).toBeGreaterThan(along)
+  })
+
+  test('a part too wide to feed that way does not pass through', () => {
+    expect(passThroughSegments(reach, 300, 1000, 6.35, 'sideways')).toBeNull()
+    expect(passThroughSegments(reach, 300, 1000, 6.35, 'front-to-back')?.alongReachWidth).toBe(false)
+  })
+})

@@ -13,7 +13,7 @@
 //
 // Only axis-aligned rectangles are split. Every cabinet panel and its long
 // pockets are rectangles; anything else is left as it is.
-import type { BenchPilotReach } from '../model/benchpilot.ts'
+import type { BenchPilotFeed, BenchPilotReach } from '../model/benchpilot.ts'
 import { fitsReach } from '../model/benchpilot.ts'
 import type { Ring, Vec2 } from '../geometry/vec.ts'
 import type { CutDrawing, CutLayer } from './cutLayers.ts'
@@ -59,18 +59,19 @@ const outlineRect = (drawing: CutDrawing): Rect | null => {
 
 /**
  * How a part this size splits, or null when it fits whole or is too wide to
- * pass through either way. Shared by the export and the build guide.
+ * pass through. Shared by the export and the build guide. Without a feed, it
+ * slides sideways when its width allows and front to back when it does not.
  */
 export function passThroughSegments(
   reach: BenchPilotReach, wMm: number, hMm: number, bitMm: number,
-  overlapMm = PASS_THROUGH_OVERLAP_MM,
+  feed?: BenchPilotFeed, overlapMm = PASS_THROUGH_OVERLAP_MM,
 ): { count: number; limitMm: number; alongReachWidth: boolean } | null {
   if (fitsReach(reach, wMm, hMm)) return null
   const length = Math.max(wMm, hMm)
   const across = Math.min(wMm, hMm) + bitMm
   // The width has to fit across the reach; the length then runs the other way.
-  const alongReachWidth = across <= reach.heightMm
-  if (!alongReachWidth && across > reach.widthMm) return null
+  const alongReachWidth = feed ? feed === 'sideways' : across <= reach.heightMm
+  if (across > (alongReachWidth ? reach.heightMm : reach.widthMm)) return null
   const limitMm = alongReachWidth ? reach.widthMm : reach.heightMm
   // The longest window: an end segment, which carries the bit radius at its end.
   const usable = limitMm - overlapMm - bitMm / 2
@@ -95,30 +96,45 @@ function placeSeam(ideal: number, lo: number, hi: number, overlap: number, block
   return candidates[0] ?? ideal
 }
 
+/** The part's long axis, from its outline. */
+export const longAxis = (drawing: CutDrawing): 'x' | 'y' | null => {
+  const rect = outlineRect(drawing)
+  return rect && (rect.y1 - rect.y0 >= rect.x1 - rect.x0 ? 'y' : 'x')
+}
+
+/**
+ * Where the short cuts -- the dados -- sit along an axis, as [from, to]
+ * intervals: every inner cut that spans less than `shorterThanMm` along it.
+ */
+export function shortCutsAlong(drawing: CutDrawing, axis: 'x' | 'y', shorterThanMm: number): [number, number][] {
+  const blocked: [number, number][] = []
+  for (const layer of drawing.layers) {
+    if (layer.cutType === 'exterior' || layer.cutType === 'guide') continue
+    for (const ring of [...layer.polygons.flat(), ...(layer.openPaths ?? [])]) {
+      const vs = ring.map(p => (axis === 'y' ? p[1] : p[0]))
+      const a = Math.min(...vs), b = Math.max(...vs)
+      if (b - a < shorterThanMm) blocked.push([a, b])
+    }
+  }
+  return blocked
+}
+
 export function planPassThrough(
   drawing: CutDrawing, reach: BenchPilotReach, bitMm = DEFAULT_PASS_THROUGH_BIT_MM,
-  overlapMm = PASS_THROUGH_OVERLAP_MM,
+  feed?: BenchPilotFeed, overlapMm = PASS_THROUGH_OVERLAP_MM,
 ): PassThroughPlan | null {
   const rect = outlineRect(drawing)
   if (!rect) return null
   const w = rect.x1 - rect.x0, h = rect.y1 - rect.y0
-  const split = passThroughSegments(reach, w, h, bitMm, overlapMm)
+  const split = passThroughSegments(reach, w, h, bitMm, feed, overlapMm)
   if (!split) return null
   const axis = h >= w ? 'y' : 'x'
   const [start, end] = axis === 'y' ? [rect.y0, rect.y1] : [rect.x0, rect.x1]
   const length = end - start
   const r = bitMm / 2
 
-  // Short cuts -- the dados -- along the axis; a seam's overlap should miss them.
-  const blocked: [number, number][] = []
-  for (const layer of drawing.layers) {
-    if (layer.cutType === 'exterior' || layer.cutType === 'guide') continue
-    for (const ring of layer.polygons.flat()) {
-      const vs = ring.map(p => (axis === 'y' ? p[1] : p[0]))
-      const a = Math.min(...vs), b = Math.max(...vs)
-      if (b - a < length / split.count) blocked.push([a, b])
-    }
-  }
+  // A seam's overlap should miss the short cuts.
+  const blocked = shortCutsAlong(drawing, axis, length / split.count)
 
   const seamsMm: number[] = []
   let prev = start - r
@@ -240,7 +256,8 @@ export function splitForPassThrough(drawing: CutDrawing, plan: PassThroughPlan):
 /** The drawing as it should be exported for this reach: split when it has to be. */
 export function forReach(
   drawing: CutDrawing, reach: BenchPilotReach | null, bitMm = DEFAULT_PASS_THROUGH_BIT_MM,
+  feed?: BenchPilotFeed,
 ): CutDrawing {
-  const plan = reach && planPassThrough(drawing, reach, bitMm)
+  const plan = reach && planPassThrough(drawing, reach, bitMm, feed)
   return plan ? splitForPassThrough(drawing, plan) : drawing
 }

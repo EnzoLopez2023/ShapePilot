@@ -2,25 +2,26 @@
 import { useMemo, useRef } from 'react'
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle } from '@mui/material'
 import { safeFilename, triggerDownload } from '../../../export/download.ts'
-import type { BenchPilotReach } from '../../../model/benchpilot.ts'
+import type { BenchPilotFeed, BenchPilotReach } from '../../../model/benchpilot.ts'
 import { guideHtml } from '../export/guideHtml.ts'
 import type { CabinetParams } from '../model/cabinet.ts'
 
 export default function BuildGuideDialog(
-  { params, title, imperial, marginMm, reach, bitMm, onClose }: {
+  { params, title, imperial, marginMm, reach, bitMm, feed, onClose }: {
     params: CabinetParams
     title: string
     imperial: boolean
     marginMm: number
     reach: BenchPilotReach | null
     bitMm: number
+    feed: BenchPilotFeed
     onClose: () => void
   },
 ) {
   const frame = useRef<HTMLIFrameElement>(null)
   const html = useMemo(
-    () => guideHtml(params, { title, imperial, marginMm, reach, bitMm }),
-    [params, title, imperial, marginMm, reach, bitMm])
+    () => guideHtml(params, { title, imperial, marginMm, reach, bitMm, feed }),
+    [params, title, imperial, marginMm, reach, bitMm, feed])
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="md">
       <DialogTitle>Cut list and build guide</DialogTitle>

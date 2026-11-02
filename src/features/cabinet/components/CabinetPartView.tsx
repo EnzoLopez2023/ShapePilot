@@ -4,17 +4,21 @@
 // the router sees. The reach is anchored at the panel's origin corner; a part
 // that fits only when turned is drawn turned a quarter, so the picture shows
 // how it would sit inside the cut area. A part too long for it is laid along
-// the reach the way it passes through, with the export's seams drawn across it.
+// the reach the way it passes through -- sideways or front to back, as chosen --
+// with the export's seams drawn across it. With the tape shown, the ShaperTape
+// strips the part carries are laid across it, each marked with how far its
+// near edge sits from the part's top or left end.
 import { Alert, Box, Typography } from '@mui/material'
 import { CABINET_VARS } from './CabinetElevations.tsx'
 import { PANEL_DRAWINGS, PANEL_LABELS } from '../export/cutDrawing.ts'
 import type { PanelId } from '../export/cutDrawing.ts'
 import type { CabinetParams } from '../model/cabinet.ts'
 import { fitsReach } from '../../../model/benchpilot.ts'
-import type { BenchPilotReach } from '../../../model/benchpilot.ts'
+import type { BenchPilotFeed, BenchPilotReach } from '../../../model/benchpilot.ts'
 import { formatMeasure, formatSize } from '../../../units.ts'
 import type { Ring } from '../../../geometry/vec.ts'
 import { planPassThrough } from '../../../export/passThrough.ts'
+import { TAPE_PITCH_MM, TAPE_WIDTH_MM, tapeLayout } from '../../../export/shaperTape.ts'
 
 const PAD = 46
 const TICK = 5
@@ -28,9 +32,13 @@ const bounds = (rings: Ring[]) => {
   }
 }
 
+const FEED_LABEL: Record<BenchPilotFeed, string> = { sideways: 'left to right', 'front-to-back': 'front to back' }
+const OTHER_FEED: Record<BenchPilotFeed, BenchPilotFeed> = { sideways: 'front-to-back', 'front-to-back': 'sideways' }
+
 export default function CabinetPartView(
-  { panel, params, reach, imperial, bitMm }: {
+  { panel, params, reach, imperial, bitMm, feed, showTape }: {
     panel: PanelId; params: CabinetParams; reach: BenchPilotReach | null; imperial: boolean; bitMm: number
+    feed: BenchPilotFeed; showTape: boolean
   },
 ) {
   const drawing = PANEL_DRAWINGS[panel](params)
@@ -39,7 +47,8 @@ export default function CabinetPartView(
   const pockets = drawing.layers.filter(l => l.cutType === 'pocket')
 
   const fits = reach ? fitsReach(reach, w, h) : true
-  const plan = reach && !fits ? planPassThrough(drawing, reach, bitMm) : null
+  const plan = reach && !fits ? planPassThrough(drawing, reach, bitMm, feed) : null
+  const otherFeedWorks = !!reach && !fits && !plan && !!planPassThrough(drawing, reach, bitMm, OTHER_FEED[feed])
   // The reach's width runs across the picture, so a part is turned when its
   // length has to run the other way to fit -- or, passing through, to slide.
   const turned = plan
@@ -59,6 +68,22 @@ export default function CabinetPartView(
     : ''
   const ring = (r: Ring) => r.map(pt => place(pt as [number, number])).map(([x, y]) => `${x},${vh - y}`).join(' ')
 
+  // Tape strips across the part, placed, with each near edge measured from the
+  // part's top or left end as it sits on screen.
+  const tape = reach && showTape ? tapeLayout(drawing, imperial ? 25.4 / 8 : 1) : null
+  const strips = (tape?.stripsMm ?? []).map(s => {
+    const [a, b] = [s, s + TAPE_WIDTH_MM].map(v => v + (tape!.axis === 'y' ? minY : minX))
+    const r: Ring = tape!.axis === 'y'
+      ? [[minX, a], [minX + w, a], [minX + w, b], [minX, b]]
+      : [[a, minY], [b, minY], [b, minY + h], [a, minY + h]]
+    const pts = r.map(pt => place(pt as [number, number])).map(([x, y]) => [x, vh - y])
+    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1])
+    const box = { x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) }
+    const across = box.w < box.h // a tall, thin strip: the length runs across the screen
+    return { r, box, across, fromEndMm: across ? box.x : box.y - (vh - ph) }
+  }).sort((a, b) => a.fromEndMm - b.fromEndMm)
+  const tapeAcross = strips[0]?.across ?? true
+
   return (
     <Box sx={{ ...CABINET_VARS, p: 2, minHeight: 0, overflow: 'auto' }}>
       <Typography variant="subtitle2" component="h2" sx={{ mb: 1 }}>
@@ -72,7 +97,9 @@ export default function CabinetPartView(
               ? `Longer than the reach: exported in ${plan.windows.length} pass-through segments, ` +
                 `split at ${plan.seamsMm.map(v => formatMeasure(v - plan.startMm, imperial)).join(', ')} (dashed). ` +
                 'Tape and scan the whole board, cut what is in reach, slide it along, cut the rest.'
-              : 'Larger than the BenchPilot reach in both orientations.'}
+              : otherFeedWorks
+                ? `Too wide to feed ${FEED_LABEL[feed]} through the reach. Feed it ${FEED_LABEL[OTHER_FEED[feed]]} instead.`
+                : 'Larger than the BenchPilot reach in both orientations.'}
         </Alert>
       )}
       <svg
@@ -87,7 +114,8 @@ export default function CabinetPartView(
               x={0} y={vh - reach.heightMm} width={reach.widthMm} height={reach.heightMm}
               fill="var(--cab-reach)" fillOpacity={0.07} stroke="var(--cab-reach)" strokeWidth={1.2}
             />
-            <text x={4} y={vh - reach.heightMm - 6} fontSize={11} fill="var(--cab-reach)">
+            {/* Beside the part when it stands taller than the reach and would cover the label. */}
+            <text x={ph > reach.heightMm ? pw + 6 : 4} y={vh - reach.heightMm - 6} fontSize={11} fill="var(--cab-reach)">
               {reachLabel}
             </text>
           </g>
@@ -108,6 +136,18 @@ export default function CabinetPartView(
         {(drawing.guideRings ?? []).map((r, i) => (
           <polygon key={`g${i}`} points={ring(r)} fill="none" stroke="var(--cab-tray)" strokeWidth={0.6} />
         ))}
+        {strips.map(({ r, box, across, fromEndMm }, i) => (
+          <g key={`t${i}`}>
+            <polygon points={ring(r)} fill="var(--cab-tape)" fillOpacity={0.82} />
+            <text
+              x={box.x + box.w / 2} y={box.y + box.h / 2} textAnchor="middle" dominantBaseline="central"
+              fontSize={8} fill="#fff"
+              transform={across ? `rotate(-90 ${box.x + box.w / 2} ${box.y + box.h / 2})` : undefined}
+            >
+              {formatMeasure(fromEndMm, imperial)}
+            </text>
+          </g>
+        ))}
         {/* The part's own size, on the part as placed in the cut area. */}
         <g stroke="var(--cab-text)" strokeWidth={0.8} fill="var(--cab-text)">
           <line x1={0} y1={vh + 16} x2={pw} y2={vh + 16} />
@@ -127,6 +167,16 @@ export default function CabinetPartView(
           </text>
         </g>
       </svg>
+      {tape && strips.length > 0 && (
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+          ShaperTape: {strips.length} strip{strips.length === 1 ? '' : 's'} across the part, about{' '}
+          {formatMeasure(TAPE_PITCH_MM, imperial)} apart. Measured from the {tapeAcross ? 'left' : 'top'} end to each
+          strip&apos;s {tapeAcross ? 'left' : 'top'} edge:{' '}
+          {strips.map(s => formatMeasure(s.fromEndMm, imperial)).join(', ')}.
+          {' '}Each strip sits clear of the dados, so none is routed through
+          {tape.overCuts.length ? `, except strip ${tape.overCuts.map(i => i + 1).join(', ')}, which could not miss a cut` : ''}.
+        </Typography>
+      )}
     </Box>
   )
 }
