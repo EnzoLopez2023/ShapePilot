@@ -152,7 +152,7 @@ export default function FilamentsPage() {
 
   const stock = useMemo(() => {
     if (!usage?.ams) return []
-    return stockOf(usage.ams, key => ledgers.get(key)?.rollsOnHand ?? 0)
+    return stockOf(usage.ams, key => ledgers.get(key)?.rollsOnHand ?? 0, key => ledgers.get(key))
   }, [usage, ledgers])
 
   const stockByKey = useMemo(() => new Map(stock.map(entry => [entry.key, entry])), [stock])

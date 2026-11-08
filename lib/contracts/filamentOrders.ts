@@ -190,6 +190,13 @@ export interface ColorLedger {
   finished: number
   /** Of `finished`, how many only the person's mark accounts for. */
   finishedByHand: number
+  /**
+   * Grams printed past the end of the last roll that usage alone used up, or
+   * null when usage used up none, or a person's mark used up more. A small
+   * overrun beside a spool the AMS still reads as loaded means the estimate
+   * retired that spool early; the reorder check needs to know.
+   */
+  overrun: number | null
   /** Rolls not yet used up, spools and refills together. */
   rollsOnHand: number
   /** Rolls on hand by form, for the owned list's wire shape. */
@@ -242,6 +249,7 @@ export function ledgerOf(
       else break
     }
     const finished = Math.min(rolls.length, Math.max(byUsage, marked.get(key) ?? 0))
+    const usageGrams = rolls.slice(0, byUsage).reduce((sum, roll) => sum + roll.grams, 0)
     const finishedGrams = rolls.slice(0, finished).reduce((sum, roll) => sum + roll.grams, 0)
     const onHandByVariant = variantsZero()
     for (const roll of rolls.slice(finished)) onHandByVariant[roll.variant] += 1
@@ -258,6 +266,7 @@ export function ledgerOf(
       usedGrams: used,
       finished,
       finishedByHand: finished - byUsage,
+      overrun: byUsage > 0 && finished === byUsage ? used - usageGrams : null,
       rollsOnHand: rolls.length - finished,
       onHandByVariant,
       gramsAvailable: Math.max(0, purchasedGrams - Math.max(used, finishedGrams)),

@@ -72,6 +72,17 @@ test('a mark never brings back a roll usage has already used up', () => {
   expect(ledger.finishedByHand).toBe(0)
 })
 
+test('the overrun is how far usage ran past the roll it last used up', () => {
+  const orders = [order('2026-09-04', [line(BLACK, 'refill', 3, 12)])]
+  // Production on 2026-11-08: Light Gray, 2,028 g printed over three refills.
+  expect(ledgerOf(orders, new Map([[BLACK, 2028]])).get(BLACK)!.overrun).toBe(28)
+  // Usage that has used up nothing has nothing to overrun.
+  expect(ledgerOf(orders, new Map([[BLACK, 600]])).get(BLACK)!.overrun).toBeNull()
+  // A mark past usage means the person decided, not the estimate.
+  expect(ledgerOf(orders, new Map([[BLACK, 1100]]), [{ key: BLACK, finished: 2 }]).get(BLACK)!.overrun)
+    .toBeNull()
+})
+
 test('printing more than was bought says an order is missing', () => {
   const ledger = ledgerOf([order('2026-09-04', [line(BLACK, 'spool', 1, 20)])], new Map([[BLACK, 1300]])).get(BLACK)!
   expect(ledger.rollsOnHand).toBe(0)

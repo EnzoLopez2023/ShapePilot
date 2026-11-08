@@ -129,7 +129,7 @@ export async function checkReorderAlerts(
 
     // Rolls on hand, derived from orders and usage exactly as the page derives them.
     const shelf = await shelfOf(repos, owner)
-    const reorder = stockOf(ams, key => shelf.get(key)?.rollsOnHand ?? 0)
+    const reorder = stockOf(ams, key => shelf.get(key)?.rollsOnHand ?? 0, key => shelf.get(key))
       .filter(entry => entry.status === 'reorder')
     const due = new Set(reorder.map(entry => entry.key))
     const alerted = new Set(await repos.push.alertedKeys(owner))

@@ -298,7 +298,18 @@ test('an administrator sees how many colours to reorder on the Filaments link', 
       },
     },
     // Gray has a spare on the shelf; Cocoa Brown does not.
-    '/api/filaments': { owned: [{ key: 'bambu-lab/pla/basic/gray-10103', variant: 'spool', quantity: 2 }] },
+    '/api/filaments/orders': {
+      adjustments: [],
+      orders: [{
+        id: 'o1', createdAt: '', invoice: null, source: 'bambu-us-invoice', orderNumber: 'n1',
+        orderedAt: '2026-09-04', currency: 'USD', orderDiscount: 0, credit: 0, shipping: 0,
+        grandTotal: null, note: null,
+        lines: [{
+          key: 'bambu-lab/pla/basic/gray-10103', description: 'Gray', sku: null, variant: 'spool',
+          gramsPerUnit: 1000, quantity: 2, unitPrice: 20, discount: 0, tax: 0,
+        }],
+      }],
+    },
   }
   renderAt('/keycap-tray', 'admin')
   assert.ok(await screen.findByRole('link', { name: 'Filaments, 1 to reorder' }))

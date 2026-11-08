@@ -126,6 +126,25 @@ describe('deciding to reorder', () => {
     assert.equal(cocoa.loaded[0].remainingPercent, LOW_PERCENT)
   })
 
+  // Production on 2026-11-08: three Light Gray refills, 2,028 g printed by the
+  // slicer's estimate, the AMS reading 5% on the loaded one and an unopened
+  // refill on the shelf. Usage had already used up the loaded refill, so
+  // taking it off again subtracted the spare.
+  test('a spool usage has just used up is not taken off the shelf twice', () => {
+    const ams = production()
+    ams.slots[0].remainingPercent = 5
+    const usage = { usedGrams: 2028, overrun: 28 }
+    const cocoa = stockOf(ams, owning({ [COCOA]: 1 }), () => usage)
+      .find(entry => entry.key === COCOA)!
+    assert.deepEqual([cocoa.status, cocoa.spares], ['covered', 1])
+    // Past the drift, the spool on hand really is the loaded one.
+    assert.equal(stockOf(ams, owning({ [COCOA]: 1 }), () => ({ usedGrams: 2028, overrun: 400 }))
+      .find(entry => entry.key === COCOA)?.status, 'reorder')
+    // Usage that used up nothing leaves the count as it was.
+    assert.equal(stockOf(ams, owning({ [COCOA]: 1 }), () => ({ usedGrams: 0, overrun: null }))
+      .find(entry => entry.key === COCOA)?.status, 'reorder')
+  })
+
   test('an unreported percentage never warns, however few you own', () => {
     const ams = amsStockOf(snapshot([slot('0', '#6F5034FF', null)])) as AmsStock
     const cocoa = stockOf(ams, owning({}))[0]

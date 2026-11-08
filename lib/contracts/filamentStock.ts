@@ -17,6 +17,15 @@
 // colour loaded but never ticked in the inventory has no spares by definition,
 // which is the right answer: nothing on record says there is another one.
 //
+// Except when the inventory has already taken it off. Rolls are used up by
+// grams printed, and those are slicer estimates that run a few percent high,
+// so usage can pass the end of the spool still in the AMS while the AMS reads
+// 5% left on it. That spool is then not among the rolls on hand, and taking it
+// off again would subtract the unopened roll behind it. So when usage has just
+// used up a roll -- the grams it ran past, plus what the AMS still measures on
+// the low spool, within estimate drift -- the low spool is that roll, and is
+// not taken off twice.
+//
 // Slots whose percentage is unreported (a third-party spool, a hand-set tray)
 // and slots that do not match a catalogue colour are carried but never warn.
 // The AMS is the only thing here that knows how full a spool is, and where it
@@ -36,6 +45,22 @@ export const LOW_PERCENT = 20
 
 /** What a full Bambu spool or refill holds. The AMS reports a percentage of it. */
 export const SPOOL_GRAMS = 1000
+
+/**
+ * How far printed grams may run ahead of a spool before it is no longer the
+ * one usage just used up: a share of everything printed, since slicer error
+ * adds up, and never less than a floor.
+ */
+export const DRIFT_SHARE = 0.1
+export const MIN_DRIFT_GRAMS = 100
+
+/** What the inventory knows from printing, for the colour a slot holds. */
+export interface UsageShelf {
+  /** Grams printed of the colour, all told. */
+  usedGrams: number
+  /** Grams printed past the roll usage last used up; see `ColorLedger.overrun`. */
+  overrun: number | null
+}
 
 export interface LoadedSlot {
   amsId: string
@@ -127,7 +152,10 @@ export interface ColorStock {
   lowestPercent: number | null
   /** Spools and refills owned, per the inventory. */
   owned: number
-  /** `owned` minus loaded spools, never below zero. */
+  /**
+   * `owned` minus loaded spools, never below zero -- less one fewer when usage
+   * has already used up the low one.
+   */
   spares: number
   status: StockStatus
 }
@@ -137,9 +165,15 @@ export interface ColorStock {
  *
  * `ownedOf` is how many of a colour the inventory holds, spools and refills
  * together: a refill is loaded onto a spool, so either can replace an empty.
+ * `usageOf`, when given, is what printing says about the colour, so a spool
+ * usage has already used up is not taken off a second time (see the header).
  * Reorder warnings sort first, lowest percentage first.
  */
-export function stockOf(ams: AmsStock | null, ownedOf: (key: string) => number): ColorStock[] {
+export function stockOf(
+  ams: AmsStock | null,
+  ownedOf: (key: string) => number,
+  usageOf?: (key: string) => UsageShelf | undefined,
+): ColorStock[] {
   if (!ams) return []
   const byKey = new Map<string, LoadedSlot[]>()
   for (const slot of ams.slots) {
@@ -156,7 +190,11 @@ export function stockOf(ams: AmsStock | null, ownedOf: (key: string) => number):
       .filter((value): value is number => value !== null)
     const lowestPercent = reported.length > 0 ? Math.min(...reported) : null
     const owned = ownedOf(key)
-    const spares = Math.max(0, owned - loaded.length)
+    const usage = usageOf?.(key)
+    const retired = usage?.overrun != null && lowestPercent !== null
+      && (lowestPercent / 100) * SPOOL_GRAMS + usage.overrun
+        <= Math.max(MIN_DRIFT_GRAMS, DRIFT_SHARE * usage.usedGrams)
+    const spares = Math.max(0, owned - loaded.length + (retired ? 1 : 0))
     const low = lowestPercent !== null && lowestPercent <= LOW_PERCENT
     const status: StockStatus = !low ? 'ok' : spares === 0 ? 'reorder' : 'covered'
     return {

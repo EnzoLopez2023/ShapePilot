@@ -30,8 +30,8 @@ import { getSettings } from '../features/settings/preferences.ts'
 import type { AccountProfile } from '../features/settings/preferences.ts'
 import { AUTH_ENABLED } from '../auth/msal.ts'
 import { formatBuildStamp, useBuildStamp } from './buildStamp.ts'
-import { getFilamentUsage, getFilaments } from '../features/filaments/service.ts'
-import { ownedByColor, ticksToInventory } from '../features/filaments/model/types.ts'
+import { getFilamentUsage, getOrders } from '../features/filaments/service.ts'
+import { ledgerOf } from '../../lib/contracts/filamentOrders.ts'
 import { stockOf } from '../../lib/contracts/filamentStock.ts'
 
 interface NavItem {
@@ -140,12 +140,17 @@ function AppShellFrame() {
   useEffect(() => {
     if (role !== 'admin' || onFilaments) return
     let cancelled = false
-    void Promise.all([getFilaments(), getFilamentUsage()])
-      .then(([ticks, usage]) => {
+    void Promise.all([getOrders(), getFilamentUsage()])
+      .then(([book, usage]) => {
         if (cancelled) return
-        const totals = ownedByColor(ticksToInventory(ticks))
-        setReorderCount(stockOf(usage?.ams ?? null, key => totals.get(key) ?? 0)
-          .filter(entry => entry.status === 'reorder').length)
+        // The shelf exactly as the page derives it, so the badge never disagrees.
+        const used = new Map((usage?.colors ?? []).map(color => [color.key, color.grams]))
+        const ledgers = ledgerOf(book.orders, used, book.adjustments)
+        setReorderCount(stockOf(
+          usage?.ams ?? null,
+          key => ledgers.get(key)?.rollsOnHand ?? 0,
+          key => ledgers.get(key),
+        ).filter(entry => entry.status === 'reorder').length)
       })
       .catch(() => { if (!cancelled) setReorderCount(0) })
     return () => { cancelled = true }
