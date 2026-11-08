@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import {
-  Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton,
-  LinearProgress, Stack, TextField, Tooltip, Typography,
+  Alert, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel,
+  IconButton, LinearProgress, Radio, RadioGroup, Stack, TextField, Tooltip, Typography,
 } from '@mui/material'
 import UploadIcon from '@mui/icons-material/UploadFileOutlined'
 import EditIcon from '@mui/icons-material/EditOutlined'
@@ -12,6 +12,14 @@ import { useConfirm } from '../../../components/ConfirmDialogProvider.tsx'
 import { EmptyState, LoadingState } from '../../../components/LoadingState.tsx'
 import type { LabelList } from '../model/types.ts'
 import * as api from '../service.ts'
+import { suggestBinSize } from '../model/labelSize.ts'
+
+/** How "a bin per label" comes out: separate STLs, or laid out on build plates. */
+export interface BatchOptions {
+  format: 'zip' | '3mf' | 'studio'
+  /** Size each bin from the fastener length in its label, instead of this bin's size. */
+  sizeToLabel: boolean
+}
 
 export interface LabelListsPanelProps {
   lists: LabelList[]
@@ -21,8 +29,10 @@ export interface LabelListsPanelProps {
   onUse: (list: LabelList) => void
   onToast: (message: string) => void
   onError: (message: string) => void
-  /** Builds and zips one bin per item; reports progress as [done, total]. */
-  onExportAll: (list: LabelList, progress: (done: number, total: number) => void) => Promise<void>
+  /** Builds one bin per item; reports progress as [done, total]. */
+  onExportAll: (
+    list: LabelList, options: BatchOptions, progress: (done: number, total: number) => void,
+  ) => Promise<void>
 }
 
 interface Editing { id?: string; name: string; text: string }
@@ -35,6 +45,8 @@ export default function LabelListsPanel(
   const [editing, setEditing] = useState<Editing | null>(null)
   const [saving, setSaving] = useState(false)
   const [batch, setBatch] = useState<{ listId: string; done: number; total: number } | null>(null)
+  const [choosing, setChoosing] = useState<LabelList | null>(null)
+  const [options, setOptions] = useState<BatchOptions>({ format: '3mf', sizeToLabel: false })
 
   const upload = async (file: File) => {
     if (file.size > LABEL_LIST_LIMITS.maxFileBytes) {
@@ -91,9 +103,10 @@ export default function LabelListsPanel(
   }
 
   const exportAll = async (list: LabelList) => {
+    setChoosing(null)
     setBatch({ listId: list.id, done: 0, total: list.items.length })
     try {
-      await onExportAll(list, (done, total) => setBatch({ listId: list.id, done, total }))
+      await onExportAll(list, options, (done, total) => setBatch({ listId: list.id, done, total }))
     } catch (e) { onError((e as Error).message) } finally { setBatch(null) }
   }
 
@@ -166,13 +179,9 @@ export default function LabelListsPanel(
                 <Button size="small" disabled={list.id === activeListId} onClick={() => onUse(list)}>
                   Use for this bin
                 </Button>
-                <Tooltip title="One STL per label, this bin's size and options, zipped">
-                  <span>
-                    <Button size="small" disabled={!!batch} onClick={() => void exportAll(list)}>
-                      Export a bin per label
-                    </Button>
-                  </span>
-                </Tooltip>
+                <Button size="small" disabled={!!batch} onClick={() => setChoosing(list)}>
+                  Export a bin per label
+                </Button>
               </Stack>
               {running && batch && (
                 <Stack spacing={0.5}>
@@ -186,6 +195,45 @@ export default function LabelListsPanel(
           )
         })}
       </Stack>
+
+      <Dialog open={!!choosing} onClose={() => setChoosing(null)} fullWidth maxWidth="xs">
+        <DialogTitle>A bin per label</DialogTitle>
+        <DialogContent dividers>
+          {choosing && (() => {
+            const sized = choosing.items.filter(item => suggestBinSize(item)).length
+            return (
+              <Stack spacing={1.5}>
+                <Typography variant="body2" color="text.secondary">
+                  {choosing.items.length} bins from “{choosing.name}”, each with this bin’s options and its own label.
+                </Typography>
+                <RadioGroup
+                  value={options.format}
+                  onChange={e => setOptions(o => ({ ...o, format: e.target.value as BatchOptions['format'] }))}
+                >
+                  <FormControlLabel value="3mf" control={<Radio size="small" />} label="One 3MF, laid out on build plates" />
+                  <FormControlLabel value="studio" control={<Radio size="small" />} label="Open on build plates in Bambu Studio" />
+                  <FormControlLabel value="zip" control={<Radio size="small" />} label="Separate STL files (zip)" />
+                </RadioGroup>
+                <FormControlLabel
+                  control={(
+                    <Checkbox
+                      size="small" checked={options.sizeToLabel} disabled={!sized}
+                      onChange={e => setOptions(o => ({ ...o, sizeToLabel: e.target.checked }))}
+                    />
+                  )}
+                  label={sized
+                    ? `Size each bin to the screw length in its label (${sized} of ${choosing.items.length} name one)`
+                    : 'Size each bin to its label (none of these name a screw length)'}
+                />
+              </Stack>
+            )
+          })()}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setChoosing(null)}>Cancel</Button>
+          <Button variant="contained" onClick={() => choosing && void exportAll(choosing)}>Export</Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={!!editing} onClose={() => !saving && setEditing(null)} fullWidth maxWidth="sm">
         <DialogTitle>{editing?.id ? 'Edit label list' : 'New label list'}</DialogTitle>

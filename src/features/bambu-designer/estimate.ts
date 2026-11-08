@@ -63,3 +63,28 @@ export function printedGrams(mesh: Mesh, density: number): number {
 /** Whole grams, and never "0 g" for something that prints. */
 export const formatGrams = (grams: number): string =>
   grams > 0 && grams < 1 ? '< 1 g' : `${Math.round(grams)} g`
+
+/**
+ * A rough print time, minutes. The extruded volume at the average rate an X2D
+ * really manages on a 0.4 mm nozzle once slow outer walls, travel and
+ * acceleration are counted (well under the hotend's peak flow), plus a few
+ * seconds a layer for the layer change and its wipe. Same caveats as the
+ * weight: no supports, purge or prime tower.
+ */
+const EFFECTIVE_FLOW_MM3_PER_S = 8
+const LAYER_MM = 0.2
+const SECONDS_PER_LAYER = 3
+
+export function printMinutes(mesh: Mesh): number {
+  const { volume, area } = measure(mesh)
+  const shell = Math.min(volume, area * SHELL_MM)
+  const extruded = shell + (volume - shell) * INFILL
+  const layers = Math.ceil((mesh.bbox[5] - mesh.bbox[2]) / LAYER_MM)
+  return (extruded / EFFECTIVE_FLOW_MM3_PER_S + layers * SECONDS_PER_LAYER) / 60
+}
+
+/** "35 min", "1 h 20 min". */
+export function formatMinutes(minutes: number): string {
+  const m = Math.max(1, Math.round(minutes))
+  return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h${m % 60 ? ` ${m % 60} min` : ''}`
+}

@@ -164,3 +164,86 @@ export function writeThreeMfParts(
     modelXml(objects, [`<item objectid="${groupId}"/>`], title),
     modelSettingsXml(parts, title, groupId))
 }
+
+export interface PlateObject {
+  /** One body, or several that stay locked together as parts (a bin and its label). */
+  parts: readonly ThreeMfPart[]
+  name: string
+  /** 0-based build plate. */
+  plate: number
+}
+
+/**
+ * Bambu Studio lays its plates out in a grid in one shared world, each a bed
+ * width plus a fifth apart (PartPlate.hpp: LOGICAL_PART_PLATE_GAP = 1/5), with
+ * ceil(sqrt(n)) columns and later rows further back (−y). An object meant for
+ * plate i is written at that plate's origin, or Studio sees it off the bed.
+ */
+export function plateOrigin(plate: number, plates: number, bedMm: number): [number, number] {
+  const root = Math.sqrt(plates)
+  const cols = Math.max(1, root > Math.round(root) ? Math.round(root) + 1 : Math.round(root))
+  const stride = bedMm * (1 + 1 / 5)
+  const row = Math.floor(plate / cols)
+  return [(plate % cols) * stride, row ? -row * stride : 0]
+}
+
+/**
+ * Several separate objects already placed on one or more build plates -- a
+ * batch of bins ready to slice. Positions are baked into the vertices, as
+ * everywhere else here; `model_settings.config` says which plate each is on.
+ */
+export function writeThreeMfPlates(
+  objects: readonly PlateObject[], title: string, bedMm: number,
+): ArrayBuffer {
+  const xml: string[] = []
+  const items: string[] = []
+  const settings: string[] = []
+  const plateCount = Math.max(1, ...objects.map(o => o.plate + 1))
+  const onPlate: number[][] = Array.from({ length: plateCount }, () => [])
+  let nextId = 1
+  for (const object of objects) {
+    const [ox, oy] = plateOrigin(object.plate, plateCount, bedMm)
+    const ids = object.parts.map(part => {
+      const id = nextId++
+      const m = ox || oy ? shift(part.mesh, ox, oy) : part.mesh
+      xml.push(`<object id="${id}" type="model" name="${esc(part.name)}">${meshXml(m)}</object>`)
+      return id
+    })
+    let objectId = ids[0]
+    if (ids.length > 1) {
+      objectId = nextId++
+      xml.push(`<object id="${objectId}" type="model" name="${esc(object.name)}">`
+        + `<components>${ids.map(id => `<component objectid="${id}"/>`).join('')}</components></object>`)
+    }
+    items.push(`<item objectid="${objectId}"/>`)
+    onPlate[object.plate].push(objectId)
+    settings.push(`<object id="${objectId}">
+<metadata key="name" value="${esc(object.name)}"/>
+<metadata key="extruder" value="${object.parts[0].extruder ?? 1}"/>
+<metadata key="sparse_infill_pattern" value="${INFILL_PATTERN}"/>
+${ids.length > 1 ? object.parts.map((part, i) => `<part id="${ids[i]}" subtype="normal_part">
+<metadata key="name" value="${esc(part.name)}"/>
+<metadata key="matrix" value="${IDENTITY}"/>
+<metadata key="extruder" value="${part.extruder ?? 1}"/>
+</part>`).join('\n') : ''}
+</object>`)
+  }
+  const plates = onPlate.map((ids, i) => `<plate>
+<metadata key="plater_id" value="${i + 1}"/>
+<metadata key="plater_name" value=""/>
+<metadata key="locked" value="false"/>
+${ids.map(id => `<model_instance>
+<metadata key="object_id" value="${id}"/>
+<metadata key="instance_id" value="0"/>
+</model_instance>`).join('\n')}
+</plate>`).join('\n')
+  return pack(
+    modelXml(xml, items, title),
+    `<?xml version="1.0" encoding="UTF-8"?>\n<config>\n${settings.join('\n')}\n${plates}\n</config>`)
+}
+
+function shift(mesh: Mesh, dx: number, dy: number): Mesh {
+  const positions = new Float32Array(mesh.positions)
+  for (let i = 0; i < positions.length; i += 3) { positions[i] += dx; positions[i + 1] += dy }
+  return { ...mesh, positions }
+}

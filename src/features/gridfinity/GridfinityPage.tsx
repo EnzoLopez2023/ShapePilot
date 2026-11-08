@@ -7,7 +7,8 @@ import {
 import DeleteIcon from '@mui/icons-material/DeleteOutline'
 import { standardMenu, useAppMenu } from '../../components/menu/AppMenu.tsx'
 import { writeBinaryStl } from '../../export/stl.ts'
-import { writeThreeMf, writeThreeMfParts } from '../../export/threemf.ts'
+import { writeThreeMf, writeThreeMfParts, writeThreeMfPlates, type ThreeMfPart } from '../../export/threemf.ts'
+import { fillPlates } from '../../export/plates.ts'
 import { safeFilename, triggerDownload } from '../../export/download.ts'
 import { zipParts } from '../../export/zip.ts'
 import { openInBambuStudio } from '../../export/bambuStudio.ts'
@@ -33,10 +34,12 @@ import * as api from './service.ts'
 import BinPanel from './components/BinPanel.tsx'
 import BaseplatePanel from './components/BaseplatePanel.tsx'
 import BaseplatePlanView from './components/BaseplatePlanView.tsx'
-import LabelListsPanel from './components/LabelListsPanel.tsx'
+import LabelListsPanel, { type BatchOptions } from './components/LabelListsPanel.tsx'
+import { suggestBinSize } from './model/labelSize.ts'
+import { densityOf, formatGrams, formatMinutes, printMinutes, printedGrams } from '../bambu-designer/estimate.ts'
 import LayoutPanel from './components/LayoutPanel.tsx'
 import { binCounts, canPlace, resolveLayout, stackAt, type LayoutBin } from './model/layout.ts'
-import { DEFAULT_BIN } from '../../../lib/contracts/gridfinity.ts'
+import { DEFAULT_BIN, type GridfinityBinParams } from '../../../lib/contracts/gridfinity.ts'
 
 const SolidViewer3D = lazy(() => import('../../components/viewport3d/SolidViewer3D.tsx'))
 
@@ -46,6 +49,8 @@ const REBUILD_DELAY_MS = 200
 const TILE_GAP_MM = 6
 /** How far above its bin the lid floats in the preview, so the catches show. */
 const LID_LIFT_MM = 15
+/** Gap between the bin and its lid when the lid is shown as printed. */
+const LID_SIDE_GAP_MM = 10
 /** The label's preview colour when no owned filament is picked, so it still reads as its own body. */
 const LABEL_FALLBACK = '#e8b04a'
 
@@ -90,6 +95,7 @@ export default function GridfinityPage() {
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [openDialog, setOpenDialog] = useState(false)
+  const [lidView, setLidView] = useState<'seated' | 'print'>('seated')
 
   const loadGeneration = useRef(0)
   const answeredForUrl = useRef<string | null>(null)
@@ -231,6 +237,7 @@ export default function GridfinityPage() {
   // ---- Export ----
 
   const baseName = safeFilename(design.name)
+  const bedMm = design.baseplate.bedMm
 
   const downloadBin = (format: 'stl' | '3mf' | 'studio') => {
     if (bin.status !== 'ready') return
@@ -294,37 +301,68 @@ export default function GridfinityPage() {
   }
 
   const exportPerLabel = useCallback(async (
-    list: LabelList, progress: (done: number, total: number) => void,
+    list: LabelList, options: BatchOptions, progress: (done: number, total: number) => void,
   ) => {
-    const files: Record<string, Uint8Array> = {}
     const used = new Set<string>()
-    const size = `${design.bin.gridX}x${design.bin.gridY}x${design.bin.heightUnits}u`
+    const sizeOf = (b: GridfinityBinParams) => `${b.gridX}x${b.gridY}x${b.heightUnits}u`
+    const objects: { name: string; parts: ThreeMfPart[] }[] = []
+    const files: Record<string, Uint8Array> = {}
+    /** Plain lids are alike for a size, so the STL zip carries one per size. */
+    const plainLidSizes = new Map<string, GridfinityBinParams>()
+    const [bodySlot, labelSlot] = assignExtruders(
+      [{ filamentSlot: slotOf(colors.bin) }, { filamentSlot: slotOf(colors.label) }], maxSlot)
+    const withLabel = (main: ThreeMfPart, label: Mesh | null | undefined, name: string): ThreeMfPart[] =>
+      label ? [main, { mesh: label, name: `${name} label`, extruder: labelSlot }] : [main]
+
     for (let i = 0; i < list.items.length; i++) {
       progress(i, list.items.length)
       const text = list.items[i]
-      const item = { ...design.bin, labelTab: true, labelText: text }
+      const fit = options.sizeToLabel ? suggestBinSize(text) : null
+      const item = {
+        ...design.bin, labelTab: true, labelText: text,
+        ...(fit ? { gridX: fit.gridX, gridY: fit.gridY } : {}),
+      }
+      const size = sizeOf(item)
       const parts = await buildBinParts(item)
-      let stem = `${String(i + 1).padStart(2, '0')}_${safeFilename(text)}_${size}`
-      while (used.has(stem)) stem = `_${stem}`
-      used.add(stem)
-      Object.assign(files, binFiles(parts, stem, text))
-      // A labelled lid is one per bin; a plain one is shared, below.
-      if (lidHasText(item)) {
-        const lid = await buildLid(item)
-        if (lid) Object.assign(files, lidFiles(lid, `${stem}_lid`, `${text} lid`))
+      const lid = await buildLid(item)
+      if (options.format === 'zip') {
+        let stem = `${String(i + 1).padStart(2, '0')}_${safeFilename(text)}_${size}`
+        while (used.has(stem)) stem = `_${stem}`
+        used.add(stem)
+        Object.assign(files, binFiles(parts, stem, text))
+        // A labelled lid is one per bin; a plain one is shared, below.
+        if (lid && lidHasText(item)) Object.assign(files, lidFiles(lid, `${stem}_lid`, `${text} lid`))
+        else if (lid) plainLidSizes.set(size, item)
+      } else {
+        // On a plate every bin gets its own lid: they are printed, not shared.
+        objects.push({ name: text, parts: withLabel({ mesh: parts.body, name: text, extruder: bodySlot }, parts.label, text) })
+        if (lid) {
+          objects.push({
+            name: `${text} lid`,
+            parts: withLabel({ mesh: lid.print, name: `${text} lid`, extruder: bodySlot }, lid.label?.print, `${text} lid`),
+          })
+        }
       }
       // Yield so the progress bar paints between bins.
       await new Promise(r => setTimeout(r, 0))
     }
-    // Every bin in the run is the same size, so one plain lid serves them all.
-    if (!design.bin.lidLabel) {
-      const lid = await buildLid(design.bin)
-      if (lid) files[`lid_${size}.stl`] = new Uint8Array(writeBinaryStl(lid.print, `${size} lid`))
-    }
     progress(list.items.length, list.items.length)
-    triggerDownload(zipParts(files), `${safeFilename(list.name)}_${size}_bins.zip`, 'application/zip')
-    setToast(`Exported ${list.items.length} bins`)
-  }, [design.bin])
+    const stem = `${safeFilename(list.name)}_bins`
+    if (options.format === 'zip') {
+      for (const [size, item] of plainLidSizes) {
+        const lid = await buildLid(item)
+        if (lid) files[`lid_${size}.stl`] = new Uint8Array(writeBinaryStl(lid.print, `${size} lid`))
+      }
+      triggerDownload(zipParts(files), `${stem}.zip`, 'application/zip')
+      setToast(`Exported ${list.items.length} bins`)
+      return
+    }
+    const { placed, plates } = fillPlates(objects, bedMm)
+    const bytes = writeThreeMfPlates(placed, list.name, bedMm)
+    if (options.format === 'studio') void openInBambuStudio(bytes, list.name)
+    else triggerDownload(bytes, `${stem}.3mf`, 'model/3mf')
+    setToast(`${objects.length} parts on ${plates} ${plates === 1 ? 'plate' : 'plates'}`)
+  }, [design.bin, slotOf, colors.bin, colors.label, maxSlot, bedMm])
 
   // ---- Saved designs ----
 
@@ -422,15 +460,43 @@ export default function GridfinityPage() {
   const binExtras = useMemo(() => {
     const extras: { mesh: Mesh; color?: string }[] = []
     if (binParts?.label) extras.push({ mesh: binParts.label, color: hexOf(colors.label) ?? LABEL_FALLBACK })
-    if (binParts?.lid) extras.push({ mesh: translateMesh(binParts.lid.seated, 0, 0, LID_LIFT_MM), color: hexOf(colors.bin) })
-    if (binParts?.lid?.label) {
-      extras.push({
-        mesh: translateMesh(binParts.lid.label.seated, 0, 0, LID_LIFT_MM),
-        color: hexOf(colors.label) ?? LABEL_FALLBACK,
-      })
+    const lid = binParts?.lid
+    if (lid && binParts) {
+      // Seated: floating over the bin so the catches show. As printed: beside
+      // it, turned over onto its top, the way it goes on the plate.
+      const asPrinted = lidView === 'print'
+      const place = (mesh: Mesh) => (asPrinted
+        ? translateMesh(mesh, binParts.body.bbox[3] + LID_SIDE_GAP_MM - mesh.bbox[0], 0, 0)
+        : translateMesh(mesh, 0, 0, LID_LIFT_MM))
+      extras.push({ mesh: place(asPrinted ? lid.print : lid.seated), color: hexOf(colors.bin) })
+      if (lid.label) {
+        extras.push({
+          mesh: asPrinted
+            ? translateMesh(lid.label.print, binParts.body.bbox[3] + LID_SIDE_GAP_MM - lid.print.bbox[0], 0, 0)
+            : place(lid.label.seated),
+          color: hexOf(colors.label) ?? LABEL_FALLBACK,
+        })
+      }
     }
     return extras.length ? extras : undefined
-  }, [binParts, hexOf, colors.label, colors.bin])
+  }, [binParts, hexOf, colors.label, colors.bin, lidView])
+
+  /** Rough filament and time, bin and lid apart: they are often printed separately. */
+  const estimate = useMemo(() => {
+    if (!binParts) return null
+    const density = densityOf(colors.bin?.split('/')[1])
+    const of = (meshes: (Mesh | null | undefined)[]) => {
+      const present = meshes.filter((m): m is Mesh => !!m)
+      return {
+        grams: present.reduce((g, m) => g + printedGrams(m, density), 0),
+        minutes: present.reduce((t, m) => t + printMinutes(m), 0),
+      }
+    }
+    return {
+      bin: of([binParts.body, binParts.label]),
+      lid: binParts.lid ? of([binParts.lid.print, binParts.lid.label?.print]) : null,
+    }
+  }, [binParts, colors.bin])
   const exportReady = isBin ? bin.status === 'ready' : !plan.problem
 
   const canvas = isBin ? (
@@ -466,7 +532,12 @@ export default function GridfinityPage() {
   ) : <LoadingState label={`Building ${plan.tiles.length} baseplate tiles…`} />
 
   const canvasStatus = isBin
-    ? (bin.status === 'building' && binMesh ? 'Rebuilding…' : binMesh ? `${binMesh.triangleCount.toLocaleString()} triangles` : '')
+    ? (bin.status === 'building' && binMesh ? 'Rebuilding…' : estimate
+        ? [
+            `Bin ≈ ${formatGrams(estimate.bin.grams)}, ${formatMinutes(estimate.bin.minutes)}`,
+            estimate.lid ? `lid ≈ ${formatGrams(estimate.lid.grams)}, ${formatMinutes(estimate.lid.minutes)}` : '',
+          ].filter(Boolean).join(' · ')
+        : '')
     : plan.problem ? '' : `${plan.cellsX} × ${plan.cellsY} cells · ${plan.tiles.length} ${plan.tiles.length === 1 ? 'tile' : 'tiles'}`
 
   useAppMenu(standardMenu({
@@ -519,6 +590,16 @@ export default function GridfinityPage() {
             <ToggleButton value="bin">Storage bin</ToggleButton>
             <ToggleButton value="baseplate">Drawer baseplate</ToggleButton>
           </ToggleButtonGroup>
+
+          {isBin && design.bin.lid && design.bin.stackingLip && (
+            <ToggleButtonGroup
+              exclusive size="small" value={lidView} aria-label="How the lid is shown"
+              onChange={(_e, v: 'seated' | 'print' | null) => v && setLidView(v)}
+            >
+              <ToggleButton value="seated">Lid on the bin</ToggleButton>
+              <ToggleButton value="print">Lid as printed</ToggleButton>
+            </ToggleButtonGroup>
+          )}
 
           {!isBin && (
             <ToggleButtonGroup

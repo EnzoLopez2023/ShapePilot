@@ -1,5 +1,5 @@
 import {
-  Autocomplete, Divider, FormControlLabel, IconButton, MenuItem, Stack, Switch,
+  Autocomplete, Button, Divider, FormControlLabel, IconButton, MenuItem, Stack, Switch,
   TextField, Tooltip, Typography,
 } from '@mui/material'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
@@ -11,6 +11,7 @@ import { mmToInches } from '../../../units.ts'
 import { BIN_CLEARANCE_MM, LIP_HEIGHT_MM, binDimensions } from '../geometry/bin.ts'
 import { LID_TOP_MM } from '../geometry/lid.ts'
 import type { LabelList } from '../model/types.ts'
+import { liesFlat, suggestBinSize } from '../model/labelSize.ts'
 import type { BinColors } from '../state/viewSettings.ts'
 import OwnedColorSelect from '../../filaments/components/OwnedColorSelect.tsx'
 import type { OwnedColor } from '../../filaments/useOwnedColors.ts'
@@ -50,6 +51,9 @@ export default function BinPanel(
   const list = lists.find(l => l.id === bin.labelListId)
   const items = list?.items ?? []
   const index = items.indexOf(bin.labelText)
+  const fit = bin.labelTab ? suggestBinSize(bin.labelText) : null
+  const fitIsCurrent = fit && fit.gridX === bin.gridX && fit.gridY === bin.gridY
+  const tooShort = fit && !liesFlat(bin.gridX, bin.gridY, fit.lengthMm)
 
   const step = (by: number) => {
     if (!items.length) return
@@ -217,6 +221,18 @@ export default function BinPanel(
         <Typography variant="body2" color="text.secondary">
           Item {index + 1} of {items.length} in {list?.name}
         </Typography>
+      )}
+      {fit && !fitIsCurrent && (
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+          <Typography variant="body2" color={tooShort ? 'warning.main' : 'text.secondary'} sx={{ flex: 1 }}>
+            {tooShort
+              ? `A ${+fit.lengthMm.toFixed(1)} mm screw won’t lie flat in this bin. ${fit.gridX} × ${fit.gridY} fits it.`
+              : `A ${+fit.lengthMm.toFixed(1)} mm screw lies flat in a ${fit.gridX} × ${fit.gridY}.`}
+          </Typography>
+          <Button size="small" onClick={() => onBin({ gridX: fit.gridX, gridY: fit.gridY })}>
+            Use {fit.gridX} × {fit.gridY}
+          </Button>
+        </Stack>
       )}
       <TextField
         select size="small" label="Text height" value={bin.textSizeMm}
