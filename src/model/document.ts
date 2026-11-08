@@ -57,7 +57,7 @@ export interface SceneObjectBase {
 export type Contour = readonly (readonly [number, number])[]
 
 export type Shape2DKind =
-  'circle' | 'ellipse' | 'rect' | 'square' | 'triangle' | 'polygon' | 'skadis'
+  'circle' | 'ellipse' | 'rect' | 'square' | 'triangle' | 'polygon' | 'skadis' | 'mft'
 
 /**
  * One flat bag rather than a union per shape: the hand-written validator stays
@@ -72,6 +72,18 @@ export interface Shape2DParams {
   /** Regular polygon only. 3..64. */
   sides?: number
   cornerRadiusMm?: number
+  /** MFT top only: dog-hole diameter, grid pitch, and the least distance from
+   *  an edge to the nearest hole centre. */
+  holeDiameterMm?: number
+  pitchMm?: number
+  edgeMarginMm?: number
+  /** MFT top only: 1 adds the Shaper Workstation's / support leg's screw
+   *  holes, with counterbores unless `counterboreDepthMm` is 0. */
+  workstationScrews?: number
+  legScrews?: number
+  screwDiameterMm?: number
+  counterboreDiameterMm?: number
+  counterboreDepthMm?: number
 }
 
 export type SolidKind = 'box' | 'cylinder' | 'sphere' | 'cone' | 'torus' | 'wedge'

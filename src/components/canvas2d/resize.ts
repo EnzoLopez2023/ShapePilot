@@ -199,8 +199,10 @@ export function resizerFor(object: SceneObject): Resizer | null {
           radiusYMm: (p.radiusYMm ?? p.radiusMm ?? 10) * fy,
         }),
       }
+    // An MFT top is any size: the grid re-centres itself, so the drag is free.
     case 'rect':
     case 'triangle':
+    case 'mft':
       return {
         uniform: false,
         normalize: identityFactors,

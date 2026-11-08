@@ -11,6 +11,7 @@ import {
 import {
   SKADIS_DEFAULT_HEIGHT_MM, SKADIS_DEFAULT_WIDTH_MM, skadisRings,
 } from './skadis.ts'
+import { mftCounterboreRings, mftRings, resolveMftScrews } from './mft.ts'
 import type { Contour, PathObject, SceneObject, Shape2DObject, TextObject } from '../model/document.ts'
 
 /**
@@ -69,6 +70,24 @@ function shape2dRings(o: Shape2DObject): Ring[] {
     case 'skadis':
       return skadisRings(p.widthMm ?? SKADIS_DEFAULT_WIDTH_MM,
         p.heightMm ?? SKADIS_DEFAULT_HEIGHT_MM)
+    case 'mft':
+      return mftRings(p)
+  }
+}
+
+/**
+ * Pockets an object carries on top of its own outline, in document space --
+ * so far only an MFT top's screw counterbores. They cannot ride in the
+ * object's rings: nested inside a through-hole's ring they would read as an
+ * island in it. Empty for everything else, and for a hidden object.
+ */
+export function objectPockets(o: SceneObject): { polygons: MultiPolygon; depthMm: number } | null {
+  if (o.type !== 'shape2d' || o.shape !== 'mft' || !o.visible) return null
+  const rings = mftCounterboreRings(o.params)
+  if (!rings.length) return null
+  return {
+    polygons: normalizeMulti(place(rings, o).map(r => [r] as Polygon)),
+    depthMm: resolveMftScrews(o.params).counterboreDepthMm,
   }
 }
 

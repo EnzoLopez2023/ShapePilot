@@ -18,7 +18,7 @@ import { useConfirm } from '../../components/ConfirmDialogProvider.tsx'
 import { standardMenu, useAppMenu } from '../../components/menu/AppMenu.tsx'
 import { union, difference } from '../../geometry/boolean.ts'
 import { LoadingState } from '../../components/LoadingState.tsx'
-import { compileObject, openPathRings } from '../../geometry/sceneShapes.ts'
+import { compileObject, objectPockets, openPathRings } from '../../geometry/sceneShapes.ts'
 import type { PathObject, SceneObject } from '../../model/document.ts'
 import { BENCHPILOT_REACH, fitsReach } from '../../model/benchpilot.ts'
 import type { BenchPilotMount } from '../../model/benchpilot.ts'
@@ -101,6 +101,7 @@ export default function ShaperDesignerPage() {
       .filter(o => o.visible)
       .map(o => {
         const open = openPathRings(o)
+        const pockets = objectPockets(o)
         return {
           id: o.id,
           name: o.name,
@@ -111,6 +112,7 @@ export default function ShaperDesignerPage() {
           mode: o.mode,
           cutType: open.length ? (o.cut?.type === 'guide' ? 'guide' as const : 'online' as const) : o.cut?.type,
           locked: o.locked,
+          ...(pockets ? { pockets: pockets.polygons } : {}),
         }
       })
       .filter(s => s.polygons.length),

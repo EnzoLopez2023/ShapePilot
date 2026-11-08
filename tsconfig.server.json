@@ -36,6 +36,7 @@
     "src/geometry/vec.ts",
     "src/geometry/bands.ts",
     "src/geometry/skadis.ts",
+    "src/geometry/mft.ts",
     "src/geometry/primitives.ts",
     "src/geometry/boolean.ts",
     "src/geometry/tjunction.ts",

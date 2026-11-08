@@ -15,6 +15,10 @@ import {
   SKADIS, SKADIS_DEFAULT_HEIGHT_MM, SKADIS_DEFAULT_WIDTH_MM,
   skadisSlotCentres, snapSkadisHeightMm, snapSkadisWidthMm,
 } from '../../geometry/skadis.ts'
+import {
+  MFT, MFT_DEFAULT_DEPTH_MM, MFT_DEFAULT_WIDTH_MM, SHAPER_SCREWS,
+  mftDogCentres, mftGridSize, mftScrewCentres, mftScrewsWanted, resolveMftGrid, resolveMftScrews,
+} from '../../geometry/mft.ts'
 import AngleField from '../AngleField.tsx'
 import { EmptyState } from '../LoadingState.tsx'
 import { localAxisFor, rescaledByPercent, resizedScale } from './resize.ts'
@@ -229,6 +233,14 @@ function objectDimensions(
           length('Width', 'widthMm', SKADIS_DEFAULT_WIDTH_MM, snapSkadisWidthMm),
           length('Height', 'heightMm', SKADIS_DEFAULT_HEIGHT_MM, snapSkadisHeightMm),
         ],
+        mft: [
+          length('Width', 'widthMm', MFT_DEFAULT_WIDTH_MM),
+          length('Depth', 'heightMm', MFT_DEFAULT_DEPTH_MM),
+          length('Corner radius', 'cornerRadiusMm', MFT.cornerRadiusMm),
+          length('Dog hole', 'holeDiameterMm', MFT.holeDiameterMm),
+          length('Grid pitch', 'pitchMm', MFT.pitchMm),
+          length('Edge margin', 'edgeMarginMm', MFT.edgeMarginMm),
+        ],
       }[object.shape]
       return (
         <>
@@ -236,6 +248,31 @@ function objectDimensions(
           <Typography variant="h3">Size</Typography>
           {fields}
           {object.shape === 'skadis' && <SkadisNote object={object} imperial={imperial} />}
+          {object.shape === 'mft' && <MftNote object={object} />}
+          {object.shape === 'mft' && (
+            <>
+              {([
+                ['workstationScrews', 'Workstation screw holes'],
+                ['legScrews', 'Support leg screw holes'],
+              ] as const).map(([key, label]) => (
+                <FormControlLabel
+                  key={key}
+                  control={
+                    <Switch
+                      size="small" checked={Boolean(object.params[key])}
+                      onChange={e => setParam(key, e.target.checked ? 1 : 0)}
+                    />
+                  }
+                  label={<Typography variant="body2">{label}</Typography>}
+                />
+              ))}
+              {mftScrewsWanted(object.params) > 0 && [
+                length('Screw hole', 'screwDiameterMm', SHAPER_SCREWS.holeDiameterMm),
+                length('Counterbore', 'counterboreDiameterMm', SHAPER_SCREWS.counterboreDiameterMm),
+                length('Counterbore depth', 'counterboreDepthMm', SHAPER_SCREWS.counterboreDepthMm),
+              ]}
+            </>
+          )}
           {thickness()}
         </>
       )
@@ -493,6 +530,38 @@ function SkadisNote({ object, imperial }: { object: Shape2DObject; imperial: boo
       {size} · {slots} slots. Width snaps to {SKADIS.columnPitchMm} mm and height
       to {SKADIS.rowPitchMm} mm, which is what keeps every edge slot centred
       exactly {SKADIS.edgeMarginMm} mm from the edge.
+    </Typography>
+  )
+}
+
+/**
+ * How many dog holes the top gets. The grid is centred, so a size that is not
+ * a whole number of pitches loses a row or column rather than crowding an edge
+ * -- worth saying, or a typed 1100 dropping to 11 columns looks like a bug.
+ */
+function MftNote({ object }: { object: Shape2DObject }) {
+  const p = object.params
+  const grid = resolveMftGrid(p)
+  const w = p.widthMm ?? MFT_DEFAULT_WIDTH_MM
+  const h = p.heightMm ?? MFT_DEFAULT_DEPTH_MM
+  const [cols, rows] = mftGridSize(w, h, grid)
+  const dogs = mftDogCentres(w, h, p).length
+  const screws = mftScrewCentres(w, h, p).length
+  const skipped = cols * rows - dogs
+  const wanted = mftScrewsWanted(p)
+  const cb = resolveMftScrews(p)
+  return (
+    <Typography variant="caption" color="text.secondary">
+      {cols} × {rows} grid, {dogs} dog holes of {grid.holeDiameterMm} mm on
+      a {grid.pitchMm} mm pitch, centred, every hole at least {grid.edgeMarginMm} mm
+      from the edge. The defaults are Festool MFT/3; a width or depth that is a
+      whole number of pitches lets tops butted together continue one grid.
+      {wanted > 0 && ` ${screws} screw holes`
+        + (cb.counterboreDepthMm
+          ? `, each under a ${cb.counterboreDiameterMm} mm counterbore ${cb.counterboreDepthMm} mm deep`
+          : ', no counterbores')
+        + (skipped ? `; ${skipped} dog holes left out to clear them.` : '.')}
+      {screws < wanted && ` ${wanted - screws} screws fall off this panel and are not cut.`}
     </Typography>
   )
 }

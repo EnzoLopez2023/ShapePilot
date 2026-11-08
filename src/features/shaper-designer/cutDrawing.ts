@@ -6,7 +6,7 @@
 // over its own pockets.
 import type { MultiPolygon, Ring } from '../../geometry/vec.ts'
 import { union } from '../../geometry/boolean.ts'
-import { compileObject, openPathRings } from '../../geometry/sceneShapes.ts'
+import { compileObject, objectPockets, openPathRings } from '../../geometry/sceneShapes.ts'
 import type { CompileOptions } from '../../geometry/sceneShapes.ts'
 import type { CutType, DesignDocument, SceneObject } from '../../model/document.ts'
 import type { CutDrawing, CutLayer } from '../../export/cutLayers.ts'
@@ -27,12 +27,14 @@ const LAYER_LABEL: Record<CutType, string> = {
 
 export const cutTypeOf = (o: SceneObject): CutType => o.cut?.type ?? 'exterior'
 
-const isPegboard = (o: SceneObject): boolean => o.type === 'shape2d' && o.shape === 'skadis'
+/** Shapes that carry their own through-holes: a pegboard's slots, an MFT top's dog holes. */
+const isPegboard = (o: SceneObject): boolean =>
+  o.type === 'shape2d' && (o.shape === 'skadis' || o.shape === 'mft')
 
 /**
  * Which layers one object feeds, and with what.
  *
- * Almost everything feeds one layer. A pegboard feeds two: Origin reads the
+ * Almost everything feeds one layer. A pegboard (or an MFT top) feeds two: Origin reads the
  * bit's behaviour from the colour of a path, so the outline that frees the
  * board and the slots that go through it cannot share a layer. Sent as a single
  * holed path the slots would inherit the outline's cut type and never be cut.
@@ -66,6 +68,12 @@ export function sceneCutDrawing(doc: DesignDocument, opts: CompileOptions = {}):
       const bucket = byType.get(type) ?? []
       bucket.push(contribution)
       byType.set(type, bucket)
+    }
+    // An MFT top's counterbores are pockets whatever the top's own cut type.
+    const pockets = objectPockets(object)
+    if (pockets) {
+      byType.set('pocket', [...(byType.get('pocket') ?? []), pockets.polygons])
+      depths.set('pocket', Math.max(depths.get('pocket') ?? 0, pockets.depthMm))
     }
     const type = cutTypeOf(object)
     if (type === 'pocket' && object.cut?.depthMm !== undefined) {
@@ -103,6 +111,8 @@ export function conflictingPocketDepths(doc: DesignDocument): number[] {
   const depths = new Set<number>()
   for (const o of doc.objects) {
     if (o.visible && cutTypeOf(o) === 'pocket') depths.add(o.cut?.depthMm ?? 3)
+    const pockets = objectPockets(o)
+    if (pockets) depths.add(pockets.depthMm)
   }
   return depths.size > 1 ? [...depths].sort((a, b) => a - b) : []
 }

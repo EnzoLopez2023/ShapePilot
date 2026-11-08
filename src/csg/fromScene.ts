@@ -14,6 +14,7 @@ import { nestRings } from '../geometry/nest.ts'
 import {
   SKADIS_DEFAULT_HEIGHT_MM, SKADIS_DEFAULT_WIDTH_MM, skadisRings,
 } from '../geometry/skadis.ts'
+import { mftRings } from '../geometry/mft.ts'
 import type { TextOutlines } from '../geometry/sceneShapes.ts'
 
 export interface FromSceneOptions {
@@ -52,6 +53,8 @@ function shape2dRings(o: Shape2DObject): Ring[] {
     case 'skadis':
       return skadisRings(p.widthMm ?? SKADIS_DEFAULT_WIDTH_MM,
         p.heightMm ?? SKADIS_DEFAULT_HEIGHT_MM)
+    case 'mft':
+      return mftRings(p)
   }
 }
 

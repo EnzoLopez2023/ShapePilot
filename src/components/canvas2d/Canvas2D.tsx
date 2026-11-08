@@ -34,6 +34,9 @@ export interface CanvasShape {
   mode: 'solid' | 'hole'
   cutType?: CutType
   locked: boolean
+  /** Pockets the object carries on top of its own cut -- an MFT top's screw
+   *  counterbores. Drawn over it in the pocket colour; not hit-tested. */
+  pockets?: MultiPolygon
 }
 
 export interface Canvas2DProps {
@@ -142,7 +145,11 @@ export default function Canvas2D(props: Canvas2DProps) {
   } | null>(null)
 
   const paths = useMemo(
-    () => shapes.map(s => ({ shape: s, d: multiToPath(s.polygons, s.openRings) })), [shapes])
+    () => shapes.map(s => ({
+      shape: s,
+      d: multiToPath(s.polygons, s.openRings),
+      pocketD: s.pockets?.length ? multiToPath(s.pockets) : null,
+    })), [shapes])
 
   const contentBBox = useMemo(() => {
     const all = shapes.flatMap(s => s.polygons)
@@ -546,7 +553,7 @@ export default function Canvas2D(props: Canvas2DProps) {
             />
           )}
 
-          {paths.map(({ shape, d }) => {
+          {paths.map(({ shape, d, pocketD }) => {
             const selected = selection.has(shape.id)
             const moving = selected && drag ? { x: drag.dx, y: drag.dy } : null
             const turning = rotateDrag?.id === shape.id ? rotateDrag : null
@@ -585,6 +592,9 @@ export default function Canvas2D(props: Canvas2DProps) {
                   style={{ cursor: shape.locked ? 'not-allowed' : 'move' }}
                   onPointerDown={e => beginDrag(e, shape)}
                 />
+                {pocketD && (
+                  <path d={pocketD} fill={colours.pocket} fillRule="evenodd" pointerEvents="none" />
+                )}
               </g>
             )
           })}

@@ -15,7 +15,9 @@ import type {
 import { DESIGN_DOCUMENT_KINDS } from '../../lib/db/repositories/contracts.ts'
 
 export const OBJECT_TYPES = ['shape2d', 'path', 'text', 'solid', 'imported', 'group'] as const
-export const SHAPE_KINDS = ['circle', 'ellipse', 'rect', 'square', 'triangle', 'polygon'] as const
+export const SHAPE_KINDS = [
+  'circle', 'ellipse', 'rect', 'square', 'triangle', 'polygon', 'skadis', 'mft',
+] as const
 export const SOLID_KINDS = ['box', 'cylinder', 'sphere', 'cone', 'torus', 'wedge'] as const
 export const IMPORT_FORMATS = ['stl', 'obj', 'svg', 'dxf', '3mf'] as const
 export const OBJECT_MODES = ['solid', 'hole'] as const
@@ -169,7 +171,9 @@ function validateCut(value: unknown, field: string): Record<string, unknown> | u
 
 const BASE_KEYS = ['id', 'name', 'transform', 'mode', 'visible', 'locked', 'color', 'filamentSlot', 'cut', 'type']
 const SHAPE_PARAM_KEYS =
-  ['widthMm', 'heightMm', 'radiusMm', 'radiusYMm', 'sides', 'cornerRadiusMm'] as const
+  ['widthMm', 'heightMm', 'radiusMm', 'radiusYMm', 'sides', 'cornerRadiusMm',
+    'holeDiameterMm', 'pitchMm', 'edgeMarginMm', 'workstationScrews', 'legScrews',
+    'screwDiameterMm', 'counterboreDiameterMm', 'counterboreDepthMm'] as const
 const SOLID_PARAM_KEYS = [
   'widthMm', 'depthMm', 'heightMm', 'radiusMm', 'topRadiusMm', 'tubeMm',
   'cornerRadiusMm', 'segments',

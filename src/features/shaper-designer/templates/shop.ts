@@ -4,11 +4,12 @@ import type { DesignDocument } from '../../../model/document.ts'
 import type { Ring, Vec2 } from '../../../geometry/vec.ts'
 import { difference, union } from '../../../geometry/boolean.ts'
 import { getPreset } from '../../../model/trayProfile.ts'
+import { MFT } from '../../../geometry/mft.ts'
 import { circle, roundedRect } from './outline.ts'
 import { outline, part, templateDocument } from './sceneParts.ts'
 
 /** 20 mm holes on the 96 mm grid Festool's MFT tops and most bench dogs use. */
-export const DOG_GRID = { holeMm: 20, pitchMm: 96, columns: 8, rows: 5 }
+export const DOG_GRID = { holeMm: MFT.holeDiameterMm, pitchMm: MFT.pitchMm, columns: 8, rows: 5 }
 
 export function dogHoleGrid(): DesignDocument {
   const { holeMm, pitchMm, columns, rows } = DOG_GRID

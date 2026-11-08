@@ -10,6 +10,7 @@ import { defaultMachineFor } from './machines.ts'
 import {
   SKADIS_DEFAULT_HEIGHT_MM, SKADIS_DEFAULT_WIDTH_MM,
 } from '../geometry/skadis.ts'
+import { MFT, MFT_DEFAULT_DEPTH_MM, MFT_DEFAULT_WIDTH_MM } from '../geometry/mft.ts'
 
 export const IDENTITY_TRANSFORM: Transform = {
   position: [0, 0, 0],
@@ -38,6 +39,11 @@ const SHAPE_DEFAULTS: Record<Shape2DKind, Shape2DParams> = {
   triangle: { widthMm: 30, heightMm: 26 },
   polygon: { radiusMm: 18, sides: 6 },
   skadis: { widthMm: SKADIS_DEFAULT_WIDTH_MM, heightMm: SKADIS_DEFAULT_HEIGHT_MM },
+  mft: {
+    widthMm: MFT_DEFAULT_WIDTH_MM, heightMm: MFT_DEFAULT_DEPTH_MM,
+    holeDiameterMm: MFT.holeDiameterMm, pitchMm: MFT.pitchMm,
+    edgeMarginMm: MFT.edgeMarginMm, cornerRadiusMm: MFT.cornerRadiusMm,
+  },
 }
 
 export const SHAPE_LABELS: Record<Shape2DKind, string> = {
@@ -48,6 +54,7 @@ export const SHAPE_LABELS: Record<Shape2DKind, string> = {
   triangle: 'Triangle',
   polygon: 'Polygon',
   skadis: 'Skadis pegboard',
+  mft: 'MFT table top',
 }
 
 export function createShape2D(
