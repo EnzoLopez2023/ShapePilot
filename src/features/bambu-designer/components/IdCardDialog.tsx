@@ -95,7 +95,7 @@ function IdCardForm({ initial, kit, ams, colors, busy, onApply, onClose }:
       <Stack spacing={1}>
         <Typography variant="subtitle2">{label}</Typography>
         <FilamentSlotField object={value} ams={ams} onPatch={onPatch} quiet />
-        <FilamentColorField object={value} colors={colors} onPatch={onPatch} />
+        <FilamentColorField object={value} colors={colors} trays={ams.trays} onPatch={onPatch} />
       </Stack>
     )
   }

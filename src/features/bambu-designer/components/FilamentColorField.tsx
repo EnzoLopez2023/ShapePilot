@@ -8,10 +8,13 @@
 import type { SceneObject } from '../../../model/document.ts'
 import type { OwnedColor } from '../../filaments/useOwnedColors.ts'
 import OwnedColorSelect from '../../filaments/components/OwnedColorSelect.tsx'
+import { loadedFirst, type AmsTray } from '../amsTrays.ts'
 
-export default function FilamentColorField({ object, colors, onPatch, label = 'Colour' }: {
+export default function FilamentColorField({ object, colors, trays, onPatch, label = 'Colour' }: {
   object: Pick<SceneObject, 'color'>
   colors: readonly OwnedColor[]
+  /** The loaded AMS trays: their colours are listed first and say where they sit. */
+  trays: readonly AmsTray[] | null
   onPatch: (patch: Partial<SceneObject>) => void
   label?: string
 }) {
@@ -24,9 +27,13 @@ export default function FilamentColorField({ object, colors, onPatch, label = 'C
   return (
     <OwnedColorSelect
       label={label}
-      colors={colors}
+      colors={loadedFirst(colors, trays)}
       value={current?.key ?? null}
       onChange={choice => onPatch({ color: choice?.hexes[0] })}
+      note={color => {
+        const tray = trays?.find(t => t.key === color.key)
+        return tray ? `in ${tray.label}` : null
+      }}
     />
   )
 }

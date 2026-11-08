@@ -116,3 +116,19 @@ export function filamentWarnings(
   }
   return warnings
 }
+
+/**
+ * Colours loaded in the AMS first, in tray order (A1-A4, then B1-B4), and the
+ * rest after them in the order they came in -- what every filament picker
+ * lists, so the spools you can print with right now are at the top.
+ */
+export function loadedFirst<T extends { key: string }>(
+  colors: readonly T[], trays: readonly AmsTray[] | null,
+): T[] {
+  const slotOf = new Map<string, number>()
+  for (const tray of trays ?? []) {
+    if (tray.key && !slotOf.has(tray.key)) slotOf.set(tray.key, tray.slot)
+  }
+  const rank = (color: T) => slotOf.get(color.key) ?? Number.MAX_SAFE_INTEGER
+  return [...colors].sort((a, b) => rank(a) - rank(b))
+}

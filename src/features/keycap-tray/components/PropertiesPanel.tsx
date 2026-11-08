@@ -44,6 +44,7 @@ export interface PropertiesPanelProps {
   /** Keycap profile the post advice uses, and whether it came from the project. */
   capProfile: { id?: string; fromProject: boolean }
   /** Filaments on the shelf, for colouring the printed bodies. */
+  /** Loaded spools first, in AMS order. */
   ownedColors: readonly OwnedColor[]
   /** The AMS tray a catalogue colour is loaded in, if any. */
   amsTrayFor: (key: string) => AmsTray | undefined
@@ -56,13 +57,9 @@ export default function PropertiesPanel(props: PropertiesPanelProps) {
   } = props
   const setColor = (part: keyof PartColors, key: string | undefined) =>
     onView({ colors: { ...view.colors, [part]: key } })
-  // Loaded spools first, in AMS order (A1-A4, then B1-B4); the rest of the
-  // shelf keeps its own order after them.
-  const slotOf = (key: string) => amsTrayFor(key)?.slot ?? Number.MAX_SAFE_INTEGER
-  const colorsByTray = [...ownedColors].sort((a, b) => slotOf(a.key) - slotOf(b.key))
   const colorField = (part: keyof PartColors, label: string) => (
     <OwnedColorSelect
-      label={label} colors={colorsByTray} value={view.colors[part] ?? null}
+      label={label} colors={ownedColors} value={view.colors[part] ?? null}
       onChange={choice => setColor(part, choice?.key)}
       note={color => {
         const tray = amsTrayFor(color.key)

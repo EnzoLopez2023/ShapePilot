@@ -3,7 +3,7 @@ import { test } from 'vitest'
 import type { AmsStock, LoadedSlot } from '../../../lib/contracts/filamentStock.ts'
 import type { SceneObject } from '../../model/document.ts'
 import { createSolid } from '../../model/scene.ts'
-import { amsTrays, assignExtruders, filamentWarnings, trayLabel } from './amsTrays.ts'
+import { amsTrays, assignExtruders, filamentWarnings, loadedFirst, trayLabel } from './amsTrays.ts'
 
 const loaded = (
   amsId: string, slotId: string, color = '#FF0000', key: string | null = null,
@@ -72,4 +72,14 @@ test('holes and hidden parts print nothing, so they warn about nothing', () => {
 test('a tray carries the catalogue colour it matched, which is what prices it', () => {
   const [tray] = amsTrays(stock([loaded('0', '0', '#FFFFFF', 'bambu-lab/pla/basic/jade-white-10100')]))
   assert.equal(tray.key, 'bambu-lab/pla/basic/jade-white-10100')
+})
+
+test('loaded colours come first in tray order, the rest keep their order', () => {
+  const trays = amsTrays(stock([
+    loaded('1', '0', '#000000', 'blue'), loaded('0', '2', '#000000', 'red'),
+    loaded('0', '3', '#000000', null), loaded('1', '1', '#000000', 'red'),
+  ]))
+  const colors = ['amber', 'blue', 'cocoa', 'red', 'white'].map(key => ({ key }))
+  assert.deepEqual(loadedFirst(colors, trays).map(c => c.key), ['red', 'blue', 'amber', 'cocoa', 'white'])
+  assert.deepEqual(loadedFirst(colors, null).map(c => c.key), ['amber', 'blue', 'cocoa', 'red', 'white'])
 })

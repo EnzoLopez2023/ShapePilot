@@ -17,6 +17,7 @@ import { materialOf } from './model/materials.ts'
 import { matchCapProfile } from './model/capProfiles.ts'
 import { useOwnedColors } from '../filaments/useOwnedColors.ts'
 import { useAmsTrays } from '../bambu-designer/useAmsTrays.ts'
+import { loadedFirst } from '../bambu-designer/amsTrays.ts'
 import {
   DEFAULT_VIEW_SETTINGS, forgetViewSettings, loadViewSettings, saveViewSettings,
 } from './state/viewSettings.ts'
@@ -180,6 +181,7 @@ export default function KeycapTrayPage() {
   const ams = useAmsTrays()
   const amsTrayFor = useCallback(
     (key: string) => ams.trays?.find(tray => tray.key === key), [ams.trays])
+  const colorsByTray = useMemo(() => loadedFirst(ownedColors, ams.trays), [ownedColors, ams.trays])
   const { colors } = settings
   const hexOf = useCallback(
     (key: string | undefined) => ownedColors.find(c => c.key === key)?.hexes[0], [ownedColors])
@@ -702,7 +704,7 @@ export default function KeycapTrayPage() {
             capProfile={settings.capProfile
               ? { id: settings.capProfile, fromProject: false }
               : { id: matchCapProfile(project?.capProfile)?.id, fromProject: true }}
-            ownedColors={ownedColors}
+            ownedColors={colorsByTray}
             amsTrayFor={amsTrayFor}
           />
         </Paper>

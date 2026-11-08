@@ -972,7 +972,7 @@ export default function BambuDesignerPage() {
             )}
             {selectedObject && (
               <FilamentColorField
-                object={selectedObject} colors={ownedColors}
+                object={selectedObject} colors={ownedColors} trays={ams.trays}
                 onPatch={patch => doc.updateObject(selectedObject.id, patch)}
               />
             )}
