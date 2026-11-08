@@ -44,6 +44,15 @@
       "port": 5174
     },
     {
+      "name": "dev-noauth-sh",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": [
+        "-c",
+        "VITE_AUTH_MODE=development exec npx vite --port 5174 --strictPort"
+      ],
+      "port": 5174
+    },
+    {
       "name": "model-viewer",
       "runtimeExecutable": "python3",
       "runtimeArgs": [
