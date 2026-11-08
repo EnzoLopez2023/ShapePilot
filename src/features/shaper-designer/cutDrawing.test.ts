@@ -13,7 +13,8 @@ import { multiArea, signedArea, translateRing } from '../../geometry/vec.ts'
 import type { Ring, Vec2 } from '../../geometry/vec.ts'
 import { IDENTITY_TRANSFORM, createShape2D, emptyDocument } from '../../model/scene.ts'
 import type { DesignDocument, PathObject, SceneObject } from '../../model/document.ts'
-import { sceneCutDrawing } from './cutDrawing.ts'
+import { materialThicknessMm, pocketsThroughMaterial, sceneCutDrawing } from './cutDrawing.ts'
+import { SHAPER_ORIGIN } from '../../model/machines.ts'
 
 const BORE = (64 / 2) * 100 * Math.sin((2 * Math.PI) / 64)
 
@@ -95,4 +96,32 @@ test('an open path is written as an unclosed on-line stroke, whatever its cut ty
   const svg = writeShaperSvg(drawing)
   assert.match(svg, /shaper:cutType="online"/)
   assert.doesNotMatch(svg, / Z"/)
+})
+
+test('the material thickness is the depth of every through cut, and only of those', () => {
+  const plate = { ...createShape2D('mft', [0, 0, 0], { widthMm: 410, heightMm: 280, legScrews: 1 }), cut: { type: 'exterior' as const } }
+  const doc = { ...docWith(plate), machine: { ...SHAPER_ORIGIN, stockThicknessMm: 18 } }
+  const byId = new Map(sceneCutDrawing(doc).layers.map(l => [l.id, l]))
+  assert.equal(byId.get('exterior-profile')?.depthMm, 18)
+  assert.equal(byId.get('interior-cuts')?.depthMm, 18)
+  // The counterbores keep their own depth.
+  assert.equal(byId.get('pockets')?.depthMm, 12)
+
+  const svg = writeShaperSvg(sceneCutDrawing(doc))
+  assert.match(svg, /shaper:cutType="outside" shaper:cutDepth="18mm"/)
+  assert.match(svg, /shaper:cutType="inside" shaper:cutDepth="18mm"/)
+  assert.match(svg, /shaper:cutType="pocket" shaper:cutDepth="12mm"/)
+})
+
+test('a document saved before the setting falls back to the Origin default', () => {
+  const doc = { ...docWith(createShape2D('square')), machine: undefined }
+  assert.equal(materialThicknessMm(doc), SHAPER_ORIGIN.stockThicknessMm)
+  assert.equal(sceneCutDrawing(doc).layers[0].depthMm, SHAPER_ORIGIN.stockThicknessMm)
+})
+
+test('pockets as deep as the material are reported, shallower ones are not', () => {
+  const top = createShape2D('mft', [0, 0, 0], { widthMm: 410, heightMm: 280, legScrews: 1 })
+  const at = (t: number) => ({ ...docWith(top), machine: { ...SHAPER_ORIGIN, stockThicknessMm: t } })
+  assert.deepEqual(pocketsThroughMaterial(at(18)), [])
+  assert.deepEqual(pocketsThroughMaterial(at(12)), [12])
 })

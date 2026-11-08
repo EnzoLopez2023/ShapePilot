@@ -100,9 +100,10 @@ export function writeShaperSvg(drawing: CutDrawing): string {
   let body = ''
   for (const layer of drawing.layers) {
     const style = CUT_STYLE[layer.cutType]
-    // Only a pocket has a depth to declare; on every other cut type the
-    // attribute would be meaningless and Shaper ignores it.
-    const extra = layer.cutType === 'pocket' && layer.depthMm !== undefined
+    // Pockets carry their depth and through cuts the material thickness, as
+    // Shaper's own cut files do. A line cut or guide has no depth to declare.
+    const hasDepth = layer.cutType !== 'online' && layer.cutType !== 'guide'
+    const extra = hasDepth && layer.depthMm !== undefined
       ? ` shaper:cutDepth="${n(layer.depthMm)}mm"`
       : ''
     body += group(layer.id, style, [

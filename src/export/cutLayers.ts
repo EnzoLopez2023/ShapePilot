@@ -11,7 +11,9 @@ export interface CutLayer {
   polygons: MultiPolygon
   /** Open polylines, written without a closing segment. Line cuts and guides only. */
   openPaths?: Ring[]
-  /** Pocket depth in mm. Ignored by every cut type except `pocket`. */
+  /** Cut depth in mm: a pocket's depth, or the material thickness on a
+   *  through cut (exterior, interior). Written as `shaper:cutDepth`, which
+   *  Origin offers as the cut's depth. Ignored on line cuts and guides. */
   depthMm?: number
 }
 

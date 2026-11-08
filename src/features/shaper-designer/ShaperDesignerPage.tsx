@@ -35,7 +35,10 @@ import { SHAPER_IMPORT_FORMATS } from '../../import/index.ts'
 import ShapePalette from './components/ShapePalette.tsx'
 import type { PaletteKind } from './components/paletteEntries.ts'
 import ImportButton from './components/ImportButton.tsx'
-import { conflictingPocketDepths, sceneCutDrawing } from './cutDrawing.ts'
+import {
+  conflictingPocketDepths, materialThicknessMm, pocketsThroughMaterial, sceneCutDrawing,
+} from './cutDrawing.ts'
+import LengthField from '../../components/LengthField.tsx'
 import { designerDefaults } from '../settings/preferences.ts'
 import type { ShaperTemplate } from './templates/index.ts'
 import { SHAPER_TEMPLATES, TEMPLATE_CATEGORIES } from './templates/index.ts'
@@ -224,6 +227,8 @@ export default function ShaperDesignerPage() {
   }, [canMerge, selectedObjects, compileOptions, doc])
 
   const depthConflict = useMemo(() => conflictingPocketDepths(doc.doc), [doc.doc])
+  const tooDeep = useMemo(() => pocketsThroughMaterial(doc.doc), [doc.doc])
+  const thicknessMm = materialThicknessMm(doc.doc)
 
   const addShape = useCallback((kind: PaletteKind, x = 0, y = 0) => {
     const object: SceneObject = kind === 'text'
@@ -588,6 +593,24 @@ export default function ShaperDesignerPage() {
             <Typography variant="body2" sx={{ color: 'text.secondary' }}>
               {SHAPER_ORIGIN.label} · {SHAPER_ORIGIN.toolDiameterMm} mm bit
             </Typography>
+            <LengthField
+              label="Material thickness" valueMm={thicknessMm} imperial={imperial}
+              onChangeMm={mm => {
+                if (!(mm > 0)) return
+                const machine = doc.doc.machine?.kind === 'cnc' ? doc.doc.machine : SHAPER_ORIGIN
+                doc.setMachine({ ...machine, stockThicknessMm: mm })
+              }}
+            />
+            <Typography variant="body2" sx={{ color: 'text.secondary', mt: -1 }}>
+              Outside and inside cuts are exported this deep, so Origin cuts
+              them through. Pockets keep their own depth.
+            </Typography>
+            {tooDeep.length > 0 && (
+              <Alert severity="warning" variant="outlined">
+                {tooDeep.join(', ')} mm pockets reach the {thicknessMm} mm material
+                thickness and would cut through it.
+              </Alert>
+            )}
             <FormControlLabel
               control={
                 <Checkbox

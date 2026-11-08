@@ -52,6 +52,19 @@ test('cutDepth is declared on the pocket layer and nowhere else', () => {
   assert.equal((svg.match(/shaper:cutDepth/g) ?? []).length, 1)
 })
 
+test('through cuts carry the material thickness; line cuts and guides never get a depth', () => {
+  const svg = writeShaperSvg({
+    ...drawing,
+    layers: drawing.layers.map(l => (l.cutType === 'pocket' ? l : { ...l, depthMm: 18 })),
+  })
+  // Shaper's own cut files put cutDepth on outside and inside paths.
+  assert.match(svg, /id="outline" shaper:cutType="outside" shaper:cutDepth="18mm"/)
+  assert.match(svg, /id="bore" shaper:cutType="inside" shaper:cutDepth="18mm"/)
+  assert.match(svg, /id="recess" shaper:cutType="pocket" shaper:cutDepth="3.5mm"/)
+  assert.match(svg, /id="score" shaper:cutType="online">/)
+  assert.match(svg, /id="mark" shaper:cutType="guide">/)
+})
+
 test('SVG is 1:1 in millimetres and spans the drawing', () => {
   const svg = writeShaperSvg(drawing)
   assert.match(svg, /width="100mm" height="100mm" viewBox="0 0 100 100"/)

@@ -10,6 +10,7 @@ import { compileObject, objectPockets, openPathRings } from '../../geometry/scen
 import type { CompileOptions } from '../../geometry/sceneShapes.ts'
 import type { CutType, DesignDocument, SceneObject } from '../../model/document.ts'
 import type { CutDrawing, CutLayer } from '../../export/cutLayers.ts'
+import { SHAPER_ORIGIN } from '../../model/machines.ts'
 
 /** Paint order, bottom to top. The profile goes first, as the keycap tray's
  *  proven file has it: its white fill would otherwise paint over every pocket
@@ -26,6 +27,14 @@ const LAYER_LABEL: Record<CutType, string> = {
 }
 
 export const cutTypeOf = (o: SceneObject): CutType => o.cut?.type ?? 'exterior'
+
+/** The stock the design is cut from: the depth every through cut goes to. A
+ *  document saved before the setting existed falls back to the machine default. */
+export const materialThicknessMm = (doc: DesignDocument): number =>
+  doc.machine?.kind === 'cnc' ? doc.machine.stockThicknessMm : SHAPER_ORIGIN.stockThicknessMm
+
+/** Through cuts go the full material thickness. */
+const THROUGH: ReadonlySet<CutType> = new Set(['exterior', 'interior'])
 
 /** Shapes that carry their own through-holes: a pegboard's slots, an MFT top's dog holes. */
 const isPegboard = (o: SceneObject): boolean =>
@@ -94,6 +103,7 @@ export function sceneCutDrawing(doc: DesignDocument, opts: CompileOptions = {}):
       polygons: bucket?.length ? union(...bucket) : [],
       ...(openPaths?.length ? { openPaths } : {}),
       ...(type === 'pocket' ? { depthMm: depths.get(type) ?? 3 } : {}),
+      ...(THROUGH.has(type) ? { depthMm: materialThicknessMm(doc) } : {}),
     })
   }
 
@@ -103,6 +113,20 @@ export function sceneCutDrawing(doc: DesignDocument, opts: CompileOptions = {}):
     description: '1 unit = 1 mm, 1:1 scale. grey = pocket | black = interior | '
       + 'white+outline = exterior | blue = guide',
   }
+}
+
+/** Pocket depths that reach or pass the material thickness -- they would cut
+ *  through, so the page warns rather than letting a counterbore become a hole. */
+export function pocketsThroughMaterial(doc: DesignDocument): number[] {
+  const t = materialThicknessMm(doc)
+  const depths = new Set<number>()
+  for (const o of doc.objects) {
+    if (!o.visible) continue
+    if (cutTypeOf(o) === 'pocket' && (o.cut?.depthMm ?? 3) >= t) depths.add(o.cut?.depthMm ?? 3)
+    const pockets = objectPockets(o)
+    if (pockets && pockets.depthMm >= t) depths.add(pockets.depthMm)
+  }
+  return [...depths].sort((a, b) => a - b)
 }
 
 /** Objects whose pocket depths disagree, so the page can say so rather than
