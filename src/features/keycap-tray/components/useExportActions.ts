@@ -9,6 +9,7 @@ import { tileTray } from '../geometry/tiling.ts'
 import { writeBinaryStl } from '../../../export/stl.ts'
 import { zipParts } from '../../../export/zip.ts'
 import { writeThreeMf, writeThreeMfParts } from '../../../export/threemf.ts'
+import { openInBambuStudio } from '../../../export/bambuStudio.ts'
 import { writeShaperSvg } from '../export/svg.ts'
 import { writeDxf } from '../export/dxf.ts'
 import { safeFilename, triggerDownload } from '../../../export/download.ts'
@@ -71,25 +72,28 @@ export function useExportActions(
     }
   }
 
-  const download3mf = () => {
+  const threeMf = (): ArrayBuffer => {
     // A body whose colour is loaded in the AMS prints from that tray; the
     // rest take the lowest numbers nobody chose, in order.
     const extruders = assignExtruders([{ filamentSlot: bodySlot }, ...extraParts], maxSlot)
-    triggerDownload(
+    return (
       extraParts.length
         ? writeThreeMfParts([
           { mesh, name: `${design.name} tray`, extruder: extruders[0] },
           ...extraParts.map((p, i) => (
             { mesh: p.mesh, name: `${design.name} ${p.label}`, extruder: extruders[i + 1] })),
         ], design.name)
-        : writeThreeMf(mesh, design.name),
-      `${base}.3mf`, 'model/3mf')
+        : writeThreeMf(mesh, design.name)
+    )
   }
+  const download3mf = () => triggerDownload(threeMf(), `${base}.3mf`, 'model/3mf')
+  const openInStudio = () => void openInBambuStudio(threeMf(), design.name)
 
   if (target === 'print') {
     return [
       { label: 'Export STL', onClick: downloadStl },
       { label: 'Export 3MF', onClick: download3mf },
+      { label: 'Open in Bambu Studio', onClick: openInStudio },
       ...(tiles.length > 1
         ? [{ label: `Export in ${tiles.length} pieces (zip of STLs)`, onClick: downloadTiles }]
         : []),

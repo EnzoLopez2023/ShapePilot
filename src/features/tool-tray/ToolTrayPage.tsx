@@ -9,6 +9,7 @@ import DeleteIcon from '@mui/icons-material/DeleteOutline'
 import { standardMenu, useAppMenu } from '../../components/menu/AppMenu.tsx'
 import { writeBinaryStl } from '../../export/stl.ts'
 import { writeThreeMf } from '../../export/threemf.ts'
+import { openInBambuStudio } from '../../export/bambuStudio.ts'
 import { safeFilename, triggerDownload } from '../../export/download.ts'
 import { useConfirm } from '../../components/ConfirmDialogProvider.tsx'
 import { EmptyState, LoadingState } from '../../components/LoadingState.tsx'
@@ -219,6 +220,10 @@ export default function ToolTrayPage() {
     exports: [
       { label: 'Export STL', onClick: () => downloadMesh('stl') },
       { label: 'Export 3MF', onClick: () => downloadMesh('3mf') },
+      {
+        label: 'Open in Bambu Studio',
+        onClick: () => { if (mesh) void openInBambuStudio(writeThreeMf(mesh, design.name), design.name) },
+      },
     ],
     file: [
       { label: 'Make a copy', onClick: savedId ? () => void clone() : undefined, disabled: busy },

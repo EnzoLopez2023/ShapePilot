@@ -2,6 +2,7 @@ import type { MenuAction } from '../../../components/menu/AppMenu.tsx'
 import type { Mesh } from '../../../geometry/mesh.ts'
 import { writeBinaryStl } from '../../../export/stl.ts'
 import { writeThreeMf, writeThreeMfParts } from '../../../export/threemf.ts'
+import { openInBambuStudio } from '../../../export/bambuStudio.ts'
 import { safeFilename, triggerDownload } from '../../../export/download.ts'
 import { zipParts } from '../../../export/zip.ts'
 import type { SwitchTrayDesign } from '../model/types.ts'
@@ -37,20 +38,23 @@ export function switchExportActions(
     }
   }
 
-  const download3mf = () => {
-    triggerDownload(
+  const threeMf = (): ArrayBuffer => {
+    return (
       extraParts.length
         ? writeThreeMfParts([
           { mesh, name: `${design.name} plate`, extruder: 1 },
           ...extraParts.map((p, i) => (
             { mesh: p.mesh, name: `${design.name} ${p.label}`, extruder: Math.min(i + 2, 4) })),
         ], design.name)
-        : writeThreeMf(mesh, design.name),
-      `${base}.3mf`, 'model/3mf')
+        : writeThreeMf(mesh, design.name)
+    )
   }
+  const download3mf = () => triggerDownload(threeMf(), `${base}.3mf`, 'model/3mf')
+  const openInStudio = () => void openInBambuStudio(threeMf(), design.name)
 
   return [
     { label: 'Export STL', onClick: downloadStl },
     { label: 'Export 3MF', onClick: download3mf },
+    { label: 'Open in Bambu Studio', onClick: openInStudio },
   ]
 }

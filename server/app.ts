@@ -35,6 +35,7 @@ import type { PushSender } from './notifications/reorderAlerts.ts'
 import { createSwitchTrayRouter } from './routes/switchTrays.ts'
 import { createCabinetRouter } from './routes/cabinets.ts'
 import { createGridfinityRouter } from './routes/gridfinity.ts'
+import { PrintLinkStore, createPrintLinkFileRouter, createPrintLinkRouter } from './routes/printLinks.ts'
 import { createToolTrayRouter } from './routes/toolTrays.ts'
 import { createSettingsRouter } from './routes/settings.ts'
 import { createVersionRouter } from './routes/version.ts'
@@ -135,6 +136,10 @@ export function createApp(options: CreateAppOptions): Express {
   const store = assetStore(options.assetStore, config.assetStoreDir)
   // Device token, not Entra: the Library organizer on the owner's Mac.
   app.use('/api/library/sync', createLibrarySyncRouter({ repos, store }))
+  // Capability link, not Entra: Bambu Studio downloads a model it was handed by
+  // a bambustudio:// link and sends no credentials. The upload is signed in.
+  const printLinks = new PrintLinkStore()
+  app.use('/api/print-links/files', createPrintLinkFileRouter(printLinks))
 
   const authenticated = requireAuth({
     auth: config.auth,
@@ -146,6 +151,7 @@ export function createApp(options: CreateAppOptions): Express {
   app.use('/api/keycap-trays', authenticated, createKeycapTrayRouter(repos))
   app.use('/api/switch-trays', authenticated, createSwitchTrayRouter(repos))
   app.use('/api/gridfinity', authenticated, createGridfinityRouter(repos))
+  app.use('/api/print-links', authenticated, createPrintLinkRouter(printLinks))
   app.use('/api/cabinets', authenticated, createCabinetRouter(repos))
   app.use('/api/tool-trays', authenticated, createToolTrayRouter(repos))
   app.use('/api/keycap-projects', authenticated, createKeycapProjectRouter(repos))

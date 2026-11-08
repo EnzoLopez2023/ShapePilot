@@ -34,6 +34,7 @@ import type { Ring } from '../../geometry/vec.ts'
 import { safeFilename, triggerDownload } from '../../export/download.ts'
 import { writeBinaryStl } from '../../export/stl.ts'
 import { writeThreeMfParts } from '../../export/threemf.ts'
+import { openInBambuStudio } from '../../export/bambuStudio.ts'
 import { evaluateNode, evaluateProgram } from '../../csg/evaluate.ts'
 import { programFromScene } from '../../csg/fromScene.ts'
 import { resolveAssets, storeImportedFile } from '../../import/assets.ts'
@@ -665,7 +666,7 @@ export default function BambuDesignerPage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [doc, objects, removeSelected, mirror, nudge, dropToPlate])
 
-  const exportMesh = useCallback(async (format: 'stl' | '3mf') => {
+  const exportMesh = useCallback(async (format: 'stl' | '3mf' | 'studio') => {
     const program = programFromScene(objects, { textOutlines })
     if (!program.parts.length) {
       lifecycle.setError('There is nothing to export yet.')
@@ -693,7 +694,9 @@ export default function BambuDesignerPage() {
           name: node.name || `Part ${i + 1}`,
           extruder: extruders[i],
         })))
-        triggerDownload(writeThreeMfParts(parts, doc.doc.name), `${name}.3mf`, 'model/3mf')
+        const bytes = writeThreeMfParts(parts, doc.doc.name)
+        if (format === 'studio') void openInBambuStudio(bytes, doc.doc.name)
+        else triggerDownload(bytes, `${name}.3mf`, 'model/3mf')
       }
     } catch (cause) {
       lifecycle.setError(cause instanceof Error ? cause.message : 'export failed')
@@ -734,6 +737,7 @@ export default function BambuDesignerPage() {
     exports: [
       { label: 'Export STL', onClick: () => void exportMesh('stl') },
       { label: 'Export 3MF', onClick: () => void exportMesh('3mf') },
+      { label: 'Open in Bambu Studio', onClick: () => void exportMesh('studio') },
     ],
     file: [{
       label: 'To Shaper',
