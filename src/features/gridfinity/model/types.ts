@@ -62,7 +62,8 @@ export function describe(kind: GridfinityKind, params: Record<string, unknown>):
   if (kind === 'bin') {
     const p = params as Partial<GridfinityBinParams>
     const label = p.labelText ? ` · ${p.labelText}` : ''
-    return `${p.gridX ?? '?'}×${p.gridY ?? '?'} bin, ${p.heightUnits ?? '?'}u${label}`
+    const lid = p.lid && p.stackingLip ? ' + lid' : ''
+    return `${p.gridX ?? '?'}×${p.gridY ?? '?'} bin, ${p.heightUnits ?? '?'}u${lid}${label}`
   }
   const p = params as Partial<GridfinityBaseplateParams>
   const inch = (mm?: number) => (mm ? `${+(mm / 25.4).toFixed(2)}"` : '?')

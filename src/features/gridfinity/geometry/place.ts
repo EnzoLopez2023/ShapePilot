@@ -1,14 +1,15 @@
 import type { Mesh } from '../../../geometry/mesh.ts'
 
-/** A copy of `mesh` moved by (dx, dy), for laying tiles out in the preview. */
-export function translateMesh(mesh: Mesh, dx: number, dy: number): Mesh {
+/** A copy of `mesh` moved by (dx, dy, dz), for laying parts out in the preview. */
+export function translateMesh(mesh: Mesh, dx: number, dy: number, dz = 0): Mesh {
   const positions = new Float32Array(mesh.positions)
   for (let i = 0; i < positions.length; i += 3) {
     positions[i] += dx
     positions[i + 1] += dy
+    positions[i + 2] += dz
   }
   const [x0, y0, z0, x1, y1, z1] = mesh.bbox
-  return { ...mesh, positions, bbox: [x0 + dx, y0 + dy, z0, x1 + dx, y1 + dy, z1] }
+  return { ...mesh, positions, bbox: [x0 + dx, y0 + dy, z0 + dz, x1 + dx, y1 + dy, z1 + dz] }
 }
 
 /** Several bodies as one mesh, for previewing them together. Not for export. */

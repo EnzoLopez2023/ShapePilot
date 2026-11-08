@@ -35,7 +35,7 @@ export function validateBinParams(value: unknown): GridfinityBinParams {
   const p = requireObject(value, 'params')
   rejectUnknownKeys(p, [
     'gridX', 'gridY', 'heightUnits', 'stackingLip', 'scoop', 'labelTab', 'labelText',
-    'labelListId', 'textSizeMm', 'magnets', 'labelSeparate',
+    'labelListId', 'textSizeMm', 'magnets', 'labelSeparate', 'lid',
   ], 'params')
   const L = BIN_LIMITS
   const labelListId = optionalString(p.labelListId, 'params.labelListId', 40)
@@ -51,6 +51,7 @@ export function validateBinParams(value: unknown): GridfinityBinParams {
     textSizeMm: requireNumber(p.textSizeMm, 'params.textSizeMm', { min: L.minTextMm, max: L.maxTextMm }),
     magnets: requireBoolean(p.magnets, 'params.magnets'),
     ...(absent(p.labelSeparate) ? {} : { labelSeparate: requireBoolean(p.labelSeparate, 'params.labelSeparate') }),
+    ...(absent(p.lid) ? {} : { lid: requireBoolean(p.lid, 'params.lid') }),
   }
 }
 

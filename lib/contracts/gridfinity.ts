@@ -31,6 +31,11 @@ export interface GridfinityBinParams {
    * filament. Absent on bins saved before this existed: one body.
    */
   labelSeparate?: boolean
+  /**
+   * Export a lid that sits in the stacking lip and clicks in under it. Only
+   * meaningful with `stackingLip`. Absent on bins saved before this: no lid.
+   */
+  lid?: boolean
 }
 
 /**
@@ -85,6 +90,7 @@ export const DEFAULT_BIN: GridfinityBinParams = {
   textSizeMm: 7,
   magnets: false,
   labelSeparate: false,
+  lid: false,
 }
 
 export const DEFAULT_BASEPLATE: GridfinityBaseplateParams = {

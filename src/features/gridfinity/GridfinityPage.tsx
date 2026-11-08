@@ -16,11 +16,13 @@ import { useConfirm } from '../../components/ConfirmDialogProvider.tsx'
 import { EmptyState, ErrorState, LoadingState } from '../../components/LoadingState.tsx'
 import { formatUpdated } from '../keycap-projects/model/formatUpdated.ts'
 import { buildBinParts, type BinParts } from './geometry/bin.ts'
+import { buildLid, type LidParts } from './geometry/lid.ts'
 import { useOwnedColors } from '../filaments/useOwnedColors.ts'
 import { useAmsTrays } from '../bambu-designer/useAmsTrays.ts'
-import { assignExtruders } from '../bambu-designer/amsTrays.ts'
+import { assignExtruders, loadedFirst } from '../bambu-designer/amsTrays.ts'
 import { BASEPLATE_HEIGHT_MM, buildBaseplate, planBaseplate, type BuiltTile } from './geometry/baseplate.ts'
 import { mergeMeshes, translateMesh } from './geometry/place.ts'
+import type { Mesh } from '../../geometry/mesh.ts'
 import {
   describe, emptyDesign, fromRecord, type GridfinityKind, type GridfinityRecord, type LabelList,
 } from './model/types.ts'
@@ -38,6 +40,8 @@ const SolidViewer3D = lazy(() => import('../../components/viewport3d/SolidViewer
 const REBUILD_DELAY_MS = 200
 /** Space between tiles in the 3D preview, so the cuts read. */
 const TILE_GAP_MM = 6
+/** How far above its bin the lid floats in the preview, so the catches show. */
+const LID_LIFT_MM = 15
 /** The label's preview colour when no owned filament is picked, so it still reads as its own body. */
 const LABEL_FALLBACK = '#e8b04a'
 
@@ -84,16 +88,21 @@ export default function GridfinityPage() {
 
   // ---- Geometry. Both are built off the main render, newest request wins. ----
 
-  const [bin, setBin] = useState<Built<BinParts>>({ status: 'idle' })
-  const [lastBin, setLastBin] = useState<BinParts | null>(null)
+  const [bin, setBin] = useState<Built<BinParts & { lid: LidParts | null }>>({ status: 'idle' })
+  const [lastBin, setLastBin] = useState<(BinParts & { lid: LidParts | null }) | null>(null)
   const binParams = design.bin
   useEffect(() => {
     if (!isBin) return
     let cancelled = false
     setBin({ status: 'building' })
     const timer = setTimeout(() => {
-      buildBinParts(binParams)
-        .then(parts => { if (!cancelled) { setBin({ status: 'ready', value: parts }); setLastBin(parts) } })
+      Promise.all([buildBinParts(binParams), buildLid(binParams)])
+        .then(([parts, lid]) => {
+          if (cancelled) return
+          const value = { ...parts, lid }
+          setBin({ status: 'ready', value })
+          setLastBin(value)
+        })
         .catch((e: unknown) => {
           if (!cancelled) setBin({ status: 'error', message: (e as Error).message })
         })
@@ -154,6 +163,7 @@ export default function GridfinityPage() {
     (key: string | undefined) => ownedColors.find(c => c.key === key)?.hexes[0], [ownedColors])
   const slotOf = useCallback(
     (key: string | undefined) => (key ? amsTrayFor(key)?.slot : undefined), [amsTrayFor])
+  const colorsByTray = useMemo(() => loadedFirst(ownedColors, ams.trays), [ownedColors, ams.trays])
   const maxSlot = ams.trays?.length ? Math.max(...ams.trays.map(tray => tray.slot)) : 4
   const { colors } = settings
 
@@ -176,6 +186,14 @@ export default function GridfinityPage() {
       { mesh: body, name: `${design.name} bin`, extruder: bodySlot },
       { mesh: label, name: `${design.name} label`, extruder: labelSlot },
     ], design.name), `${baseName}.3mf`, 'model/3mf')
+  }
+
+  const downloadLid = (format: 'stl' | '3mf') => {
+    const lid = bin.status === 'ready' ? bin.value.lid : null
+    if (!lid) return
+    const title = `${design.name} lid`
+    if (format === 'stl') triggerDownload(writeBinaryStl(lid.print, title), `${baseName}_lid.stl`, 'model/stl')
+    else triggerDownload(writeThreeMf(lid.print, title), `${baseName}_lid.3mf`, 'model/3mf')
   }
 
   const downloadBaseplate = async () => {
@@ -212,6 +230,9 @@ export default function GridfinityPage() {
       // Yield so the progress bar paints between bins.
       await new Promise(r => setTimeout(r, 0))
     }
+    // Every bin in the run is the same size, so one lid file serves them all.
+    const lid = await buildLid(design.bin)
+    if (lid) files[`lid_${size}.stl`] = new Uint8Array(writeBinaryStl(lid.print, `${size} lid`))
     progress(list.items.length, list.items.length)
     triggerDownload(zipParts(files), `${safeFilename(list.name)}_${size}_bins.zip`, 'application/zip')
     setToast(`Exported ${list.items.length} bins`)
@@ -307,9 +328,12 @@ export default function GridfinityPage() {
   const len = (mm: number) => `${formatLength(mm, settings.imperial)}${settings.imperial ? '' : ' mm'}`
   const binParts = bin.status === 'ready' ? bin.value : lastBin
   const binMesh = binParts?.body ?? null
-  const binExtras = useMemo(
-    () => (binParts?.label ? [{ mesh: binParts.label, color: hexOf(colors.label) ?? LABEL_FALLBACK }] : undefined),
-    [binParts, hexOf, colors.label])
+  const binExtras = useMemo(() => {
+    const extras: { mesh: Mesh; color?: string }[] = []
+    if (binParts?.label) extras.push({ mesh: binParts.label, color: hexOf(colors.label) ?? LABEL_FALLBACK })
+    if (binParts?.lid) extras.push({ mesh: translateMesh(binParts.lid.seated, 0, 0, LID_LIFT_MM), color: hexOf(colors.bin) })
+    return extras.length ? extras : undefined
+  }, [binParts, hexOf, colors.label, colors.bin])
   const exportReady = isBin ? bin.status === 'ready' : !plan.problem
 
   const canvas = isBin ? (
@@ -356,6 +380,12 @@ export default function GridfinityPage() {
       ? [
           { label: 'Export STL', onClick: () => downloadBin('stl'), disabled: !exportReady },
           { label: 'Export 3MF', onClick: () => downloadBin('3mf'), disabled: !exportReady },
+          ...(design.bin.lid && design.bin.stackingLip
+            ? [
+                { label: 'Export lid STL', onClick: () => downloadLid('stl'), disabled: !exportReady },
+                { label: 'Export lid 3MF', onClick: () => downloadLid('3mf'), disabled: !exportReady },
+              ]
+            : []),
         ]
       : [
           {
@@ -417,7 +447,7 @@ export default function GridfinityPage() {
             <BinPanel
               name={design.name} bin={design.bin} lists={lists}
               onName={d.setName} onBin={d.setBin}
-              ownedColors={ownedColors} colors={colors} onColors={next => view({ colors: next })}
+              ownedColors={colorsByTray} colors={colors} onColors={next => view({ colors: next })}
               amsNote={key => { const tray = amsTrayFor(key); return tray ? `in ${tray.label}` : null }}
             />
           ) : (

@@ -5,6 +5,14 @@ import { checkManifold } from '../../../geometry/mesh.ts'
 import { DEFAULT_BASEPLATE, DEFAULT_BIN, parseLabelFile } from '../../../../lib/contracts/gridfinity.ts'
 import { buildBin, buildBinParts, binDimensions, LIP_HEIGHT_MM, TEXT_RAISE_MM } from './bin.ts'
 import { buildBaseplate, planBaseplate, splitAxis, BASEPLATE_HEIGHT_MM } from './baseplate.ts'
+import { buildLid, lidDimensions, lidSolid, LID_TOP_MM } from './lid.ts'
+import type { Manifold, ManifoldToplevel } from 'manifold-3d'
+import { loadManifold } from '../../../csg/manifold.ts'
+import type { Mesh } from '../../../geometry/mesh.ts'
+
+const solidOf = (wasm: ManifoldToplevel, m: Mesh): Manifold => new wasm.Manifold(new wasm.Mesh({
+  numProp: 3, vertProperties: new Float32Array(m.positions), triVerts: new Uint32Array(m.indices),
+}))
 
 const font = (() => {
   const buf = readFileSync('public/fonts/archivo-medium.ttf')
@@ -66,6 +74,69 @@ describe('gridfinity bin', () => {
         const report = checkManifold(mesh)
         expect(report.ok, `${heightUnits}u lip=${stackingLip}`).toBe(true)
         expect(report.nonManifoldEdges).toBe(0)
+      }
+    }
+  })
+})
+
+describe('gridfinity lid', () => {
+  it('only exists for a bin with a stacking lip', async () => {
+    expect(await buildLid({ ...DEFAULT_BIN, lid: false })).toBeNull()
+    expect(await buildLid({ ...DEFAULT_BIN, lid: true, stackingLip: false })).toBeNull()
+  })
+
+  it('sits on the lip, adds only its plate, and prints flat', async () => {
+    const params = { ...DEFAULT_BIN, gridX: 2, gridY: 1, heightUnits: 2, lid: true }
+    const lid = (await buildLid(params))!
+    const bin = binDimensions(params)
+    for (const mesh of [lid.seated, lid.print]) {
+      const report = checkManifold(mesh)
+      expect(report.ok).toBe(true)
+      expect(report.nonManifoldEdges).toBe(0)
+    }
+    // Footprint of the bin; the barbs stay inside it.
+    const [w, d] = size(lid.seated.bbox)
+    expect(w).toBeCloseTo(bin.widthMm, 2)
+    expect(d).toBeCloseTo(bin.depthMm, 2)
+    // Its top is the lip's top plus the plate; the barbs reach below the wall top.
+    expect(lid.seated.bbox[5]).toBeCloseTo(bin.heightMm + LID_TOP_MM, 2)
+    expect(lid.seated.bbox[2]).toBeLessThan(bin.wallTopMm)
+    // Turned over, the plate is on the bed.
+    expect(lid.print.bbox[2]).toBeCloseTo(0, 3)
+    expect(size(lid.print.bbox)[2]).toBeCloseTo(size(lid.seated.bbox)[2], 3)
+  })
+
+  it('seats without touching the bin, rests on the lip, and catches when pulled', async () => {
+    const wasm = await loadManifold()
+    for (const [gridX, gridY, heightUnits] of [[1, 1, 2], [2, 3, 3]]) {
+      const params = { ...DEFAULT_BIN, gridX, gridY, heightUnits, lid: true }
+      const bin = solidOf(wasm, await buildBin(params))
+      const lid = lidSolid(wasm, params)
+      const overlap = (dz: number) => bin.intersect(lid.translate([0, 0, dz])).volume()
+      expect(overlap(0), 'seated').toBeCloseTo(0, 3)
+      // Any lower and the plate is in the lip's top: that is what it rests on.
+      expect(overlap(-0.05), 'lowered').toBeGreaterThan(1)
+      // Pulled up, the barbs run into the ledge under the lip.
+      expect(overlap(0.3), 'lifted').toBeGreaterThan(0.1)
+    }
+  })
+
+  it('keeps its catch fingers clear of the label tab', () => {
+    const params = { ...DEFAULT_BIN, gridX: 1, gridY: 3, lid: true }
+    const tabFront = binDimensions(params).depthMm - 1.2 - binDimensions(params).tabDepthMm
+    const ys = lidDimensions(params).fingerYs
+    expect(ys).toHaveLength(3)
+    // Even a 1x1 bin with a tab gets a finger each side.
+    expect(lidDimensions({ ...params, gridY: 1 }).fingerYs).toHaveLength(1)
+    for (const y of ys) expect(y + 4.8).toBeLessThan(tabFront)
+    expect(lidDimensions({ ...params, labelTab: false }).fingerYs).toHaveLength(3)
+  })
+
+  it('builds for every size without errors', async () => {
+    for (const [gridX, gridY] of [[1, 1], [3, 2], [1, 4]]) {
+      for (const labelTab of [true, false]) {
+        const lid = (await buildLid({ ...DEFAULT_BIN, gridX, gridY, labelTab, lid: true }))!
+        expect(checkManifold(lid.print).ok, `${gridX}x${gridY} tab=${labelTab}`).toBe(true)
       }
     }
   })

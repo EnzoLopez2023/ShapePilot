@@ -9,6 +9,7 @@ import {
 } from '../../../../lib/contracts/gridfinity.ts'
 import { mmToInches } from '../../../units.ts'
 import { BIN_CLEARANCE_MM, LIP_HEIGHT_MM, binDimensions } from '../geometry/bin.ts'
+import { LID_TOP_MM } from '../geometry/lid.ts'
 import type { LabelList } from '../model/types.ts'
 import type { BinColors } from '../state/viewSettings.ts'
 import OwnedColorSelect from '../../filaments/components/OwnedColorSelect.tsx'
@@ -106,6 +107,22 @@ export default function BinPanel(
           control={<Switch checked={bin.stackingLip} onChange={e => onBin({ stackingLip: e.target.checked })} />}
           label="Stacking lip"
         />
+        <FormControlLabel
+          disabled={!bin.stackingLip}
+          control={<Switch checked={!!bin.lid && bin.stackingLip} onChange={e => onBin({ lid: e.target.checked })} />}
+          label="Lid that clicks in"
+        />
+        {bin.lid && bin.stackingLip && (
+          <Typography variant="body2" color="text.secondary" sx={{ pl: 6, pb: 1 }}>
+            Sits in the stacking lip, adding {LID_TOP_MM} mm ({both(dims.heightMm + LID_TOP_MM)} overall).
+            {' '}Barbs on the side walls click in under the lip. It exports on its own, plate down.
+          </Typography>
+        )}
+        {!bin.stackingLip && (
+          <Typography variant="body2" color="text.secondary" sx={{ pl: 6, pb: 1 }}>
+            A lid needs the stacking lip to sit in.
+          </Typography>
+        )}
         <FormControlLabel
           control={<Switch checked={bin.scoop} onChange={e => onBin({ scoop: e.target.checked })} />}
           label="Finger scoop at the front"
