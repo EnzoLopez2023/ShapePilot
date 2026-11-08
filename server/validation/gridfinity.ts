@@ -6,7 +6,7 @@ import type {
 } from '../../lib/db/repositories/contracts.ts'
 import {
   ALIGNMENTS, BASEPLATE_CONTAINERS, BASEPLATE_LIMITS, BIN_LIMITS, LABEL_LIST_LIMITS,
-  type GridfinityBaseplateParams, type GridfinityBinParams,
+  type GridfinityBaseplateParams, type GridfinityBinParams, type GridfinityPlacement,
 } from '../../lib/contracts/gridfinity.ts'
 import {
   absent, bad, optionalString, rejectUnknownKeys, requireEnum, requireNumber,
@@ -35,7 +35,8 @@ export function validateBinParams(value: unknown): GridfinityBinParams {
   const p = requireObject(value, 'params')
   rejectUnknownKeys(p, [
     'gridX', 'gridY', 'heightUnits', 'stackingLip', 'scoop', 'labelTab', 'labelText',
-    'labelListId', 'textSizeMm', 'magnets', 'labelSeparate', 'lid',
+    'labelListId', 'textSizeMm', 'magnets', 'labelSeparate', 'lid', 'lidLabel',
+    'compartmentsX', 'compartmentsY',
   ], 'params')
   const L = BIN_LIMITS
   const labelListId = optionalString(p.labelListId, 'params.labelListId', 40)
@@ -52,6 +53,9 @@ export function validateBinParams(value: unknown): GridfinityBinParams {
     magnets: requireBoolean(p.magnets, 'params.magnets'),
     ...(absent(p.labelSeparate) ? {} : { labelSeparate: requireBoolean(p.labelSeparate, 'params.labelSeparate') }),
     ...(absent(p.lid) ? {} : { lid: requireBoolean(p.lid, 'params.lid') }),
+    ...(absent(p.lidLabel) ? {} : { lidLabel: requireBoolean(p.lidLabel, 'params.lidLabel') }),
+    ...(absent(p.compartmentsX) ? {} : { compartmentsX: int(p.compartmentsX, 'params.compartmentsX', 1, L.maxCompartments) }),
+    ...(absent(p.compartmentsY) ? {} : { compartmentsY: int(p.compartmentsY, 'params.compartmentsY', 1, L.maxCompartments) }),
   }
 }
 
@@ -59,6 +63,7 @@ export function validateBaseplateParams(value: unknown): GridfinityBaseplatePara
   const p = requireObject(value, 'params')
   rejectUnknownKeys(p, [
     'container', 'drawerWidthMm', 'drawerDepthMm', 'clearanceMm', 'alignX', 'alignY', 'bedMm',
+    'layout', 'heightLimitMm',
   ], 'params')
   const L = BASEPLATE_LIMITS
   const drawer = (v: unknown, field: string) => {
@@ -73,7 +78,33 @@ export function validateBaseplateParams(value: unknown): GridfinityBaseplatePara
     alignX: requireEnum(p.alignX, 'params.alignX', ALIGNMENTS),
     alignY: requireEnum(p.alignY, 'params.alignY', ALIGNMENTS),
     bedMm: requireNumber(p.bedMm, 'params.bedMm', { min: L.minBedMm, max: L.maxBedMm }),
+    ...(absent(p.layout) ? {} : { layout: validateLayout(p.layout) }),
+    ...(absent(p.heightLimitMm)
+      ? {}
+      : { heightLimitMm: requireNumber(p.heightLimitMm, 'params.heightLimitMm', { min: 1, max: L.maxHeightMm }) }),
   }
+}
+
+function validateLayout(value: unknown): GridfinityPlacement[] {
+  if (!Array.isArray(value)) bad('params.layout', 'params.layout must be a list')
+  const list = value as unknown[]
+  if (list.length > BASEPLATE_LIMITS.maxPlacements) {
+    bad('params.layout', `a layout holds at most ${BASEPLATE_LIMITS.maxPlacements} stacks`)
+  }
+  return list.map((raw, i) => {
+    const field = `params.layout[${i}]`
+    const item = requireObject(raw, field)
+    rejectUnknownKeys(item, ['col', 'row', 'stack', 'rotated'], field)
+    if (!Array.isArray(item.stack) || !item.stack.length) bad(`${field}.stack`, 'a stack needs at least one bin')
+    const stack = item.stack as unknown[]
+    if (stack.length > BASEPLATE_LIMITS.maxStack) bad(`${field}.stack`, `a stack holds at most ${BASEPLATE_LIMITS.maxStack} bins`)
+    return {
+      col: int(item.col, `${field}.col`, 0, 100),
+      row: int(item.row, `${field}.row`, 0, 100),
+      stack: stack.map((id, k) => requireName(id, `${field}.stack[${k}]`, 40)),
+      ...(absent(item.rotated) ? {} : { rotated: requireBoolean(item.rotated, `${field}.rotated`) }),
+    }
+  })
 }
 
 export function validateGridfinityDesignInput(value: unknown): GridfinityDesignInput {

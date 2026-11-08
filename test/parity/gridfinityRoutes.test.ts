@@ -77,6 +77,20 @@ describe('gridfinity routes', () => {
     assert.equal((await send('/designs', 'POST', { name: 'Old', kind: 'bin', params: oldBin })).status, 201)
   })
 
+  test('a lidded, divided bin and a planned case layout round-trip', async () => {
+    const bin = { ...DEFAULT_BIN, lid: true, lidLabel: true, compartmentsX: 2, compartmentsY: 3 }
+    const b = await send<{ id: string }>('/designs', 'POST', { name: 'Lidded', kind: 'bin', params: bin })
+    assert.equal(b.status, 201)
+    assert.deepEqual((await get<Record_>(`/designs/${b.body.id}`)).body.params, bin)
+    const plate = {
+      ...DEFAULT_BASEPLATE, container: 'systainer-s76-notched' as const, heightLimitMm: 47.5,
+      layout: [{ col: 0, row: 0, stack: [b.body.id, b.body.id] }, { col: 2, row: 1, stack: [b.body.id], rotated: true }],
+    }
+    const p = await send<{ id: string }>('/designs', 'POST', { name: 'Case', kind: 'baseplate', params: plate })
+    assert.equal(p.status, 201)
+    assert.deepEqual((await get<Record_>(`/designs/${p.body.id}`)).body.params, plate)
+  })
+
   test('another account cannot see or change a design', async () => {
     const { body } = await send<{ id: string }>('/designs', 'POST', { name: 'Mine', kind: 'bin', params: DEFAULT_BIN })
     assert.equal((await get(`/designs/${body.id}`, OTHER)).status, 404)
@@ -95,6 +109,10 @@ describe('gridfinity routes', () => {
       { name: 'x', kind: 'baseplate', params: { ...DEFAULT_BASEPLATE, bedMm: 5 } },
       { name: 'x', kind: 'baseplate', params: { ...DEFAULT_BASEPLATE, container: 'systainer-s99' } },
       { name: 'x', kind: 'bin', params: { ...DEFAULT_BIN, labelSeparate: 'yes' } },
+      { name: 'x', kind: 'bin', params: { ...DEFAULT_BIN, compartmentsX: 7 } },
+      { name: 'x', kind: 'baseplate', params: { ...DEFAULT_BASEPLATE, layout: [{ col: 0, row: 0, stack: [] }] } },
+      { name: 'x', kind: 'baseplate', params: { ...DEFAULT_BASEPLATE, layout: [{ col: -1, row: 0, stack: ['1'] }] } },
+      { name: 'x', kind: 'baseplate', params: { ...DEFAULT_BASEPLATE, layout: [{ col: 0, row: 0, stack: ['1'], extra: 1 }] } },
     ]
     for (const body of bad) assert.equal((await send('/designs', 'POST', body)).status, 400, JSON.stringify(body))
   })

@@ -36,6 +36,11 @@ export interface GridfinityBinParams {
    * meaningful with `stackingLip`. Absent on bins saved before this: no lid.
    */
   lid?: boolean
+  /** Engrave the label text into the lid's top as well. Absent: a plain lid. */
+  lidLabel?: boolean
+  /** Compartments across the bin (x) and front to back (y), split by thin walls. Absent: 1. */
+  compartmentsX?: number
+  compartmentsY?: number
 }
 
 /**
@@ -45,6 +50,17 @@ export interface GridfinityBinParams {
  */
 export const BASEPLATE_CONTAINERS = ['drawer', 'systainer-s76-notched', 'systainer-s76-plain'] as const
 export type GridfinityContainer = (typeof BASEPLATE_CONTAINERS)[number]
+
+/**
+ * One stack of saved bins on the plate: its front-left cell and the bins'
+ * design ids, bottom first. Turned a quarter, a bin's width and depth swap.
+ */
+export interface GridfinityPlacement {
+  col: number
+  row: number
+  stack: string[]
+  rotated?: boolean
+}
 
 export interface GridfinityBaseplateParams {
   container?: GridfinityContainer
@@ -56,6 +72,13 @@ export interface GridfinityBaseplateParams {
   alignY: GridfinityAlign
   /** Largest square a tile may be; the X2D bed is 256. */
   bedMm: number
+  /** What is planned to sit on the plate. Absent on plates saved before this: nothing. */
+  layout?: GridfinityPlacement[]
+  /**
+   * Clear height above the plate the stacks must fit under, mm. Absent: the
+   * container's own (a Systainer's base) or, for a drawer, no check.
+   */
+  heightLimitMm?: number
 }
 
 export const BIN_LIMITS = {
@@ -63,13 +86,21 @@ export const BIN_LIMITS = {
   minHeightUnits: 2, maxHeightUnits: 20,
   labelMaxLength: 60,
   minTextMm: 3, maxTextMm: 14,
+  maxCompartments: 6,
 } as const
 
 export const BASEPLATE_LIMITS = {
   minDrawerMm: GRID_PITCH_MM, maxDrawerMm: 2_000,
   maxClearanceMm: 20,
   minBedMm: 100, maxBedMm: 1_000,
+  maxPlacements: 200, maxStack: 10, maxHeightMm: 1_000,
 } as const
+
+/**
+ * Systainer SYS3 S 76 base cavity, mm: Systainer USA's "inside" figure, not
+ * yet measured. The lid's recess adds ~19 mm but is inset from the walls.
+ */
+export const S76_BASE_DEPTH_MM = 48
 
 export const LABEL_LIST_LIMITS = {
   nameMaxLength: 100,
@@ -91,6 +122,9 @@ export const DEFAULT_BIN: GridfinityBinParams = {
   magnets: false,
   labelSeparate: false,
   lid: false,
+  lidLabel: false,
+  compartmentsX: 1,
+  compartmentsY: 1,
 }
 
 export const DEFAULT_BASEPLATE: GridfinityBaseplateParams = {

@@ -22,6 +22,8 @@ import type { CrossSection, Manifold, ManifoldToplevel } from 'manifold-3d'
 import { loadManifold } from '../../../csg/manifold.ts'
 import { toAppMesh } from '../../../csg/evaluate.ts'
 import type { Mesh } from '../../../geometry/mesh.ts'
+import type { Font } from 'opentype.js'
+import { DEFAULT_FONT_ID, loadFont, traceTextPolys } from '../../../text/fonts.ts'
 import {
   GRID_PITCH_MM, HEIGHT_UNIT_MM, type GridfinityBinParams,
 } from '../../../../lib/contracts/gridfinity.ts'
@@ -46,6 +48,11 @@ const SLOT_MM = 0.8
 const FINGER_REACH_MM = 1.8
 /** The barb's lead-in, from vertical: shallow so it pushes in without force. */
 const LEAD_IN_DEG = 30
+
+/** How deep the label is cut into the lid's top. Three 0.2 mm layers: it prints first, face down. */
+export const LID_TEXT_DEPTH_MM = 0.6
+/** Clear border round the lid's label. */
+const LID_TEXT_MARGIN_MM = 5
 
 /** Gap between the plug and the lip on every face, so the plate is what the lid rests on. */
 const PLUG_CLEARANCE_MM = 0.1
@@ -165,6 +172,41 @@ export function lidSolid(wasm: ManifoldToplevel, p: GridfinityBinParams): Manifo
   return finish(lid, 'The lid')
 }
 
+/** Whether this bin's lid carries text. */
+export const lidHasText = (p: GridfinityBinParams): boolean =>
+  !!p.lid && !!p.lidLabel && p.stackingLip && p.labelText.trim() !== ''
+
+/**
+ * The label as a solid filling the cut in the lid's top: subtract it from the
+ * lid to engrave, or print it on its own as an inlay in a second colour. Same
+ * text and size as the tab, grown to use the lid but shrunk to fit it.
+ */
+export function lidTextSolid(wasm: ManifoldToplevel, font: Font, p: GridfinityBinParams): Manifold | null {
+  const text = p.labelText.trim()
+  if (!text) return null
+  const polys = traceTextPolys(font, text, p.textSizeMm)
+  if (!polys.length) return null
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+  for (const poly of polys) for (const ring of poly) for (const [x, y] of ring) {
+    minX = Math.min(minX, x); maxX = Math.max(maxX, x)
+    minY = Math.min(minY, y); maxY = Math.max(maxY, y)
+  }
+  const d = binDimensions(p)
+  const { topMm } = lidDimensions(p)
+  // Keep clear of the thumb notch's lip at the front and the plug edge round the rest.
+  const roomW = d.widthMm - 2 * LID_TEXT_MARGIN_MM
+  const roomD = d.depthMm - 2 * LID_TEXT_MARGIN_MM
+  if (roomW <= 2 || roomD <= 2) return null
+  const scale = Math.min(roomW / (maxX - minX), roomD / (maxY - minY), 2)
+  const cx = (minX + maxX) / 2
+  const cy = (minY + maxY) / 2
+  const sections = polys.map(poly => new wasm.CrossSection(
+    poly.map(r => r.map(([x, y]) => [(x - cx) * scale, (y - cy) * scale] as [number, number])), 'EvenOdd'))
+  return wasm.CrossSection.union(sections)
+    .extrude(LID_TEXT_DEPTH_MM)
+    .translate([d.widthMm / 2, d.depthMm / 2, topMm - LID_TEXT_DEPTH_MM])
+}
+
 /** The lid turned over to print: plate flat on the bed, fingers up, same footprint. */
 export function printLid(lid: Manifold, p: GridfinityBinParams): Manifold {
   const d = binDimensions(p)
@@ -177,12 +219,28 @@ export interface LidParts {
   seated: Mesh
   /** Turned over on the bed, for export. */
   print: Mesh
+  /**
+   * The label as an inlay filling its cut, when the bin's text prints in a
+   * second colour: seated and turned over, in step with the lid.
+   */
+  label: { seated: Mesh; print: Mesh } | null
 }
 
-/** The lid for bin `p`, or null when the bin has no lip to take one. */
-export async function buildLid(p: GridfinityBinParams): Promise<LidParts | null> {
+/**
+ * The lid for bin `p`, or null when the bin has no lip to take one.
+ * `withFont` is for tests, which read the font from disk.
+ */
+export async function buildLid(p: GridfinityBinParams, withFont?: Font): Promise<LidParts | null> {
   if (!p.lid || !p.stackingLip) return null
   const wasm = await loadManifold()
-  const lid = lidSolid(wasm, p)
-  return { seated: toAppMesh(lid), print: toAppMesh(finish(printLid(lid, p), 'The lid')) }
+  let lid = lidSolid(wasm, p)
+  const font = lidHasText(p) ? withFont ?? await loadFont(DEFAULT_FONT_ID) : null
+  const text = font ? lidTextSolid(wasm, font, p) : null
+  if (text) lid = finish(lid.subtract(text), 'The lid')
+  const inlay = text && p.labelSeparate ? finish(text, 'The lid label') : null
+  return {
+    seated: toAppMesh(lid),
+    print: toAppMesh(finish(printLid(lid, p), 'The lid')),
+    label: inlay ? { seated: toAppMesh(inlay), print: toAppMesh(printLid(inlay, p)) } : null,
+  }
 }

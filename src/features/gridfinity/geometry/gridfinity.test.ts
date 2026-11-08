@@ -3,9 +3,9 @@ import { parse } from 'opentype.js'
 import { describe, expect, it } from 'vitest'
 import { checkManifold } from '../../../geometry/mesh.ts'
 import { DEFAULT_BASEPLATE, DEFAULT_BIN, parseLabelFile } from '../../../../lib/contracts/gridfinity.ts'
-import { buildBin, buildBinParts, binDimensions, LIP_HEIGHT_MM, TEXT_RAISE_MM } from './bin.ts'
+import { buildBin, buildBinParts, binDimensions, dividerLayout, LIP_HEIGHT_MM, TEXT_RAISE_MM } from './bin.ts'
 import { buildBaseplate, planBaseplate, splitAxis, BASEPLATE_HEIGHT_MM } from './baseplate.ts'
-import { buildLid, lidDimensions, lidSolid, LID_TOP_MM } from './lid.ts'
+import { buildLid, lidDimensions, lidSolid, LID_TEXT_DEPTH_MM, LID_TOP_MM } from './lid.ts'
 import type { Manifold, ManifoldToplevel } from 'manifold-3d'
 import { loadManifold } from '../../../csg/manifold.ts'
 import type { Mesh } from '../../../geometry/mesh.ts'
@@ -79,6 +79,31 @@ describe('gridfinity bin', () => {
   })
 })
 
+describe('gridfinity bin extras', () => {
+  it('splits the bin into even compartments below anything that reaches in', async () => {
+    const params = { ...DEFAULT_BIN, gridX: 2, gridY: 2, compartmentsX: 3, compartmentsY: 2, lid: true }
+    const d = binDimensions(params)
+    const layout = dividerLayout(params, d)
+    expect(layout.xs).toHaveLength(2)
+    expect(layout.ys).toHaveLength(1)
+    expect(layout.xs[1] - layout.xs[0]).toBeCloseTo((d.widthMm - 2.4) / 3, 6)
+    // Under the lid's barbs, which reach 1.8 mm below the wall top.
+    expect(layout.topMm).toBeLessThan(d.wallTopMm - 1.8)
+    const mesh = await buildBin(params)
+    expect(checkManifold(mesh).ok).toBe(true)
+    expect(checkManifold(mesh).nonManifoldEdges).toBe(0)
+    expect(mesh.triangleCount).toBeGreaterThan((await buildBin({ ...params, compartmentsX: 1, compartmentsY: 1 })).triangleCount)
+  })
+
+  it('notches the front of the lip for a fingernail only when there is a lid', async () => {
+    const wasm = await loadManifold()
+    const plain = solidOf(wasm, await buildBin(DEFAULT_BIN)).volume()
+    const notched = solidOf(wasm, await buildBin({ ...DEFAULT_BIN, lid: true })).volume()
+    expect(notched).toBeLessThan(plain - 5)
+    expect(checkManifold(await buildBin({ ...DEFAULT_BIN, lid: true })).ok).toBe(true)
+  })
+})
+
 describe('gridfinity lid', () => {
   it('only exists for a bin with a stacking lip', async () => {
     expect(await buildLid({ ...DEFAULT_BIN, lid: false })).toBeNull()
@@ -130,6 +155,22 @@ describe('gridfinity lid', () => {
     expect(lidDimensions({ ...params, gridY: 1 }).fingerYs).toHaveLength(1)
     for (const y of ys) expect(y + 4.8).toBeLessThan(tabFront)
     expect(lidDimensions({ ...params, labelTab: false }).fingerYs).toHaveLength(3)
+  })
+
+  it('engraves the label into its top, or makes it an inlay that fills the cut', async () => {
+    const params = { ...DEFAULT_BIN, gridX: 2, labelText: 'M3 x 8', lid: true, lidLabel: true }
+    const plain = (await buildLid({ ...params, lidLabel: false }, font))!
+    const engraved = (await buildLid(params, font))!
+    expect(engraved.label).toBeNull()
+    expect(engraved.seated.triangleCount).toBeGreaterThan(plain.seated.triangleCount)
+    expect(checkManifold(engraved.print).ok).toBe(true)
+    const inlaid = (await buildLid({ ...params, labelSeparate: true }, font))!
+    const label = inlaid.label!
+    expect(checkManifold(label.print).ok).toBe(true)
+    // The inlay sits flush in the top, and face down on the bed when printed.
+    expect(label.seated.bbox[5]).toBeCloseTo(inlaid.seated.bbox[5], 3)
+    expect(label.seated.bbox[5] - label.seated.bbox[2]).toBeCloseTo(LID_TEXT_DEPTH_MM, 3)
+    expect(label.print.bbox[2]).toBeCloseTo(0, 3)
   })
 
   it('builds for every size without errors', async () => {

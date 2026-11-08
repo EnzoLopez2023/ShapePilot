@@ -95,6 +95,22 @@ export default function BinPanel(
           <MenuItem key={n} value={n}>{n}u · {both(n * HEIGHT_UNIT_MM)} to the wall top</MenuItem>
         ))}
       </TextField>
+      <Stack direction="row" spacing={1}>
+        {(['compartmentsX', 'compartmentsY'] as const).map(axis => (
+          <TextField
+            key={axis} select fullWidth size="small"
+            label={axis === 'compartmentsX' ? 'Dividers: across' : 'Front to back'}
+            value={bin[axis] ?? 1}
+            onChange={e => onBin({ [axis]: Number(e.target.value) })}
+          >
+            {range(1, BIN_LIMITS.maxCompartments).map(n => (
+              <MenuItem key={n} value={n}>
+                {n === 1 ? 'None' : `${n} · ${both(((axis === 'compartmentsX' ? dims.widthMm : dims.depthMm) - 2.4 - (n - 1) * 1.2) / n)}`}
+              </MenuItem>
+            ))}
+          </TextField>
+        ))}
+      </Stack>
       <Typography variant="body2" color="text.secondary">
         Finished bin: {both(dims.widthMm)} wide × {both(dims.depthMm)} deep × {both(dims.heightMm)} tall.
         {' '}One cell is {GRID_PITCH_MM} mm ({mmToInches(GRID_PITCH_MM).toFixed(2)}"); one height unit is {HEIGHT_UNIT_MM} mm.
@@ -115,8 +131,21 @@ export default function BinPanel(
         {bin.lid && bin.stackingLip && (
           <Typography variant="body2" color="text.secondary" sx={{ pl: 6, pb: 1 }}>
             Sits in the stacking lip, adding {LID_TOP_MM} mm ({both(dims.heightMm + LID_TOP_MM)} overall).
-            {' '}Barbs on the side walls click in under the lip. It exports on its own, plate down.
+            {' '}Barbs on the side walls click in under the lip, and a notch in the front of the lip
+            {' '}lets a fingernail under it. It exports on its own, plate down.
           </Typography>
+        )}
+        {bin.lid && bin.stackingLip && (
+          <FormControlLabel
+            sx={{ pl: 4 }}
+            control={(
+              <Switch
+                size="small" checked={!!bin.lidLabel}
+                onChange={e => onBin({ lidLabel: e.target.checked })}
+              />
+            )}
+            label="Label text on the lid too"
+          />
         )}
         {!bin.stackingLip && (
           <Typography variant="body2" color="text.secondary" sx={{ pl: 6, pb: 1 }}>

@@ -1,11 +1,17 @@
 import { Box, useTheme } from '@mui/material'
 import { GRID_PITCH_MM } from '../../../../lib/contracts/gridfinity.ts'
 import type { BaseplatePlan } from '../geometry/baseplate.ts'
+import type { ResolvedStack } from '../model/layout.ts'
 
 export interface BaseplatePlanViewProps {
   plan: BaseplatePlan
   drawerWidthMm: number
   drawerDepthMm: number
+  /** Bins planned on the plate, drawn over their cells. */
+  stacks?: readonly ResolvedStack[]
+  selected?: number | null
+  /** Clicking a cell: select what is there, or place the bin being placed. */
+  onCell?: (col: number, row: number) => void
 }
 
 /**
@@ -13,7 +19,9 @@ export interface BaseplatePlanViewProps {
  * the solid padding and where it is cut into tiles. Pure SVG in millimetres,
  * scaled to the panel.
  */
-export default function BaseplatePlanView({ plan, drawerWidthMm, drawerDepthMm }: BaseplatePlanViewProps) {
+export default function BaseplatePlanView(
+  { plan, drawerWidthMm, drawerDepthMm, stacks = [], selected = null, onCell }: BaseplatePlanViewProps,
+) {
   const theme = useTheme()
   const margin = 16
   const W = drawerWidthMm
@@ -56,8 +64,49 @@ export default function BaseplatePlanView({ plan, drawerWidthMm, drawerDepthMm }
             y={oy + fy(plan.gridY + j * GRID_PITCH_MM, GRID_PITCH_MM) + 2.5}
             width={GRID_PITCH_MM - 5} height={GRID_PITCH_MM - 5} rx={2}
             fill={theme.palette.background.paper} stroke={line} strokeWidth={0.6}
-          />
+            style={onCell ? { cursor: 'pointer' } : undefined}
+            onClick={onCell ? () => onCell(i, j) : undefined}
+          >
+            <title>{`Cell ${i + 1}, ${j + 1}`}</title>
+          </rect>
         )))}
+        {stacks.map(stack => {
+          const x = ox + plan.gridX + stack.col * GRID_PITCH_MM + 1.5
+          const w = stack.cellsX * GRID_PITCH_MM - 3
+          const h = stack.cellsY * GRID_PITCH_MM - 3
+          const y = oy + fy(plan.gridY + stack.row * GRID_PITCH_MM, stack.cellsY * GRID_PITCH_MM) + 1.5
+          const bad = stack.problems.length > 0
+          const isSelected = stack.index === selected
+          const colour = bad ? theme.palette.error.main : accent
+          const size = Math.min(7, w / 7)
+          const names = stack.bins.map(b => b.name)
+          return (
+            <g
+              key={stack.index}
+              style={onCell ? { cursor: 'pointer' } : undefined}
+              onClick={onCell ? () => onCell(stack.col, stack.row) : undefined}
+            >
+              <title>{`${names.join(' on ') || 'Empty'} · ${stack.heightMm.toFixed(1)} mm${bad ? ` · ${stack.problems.join(' ')}` : ''}`}</title>
+              <rect
+                x={x} y={y} width={w} height={h} rx={3}
+                fill={colour} fillOpacity={isSelected ? 0.28 : 0.14}
+                stroke={colour} strokeWidth={isSelected ? 2 : 1}
+              />
+              <text
+                x={x + w / 2} y={y + h / 2 - size * 0.6} textAnchor="middle" dominantBaseline="central"
+                fontSize={size} fontWeight={600} fill={ink} fontFamily={theme.typography.fontFamily}
+              >
+                {names.length > 1 ? `${names.length} stacked` : (names[0] ?? '?').slice(0, Math.max(4, Math.floor(w / (size * 0.6))))}
+              </text>
+              <text
+                x={x + w / 2} y={y + h / 2 + size * 0.8} textAnchor="middle" dominantBaseline="central"
+                fontSize={size * 0.85} fill={bad ? colour : muted} fontFamily={theme.typography.fontFamily}
+              >
+                {stack.heightMm.toFixed(1)} mm
+              </text>
+            </g>
+          )
+        })}
         {plan.columns.slice(1).map(c => (
           <line
             key={`c${c.from}`} x1={ox + c.from} x2={ox + c.from} y1={oy - 4} y2={oy + plan.plateDepthMm + 4}

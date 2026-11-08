@@ -35,6 +35,14 @@ const TAB_LIP_MM = 1.2
 const MAGNET_DIAMETER_MM = 6.5
 const MAGNET_DEPTH_MM = 2.4
 const MAGNET_OFFSET_MM = 13
+/** Thin walls splitting a bin into compartments. */
+export const DIVIDER_MM = 1.2
+/**
+ * How far below the lip's top the thumb notch goes, when a lid is on: deep
+ * enough for a fingernail under the lid's plate edge, which overhangs the plug.
+ */
+export const THUMB_NOTCH_DEPTH_MM = 2
+export const THUMB_NOTCH_WIDTH_MM = 16
 
 export interface BinDimensions {
   widthMm: number
@@ -160,6 +168,44 @@ export const labelRoom = (d: BinDimensions): { widthMm: number; depthMm: number 
   depthMm: Math.max(1, d.tabDepthMm - 2.5),
 })
 
+/**
+ * Divider walls, as positions along each axis, in the bin's frame. They split
+ * the inside evenly, run wall to wall, and stop below where a lid's barbs or a
+ * stacked bin's feet reach.
+ */
+export function dividerLayout(p: GridfinityBinParams, d: BinDimensions): {
+  xs: number[]; ys: number[]; topMm: number
+} {
+  const split = (n: number | undefined, size: number) => {
+    const count = Math.max(1, Math.min(n ?? 1, 6))
+    const inner = size - 2 * WALL_MM
+    return Array.from({ length: count - 1 }, (_, i) => WALL_MM + (inner * (i + 1)) / count)
+  }
+  return {
+    xs: split(p.compartmentsX, d.widthMm),
+    ys: split(p.compartmentsY, d.depthMm),
+    topMm: d.tabTopMm - 0.6,
+  }
+}
+
+function dividers(wasm: ManifoldToplevel, p: GridfinityBinParams, d: BinDimensions): Manifold | null {
+  const { xs, ys, topMm } = dividerLayout(p, d)
+  const height = topMm - FLOOR_TOP_MM + 0.01
+  if (height <= 1 || (!xs.length && !ys.length)) return null
+  const z = FLOOR_TOP_MM - 0.01
+  const walls = [
+    ...xs.map(x => wasm.Manifold.cube([DIVIDER_MM, d.depthMm, height]).translate([x - DIVIDER_MM / 2, 0, z])),
+    ...ys.map(y => wasm.Manifold.cube([d.widthMm, DIVIDER_MM, height]).translate([0, y - DIVIDER_MM / 2, z])),
+  ]
+  return wasm.Manifold.union(walls)
+}
+
+/** The cut at the front of the lip that lets a fingernail under a lid. */
+function thumbNotch(wasm: ManifoldToplevel, d: BinDimensions): Manifold {
+  return wasm.Manifold.cube([THUMB_NOTCH_WIDTH_MM, 4, THUMB_NOTCH_DEPTH_MM + 1])
+    .translate([(d.widthMm - THUMB_NOTCH_WIDTH_MM) / 2, -1, d.heightMm - THUMB_NOTCH_DEPTH_MM])
+}
+
 function magnetHoles(wasm: ManifoldToplevel, p: GridfinityBinParams): Manifold {
   const holes: Manifold[] = []
   for (const [cx, cy] of cellCentres(p)) {
@@ -205,10 +251,13 @@ export async function buildBinParts(p: GridfinityBinParams, withFont?: Font): Pr
     if (s) extras.push(s)
   }
   if (p.labelTab) extras.push(labelTab(wasm, d))
+  const walls = dividers(wasm, p, d)
+  if (walls) extras.push(walls)
   if (extras.length) solid = solid.add(wasm.Manifold.union(extras).intersect(shell))
   const text = font ? labelText(wasm, font, p, d, separate) : null
   if (text && !separate) solid = solid.add(text)
   if (p.magnets) solid = solid.subtract(magnetHoles(wasm, p))
+  if (p.lid && p.stackingLip) solid = solid.subtract(thumbNotch(wasm, d))
 
   return {
     body: toAppMesh(finish(solid, 'The bin')),
