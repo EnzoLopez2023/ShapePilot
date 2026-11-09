@@ -112,9 +112,133 @@ export const KADRICK_THREADED_INSERTS: LabelSeed = {
   ],
 }
 
+/** Socket cap and button head, 6-40 mm (the listing says 35; the box has 40). */
+export const FGRUH_M4_BOLT_ASSORTMENT: LabelSeed = {
+  key: 'fgruh-m4-bolt-assortment-1500-v1',
+  name: 'Fgruh M4 bolts, nuts and washers (1500 pcs)',
+  items: [
+    'M4 x 6 Socket cap',
+    'M4 x 8 Socket cap',
+    'M4 x 12 Socket cap',
+    'M4 x 16 Socket cap',
+    'M4 x 20 Socket cap',
+    'M4 x 25 Socket cap',
+    'M4 x 30 Socket cap',
+    'M4 x 40 Socket cap',
+    'M4 x 6 Button',
+    'M4 x 8 Button',
+    'M4 x 12 Button',
+    'M4 x 16 Button',
+    'M4 x 20 Button',
+    'M4 x 25 Button',
+    'M4 x 30 Button',
+    'M4 x 40 Button',
+    'M4 Hex nuts',
+    'M4 Flat washers',
+    'M4 Split washers',
+  ],
+}
+
+/** 8-35 mm (the listing stops at 30; the box has 35). */
+export const FGRUH_M5_SOCKET_CAP_ASSORTMENT: LabelSeed = {
+  key: 'fgruh-m5-socket-cap-assortment-272-v1',
+  name: 'Fgruh M5 socket cap bolts, nuts and washers (272 pcs)',
+  items: [
+    'M5 x 8 Socket cap',
+    'M5 x 10 Socket cap',
+    'M5 x 12 Socket cap',
+    'M5 x 16 Socket cap',
+    'M5 x 20 Socket cap',
+    'M5 x 25 Socket cap',
+    'M5 x 30 Socket cap',
+    'M5 x 35 Socket cap',
+    'M5 Hex nuts',
+    'M5 Flat washers',
+    'M5 Split washers',
+  ],
+}
+
+/** Plus one Allen wrench, which needs no bin. */
+export const FGRUH_M5_BUTTON_ASSORTMENT: LabelSeed = {
+  key: 'fgruh-m5-button-assortment-380-v1',
+  name: 'Fgruh M5 button head bolts, nuts and washers (380 pcs)',
+  items: [
+    'M5 x 8 Button',
+    'M5 x 12 Button',
+    'M5 x 16 Button',
+    'M5 x 20 Button',
+    'M5 x 25 Button',
+    'M5 x 30 Button',
+    'M5 Hex nuts',
+    'M5 Flat washers',
+    'M5 Split washers',
+  ],
+}
+
+/** 8-35 mm. */
+export const FGRUH_M6_SOCKET_CAP_ASSORTMENT: LabelSeed = {
+  key: 'fgruh-m6-socket-cap-assortment-185-v1',
+  name: 'Fgruh M6 socket cap bolts, nuts and washers (185 pcs)',
+  items: [
+    'M6 x 8 Socket cap',
+    'M6 x 10 Socket cap',
+    'M6 x 12 Socket cap',
+    'M6 x 16 Socket cap',
+    'M6 x 20 Socket cap',
+    'M6 x 25 Socket cap',
+    'M6 x 30 Socket cap',
+    'M6 x 35 Socket cap',
+    'M6 Hex nuts',
+    'M6 Flat washers',
+    'M6 Split washers',
+  ],
+}
+
+/** 10-35 mm, plus one Allen wrench, which needs no bin. */
+export const FGRUH_M6_BUTTON_ASSORTMENT: LabelSeed = {
+  key: 'fgruh-m6-button-assortment-560-v1',
+  name: 'Fgruh M6 button head bolts, nuts and washers (560 pcs)',
+  items: [
+    'M6 x 10 Button',
+    'M6 x 12 Button',
+    'M6 x 14 Button',
+    'M6 x 16 Button',
+    'M6 x 20 Button',
+    'M6 x 25 Button',
+    'M6 x 30 Button',
+    'M6 x 35 Button',
+    'M6 Hex nuts',
+    'M6 Flat washers',
+    'M6 Split washers',
+  ],
+}
+
+/** Black flat-head machine screws, 6-25 mm; flat washers only. */
+export const M5_COUNTERSUNK_ASSORTMENT: LabelSeed = {
+  key: 'm5-countersunk-assortment-330-v1',
+  name: 'M5 countersunk screws, nuts and washers (330 pcs)',
+  items: [
+    'M5 x 6 Countersunk',
+    'M5 x 8 Countersunk',
+    'M5 x 10 Countersunk',
+    'M5 x 12 Countersunk',
+    'M5 x 16 Countersunk',
+    'M5 x 20 Countersunk',
+    'M5 x 25 Countersunk',
+    'M5 Hex nuts',
+    'M5 Flat washers',
+  ],
+}
+
 export const LABEL_SEEDS: readonly LabelSeed[] = [
   KREG_POCKET_SCREWS,
   HANTOF_SELF_TAPPING_SCREWS,
   FGRUH_M3_BOLT_ASSORTMENT,
   KADRICK_THREADED_INSERTS,
+  FGRUH_M4_BOLT_ASSORTMENT,
+  FGRUH_M5_SOCKET_CAP_ASSORTMENT,
+  FGRUH_M5_BUTTON_ASSORTMENT,
+  FGRUH_M6_SOCKET_CAP_ASSORTMENT,
+  FGRUH_M6_BUTTON_ASSORTMENT,
+  M5_COUNTERSUNK_ASSORTMENT,
 ]
