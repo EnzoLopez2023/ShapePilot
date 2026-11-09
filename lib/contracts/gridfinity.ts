@@ -48,9 +48,9 @@ export interface GridfinityBinParams {
  * outline (the SYS3 S 76 insert shared with the tray designers), so its size,
  * clearance and tiling are fixed. Absent on plates saved before this: a drawer.
  *
- * `systainer-s76-wide` is the notched insert for a case whose two side divider
- * brackets have been cut off: widened to 255 mm along the straight side walls,
- * it takes a 6 x 3 grid, pushed to the front.
+ * `systainer-s76-wide` is the notched insert for a case whose divider brackets
+ * have all been cut off: no bracket slots, and widened to 255 mm along the
+ * straight side walls, it takes a 6 x 3 grid, pushed to the front.
  */
 export const BASEPLATE_CONTAINERS = [
   'drawer', 'systainer-s76-notched', 'systainer-s76-plain', 'systainer-s76-wide',

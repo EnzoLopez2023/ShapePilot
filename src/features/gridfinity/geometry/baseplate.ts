@@ -143,20 +143,34 @@ function cellFits(rings: Pt[][], x: number, y: number): boolean {
   return true
 }
 
+/**
+ * The four slots the notched insert leaves for the front and back divider
+ * brackets, in its own (unshifted) frame: x0, x1, y0, y1. Every slot vertex
+ * but the two where it leaves the edge lies inside one; dropping them joins
+ * those two with a straight edge.
+ */
+const BRACKET_SLOTS: [number, number, number, number][] = [
+  [77.2, 85.3, 9, 14], [163.7, 171.8, 9, 14],
+  [77.2, 85.3, 157, 162.6], [163.7, 171.8, 157, 162.6],
+]
+const inBox = ([x0, x1, y0, y1]: [number, number, number, number], [x, y]: Pt) =>
+  x >= x0 && x <= x1 && y >= y0 && y <= y1
+
 /** How far each side of the wide S76 plate reaches past the notched insert. */
 export const S76_WIDE_EAR_MM = 3
 /** Past the ears' front edge, so the corner pockets keep ~2 mm of wall. */
 const WIDE_FRONT_SKIN_MM = 0.6
 
 /**
- * The notched S76 insert, widened for a case with its side divider brackets
- * cut off. Those brackets are what kept the stock insert to 249 mm; without
- * them the straight side walls stand 258 mm apart, so the plate grows 3 mm a
+ * The notched S76 insert for a case with all its divider brackets cut off:
+ * the front and back bracket slots filled, and widened at the sides. The two
+ * side brackets are what kept the stock insert to 249 mm; without them the
+ * straight side walls stand 258 mm apart, so the plate grows 3 mm a
  * side (255 mm, 1.5 mm play each side) -- enough for six 42 mm columns.
  *
  * Only the straight run of the side walls widens. Front and back the plate
- * keeps the insert's own corner fillets and bracket notches, so it still
- * clears the latch slopes, the hinge corners and the front/back brackets.
+ * keeps the insert's own corner fillets, so it still clears the latch
+ * slopes and the hinge corners.
  * The ears start exactly where the insert's front fillet meets the wall --
  * the wall's own tangent point, if the case corner is concentric with it.
  */
@@ -164,8 +178,13 @@ function wideS76(gutter: boolean): {
   widthMm: number; depthMm: number; outline: Pt[][]; gridY: number; gutterOutline?: Pt[][]
 } {
   const preset = getPreset('systainer-s76-notched')
-  const ring = profileToMulti({ kind: 'preset', id: 'systainer-s76-notched' })[0][0]
+  const notched = profileToMulti({ kind: 'preset', id: 'systainer-s76-notched' })[0][0]
     .map(([x, y]) => [x, y] as Pt)
+  // With the brackets gone the slots for them are just lost space: fill them.
+  const ring = notched.filter(pt => !BRACKET_SLOTS.some(b => inBox(b, pt)))
+  if (notched.length - ring.length !== 40) {
+    throw new Error('The S76 outline no longer has the four bracket slots where expected.')
+  }
   const w = preset.widthMm
   const e = S76_WIDE_EAR_MM
   const on = (v: number, at: number) => Math.abs(v - at) < 1e-3

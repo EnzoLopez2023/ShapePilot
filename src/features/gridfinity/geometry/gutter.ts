@@ -3,8 +3,9 @@
 //
 // It is not a Gridfinity bin. It has no feet and stands straight on the case
 // floor, so it gets the plate's 4.65 mm of depth back, and its footprint is
-// the case outline behind the plate: the hinge corners, the back bracket
-// slots and the hinge lobes all carried up the full height.
+// the case outline behind the plate: the hinge corners and the hinge lobes
+// carried up the full height. (The back bracket slots are gone: the wide
+// plate is for a case with every divider bracket cut off.)
 //
 // Coordinates are the plate's (x across, y front to back, z up from the case
 // floor), so it previews in place beside the tiles. Export moves it to the

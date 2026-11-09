@@ -14,7 +14,7 @@ const CONTAINERS: { id: GridfinityContainer; label: string }[] = [
   { id: 'drawer', label: 'A drawer I measure' },
   { id: 'systainer-s76-notched', label: 'Systainer SYS3 S 76 — notched insert' },
   { id: 'systainer-s76-plain', label: 'Systainer SYS3 S 76 — plain insert' },
-  { id: 'systainer-s76-wide', label: 'Systainer SYS3 S 76 — side brackets removed (6 × 3)' },
+  { id: 'systainer-s76-wide', label: 'Systainer SYS3 S 76 — divider brackets removed (6 × 3)' },
 ]
 
 export interface BaseplatePanelProps {
@@ -129,9 +129,9 @@ export default function BaseplatePanel(
       ) : container === 'systainer-s76-wide' ? (
         <>
           <Typography variant="body2" color="text.secondary">
-            For a case with its two side divider brackets cut off. The notched insert
-            widened to {systainerSize} along the straight side walls, with the grid
-            pushed to the front.
+            For a case with all six divider brackets cut off. The notched insert
+            without its bracket slots, widened to {systainerSize} along the straight
+            side walls, with the grid pushed to the front.
           </Typography>
 
           <Divider />

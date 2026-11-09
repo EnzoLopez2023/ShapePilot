@@ -264,6 +264,9 @@ describe('the S76 plate for a case without side brackets', () => {
     // What is left at the back is the strip to decide about.
     expect(plan.plateDepthMm - plan.gridY - 3 * 42).toBeGreaterThan(23)
     expect(plan.tiles).toHaveLength(1)
+    // No bracket slots: the back edge between the hinge lobes runs straight.
+    const backEdge = plan.outline![0].filter(([, y]) => y > 150 && y < 162.7)
+    expect(backEdge.every(([x]) => x < 12 || x > 243)).toBe(true)
     const [tile] = await buildBaseplate(plan)
     const [w, d, h] = size(tile.mesh.bbox)
     expect(w).toBeCloseTo(255, 1)
@@ -314,9 +317,8 @@ describe('the gutter behind a wide S76 plate', () => {
     const three = vol((await buildGutter(plan, params))!)
     const [w, d, h] = size((await buildGutter(plan, params))!.bbox)
     expect(one).toBeLessThan(0.35 * w * d * h)
-    // Two dividers, 1.2 mm thick and full height; at thirds they fall beside
-    // the back bracket slots, where the trough is shallowest.
-    expect(three - one).toBeGreaterThan(1000)
+    // Two dividers, 1.2 mm thick and full height, across the trough.
+    expect(three - one).toBeGreaterThan(1500)
   })
 
   it('has no gutter unless asked, and only on the wide plate', () => {
