@@ -62,6 +62,12 @@ import FastenerDialog from './components/FastenerDialog.tsx'
 import JigDialog from './components/JigDialog.tsx'
 import ClampSquareDialog from './components/ClampSquareDialog.tsx'
 import type { ClampSquareSpec } from './clampSquare.ts'
+import PanelStandDialog from './components/PanelStandDialog.tsx'
+import type { PanelStandColours } from './components/PanelStandDialog.tsx'
+import type { PanelStandSpec } from './panelStand.ts'
+import {
+  DEFAULT_PANEL_STAND_SPEC, createPanelStands, panelStandLayout,
+} from './panelStand.ts'
 import {
   DEFAULT_CLAMP_SQUARE_SPEC, clampSquareColumns, clampSquaresFootprint, createClampSquares,
 } from './clampSquare.ts'
@@ -186,6 +192,8 @@ export default function BambuDesignerPage() {
   const [lastJig, setLastJig] = useState<JigSpec>(DEFAULT_JIG_SPEC)
   const [squareDialog, setSquareDialog] = useState<ClampSquareSpec | null>(null)
   const [lastSquares, setLastSquares] = useState<ClampSquareSpec>(DEFAULT_CLAMP_SQUARE_SPEC)
+  const [standDialog, setStandDialog] = useState<{ spec: PanelStandSpec; colours: PanelStandColours } | null>(null)
+  const [lastStands, setLastStands] = useState<{ spec: PanelStandSpec; colours: PanelStandColours } | null>(null)
   const [cardDialog, setCardDialog] = useState<
     { spec: CardSpec; editing: FoundCard | null } | null>(null)
   const [cardKit, setCardKit] = useState<CardKit | null>(null)
@@ -447,13 +455,30 @@ export default function BambuDesignerPage() {
     }
   }, [bounds, cardDialog, cardKit, doc, lifecycle])
 
+  /**
+   * The stands start from the last run, so a second batch for the other sheet
+   * only needs its thickness. The first run takes its colours from the trays
+   * it defaults to, like an ID card: the stand from the first, the label the second.
+   */
+  const openPanelStands = useCallback(() => {
+    const trayColor = (slot: number) => ams.trays?.find(t => t.slot === slot)?.color || undefined
+    setStandDialog(lastStands ?? {
+      spec: DEFAULT_PANEL_STAND_SPEC,
+      colours: {
+        stand: { filamentSlot: 1, color: trayColor(1) },
+        label: { filamentSlot: 2, color: trayColor(2) },
+      },
+    })
+  }, [ams.trays, lastStands])
+
   const addLibraryPart = useCallback((entry: LibraryEntry) => {
     if (entry.kind === 'fastener') setFastener(entry)
     else if (entry.kind === 'jig') setJigDialog({ ...lastJig, kind: entry.jig })
     else if (entry.kind === 'clamp-square') setSquareDialog(lastSquares)
+    else if (entry.kind === 'panel-stand') openPanelStands()
     else if (entry.kind === 'template') openCardTemplate(null)
     else void addLibraryFile(entry)
-  }, [addLibraryFile, lastJig, lastSquares, openCardTemplate])
+  }, [addLibraryFile, lastJig, lastSquares, openCardTemplate, openPanelStands])
 
   const addJig = useCallback((spec: JigSpec) => {
     // Beside everything already on the plate, like a new card; centred on an empty one.
@@ -481,6 +506,26 @@ export default function BambuDesignerPage() {
     setLastSquares(spec)
     setSquareDialog(null)
   }, [bounds, doc, machine.buildMm])
+
+  const addPanelStands = useCallback(async (spec: PanelStandSpec, colours: PanelStandColours) => {
+    try {
+      // The label is fitted to the base from the font's real outline.
+      const measure = spec.label.trim() ? measureWith(await loadFont(DEFAULT_FONT_ID)) : null
+      const overall = combinedBounds([...bounds.values()])
+      const plateX = machine.buildMm[0]
+      const [x, y] = panelStandLayout(spec, plateX).footprintMm
+      const made = createPanelStands(spec, measure, overall
+        ? [overall.max[0] + CARD_SPACING_MM, overall.min[1], 0]
+        : [-x / 2, -y / 2, 0], plateX, colours)
+      // One replace, so the whole run is a single undo step.
+      doc.replace(d => ({ ...d, objects: [...d.objects, ...made] }))
+      doc.setSelection(made.map(o => o.id))
+      setLastStands({ spec, colours })
+      setStandDialog(null)
+    } catch (cause) {
+      lifecycle.setError(cause instanceof Error ? cause.message : 'could not make the stands')
+    }
+  }, [bounds, doc, lifecycle, machine.buildMm])
 
   /** The one top-level part a cutter would be sized to and placed in. */
   const fastenerTarget = useMemo(() => {
@@ -1126,6 +1171,14 @@ export default function BambuDesignerPage() {
         plateMm={[machine.buildMm[0], machine.buildMm[1]]}
         onAdd={addClampSquares}
         onClose={() => setSquareDialog(null)}
+      />
+      <PanelStandDialog
+        initial={standDialog}
+        plateMm={[machine.buildMm[0], machine.buildMm[1]]}
+        ams={ams}
+        colors={ownedColors}
+        onAdd={(spec, colours) => void addPanelStands(spec, colours)}
+        onClose={() => setStandDialog(null)}
       />
       <IdCardDialog
         initial={cardDialog && { spec: cardDialog.spec, editing: Boolean(cardDialog.editing) }}
