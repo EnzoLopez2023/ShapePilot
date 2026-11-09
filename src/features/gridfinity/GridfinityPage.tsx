@@ -310,6 +310,7 @@ export default function GridfinityPage() {
     const files: Record<string, Uint8Array> = {}
     /** Plain lids are alike for a size, so the STL zip carries one per size. */
     const plainLidSizes = new Map<string, GridfinityBinParams>()
+    let withLids = false
     const [bodySlot, labelSlot] = assignExtruders(
       [{ filamentSlot: slotOf(colors.bin) }, { filamentSlot: slotOf(colors.label) }], maxSlot)
     const withLabel = (main: ThreeMfPart, label: Mesh | null | undefined, name: string): ThreeMfPart[] =>
@@ -326,6 +327,7 @@ export default function GridfinityPage() {
       const size = sizeOf(item)
       const parts = await buildBinParts(item)
       const lid = await buildLid(item)
+      if (lid) withLids = true
       if (options.format === 'zip') {
         let stem = `${String(i + 1).padStart(2, '0')}_${safeFilename(text)}_${size}`
         while (used.has(stem)) stem = `_${stem}`
@@ -348,7 +350,8 @@ export default function GridfinityPage() {
       await new Promise(r => setTimeout(r, 0))
     }
     progress(list.items.length, list.items.length)
-    const stem = `${safeFilename(list.name)}_bins`
+    // Every bin shares the design's height (size-to-label changes only the footprint).
+    const stem = `${safeFilename(list.name)}_${design.bin.heightUnits}u${withLids ? '_with_lids' : ''}`
     if (options.format === 'zip') {
       for (const [size, item] of plainLidSizes) {
         const lid = await buildLid(item)
@@ -360,7 +363,7 @@ export default function GridfinityPage() {
     }
     const { placed, plates } = fillPlates(objects, bedMm)
     const bytes = writeThreeMfPlates(placed, list.name, bedMm)
-    if (options.format === 'studio') void openInBambuStudio(bytes, list.name)
+    if (options.format === 'studio') void openInBambuStudio(bytes, stem)
     else triggerDownload(bytes, `${stem}.3mf`, 'model/3mf')
     setToast(`${objects.length} parts on ${plates} ${plates === 1 ? 'plate' : 'plates'}`)
   }, [design.bin, slotOf, colors.bin, colors.label, maxSlot, bedMm])
