@@ -4,7 +4,8 @@ import { describe, expect, it } from 'vitest'
 import { checkManifold } from '../../../geometry/mesh.ts'
 import { DEFAULT_BASEPLATE, DEFAULT_BIN, parseLabelFile } from '../../../../lib/contracts/gridfinity.ts'
 import { buildBin, buildBinParts, binDimensions, dividerLayout, LIP_HEIGHT_MM, TEXT_RAISE_MM } from './bin.ts'
-import { buildBaseplate, planBaseplate, splitAxis, BASEPLATE_HEIGHT_MM } from './baseplate.ts'
+import { buildBaseplate, planBaseplate, splitAxis, BASEPLATE_HEIGHT_MM, GUTTER_GAP_MM, PLATE_BACK_RIM_MM } from './baseplate.ts'
+import { buildGutter, gutterHeightMm } from './gutter.ts'
 import { buildLid, lidDimensions, lidSolid, LID_TEXT_DEPTH_MM, LID_TOP_MM } from './lid.ts'
 import type { Manifold, ManifoldToplevel } from 'manifold-3d'
 import { loadManifold } from '../../../csg/manifold.ts'
@@ -248,6 +249,80 @@ describe('label files', () => {
       expect(checkManifold(tile.mesh).ok).toBe(true)
       expect(checkManifold(tile.mesh).nonManifoldEdges).toBe(0)
     })
+})
+
+describe('the S76 plate for a case without side brackets', () => {
+  it('takes six columns, 255 mm wide, grid at the front, in one X2D tile', async () => {
+    const plan = planBaseplate({ ...DEFAULT_BASEPLATE, container: 'systainer-s76-wide' })
+    expect(plan.problem).toBeUndefined()
+    expect([plan.cellsX, plan.cellsY]).toEqual([6, 3])
+    expect(plan.plateWidthMm).toBeCloseTo(255, 3)
+    expect(plan.gridX).toBeCloseTo(1.5, 3)
+    // Front-most row starts just past where the side walls go straight.
+    expect(plan.gridY).toBeGreaterThan(15.4)
+    expect(plan.gridY).toBeLessThan(16.5)
+    // What is left at the back is the strip to decide about.
+    expect(plan.plateDepthMm - plan.gridY - 3 * 42).toBeGreaterThan(23)
+    expect(plan.tiles).toHaveLength(1)
+    const [tile] = await buildBaseplate(plan)
+    const [w, d, h] = size(tile.mesh.bbox)
+    expect(w).toBeCloseTo(255, 1)
+    expect(d).toBeCloseTo(plan.plateDepthMm, 1)
+    expect(h).toBeCloseTo(BASEPLATE_HEIGHT_MM, 3)
+    expect(checkManifold(tile.mesh).ok).toBe(true)
+  })
+})
+
+describe('the gutter behind a wide S76 plate', () => {
+  const params = { ...DEFAULT_BASEPLATE, container: 'systainer-s76-wide' as const, gutter: true, gutterCompartments: 3 }
+
+  it('cuts the plate behind the grid and fills the rest of the case', async () => {
+    const plan = planBaseplate(params)
+    expect(plan.problem).toBeUndefined()
+    expect([plan.cellsX, plan.cellsY]).toEqual([6, 3])
+    expect(plan.plateDepthMm).toBeCloseTo(plan.gridY + 3 * 42 + PLATE_BACK_RIM_MM, 6)
+    const [tile] = await buildBaseplate(plan)
+    expect(size(tile.mesh.bbox)[1]).toBeCloseTo(plan.plateDepthMm, 1)
+
+    const gutter = await buildGutter(plan, params)
+    expect(gutter).not.toBeNull()
+    const m = gutter!
+    expect(checkManifold(m).ok).toBe(true)
+    // Clear of the plate, inside the insert's own depth, full width at most.
+    expect(m.bbox[1]).toBeGreaterThanOrEqual(plan.plateDepthMm + GUTTER_GAP_MM - 1e-3)
+    expect(m.bbox[4]).toBeLessThanOrEqual(165.49)
+    expect(m.bbox[0]).toBeGreaterThanOrEqual(-1e-3)
+    expect(m.bbox[3]).toBeLessThanOrEqual(255 + 1e-3)
+    expect(m.bbox[5]).toBeCloseTo(gutterHeightMm(params), 3)
+    expect(gutterHeightMm(params)).toBeLessThanOrEqual(48)
+  })
+
+  it('is hollow, and its compartments add walls', async () => {
+    const plan = planBaseplate(params)
+    const vol = (m: Mesh) => {
+      let v = 0
+      const p = m.positions
+      for (let t = 0; t < m.indices.length; t += 3) {
+        const [a, b, c] = [m.indices[t] * 3, m.indices[t + 1] * 3, m.indices[t + 2] * 3]
+        v += (p[a] * (p[b + 1] * p[c + 2] - p[b + 2] * p[c + 1])
+          - p[a + 1] * (p[b] * p[c + 2] - p[b + 2] * p[c])
+          + p[a + 2] * (p[b] * p[c + 1] - p[b + 1] * p[c])) / 6
+      }
+      return Math.abs(v)
+    }
+    const one = vol((await buildGutter(plan, { ...params, gutterCompartments: 1 }))!)
+    const three = vol((await buildGutter(plan, params))!)
+    const [w, d, h] = size((await buildGutter(plan, params))!.bbox)
+    expect(one).toBeLessThan(0.35 * w * d * h)
+    // Two dividers, 1.2 mm thick and full height; at thirds they fall beside
+    // the back bracket slots, where the trough is shallowest.
+    expect(three - one).toBeGreaterThan(1000)
+  })
+
+  it('has no gutter unless asked, and only on the wide plate', () => {
+    expect(planBaseplate({ ...params, gutter: false }).gutterOutline).toBeUndefined()
+    expect(planBaseplate({ ...params, container: 'systainer-s76-notched' }).gutterOutline).toBeUndefined()
+  })
 })
 
 /**

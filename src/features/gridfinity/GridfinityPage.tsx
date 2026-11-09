@@ -24,6 +24,7 @@ import { useAmsTrays } from '../bambu-designer/useAmsTrays.ts'
 import { assignExtruders, loadedFirst } from '../bambu-designer/amsTrays.ts'
 import { BASEPLATE_HEIGHT_MM, buildBaseplate, planBaseplate, type BuiltTile } from './geometry/baseplate.ts'
 import { mergeMeshes, translateMesh } from './geometry/place.ts'
+import { buildGutter } from './geometry/gutter.ts'
 import type { Mesh } from '../../geometry/mesh.ts'
 import {
   describe, emptyDesign, fromRecord, type GridfinityKind, type GridfinityRecord, type LabelList,
@@ -46,6 +47,8 @@ const SolidViewer3D = lazy(() => import('../../components/viewport3d/SolidViewer
 
 /** Long enough that dragging through a select does not rebuild every step. */
 const REBUILD_DELAY_MS = 200
+/** The gutter's colour in the 3D preview, apart from the plate's. */
+const GUTTER_PREVIEW = '#8fb3d9'
 /** Space between tiles in the 3D preview, so the cuts read. */
 const TILE_GAP_MM = 6
 /** How far above its bin the lid floats in the preview, so the catches show. */
@@ -155,6 +158,26 @@ export default function GridfinityPage() {
       translateMesh(mesh, tile.x + (tile.col - 1) * TILE_GAP_MM, tile.y + (tile.row - 1) * TILE_GAP_MM))
     return mergeMeshes(placed)
   }, [tiles])
+
+  // The gutter behind a wide S76 plate: built with the tiles, shown behind them.
+  const [gutter, setGutter] = useState<Mesh | null>(null)
+  useEffect(() => {
+    if (!wantTiles || !plan.gutterOutline) { setGutter(null); return }
+    let cancelled = false
+    const timer = setTimeout(() => {
+      buildGutter(plan, plateParams)
+        .then(m => { if (!cancelled) setGutter(m) })
+        .catch((e: unknown) => { if (!cancelled) setError((e as Error).message) })
+    }, REBUILD_DELAY_MS)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [wantTiles, plan, plateParams])
+  const gutterExtras = useMemo(() => (gutter
+    ? [{ mesh: translateMesh(gutter, 0, (plan.rows.length - 1) * TILE_GAP_MM + TILE_GAP_MM, 0), color: GUTTER_PREVIEW }]
+    : undefined), [gutter, plan.rows.length])
+  /** How deep the case drawing runs: past the cut plate when a gutter follows it. */
+  const caseDepthMm = plan.gutterOutline
+    ? Math.max(plan.plateDepthMm, ...plan.gutterOutline.flat().map(([, y]) => y))
+    : plan.plateDepthMm
 
   // ---- Case layout: saved bins placed on the plate. ----
 
@@ -298,6 +321,20 @@ export default function GridfinityPage() {
           new Uint8Array(writeBinaryStl(mesh, `${design.name} tile ${tile.col}-${tile.row}`))
       }
       triggerDownload(zipParts(files), `${baseName}_${built.length}-tiles.zip`, 'application/zip')
+    } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
+  }
+
+  /** The gutter on its own, moved to the origin the way it prints: floor down. */
+  const downloadGutter = async (format: 'stl' | '3mf' | 'studio') => {
+    setBusy(true)
+    try {
+      const built = gutter ?? await buildGutter(plan, plateParams)
+      if (!built) return
+      const mesh = translateMesh(built, -built.bbox[0], -built.bbox[1], -built.bbox[2])
+      const title = `${design.name} gutter`
+      if (format === 'stl') triggerDownload(writeBinaryStl(mesh, title), `${baseName}_gutter.stl`, 'model/stl')
+      else if (format === 'studio') void openInBambuStudio(writeThreeMf(mesh, title), title)
+      else triggerDownload(writeThreeMf(mesh, title), `${baseName}_gutter.3mf`, 'model/3mf')
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
 
@@ -522,7 +559,7 @@ export default function GridfinityPage() {
     <BaseplatePlanView
       plan={plan}
       drawerWidthMm={plan.outline ? plan.plateWidthMm : plateParams.drawerWidthMm}
-      drawerDepthMm={plan.outline ? plan.plateDepthMm : plateParams.drawerDepthMm}
+      drawerDepthMm={plan.outline ? caseDepthMm : plateParams.drawerDepthMm}
       stacks={stacks} selected={selectedStack} onCell={onCell}
     />
   ) : tiles.status === 'error' ? (
@@ -530,7 +567,7 @@ export default function GridfinityPage() {
   ) : tilePreview ? (
     <Suspense fallback={<LoadingState label="Loading the 3D view…" />}>
       <SolidViewer3D
-        mesh={tilePreview} label="the baseplate tiles" up="z"
+        mesh={tilePreview} extras={gutterExtras} label="the baseplate tiles" up="z"
       />
     </Suspense>
   ) : <LoadingState label={`Building ${plan.tiles.length} baseplate tiles…`} />
@@ -568,6 +605,13 @@ export default function GridfinityPage() {
             onClick: () => void downloadBaseplate(),
             disabled: !exportReady || busy,
           },
+          ...(plan.gutterOutline
+            ? [
+                { label: 'Export gutter STL', onClick: () => void downloadGutter('stl'), disabled: !exportReady || busy },
+                { label: 'Export gutter 3MF', onClick: () => void downloadGutter('3mf'), disabled: !exportReady || busy },
+                { label: 'Open gutter in Bambu Studio', onClick: () => void downloadGutter('studio'), disabled: !exportReady || busy },
+              ]
+            : []),
         ],
     file: [
       { label: 'Make a copy', onClick: savedId ? () => void clone() : undefined, disabled: busy },

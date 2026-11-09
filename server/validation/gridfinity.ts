@@ -63,7 +63,7 @@ export function validateBaseplateParams(value: unknown): GridfinityBaseplatePara
   const p = requireObject(value, 'params')
   rejectUnknownKeys(p, [
     'container', 'drawerWidthMm', 'drawerDepthMm', 'clearanceMm', 'alignX', 'alignY', 'bedMm',
-    'layout', 'heightLimitMm',
+    'layout', 'heightLimitMm', 'gutter', 'gutterHeightUnits', 'gutterCompartments',
   ], 'params')
   const L = BASEPLATE_LIMITS
   const drawer = (v: unknown, field: string) => {
@@ -82,6 +82,13 @@ export function validateBaseplateParams(value: unknown): GridfinityBaseplatePara
     ...(absent(p.heightLimitMm)
       ? {}
       : { heightLimitMm: requireNumber(p.heightLimitMm, 'params.heightLimitMm', { min: 1, max: L.maxHeightMm }) }),
+    ...(absent(p.gutter) ? {} : { gutter: requireBoolean(p.gutter, 'params.gutter') }),
+    ...(absent(p.gutterHeightUnits)
+      ? {}
+      : { gutterHeightUnits: int(p.gutterHeightUnits, 'params.gutterHeightUnits', L.minGutterUnits, L.maxGutterUnits) }),
+    ...(absent(p.gutterCompartments)
+      ? {}
+      : { gutterCompartments: int(p.gutterCompartments, 'params.gutterCompartments', 1, L.maxGutterCompartments) }),
   }
 }
 

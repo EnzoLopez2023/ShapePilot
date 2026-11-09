@@ -47,8 +47,14 @@ export interface GridfinityBinParams {
  * What the baseplate sits in. A drawer is measured; a Systainer is a known
  * outline (the SYS3 S 76 insert shared with the tray designers), so its size,
  * clearance and tiling are fixed. Absent on plates saved before this: a drawer.
+ *
+ * `systainer-s76-wide` is the notched insert for a case whose two side divider
+ * brackets have been cut off: widened to 255 mm along the straight side walls,
+ * it takes a 6 x 3 grid, pushed to the front.
  */
-export const BASEPLATE_CONTAINERS = ['drawer', 'systainer-s76-notched', 'systainer-s76-plain'] as const
+export const BASEPLATE_CONTAINERS = [
+  'drawer', 'systainer-s76-notched', 'systainer-s76-plain', 'systainer-s76-wide',
+] as const
 export type GridfinityContainer = (typeof BASEPLATE_CONTAINERS)[number]
 
 /**
@@ -79,6 +85,16 @@ export interface GridfinityBaseplateParams {
    * container's own (a Systainer's base) or, for a drawer, no check.
    */
   heightLimitMm?: number
+  /**
+   * `systainer-s76-wide` only: stop the plate just behind the grid and fill
+   * the strip left at the back with one long bin standing on the case floor.
+   * Absent: no gutter, the strip is solid plate.
+   */
+  gutter?: boolean
+  /** The gutter's top sits level with an n-unit bin's stacking lip. Absent: 6. */
+  gutterHeightUnits?: number
+  /** Compartments along the gutter, split by thin walls. Absent: 1. */
+  gutterCompartments?: number
 }
 
 export const BIN_LIMITS = {
@@ -94,7 +110,10 @@ export const BASEPLATE_LIMITS = {
   maxClearanceMm: 20,
   minBedMm: 100, maxBedMm: 1_000,
   maxPlacements: 200, maxStack: 10, maxHeightMm: 1_000,
+  minGutterUnits: 2, maxGutterUnits: 6, maxGutterCompartments: 8,
 } as const
+
+export const DEFAULT_GUTTER_UNITS = 6
 
 /**
  * Systainer SYS3 S 76 base cavity, mm: Systainer USA's "inside" figure, not

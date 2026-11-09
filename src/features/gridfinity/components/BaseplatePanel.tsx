@@ -4,14 +4,17 @@ import {
 } from '@mui/material'
 import LengthField from '../../../components/LengthField.tsx'
 import {
-  BASEPLATE_LIMITS, type GridfinityAlign, type GridfinityBaseplateParams, type GridfinityContainer,
+  BASEPLATE_LIMITS, DEFAULT_GUTTER_UNITS, type GridfinityAlign, type GridfinityBaseplateParams, type GridfinityContainer,
 } from '../../../../lib/contracts/gridfinity.ts'
 import { getPreset } from '../../../model/trayProfile.ts'
+import { S76_WIDE_EAR_MM } from '../geometry/baseplate.ts'
+import { gutterHeightMm } from '../geometry/gutter.ts'
 
 const CONTAINERS: { id: GridfinityContainer; label: string }[] = [
   { id: 'drawer', label: 'A drawer I measure' },
   { id: 'systainer-s76-notched', label: 'Systainer SYS3 S 76 — notched insert' },
   { id: 'systainer-s76-plain', label: 'Systainer SYS3 S 76 — plain insert' },
+  { id: 'systainer-s76-wide', label: 'Systainer SYS3 S 76 — side brackets removed (6 × 3)' },
 ]
 
 export interface BaseplatePanelProps {
@@ -64,8 +67,9 @@ export default function BaseplatePanel(
   const bedPreset = BEDS.find(b => b.mm === plate.bedMm)
   const container = plate.container ?? 'drawer'
   const systainerSize = container === 'drawer' ? '' : (() => {
-    const p = getPreset(container)
-    return `${+p.widthMm.toFixed(1)} × ${+p.heightMm.toFixed(1)} mm`
+    const p = getPreset(container === 'systainer-s76-wide' ? 'systainer-s76-notched' : container)
+    const w = p.widthMm + (container === 'systainer-s76-wide' ? 2 * S76_WIDE_EAR_MM : 0)
+    return `${+w.toFixed(1)} × ${+p.heightMm.toFixed(1)} mm`
   })()
   return (
     <Stack spacing={2} sx={{ p: 2, overflowY: { lg: 'auto' }, height: { lg: '100%' } }}>
@@ -121,6 +125,50 @@ export default function BaseplatePanel(
             label="Front to back" value={plate.alignY} names={['Front', 'Centre', 'Back']}
             onChange={alignY => onPlate({ alignY })}
           />
+        </>
+      ) : container === 'systainer-s76-wide' ? (
+        <>
+          <Typography variant="body2" color="text.secondary">
+            For a case with its two side divider brackets cut off. The notched insert
+            widened to {systainerSize} along the straight side walls, with the grid
+            pushed to the front.
+          </Typography>
+
+          <Divider />
+          <Typography variant="h3" component="h2">Back strip</Typography>
+          <FormControlLabel
+            control={<Switch size="small" checked={!!plate.gutter} onChange={e => onPlate({ gutter: e.target.checked })} />}
+            label="Long gutter bin"
+          />
+          {plate.gutter ? (
+            <>
+              <Typography variant="body2" color="text.secondary">
+                The plate stops just behind the last row. The gutter fills the rest of the
+                case, standing on the floor, for pencils, rules, hex keys and bits.
+              </Typography>
+              <TextField
+                select size="small" label="Height" value={plate.gutterHeightUnits ?? DEFAULT_GUTTER_UNITS}
+                onChange={e => onPlate({ gutterHeightUnits: Number(e.target.value) })}
+                helperText={`${+gutterHeightMm(plate).toFixed(1)} mm — level with the lip of a bin this tall`}
+              >
+                {Array.from(
+                  { length: BASEPLATE_LIMITS.maxGutterUnits - BASEPLATE_LIMITS.minGutterUnits + 1 },
+                  (_, i) => BASEPLATE_LIMITS.minGutterUnits + i,
+                ).map(u => <MenuItem key={u} value={u}>{`${u}u bin`}</MenuItem>)}
+              </TextField>
+              <TextField
+                select size="small" label="Compartments" value={plate.gutterCompartments ?? 1}
+                onChange={e => onPlate({ gutterCompartments: Number(e.target.value) })}
+              >
+                {Array.from({ length: BASEPLATE_LIMITS.maxGutterCompartments }, (_, i) => i + 1)
+                  .map(n => <MenuItem key={n} value={n}>{n === 1 ? 'One long trough' : `${n}`}</MenuItem>)}
+              </TextField>
+            </>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              Off: the strip behind the grid stays solid plate.
+            </Typography>
+          )}
         </>
       ) : (
         <Typography variant="body2" color="text.secondary">

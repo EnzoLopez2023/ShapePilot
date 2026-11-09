@@ -17,7 +17,7 @@ import {
 import { finish, profile, type Outline } from './shapes.ts'
 import { getPreset, profileToMulti } from '../../../model/trayProfile.ts'
 
-type Pt = [number, number]
+export type Pt = [number, number]
 
 export const BASEPLATE_HEIGHT_MM = 4.65
 const POCKET_RADIUS_MM = 4
@@ -63,6 +63,11 @@ export interface BaseplatePlan {
    * insert. Rings in plate coordinates, the first the outside.
    */
   outline?: Pt[][]
+  /**
+   * The long bin filling the strip behind the grid, when there is one: its
+   * footprint in plate coordinates (it runs past `plateDepthMm`).
+   */
+  gutterOutline?: Pt[][]
   /** Set when the drawer cannot take a plate at all; nothing else is useful. */
   problem?: string
 }
@@ -138,10 +143,104 @@ function cellFits(rings: Pt[][], x: number, y: number): boolean {
   return true
 }
 
+/** How far each side of the wide S76 plate reaches past the notched insert. */
+export const S76_WIDE_EAR_MM = 3
+/** Past the ears' front edge, so the corner pockets keep ~2 mm of wall. */
+const WIDE_FRONT_SKIN_MM = 0.6
+
+/**
+ * The notched S76 insert, widened for a case with its side divider brackets
+ * cut off. Those brackets are what kept the stock insert to 249 mm; without
+ * them the straight side walls stand 258 mm apart, so the plate grows 3 mm a
+ * side (255 mm, 1.5 mm play each side) -- enough for six 42 mm columns.
+ *
+ * Only the straight run of the side walls widens. Front and back the plate
+ * keeps the insert's own corner fillets and bracket notches, so it still
+ * clears the latch slopes, the hinge corners and the front/back brackets.
+ * The ears start exactly where the insert's front fillet meets the wall --
+ * the wall's own tangent point, if the case corner is concentric with it.
+ */
+function wideS76(gutter: boolean): {
+  widthMm: number; depthMm: number; outline: Pt[][]; gridY: number; gutterOutline?: Pt[][]
+} {
+  const preset = getPreset('systainer-s76-notched')
+  const ring = profileToMulti({ kind: 'preset', id: 'systainer-s76-notched' })[0][0]
+    .map(([x, y]) => [x, y] as Pt)
+  const w = preset.widthMm
+  const e = S76_WIDE_EAR_MM
+  const on = (v: number, at: number) => Math.abs(v - at) < 1e-3
+  const out: Pt[] = []
+  ring.forEach((pt, i) => {
+    const next = ring[(i + 1) % ring.length]
+    out.push(pt)
+    // A straight side edge (both ends on x = 0 or x = w): step out and back.
+    for (const side of [0, w]) {
+      if (on(pt[0], side) && on(next[0], side) && Math.abs(pt[1] - next[1]) > 50) {
+        const dx = side === 0 ? -e : e
+        out.push([side + dx, pt[1]], [side + dx, next[1]])
+      }
+    }
+  })
+  if (out.length !== ring.length + 4) {
+    throw new Error('The S76 outline no longer has two straight sides to widen.')
+  }
+  // As far forward as the outer columns go: the ears' front edge, plus a
+  // little so the pockets' rounded corners leave a printable skin.
+  const earFront = Math.min(...ring.filter(([x]) => on(x, 0)).map(([, y]) => y))
+  const gridY = earFront + WIDE_FRONT_SKIN_MM
+  const whole = out.map(([x, y]) => [x + e, y] as Pt)
+  if (!gutter) return { widthMm: w + 2 * e, depthMm: preset.heightMm, outline: [whole], gridY }
+  // The plate stops just behind the last row; the gutter takes the rest.
+  const cut = gridY + S76_ROWS * GRID_PITCH_MM + PLATE_BACK_RIM_MM
+  return {
+    widthMm: w + 2 * e,
+    depthMm: cut,
+    outline: [clipY(whole, cut, 'below')],
+    gridY,
+    gutterOutline: [clipY(whole, cut + GUTTER_GAP_MM, 'above')],
+  }
+}
+
+/** Rows the S76 takes front to back, whichever outline. */
+const S76_ROWS = 3
+/** Plate left behind the last row when a gutter follows: a 1.1 mm top rim. */
+export const PLATE_BACK_RIM_MM = 1
+/** Play between the cut plate and the gutter at the floor. */
+export const GUTTER_GAP_MM = 0.4
+
+/**
+ * One ring cut by a horizontal line, keeping the part below or above it
+ * (Sutherland-Hodgman). Right only while that part is one piece -- true for
+ * the S76 outline either side of a line through its straight-sided middle.
+ */
+export function clipY(ring: Pt[], y: number, keep: 'below' | 'above'): Pt[] {
+  const ins = ([, py]: Pt) => (keep === 'below' ? py <= y : py >= y)
+  const out: Pt[] = []
+  ring.forEach((cur, i) => {
+    const prev = ring[(i + ring.length - 1) % ring.length]
+    const cross = (): Pt => {
+      const t = (y - prev[1]) / (cur[1] - prev[1])
+      return [prev[0] + t * (cur[0] - prev[0]), y]
+    }
+    if (ins(cur)) {
+      if (!ins(prev)) out.push(cross())
+      out.push(cur)
+    } else if (ins(prev)) out.push(cross())
+  })
+  // Drop repeats a vertex lying on the line leaves behind.
+  return out.filter((p, i) => {
+    const q = out[(i + 1) % out.length]
+    return Math.hypot(p[0] - q[0], p[1] - q[1]) > 1e-6
+  })
+}
+
 /** The plate's size and, for a Systainer, its fixed outline. */
 function container(p: GridfinityBaseplateParams): {
   widthMm: number; depthMm: number; alignX: GridfinityAlign; alignY: GridfinityAlign
   outline?: Pt[][]
+  /** A fixed front-to-back grid position, overriding `alignY`. */
+  gridY?: number
+  gutterOutline?: Pt[][]
 } {
   const c = p.container ?? 'drawer'
   if (c === 'drawer') {
@@ -151,6 +250,9 @@ function container(p: GridfinityBaseplateParams): {
       alignX: p.alignX,
       alignY: p.alignY,
     }
+  }
+  if (c === 'systainer-s76-wide') {
+    return { ...wideS76(!!p.gutter), alignX: 'center', alignY: 'start' }
   }
   // The insert outline the tray designers cut to already fits the case, so it
   // takes no clearance; the grid sits centred so the padding is even.
@@ -172,10 +274,11 @@ export function planBaseplate(p: GridfinityBaseplateParams): BaseplatePlan {
   const cellsX = Math.floor((plateWidthMm + 1e-6) / GRID_PITCH_MM)
   const cellsY = Math.floor((plateDepthMm + 1e-6) / GRID_PITCH_MM)
   const gridX = offset(box.alignX, plateWidthMm - cellsX * GRID_PITCH_MM)
-  const gridY = offset(box.alignY, plateDepthMm - cellsY * GRID_PITCH_MM)
+  const gridY = box.gridY ?? offset(box.alignY, plateDepthMm - cellsY * GRID_PITCH_MM)
   const empty: BaseplatePlan = {
     plateWidthMm, plateDepthMm, cellsX, cellsY, gridX, gridY, columns: [], rows: [], tiles: [],
     ...(box.outline ? { outline: box.outline } : {}),
+    ...(box.gutterOutline ? { gutterOutline: box.gutterOutline } : {}),
   }
   if (cellsX < 1 || cellsY < 1) {
     return { ...empty, problem: `The drawer needs at least ${GRID_PITCH_MM} mm of room each way, after clearance.` }

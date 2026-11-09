@@ -26,8 +26,9 @@ export default function BaseplatePlanView(
   const margin = 16
   const W = drawerWidthMm
   const D = drawerDepthMm
-  const ox = (W - plan.plateWidthMm) / 2
-  const oy = (D - plan.plateDepthMm) / 2
+  // A case outline is drawn where it is; a drawer plate is centred in the drawer.
+  const ox = plan.outline ? 0 : (W - plan.plateWidthMm) / 2
+  const oy = plan.outline ? 0 : (D - plan.plateDepthMm) / 2
   // SVG y runs down; the drawer's front (y = 0) is drawn at the bottom.
   const fy = (y: number, h = 0) => D - y - h
   const ink = theme.palette.text.primary
@@ -57,6 +58,25 @@ export default function BaseplatePlanView(
             />
           </>
         )}
+        {plan.gutterOutline && (() => {
+          const ys = plan.gutterOutline.flat().map(([, y]) => y)
+          const mid = (Math.min(...ys) + Math.max(...ys)) / 2
+          return (
+            <g>
+              <title>Gutter: one long bin standing on the case floor</title>
+              <path
+                d={path(plan.gutterOutline)} fillRule="evenodd"
+                fill={accent} fillOpacity={0.12} stroke={accent} strokeWidth={0.8}
+              />
+              <text
+                x={ox + plan.plateWidthMm / 2} y={oy + fy(mid)} textAnchor="middle" dominantBaseline="central"
+                fontSize={7} fontWeight={600} fill={accent} fontFamily={theme.typography.fontFamily}
+              >
+                Gutter
+              </text>
+            </g>
+          )
+        })()}
         {Array.from({ length: plan.cellsX }, (_, i) => Array.from({ length: plan.cellsY }, (_, j) => (
           <rect
             key={`${i}-${j}`}
