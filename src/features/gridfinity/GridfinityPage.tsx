@@ -307,25 +307,48 @@ export default function GridfinityPage() {
     ], title)
   }
 
-  const downloadBaseplate = async () => {
+  /**
+   * The plate and, when there is one, the gutter: one STL (or a zip of them),
+   * or one 3MF with each tile and the gutter on a build plate of its own.
+   */
+  const downloadBaseplate = async (format: 'stl' | '3mf' | 'studio') => {
     setBusy(true)
     try {
       const built = tiles.status === 'ready' ? tiles.value : await buildBaseplate(plan)
-      if (built.length === 1) {
-        triggerDownload(writeBinaryStl(built[0].mesh, design.name), `${baseName}.stl`, 'model/stl')
+      const gutterMesh = plan.gutterOutline ? (gutter ?? await buildGutter(plan, plateParams)) : null
+      const toOrigin = (m: Mesh) => translateMesh(m, -m.bbox[0], -m.bbox[1], -m.bbox[2])
+      const pieces = [
+        ...built.map(({ tile, mesh }) => ({
+          mesh,
+          name: built.length === 1 ? design.name : `${design.name} tile ${tile.col}-${tile.row}`,
+          file: built.length === 1 ? baseName : `${baseName}_tile_${tile.col}-${tile.row}`,
+        })),
+        ...(gutterMesh ? [{ mesh: toOrigin(gutterMesh), name: `${design.name} gutter`, file: `${baseName}_gutter` }] : []),
+      ]
+      if (format === 'stl') {
+        if (pieces.length === 1) {
+          triggerDownload(writeBinaryStl(pieces[0].mesh, pieces[0].name), `${baseName}.stl`, 'model/stl')
+          return
+        }
+        const files: Record<string, Uint8Array> = {}
+        for (const p of pieces) files[`${p.file}.stl`] = new Uint8Array(writeBinaryStl(p.mesh, p.name))
+        triggerDownload(zipParts(files), `${baseName}_${pieces.length}-parts.zip`, 'application/zip')
         return
       }
-      const files: Record<string, Uint8Array> = {}
-      for (const { tile, mesh } of built) {
-        files[`${baseName}_tile_${tile.col}-${tile.row}.stl`] =
-          new Uint8Array(writeBinaryStl(mesh, `${design.name} tile ${tile.col}-${tile.row}`))
-      }
-      triggerDownload(zipParts(files), `${baseName}_${built.length}-tiles.zip`, 'application/zip')
+      // Each piece centred on a bed of its own: they are all near bed-sized.
+      const bed = plateParams.bedMm
+      const bytes = writeThreeMfPlates(pieces.map((p, i) => {
+        const [x0, y0, , x1, y1] = p.mesh.bbox
+        const mesh = translateMesh(p.mesh, (bed - (x1 - x0)) / 2 - x0, (bed - (y1 - y0)) / 2 - y0, 0)
+        return { name: p.name, plate: i, parts: [{ mesh, name: p.name }] }
+      }), design.name, bed)
+      if (format === 'studio') void openInBambuStudio(bytes, design.name)
+      else triggerDownload(bytes, `${baseName}.3mf`, 'model/3mf')
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
 
   /** The gutter on its own, moved to the origin the way it prints: floor down. */
-  const downloadGutter = async (format: 'stl' | '3mf' | 'studio') => {
+  const downloadGutter = async (format: 'stl' | '3mf') => {
     setBusy(true)
     try {
       const built = gutter ?? await buildGutter(plan, plateParams)
@@ -333,7 +356,6 @@ export default function GridfinityPage() {
       const mesh = translateMesh(built, -built.bbox[0], -built.bbox[1], -built.bbox[2])
       const title = `${design.name} gutter`
       if (format === 'stl') triggerDownload(writeBinaryStl(mesh, title), `${baseName}_gutter.stl`, 'model/stl')
-      else if (format === 'studio') void openInBambuStudio(writeThreeMf(mesh, title), title)
       else triggerDownload(writeThreeMf(mesh, title), `${baseName}_gutter.3mf`, 'model/3mf')
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
@@ -601,15 +623,22 @@ export default function GridfinityPage() {
         ]
       : [
           {
-            label: plan.tiles.length > 1 ? `Export ${plan.tiles.length} tiles (STL zip)` : 'Export STL',
-            onClick: () => void downloadBaseplate(),
+            label: plan.tiles.length > 1 || plan.gutterOutline
+              ? `Export ${plan.tiles.length > 1 ? `${plan.tiles.length} tiles` : 'plate'}${plan.gutterOutline ? ' + gutter' : ''} (STL zip)`
+              : 'Export STL',
+            onClick: () => void downloadBaseplate('stl'),
             disabled: !exportReady || busy,
           },
+          {
+            label: plan.gutterOutline ? 'Export 3MF (plate + gutter)' : 'Export 3MF',
+            onClick: () => void downloadBaseplate('3mf'),
+            disabled: !exportReady || busy,
+          },
+          { label: 'Open in Bambu Studio', onClick: () => void downloadBaseplate('studio'), disabled: !exportReady || busy },
           ...(plan.gutterOutline
             ? [
-                { label: 'Export gutter STL', onClick: () => void downloadGutter('stl'), disabled: !exportReady || busy },
-                { label: 'Export gutter 3MF', onClick: () => void downloadGutter('3mf'), disabled: !exportReady || busy },
-                { label: 'Open gutter in Bambu Studio', onClick: () => void downloadGutter('studio'), disabled: !exportReady || busy },
+                { label: 'Export gutter only STL', onClick: () => void downloadGutter('stl'), disabled: !exportReady || busy },
+                { label: 'Export gutter only 3MF', onClick: () => void downloadGutter('3mf'), disabled: !exportReady || busy },
               ]
             : []),
         ],
