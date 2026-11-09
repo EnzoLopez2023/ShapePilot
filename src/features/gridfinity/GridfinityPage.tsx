@@ -34,6 +34,7 @@ import * as api from './service.ts'
 import BinPanel from './components/BinPanel.tsx'
 import BaseplatePanel from './components/BaseplatePanel.tsx'
 import BaseplatePlanView from './components/BaseplatePlanView.tsx'
+import BatchBinOptions from './components/BatchBinOptions.tsx'
 import LabelListsPanel, { type BatchOptions } from './components/LabelListsPanel.tsx'
 import { suggestBinSize } from './model/labelSize.ts'
 import { densityOf, formatGrams, formatMinutes, printMinutes, printedGrams } from '../bambu-designer/estimate.ts'
@@ -658,6 +659,13 @@ export default function GridfinityPage() {
               lists={lists} loading={listsLoading} activeListId={design.bin.labelListId}
               onChanged={refreshLists} onUse={applyList}
               onToast={setToast} onError={setError} onExportAll={exportPerLabel}
+              batchOptions={(
+                <BatchBinOptions
+                  bin={design.bin} onBin={d.setBin}
+                  ownedColors={colorsByTray} colors={colors} onColors={next => view({ colors: next })}
+                  amsNote={key => { const tray = amsTrayFor(key); return tray ? `in ${tray.label}` : null }}
+                />
+              )}
             />
           ) : plan.problem ? (
             <Typography variant="body2" color="text.secondary">

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import {
   Alert, Button, Checkbox, Dialog, DialogActions, DialogContent, DialogTitle, Divider, FormControlLabel,
   IconButton, LinearProgress, Radio, RadioGroup, Stack, TextField, Tooltip, Typography,
@@ -33,12 +33,14 @@ export interface LabelListsPanelProps {
   onExportAll: (
     list: LabelList, options: BatchOptions, progress: (done: number, total: number) => void,
   ) => Promise<void>
+  /** Bin choices shown in the export dialog (height, lid, colours). */
+  batchOptions?: ReactNode
 }
 
 interface Editing { id?: string; name: string; text: string }
 
 export default function LabelListsPanel(
-  { lists, loading, activeListId, onChanged, onUse, onToast, onError, onExportAll }: LabelListsPanelProps,
+  { lists, loading, activeListId, onChanged, onUse, onToast, onError, onExportAll, batchOptions }: LabelListsPanelProps,
 ) {
   const confirm = useConfirm()
   const fileInput = useRef<HTMLInputElement>(null)
@@ -196,7 +198,7 @@ export default function LabelListsPanel(
         })}
       </Stack>
 
-      <Dialog open={!!choosing} onClose={() => setChoosing(null)} fullWidth maxWidth="xs">
+      <Dialog open={!!choosing} onClose={() => setChoosing(null)} fullWidth maxWidth="sm">
         <DialogTitle>A bin per label</DialogTitle>
         <DialogContent dividers>
           {choosing && (() => {
@@ -204,8 +206,10 @@ export default function LabelListsPanel(
             return (
               <Stack spacing={1.5}>
                 <Typography variant="body2" color="text.secondary">
-                  {choosing.items.length} bins from “{choosing.name}”, each with this bin’s options and its own label.
+                  {choosing.items.length} bins from “{choosing.name}”, each this bin with its own label. These settings change the bin you are designing too.
                 </Typography>
+                {batchOptions}
+                <Divider />
                 <RadioGroup
                   value={options.format}
                   onChange={e => setOptions(o => ({ ...o, format: e.target.value as BatchOptions['format'] }))}

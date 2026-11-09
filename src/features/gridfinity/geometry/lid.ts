@@ -95,6 +95,9 @@ export function lidDimensions(p: GridfinityBinParams): LidDimensions {
   return { plugBottomMm, plateBottomMm, topMm: plateBottomMm + LID_TOP_MM, fingerYs }
 }
 
+/** How far a catch stays off surfaces it would otherwise lie flush with. */
+const FLUSH_AVOID_MM = 0.05
+
 /** A polygon in (x, z), extruded along y from y0 to y1. */
 function prismY(wasm: ManifoldToplevel, pts: [number, number][], y0: number, y1: number): Manifold {
   const section: CrossSection = new wasm.CrossSection([pts], 'Positive')
@@ -122,10 +125,14 @@ function catchOutline(H: number, plugBottom: number): [number, number][] {
     [tip, tipBottom],
     [fingerFace, tipBottom - leadIn],
     [fingerFace, bottom],
-    [inner, bottom],
-    // Up the hollow's face to the plug's underside, then into the plug wall so
-    // the finger welds to it.
-    [inner, plugBottom],
+    // A hair behind the hollow's face, not on it: a finger flush with the
+    // plug's inner corner pinches the mesh there, which slicers report as an
+    // error. Then up through the plug's underside -- crossing it, not ending
+    // on it -- and into its wall to weld.
+    [inner - FLUSH_AVOID_MM, bottom],
+    // Half as far up as in: equal steps would land the corner exactly on the
+    // hollow's 45° chamfer.
+    [inner - FLUSH_AVOID_MM, plugBottom + FLUSH_AVOID_MM / 2],
     [inner - 0.75, plugBottom + 0.5],
     [tip + (meet - tipTop), meet],
     [tip, tipTop],
@@ -159,7 +166,8 @@ export function lidSolid(wasm: ManifoldToplevel, p: GridfinityBinParams): Manifo
   for (const y of L.fingerYs) {
     const y0 = y - FINGER_WIDTH_MM / 2
     const y1 = y + FINGER_WIDTH_MM / 2
-    const left = prismY(wasm, outline, y0, y1)
+    // Narrower than the gap between its slots, so its ends never lie on a slot face.
+    const left = prismY(wasm, outline, y0 + FLUSH_AVOID_MM, y1 - FLUSH_AVOID_MM)
     catches.push(left, left.mirror([1, 0, 0]).translate([d.widthMm, 0, 0]))
     for (const [a, b] of [[y0 - SLOT_MM, y0], [y1, y1 + SLOT_MM]]) {
       const slot = wasm.Manifold.cube([slotDepth + 1, b - a, L.plateBottomMm - (z0 - 3)])

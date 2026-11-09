@@ -41,6 +41,8 @@ export const DIVIDER_MM = 1.2
  * How far below the lip's top the thumb notch goes, when a lid is on: deep
  * enough for a fingernail under the lid's plate edge, which overhangs the plug.
  */
+/** How far inside the outer skin the scoop, tab and dividers stop. */
+const EXTRAS_INSET_MM = 0.3
 export const THUMB_NOTCH_DEPTH_MM = 2
 export const THUMB_NOTCH_WIDTH_MM = 16
 
@@ -253,7 +255,16 @@ export async function buildBinParts(p: GridfinityBinParams, withFont?: Font): Pr
   if (p.labelTab) extras.push(labelTab(wasm, d))
   const walls = dividers(wasm, p, d)
   if (walls) extras.push(walls)
-  if (extras.length) solid = solid.add(wasm.Manifold.union(extras).intersect(shell))
+  if (extras.length) {
+    // Trimmed just inside the outer skin, never to it: an extra cut flush with
+    // the outer wall leaves zero-area slivers and pinched vertices along the
+    // seam, and Bambu Studio flags those as "reversed faces". 0.3 mm in still
+    // overlaps the 1.2 mm wall by 0.9 mm, so the union welds.
+    const inside = wasm.Manifold.hull([
+      ...ring(body, EXTRAS_INSET_MM, FOOT_HEIGHT_MM), ...ring(body, EXTRAS_INSET_MM, d.heightMm),
+    ])
+    solid = solid.add(wasm.Manifold.union(extras).intersect(inside))
+  }
   const text = font ? labelText(wasm, font, p, d, separate) : null
   if (text && !separate) solid = solid.add(text)
   if (p.magnets) solid = solid.subtract(magnetHoles(wasm, p))

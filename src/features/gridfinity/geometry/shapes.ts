@@ -4,8 +4,15 @@
 // keep the booleans that follow robust: no thin slivers, no coplanar fights.
 import type { Manifold, ManifoldToplevel, Vec3 } from 'manifold-3d'
 
-/** Quarter-circle segments per rounded corner. */
-const CORNER_SEGMENTS = 8
+/**
+ * Quarter-circle segments per rounded corner. Odd on purpose: with an even
+ * count a vertex sits exactly on each corner's 45° diagonal, the plane a
+ * square bin is mirror-symmetric about. Bambu Studio's "reversed faces" check
+ * fires a ray down that very plane through the bin's centre; it lands on the
+ * edge between two facets, misses both in rounding, meets the inside of the
+ * bin first, and flags a perfectly good mesh. Odd puts a facet's middle there.
+ */
+const CORNER_SEGMENTS = 9
 
 /** A rounded rectangle, by its min corner, size and inset from that outline. */
 export interface Outline {

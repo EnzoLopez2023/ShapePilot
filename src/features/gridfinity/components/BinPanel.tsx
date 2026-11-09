@@ -258,7 +258,7 @@ export default function BinPanel(
         <Typography variant="body2" color="text.secondary">
           {hasText
             ? 'The text exports as its own body on the tab: one 3MF with two parts, or a zip of two STLs that line up.'
-            : 'Pick some text to get a second body.'}
+            : 'Pick some text to get a second body. "Export a bin per label" uses the label colour too.'}
         </Typography>
       )}
 
@@ -269,7 +269,7 @@ export default function BinPanel(
             <Typography variant="h3" component="h2">Filament colours</Typography>
           </Tooltip>
           {colorField('bin', 'Bin')}
-          {bin.labelSeparate && hasText && colorField('label', 'Label text')}
+          {bin.labelSeparate && bin.labelTab && colorField('label', 'Label text')}
         </>
       )}
     </Stack>

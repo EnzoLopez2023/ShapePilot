@@ -9,6 +9,7 @@ import { buildLid, lidDimensions, lidSolid, LID_TEXT_DEPTH_MM, LID_TOP_MM } from
 import type { Manifold, ManifoldToplevel } from 'manifold-3d'
 import { loadManifold } from '../../../csg/manifold.ts'
 import type { Mesh } from '../../../geometry/mesh.ts'
+import { ring } from './shapes.ts'
 
 const solidOf = (wasm: ManifoldToplevel, m: Mesh): Manifold => new wasm.Manifold(new wasm.Mesh({
   numProp: 3, vertProperties: new Float32Array(m.positions), triVerts: new Uint32Array(m.indices),
@@ -247,4 +248,62 @@ describe('label files', () => {
       expect(checkManifold(tile.mesh).ok).toBe(true)
       expect(checkManifold(tile.mesh).nonManifoldEdges).toBe(0)
     })
+})
+
+/**
+ * What Bambu Studio's mesh check trips on even in a closed, consistently wound
+ * mesh: two vertices at one position (a pinch it welds into a non-manifold
+ * edge) and zero-area triangles. Both came from extras cut flush with the
+ * outer wall, and Studio reported them as "reversed faces".
+ */
+function slicerDefects(m: Mesh): { duplicateVertices: number; zeroAreaTriangles: number } {
+  const p = m.positions
+  const seen = new Set<string>()
+  let duplicateVertices = 0
+  for (let i = 0; i < p.length; i += 3) {
+    const key = `${p[i]},${p[i + 1]},${p[i + 2]}`
+    if (seen.has(key)) duplicateVertices++
+    else seen.add(key)
+  }
+  let zeroAreaTriangles = 0
+  for (let t = 0; t < m.indices.length; t += 3) {
+    const [a, b, c] = [m.indices[t] * 3, m.indices[t + 1] * 3, m.indices[t + 2] * 3]
+    const u = [p[b] - p[a], p[b + 1] - p[a + 1], p[b + 2] - p[a + 2]]
+    const w = [p[c] - p[a], p[c + 1] - p[a + 1], p[c + 2] - p[a + 2]]
+    const n = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]]
+    if (Math.hypot(n[0], n[1], n[2]) === 0) zeroAreaTriangles++
+  }
+  return { duplicateVertices, zeroAreaTriangles }
+}
+
+describe('bins Bambu Studio accepts without a mesh error', () => {
+  it('puts no corner vertex on the 45° diagonal Studio fires a check ray down', () => {
+    // An even segment count does, and that ray then slips between two facets.
+    const r = 3.75
+    const corner = ring({ x: 0, y: 0, w: 41.5, d: 41.5, r }, 0, 0)
+      .filter(([x, y]) => x < r && y < r)
+    for (const [x, y] of corner) expect(Math.abs((x - r) - (y - r))).toBeGreaterThan(0.01)
+  })
+
+  const clean = { duplicateVertices: 0, zeroAreaTriangles: 0 }
+  const cases: [string, Partial<typeof DEFAULT_BIN>][] = [
+    ['1x1 scoop + tab + text', { gridX: 1, gridY: 1, heightUnits: 6, labelText: 'M3 x 30 Button' }],
+    ['2x1 scoop + tab + text', { gridX: 2, gridY: 1, heightUnits: 6, labelText: 'M3 x 35 Socket cap' }],
+    ['3x2 dividers + magnets', { gridX: 3, gridY: 2, heightUnits: 3, compartmentsX: 3, compartmentsY: 2, magnets: true, labelText: 'Bits' }],
+    ['1x1 lid notch, no lip text', { gridX: 1, gridY: 1, heightUnits: 3, lid: true, labelText: '' }],
+  ]
+  it.each(cases)('%s', async (_name, patch) => {
+    const params = { ...DEFAULT_BIN, labelTab: true, scoop: true, stackingLip: true, ...patch }
+    const { body } = await buildBinParts(params, font)
+    const separate = await buildBinParts({ ...params, labelSeparate: true }, font)
+    const lid = await buildLid({ ...params, lid: true, lidLabel: true }, font)
+    const lidInlay = await buildLid({ ...params, lid: true, lidLabel: true, labelSeparate: true }, font)
+    const parts: Record<string, Mesh | null | undefined> = {
+      bin: body, 'bin, label apart': separate.body, label: separate.label,
+      lid: lid?.print, 'lid, inlay apart': lidInlay?.print, inlay: lidInlay?.label?.print,
+    }
+    for (const [part, mesh] of Object.entries(parts)) {
+      if (mesh) expect({ part, ...slicerDefects(mesh) }).toEqual({ part, ...clean })
+    }
+  })
 })
