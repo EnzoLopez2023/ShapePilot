@@ -129,9 +129,8 @@ export function condensePlan(config, plan) {
   }
 }
 
-/** Writes edits made in the app into model.json. Returns the number applied. */
-export async function pullEdits(config, client, index) {
-  const { edits } = await client.call('GET', '/api/library/sync/edits')
+/** Writes edits made in the app (GET /api/library/sync/edits) into model.json. Returns the number applied. */
+export function applyEdits(config, edits, index) {
   if (!edits.length) return 0
   const log = new OpLog(config.libraryRoot)
   const record = log.record.bind(log)

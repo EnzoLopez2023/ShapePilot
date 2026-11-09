@@ -52,14 +52,20 @@ export function inspectZip(path) {
   const size = statSync(path).size
   if (size > MAX_ZIP_BYTES) return null
   let entries
+  let names
   try {
-    entries = unzipSync(new Uint8Array(readFileSync(path)), { filter: (f) => !f.name.endsWith('/') && !f.name.startsWith('__MACOSX/') })
+    const bytes = new Uint8Array(readFileSync(path))
+    // List first without inflating anything: most ZIPs in Downloads are installers or archives, not models.
+    const listed = []
+    unzipSync(bytes, { filter: (f) => { listed.push(f.name); return false } })
+    names = listed.filter((n) => !n.endsWith('/') && !n.startsWith('__MACOSX/') && !LITTER.has(basename(n)) && !basename(n).startsWith('._'))
+    const models = names.filter((n) => isModelFile(basename(n)))
+    if (!models.length || names.some((n) => !isModelFile(basename(n)) && !isCompanionFile(n))) return null
+    const wanted = new Set(names)
+    entries = unzipSync(bytes, { filter: (f) => wanted.has(f.name) })
   } catch {
     return null
   }
-  const names = Object.keys(entries).filter((n) => !LITTER.has(basename(n)) && !basename(n).startsWith('._'))
-  const models = names.filter((n) => isModelFile(basename(n)))
-  if (!models.length || names.some((n) => !isModelFile(basename(n)) && !isCompanionFile(n))) return null
   // Strip a single shared top-level folder ("thing/files/a.stl" -> "files/a.stl").
   const tops = new Set(names.map((n) => n.split('/')[0]))
   const strip = tops.size === 1 && names.every((n) => n.includes('/')) ? `${[...tops][0]}/` : ''
@@ -78,9 +84,10 @@ function newUnit(source) {
 
 /**
  * Builds the plan. `records` come from `scanAll`. Intake folders/ZIPs are
- * discovered here. Returns a JSON-serializable plan.
+ * discovered here. Returns a JSON-serializable plan. Pass `cache` (a ScanCache)
+ * to remember ZIP listings between runs; the caller saves it.
  */
-export function buildPlan(config, records, { intakeOnly = false, now = Date.now() } = {}) {
+export function buildPlan(config, records, { intakeOnly = false, now = Date.now(), cache = null } = {}) {
   const root = config.libraryRoot
   const memo = new Map()
   const organized = [] // records already inside a model folder
@@ -164,7 +171,11 @@ export function buildPlan(config, records, { intakeOnly = false, now = Date.now(
       const path = join(intakeRoot, name)
       const stat = statSync(path)
       if (now - stat.mtimeMs < settleMs) continue
-      const entries = inspectZip(path)
+      let entries = cache?.getZip(path, stat)
+      if (entries === undefined) {
+        entries = inspectZip(path)
+        cache?.setZip(path, stat, entries)
+      }
       if (!entries) continue
       const unit = unitFor(`zip:${path}`, { origin: 'intake', sourceLabel: basename(intakeRoot), category: null, status: 'inbox' })
       unit.zip = { path, size: stat.size, entries }

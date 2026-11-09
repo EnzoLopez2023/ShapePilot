@@ -46,10 +46,15 @@ export class ScanCache {
     this.file = join(cacheDir, 'index.json')
     mkdirSync(this.thumbDir, { recursive: true })
     this.entries = {}
+    // ZIP listings from Downloads: reading one means inflating it, so remember them too.
+    this.zips = {}
     if (existsSync(this.file)) {
       try {
         const data = JSON.parse(readFileSync(this.file, 'utf8'))
-        if (data.version === CACHE_VERSION) this.entries = data.entries
+        if (data.version === CACHE_VERSION) {
+          this.entries = data.entries
+          this.zips = data.zips ?? {}
+        }
       } catch {
         this.entries = {}
       }
@@ -63,6 +68,16 @@ export class ScanCache {
 
   set(path, stat, record) {
     this.entries[path] = { size: stat.size, mtimeMs: stat.mtimeMs, record }
+  }
+
+  /** A cached `inspectZip` result (null = not a model ZIP), or undefined when the ZIP is new or changed. */
+  getZip(path, stat) {
+    const hit = this.zips[path]
+    return hit && hit.size === stat.size && hit.mtimeMs === stat.mtimeMs ? hit.entries : undefined
+  }
+
+  setZip(path, stat, entries) {
+    this.zips[path] = { size: stat.size, mtimeMs: stat.mtimeMs, entries }
   }
 
   /** Stores a PNG by content hash; returns the hash. */
@@ -84,7 +99,8 @@ export class ScanCache {
   }
 
   save() {
-    writeFileSync(this.file, JSON.stringify({ version: CACHE_VERSION, entries: this.entries }))
+    for (const path of Object.keys(this.zips)) if (!existsSync(path)) delete this.zips[path]
+    writeFileSync(this.file, JSON.stringify({ version: CACHE_VERSION, entries: this.entries, zips: this.zips }))
   }
 }
 

@@ -7,7 +7,7 @@ import { applyPlan, buildPlan } from './plan.js'
 import { MODEL_JSON, readModelJson, serializeModelJson } from './modeljson.js'
 import { OpLog, move, rewrite, trash } from './fsops.js'
 import { modelIndex } from './models.js'
-import { LibraryClient, buildSnapshot, pullEdits, pushSnapshot } from './sync.js'
+import { LibraryClient, applyEdits, buildSnapshot, pushSnapshot } from './sync.js'
 import { safeComponent } from './names.js'
 
 let queue = Promise.resolve()
@@ -38,7 +38,8 @@ function savePlan(config, plan) {
 export function runIntake(config, { cache = new ScanCache(config.cacheDir), dryRun = false } = {}) {
   const roots = [{ path: config.libraryRoot, type: 'library' }, ...config.intakeRoots.map((path) => ({ path, type: 'intake' }))]
   const { records } = scanAll(config, { cache, roots })
-  const plan = buildPlan(config, records, { intakeOnly: true })
+  const plan = buildPlan(config, records, { intakeOnly: true, cache })
+  cache.save()
   const waiting = plan.skipped.filter((s) => s.reason.startsWith('still downloading')).length
   if (!plan.models.length) return { batch: null, filed: [], failed: [], waiting }
   const result = applyPlan(config, plan, { dryRun, kind: 'intake' })
@@ -50,15 +51,23 @@ export function runIntake(config, { cache = new ScanCache(config.cacheDir), dryR
   }
 }
 
-/** Pull edits -> scan -> refresh plan -> push. */
-export async function runSync(config, { cache = new ScanCache(config.cacheDir), fetchImpl } = {}) {
+/**
+ * Pull edits -> scan -> refresh plan -> push. `lock` wraps only the local
+ * filesystem phase, so the helper can file models while the (slow) network
+ * round trips run; a change that lands mid-push is picked up by the next sync.
+ */
+export async function runSync(config, { cache = new ScanCache(config.cacheDir), fetchImpl, lock = (job) => job() } = {}) {
   const client = new LibraryClient(config, fetchImpl)
   const startedAt = new Date().toISOString()
-  const edits = await pullEdits(config, client, modelIndex(config.libraryRoot))
-  const { records } = scanAll(config, { cache })
-  const plan = buildPlan(config, records)
-  savePlan(config, plan)
-  const models = buildSnapshot(config, records)
+  const { edits: pending } = await client.call('GET', '/api/library/sync/edits')
+  const { edits, models, plan } = await lock(() => {
+    const applied = applyEdits(config, pending, modelIndex(config.libraryRoot))
+    const { records } = scanAll(config, { cache })
+    const plan = buildPlan(config, records, { cache })
+    cache.save()
+    savePlan(config, plan)
+    return { edits: applied, models: buildSnapshot(config, records), plan }
+  })
   const pushed = await pushSnapshot(config, client, { models, plan, cache, startedAt })
   return { edits, ...pushed, planModels: plan.models.length }
 }

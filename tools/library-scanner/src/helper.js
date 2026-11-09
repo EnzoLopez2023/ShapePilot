@@ -19,6 +19,7 @@ import {
 
 const VERSION = 3
 const MAX_BODY = 64 * 1024
+const RESYNC_DELAY_MS = 3000
 
 export function allowedOrigins(config) {
   return new Set([
@@ -60,16 +61,36 @@ function openWith(args) {
 
 export function createHelper(config, { cache = new ScanCache(config.cacheDir), afterChange } = {}) {
   const origins = allowedOrigins(config)
-  let syncing = null
+  let timer = null
+  let running = null
+  let again = false
 
-  // Re-sync after a change so the Library reflects it; coalesce bursts.
+  // One sync at a time. It holds the filesystem lock only while scanning, so
+  // filing (the inbox) never waits on the upload to ShapePilot.
+  const sync = () => {
+    if (running) {
+      again = true
+      return running
+    }
+    running = runSync(config, { cache, lock: exclusive }).finally(() => {
+      running = null
+      if (again) {
+        again = false
+        resync()
+      }
+    })
+    return running
+  }
+
+  // Re-sync after a change so the Library reflects it. Trailing debounce: a
+  // run of inbox decisions ends in one sync, not one per click.
   const resync = () => {
     if (!config.deviceToken) return
-    if (syncing) return
-    syncing = setTimeout(() => {
-      syncing = null
-      exclusive(() => runSync(config, { cache })).catch((err) => console.error('[helper] sync failed:', err.message))
-    }, 1500)
+    clearTimeout(timer)
+    timer = setTimeout(() => {
+      timer = null
+      sync().catch((err) => console.error('[helper] sync failed:', err.message))
+    }, RESYNC_DELAY_MS)
   }
 
   const routes = {
@@ -131,7 +152,11 @@ export function createHelper(config, { cache = new ScanCache(config.cacheDir), a
       resync()
       return { reversed: count }
     },
-    'POST /sync': async () => exclusive(() => runSync(config, { cache })),
+    'POST /sync': async () => {
+      // An explicit sync must include every change so far, so never join one already underway.
+      while (running) await running.catch(() => undefined)
+      return sync()
+    },
   }
 
   const server = createServer(async (req, res) => {

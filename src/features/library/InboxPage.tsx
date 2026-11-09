@@ -1,7 +1,7 @@
 // The Library inbox: one new model at a time. Decide what it is (want /
 // printed / archive) and where it lives (a category). Number keys file into
 // categories, W/P/A set status, → skips.
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Alert, Box, Button, Paper, Stack, Typography } from '@mui/material'
 import ArchiveRoundedIcon from '@mui/icons-material/ArchiveRounded'
@@ -30,7 +30,6 @@ export default function InboxPage() {
   const toast = useToast()
   const [queue, setQueue] = useState<LibraryModel[] | null>(null)
   const [categories, setCategories] = useState<string[]>([])
-  const [busy, setBusy] = useState(false)
   const [done, setDone] = useState(0)
 
   useEffect(() => {
@@ -49,30 +48,36 @@ export default function InboxPage() {
     setDone(n => n + 1)
   }, [])
 
-  const decide = useCallback(async (status: LibraryStatus | null, category?: string) => {
-    if (!current || busy) return
-    setBusy(true)
-    try {
-      if (category && helper.available) await libraryHelper.file(current.id, category, status ?? undefined)
-      // Status also goes through this server, so it applies even when the helper is unavailable.
-      if (status) await updateModel(current.id, { status })
-      next()
-    } catch (cause) {
-      toast.failure('Could not file this model', cause)
-    } finally {
-      setBusy(false)
-    }
-  }, [busy, current, helper.available, next, toast])
+  // Decisions save in the background, one after another, so triage never waits
+  // on the helper or the server. A model that fails to save goes back in the queue.
+  const saving = useRef<Promise<void>>(Promise.resolve())
+  const decide = useCallback((status: LibraryStatus | null, category?: string) => {
+    if (!current) return
+    const model = current
+    const fileIt = Boolean(category && helper.available)
+    next()
+    saving.current = saving.current.then(async () => {
+      try {
+        if (fileIt && category) await libraryHelper.file(model.id, category, status ?? undefined)
+        // Status also goes through this server, so it applies even when the helper is unavailable.
+        if (status) await updateModel(model.id, { status })
+      } catch (cause) {
+        toast.failure(`Could not file “${model.title}” (back in the queue)`, cause)
+        setQueue(q => (q ? [...q, model] : q))
+        setDone(n => n - 1)
+      }
+    })
+  }, [current, helper.available, next, toast])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.metaKey || event.ctrlKey) return
       const key = event.key.toLowerCase()
-      if (key === 'w') void decide('want')
-      else if (key === 'p') void decide('printed')
-      else if (key === 'a') void decide('skip', '_Archive')
+      if (key === 'w') decide('want')
+      else if (key === 'p') decide('printed')
+      else if (key === 'a') decide('skip', '_Archive')
       else if (key === 'arrowright') next()
-      else if (/^[1-9]$/.test(key) && categories[Number(key) - 1]) void decide('want', categories[Number(key) - 1])
+      else if (/^[1-9]$/.test(key) && categories[Number(key) - 1]) decide('want', categories[Number(key) - 1])
       else return
       event.preventDefault()
     }
@@ -115,16 +120,16 @@ export default function InboxPage() {
                 .filter(Boolean).join(' · ')}
             </Typography>
             <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap', rowGap: 1 }}>
-              <Button variant="contained" startIcon={<StarRoundedIcon />} disabled={busy} onClick={() => void decide('want')}>
+              <Button variant="contained" startIcon={<StarRoundedIcon />} onClick={() => decide('want')}>
                 Want to print<Key>W</Key>
               </Button>
-              <Button variant="outlined" startIcon={<CheckCircleRoundedIcon />} disabled={busy} onClick={() => void decide('printed')}>
+              <Button variant="outlined" startIcon={<CheckCircleRoundedIcon />} onClick={() => decide('printed')}>
                 Already printed<Key>P</Key>
               </Button>
-              <Button startIcon={<ArchiveRoundedIcon />} disabled={busy} onClick={() => void decide('skip', '_Archive')}>
+              <Button startIcon={<ArchiveRoundedIcon />} onClick={() => decide('skip', '_Archive')}>
                 Archive<Key>A</Key>
               </Button>
-              <Button endIcon={<ChevronRightRoundedIcon />} disabled={busy} onClick={next}>
+              <Button endIcon={<ChevronRightRoundedIcon />} onClick={next}>
                 Skip for now<Key>→</Key>
               </Button>
             </Stack>
@@ -133,7 +138,7 @@ export default function InboxPage() {
               {helper.available ? (
                 <Box sx={{ display: 'grid', gap: 1, gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}>
                   {categories.map((c, i) => (
-                    <Button key={c} variant="outlined" disabled={busy} onClick={() => void decide('want', c)} sx={{ justifyContent: 'flex-start' }}>
+                    <Button key={c} variant="outlined" onClick={() => decide('want', c)} sx={{ justifyContent: 'flex-start' }}>
                       {i < 9 && <Box component="kbd" sx={{ mr: 1, fontFamily: 'monospace', fontSize: 11 }}>{i + 1}</Box>}
                       {categoryLabel(c)}
                     </Button>
