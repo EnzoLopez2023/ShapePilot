@@ -11,6 +11,7 @@ import { loadManifold } from '../../../csg/manifold.ts'
 import { toAppMesh } from '../../../csg/evaluate.ts'
 import type { Mesh } from '../../../geometry/mesh.ts'
 import { DEFAULT_FONT_ID, loadFont, traceTextPolys } from '../../../text/fonts.ts'
+import { shortLabel } from '../model/labelSize.ts'
 import {
   GRID_PITCH_MM, HEIGHT_UNIT_MM, type GridfinityBinParams,
 } from '../../../../lib/contracts/gridfinity.ts'
@@ -135,14 +136,20 @@ function labelTab(wasm: ManifoldToplevel, d: BinDimensions): Manifold {
   return wasm.Manifold.hull(pts)
 }
 
+/** What the tab prints: the size alone unless the bin asks for the whole label. */
+export const tabText = (p: GridfinityBinParams): string =>
+  p.labelSizeOnly === false ? p.labelText.trim() : shortLabel(p.labelText)
+
 /**
- * Raised text, centred on the tab, reading from the front of the bin. Scaled
- * down -- never up -- until it fits the tab with a margin all round.
+ * Raised text, centred on the tab, reading from the front of the bin. The size
+ * alone is grown to fill the tab -- small text is what prints badly and reads
+ * worse. The whole label keeps its chosen height, shrunk only if it must be
+ * to fit the tab with a margin all round.
  */
 function labelText(
   wasm: ManifoldToplevel, font: Font, p: GridfinityBinParams, d: BinDimensions, separate: boolean,
 ): Manifold | null {
-  const text = p.labelText.trim()
+  const text = tabText(p)
   if (!text) return null
   const polys = traceTextPolys(font, text, p.textSizeMm)
   if (!polys.length) return null
@@ -152,7 +159,8 @@ function labelText(
     minY = Math.min(minY, y); maxY = Math.max(maxY, y)
   }
   const room = labelRoom(d)
-  const scale = Math.min(1, room.widthMm / (maxX - minX), room.depthMm / (maxY - minY))
+  const fit = Math.min(room.widthMm / (maxX - minX), room.depthMm / (maxY - minY))
+  const scale = p.labelSizeOnly === false ? Math.min(1, fit) : fit
   const sections = polys.map(poly => new wasm.CrossSection(
     poly.map(r => r.map(([x, y]) => [x * scale, y * scale] as [number, number])), 'EvenOdd'))
   const outline = wasm.CrossSection.union(sections)

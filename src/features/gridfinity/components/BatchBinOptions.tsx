@@ -59,9 +59,18 @@ export default function BatchBinOptions(
           <FormControlLabel
             sx={{ pl: 4 }}
             control={<Switch size="small" checked={!!bin.lidLabel} onChange={e => onBin({ lidLabel: e.target.checked })} />}
-            label="Its label on the lid too"
+            label="The whole label on each lid, as large as it fits"
           />
         )}
+        <FormControlLabel
+          control={(
+            <Switch
+              checked={bin.labelSizeOnly !== false}
+              onChange={e => onBin({ labelSizeOnly: e.target.checked })}
+            />
+          )}
+          label="Tabs show only the size (M5x12, M5), as large as they fit"
+        />
         <FormControlLabel
           control={(
             <Switch

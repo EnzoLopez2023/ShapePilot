@@ -29,6 +29,7 @@ import {
 } from '../../../../lib/contracts/gridfinity.ts'
 import { FOOT_HEIGHT_MM, LIP_HEIGHT_MM, OUTER_RADIUS_MM, WALL_MM, binDimensions } from './bin.ts'
 import { finish, profile, ring, type Outline } from './shapes.ts'
+import { lidLines } from '../model/labelSize.ts'
 
 /** The plate on top, mm. */
 export const LID_TOP_MM = 2
@@ -39,9 +40,9 @@ const PLUG_WALL_MM = 1.2
 /** Inset of the lip's narrowest point, at the wall top: what a barb must pass. */
 const LIP_THROAT_INSET = 2.6
 /** How far each barb reaches past the throat -- the bend that makes the click. */
-export const CATCH_MM = 0.3
+export const CATCH_MM = 0.45
 /** Play between a seated barb and the ledge, so the lid seats on the lip, not the barbs. */
-const CATCH_PLAY_MM = 0.15
+const CATCH_PLAY_MM = 0.08
 const FINGER_WIDTH_MM = 8
 const SLOT_MM = 0.8
 /** Below the wall top: how far the barbs reach down into the bin. */
@@ -118,7 +119,9 @@ function catchOutline(H: number, plugBottom: number): [number, number][] {
   // until it meets the plug's own outer chamfer.
   const tipTop = H - (LIP_THROAT_INSET + CATCH_PLAY_MM - tip)
   const tipBottom = tipTop - 0.1
-  const meet = (fingerFace + plugBottom - tip + tipTop) / 2
+  // Where the barb's top would meet the plug's chamfer, carried a little past
+  // it into the plug: ending exactly on the chamfer pinches the mesh.
+  const meet = (fingerFace + plugBottom - tip + tipTop) / 2 + 2 * FLUSH_AVOID_MM
   const leadIn = (fingerFace - tip) / Math.tan((LEAD_IN_DEG * Math.PI) / 180)
   const bottom = H - FINGER_REACH_MM
   return [
@@ -184,32 +187,97 @@ export function lidSolid(wasm: ManifoldToplevel, p: GridfinityBinParams): Manifo
 export const lidHasText = (p: GridfinityBinParams): boolean =>
   !!p.lid && !!p.lidLabel && p.stackingLip && p.labelText.trim() !== ''
 
+/** Gap between the lid's two lines, as a share of the type size. */
+const LINE_GAP = 0.3
+/** Size the lines are traced at before scaling to the lid; only their proportions matter. */
+const TRACE_MM = 10
+
+type Poly = readonly (readonly (readonly [number, number])[])[]
+
+/** Lines stacked top-down and centred, as one block of polygons centred on the origin. */
+function textBlock(font: Font, lines: readonly string[]): { polys: Poly[]; w: number; h: number } | null {
+  const traced = lines.map(line => traceTextPolys(font, line, TRACE_MM)).filter(polys => polys.length)
+  if (!traced.length) return null
+  const boxes = traced.map(polys => {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+    for (const poly of polys) for (const r of poly) for (const [x, y] of r) {
+      minX = Math.min(minX, x); maxX = Math.max(maxX, x)
+      minY = Math.min(minY, y); maxY = Math.max(maxY, y)
+    }
+    return { w: maxX - minX, h: maxY - minY }
+  })
+  const gap = LINE_GAP * TRACE_MM
+  const h = boxes.reduce((sum, b) => sum + b.h, 0) + gap * (boxes.length - 1)
+  const w = Math.max(...boxes.map(b => b.w))
+  const polys: Poly[] = []
+  let top = h / 2
+  traced.forEach((line, i) => {
+    // traceTextPolys centres each line on the origin; drop it to its row.
+    const cy = top - boxes[i].h / 2
+    for (const poly of line) polys.push(poly.map(r => r.map(([x, y]) => [x, y + cy] as const)))
+    top -= boxes[i].h + gap
+  })
+  return { polys, w, h }
+}
+
+export interface LidTextLayout {
+  lines: string[]
+  /** Turned a quarter, reading along the lid's depth. */
+  turned: boolean
+  /** Cap-to-descender height of one line as printed, mm (roughly the type size). */
+  scale: number
+}
+
 /**
- * The label as a solid filling the cut in the lid's top: subtract it from the
- * lid to engrave, or print it on its own as an inlay in a second colour. Same
- * text and size as the tab, grown to use the lid but shrunk to fit it.
+ * The biggest the whole label prints on the lid: on one line or as size over
+ * description, across the lid or turned to run along a long one. The lid hides
+ * the contents, so it carries the full label, and as large as it goes.
  */
-export function lidTextSolid(wasm: ManifoldToplevel, font: Font, p: GridfinityBinParams): Manifold | null {
+function lidTextLayout(font: Font, p: GridfinityBinParams): { layout: LidTextLayout; polys: Poly[] } | null {
   const text = p.labelText.trim()
   if (!text) return null
-  const polys = traceTextPolys(font, text, p.textSizeMm)
-  if (!polys.length) return null
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
-  for (const poly of polys) for (const ring of poly) for (const [x, y] of ring) {
-    minX = Math.min(minX, x); maxX = Math.max(maxX, x)
-    minY = Math.min(minY, y); maxY = Math.max(maxY, y)
-  }
   const d = binDimensions(p)
-  const { topMm } = lidDimensions(p)
   // Keep clear of the thumb notch's lip at the front and the plug edge round the rest.
   const roomW = d.widthMm - 2 * LID_TEXT_MARGIN_MM
   const roomD = d.depthMm - 2 * LID_TEXT_MARGIN_MM
   if (roomW <= 2 || roomD <= 2) return null
-  const scale = Math.min(roomW / (maxX - minX), roomD / (maxY - minY), 2)
-  const cx = (minX + maxX) / 2
-  const cy = (minY + maxY) / 2
-  const sections = polys.map(poly => new wasm.CrossSection(
-    poly.map(r => r.map(([x, y]) => [(x - cx) * scale, (y - cy) * scale] as [number, number])), 'EvenOdd'))
+  const options = [[text], lidLines(text)].filter((lines, i) => i === 0 || lines.length > 1)
+  let best: { layout: LidTextLayout; polys: Poly[] } | null = null
+  for (const lines of options) {
+    const block = textBlock(font, lines)
+    if (!block) continue
+    for (const turned of [false, true]) {
+      const [w, h] = turned ? [block.h, block.w] : [block.w, block.h]
+      const scale = Math.min(roomW / w, roomD / h)
+      if (!best || scale > best.layout.scale) best = { layout: { lines, turned, scale }, polys: block.polys }
+    }
+  }
+  if (!best) return null
+  const { scale, turned } = best.layout
+  // Turned, it reads from the lid's right edge, bottom to top.
+  const polys: Poly[] = best.polys.map(poly => poly.map(r => r.map(([x, y]): readonly [number, number] =>
+    (turned ? [-y * scale, x * scale] : [x * scale, y * scale]))))
+  return { layout: { ...best.layout, scale: scale * TRACE_MM }, polys }
+}
+
+/** How the lid's label will be laid out, for the designer to describe. */
+export async function lidTextLayoutFor(p: GridfinityBinParams, withFont?: Font): Promise<LidTextLayout | null> {
+  if (!lidHasText(p)) return null
+  const font = withFont ?? await loadFont(DEFAULT_FONT_ID)
+  return lidTextLayout(font, p)?.layout ?? null
+}
+
+/**
+ * The label as a solid filling the cut in the lid's top: subtract it from the
+ * lid to engrave, or print it on its own as an inlay in a second colour.
+ */
+export function lidTextSolid(wasm: ManifoldToplevel, font: Font, p: GridfinityBinParams): Manifold | null {
+  const laid = lidTextLayout(font, p)
+  if (!laid) return null
+  const d = binDimensions(p)
+  const { topMm } = lidDimensions(p)
+  const sections = laid.polys.map(poly => new wasm.CrossSection(
+    poly.map(r => r.map(([x, y]) => [x, y] as [number, number])), 'EvenOdd'))
   return wasm.CrossSection.union(sections)
     .extrude(LID_TEXT_DEPTH_MM)
     .translate([d.widthMm / 2, d.depthMm / 2, topMm - LID_TEXT_DEPTH_MM])

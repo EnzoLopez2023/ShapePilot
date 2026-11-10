@@ -38,6 +38,12 @@ export interface GridfinityBinParams {
   lid?: boolean
   /** Engrave the label text into the lid's top as well. Absent: a plain lid. */
   lidLabel?: boolean
+  /**
+   * The tab shows only the size from the label ("M5 x 12 Button" -> "M5x12",
+   * "M5 Hex nuts" -> "M5"), as large as the tab takes; the lid keeps the whole
+   * label. Absent counts as on: small full-length text proved unreadable in print.
+   */
+  labelSizeOnly?: boolean
   /** Compartments across the bin (x) and front to back (y), split by thin walls. Absent: 1. */
   compartmentsX?: number
   compartmentsY?: number
@@ -142,6 +148,7 @@ export const DEFAULT_BIN: GridfinityBinParams = {
   labelSeparate: false,
   lid: false,
   lidLabel: false,
+  labelSizeOnly: true,
   compartmentsX: 1,
   compartmentsY: 1,
 }

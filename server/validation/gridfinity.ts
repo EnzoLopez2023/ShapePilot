@@ -35,7 +35,7 @@ export function validateBinParams(value: unknown): GridfinityBinParams {
   const p = requireObject(value, 'params')
   rejectUnknownKeys(p, [
     'gridX', 'gridY', 'heightUnits', 'stackingLip', 'scoop', 'labelTab', 'labelText',
-    'labelListId', 'textSizeMm', 'magnets', 'labelSeparate', 'lid', 'lidLabel',
+    'labelListId', 'textSizeMm', 'magnets', 'labelSeparate', 'lid', 'lidLabel', 'labelSizeOnly',
     'compartmentsX', 'compartmentsY',
   ], 'params')
   const L = BIN_LIMITS
@@ -54,6 +54,7 @@ export function validateBinParams(value: unknown): GridfinityBinParams {
     ...(absent(p.labelSeparate) ? {} : { labelSeparate: requireBoolean(p.labelSeparate, 'params.labelSeparate') }),
     ...(absent(p.lid) ? {} : { lid: requireBoolean(p.lid, 'params.lid') }),
     ...(absent(p.lidLabel) ? {} : { lidLabel: requireBoolean(p.lidLabel, 'params.lidLabel') }),
+    ...(absent(p.labelSizeOnly) ? {} : { labelSizeOnly: requireBoolean(p.labelSizeOnly, 'params.labelSizeOnly') }),
     ...(absent(p.compartmentsX) ? {} : { compartmentsX: int(p.compartmentsX, 'params.compartmentsX', 1, L.maxCompartments) }),
     ...(absent(p.compartmentsY) ? {} : { compartmentsY: int(p.compartmentsY, 'params.compartmentsY', 1, L.maxCompartments) }),
   }

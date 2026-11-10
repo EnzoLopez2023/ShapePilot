@@ -8,7 +8,7 @@ import {
   BIN_LIMITS, GRID_PITCH_MM, HEIGHT_UNIT_MM, type GridfinityBinParams,
 } from '../../../../lib/contracts/gridfinity.ts'
 import { mmToInches } from '../../../units.ts'
-import { BIN_CLEARANCE_MM, LIP_HEIGHT_MM, binDimensions } from '../geometry/bin.ts'
+import { BIN_CLEARANCE_MM, LIP_HEIGHT_MM, binDimensions, tabText } from '../geometry/bin.ts'
 import { LID_TOP_MM } from '../geometry/lid.ts'
 import type { LabelList } from '../model/types.ts'
 import { liesFlat, suggestBinSize } from '../model/labelSize.ts'
@@ -44,6 +44,7 @@ export default function BinPanel(
     />
   )
   const hasText = bin.labelTab && bin.labelText.trim() !== ''
+  const sizeOnly = bin.labelSizeOnly !== false
   const dims = binDimensions(bin)
   // Both units everywhere, so a target like 6" x 4" can be matched by eye.
   const both = (mm: number) => `${+mm.toFixed(1)} mm · ${mmToInches(mm).toFixed(2)}"`
@@ -115,6 +116,22 @@ export default function BinPanel(
           </TextField>
         ))}
       </Stack>
+      {bin.labelTab && bin.gridX > bin.gridY && (
+        <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
+          <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
+            The label tab runs across the width, here the long side. Swap to {bin.gridY} × {bin.gridX} to put it on a short side and turn the bin in the case.
+          </Typography>
+          <Button
+            size="small"
+            onClick={() => onBin({
+              gridX: bin.gridY, gridY: bin.gridX,
+              compartmentsX: bin.compartmentsY, compartmentsY: bin.compartmentsX,
+            })}
+          >
+            Swap
+          </Button>
+        </Stack>
+      )}
       <Typography variant="body2" color="text.secondary">
         Finished bin: {both(dims.widthMm)} wide × {both(dims.depthMm)} deep × {both(dims.heightMm)} tall.
         {' '}One cell is {GRID_PITCH_MM} mm ({mmToInches(GRID_PITCH_MM).toFixed(2)}"); one height unit is {HEIGHT_UNIT_MM} mm.
@@ -234,11 +251,26 @@ export default function BinPanel(
           </Button>
         </Stack>
       )}
+      <FormControlLabel
+        disabled={!bin.labelTab}
+        control={(
+          <Switch
+            size="small" checked={sizeOnly}
+            onChange={e => onBin({ labelSizeOnly: e.target.checked })}
+          />
+        )}
+        label="Tab shows only the size, as large as it fits"
+      />
+      {sizeOnly && bin.labelTab && hasText && (
+        <Typography variant="body2" color="text.secondary">
+          The tab prints “{tabText(bin)}”.{bin.lid && bin.lidLabel ? ' The lid carries the whole label.' : ''}
+        </Typography>
+      )}
       <TextField
         select size="small" label="Text height" value={bin.textSizeMm}
-        disabled={!bin.labelTab}
+        disabled={!bin.labelTab || sizeOnly}
         onChange={e => onBin({ textSizeMm: Number(e.target.value) })}
-        helperText="Raised 0.6 mm. Long labels shrink to fit the tab."
+        helperText={sizeOnly ? 'The size alone fills the tab.' : 'Raised 0.6 mm. Long labels shrink to fit the tab.'}
       >
         {range(BIN_LIMITS.minTextMm, BIN_LIMITS.maxTextMm).map(n => (
           <MenuItem key={n} value={n}>{n} mm</MenuItem>

@@ -3,10 +3,10 @@ import { parse } from 'opentype.js'
 import { describe, expect, it } from 'vitest'
 import { checkManifold } from '../../../geometry/mesh.ts'
 import { DEFAULT_BASEPLATE, DEFAULT_BIN, parseLabelFile } from '../../../../lib/contracts/gridfinity.ts'
-import { buildBin, buildBinParts, binDimensions, dividerLayout, LIP_HEIGHT_MM, TEXT_RAISE_MM } from './bin.ts'
+import { buildBin, buildBinParts, binDimensions, tabText, dividerLayout, LIP_HEIGHT_MM, TEXT_RAISE_MM } from './bin.ts'
 import { buildBaseplate, planBaseplate, splitAxis, BASEPLATE_HEIGHT_MM, GUTTER_GAP_MM, PLATE_BACK_RIM_MM } from './baseplate.ts'
 import { buildGutter, gutterHeightMm } from './gutter.ts'
-import { buildLid, lidDimensions, lidSolid, LID_TEXT_DEPTH_MM, LID_TOP_MM } from './lid.ts'
+import { buildLid, lidDimensions, lidSolid, lidTextLayoutFor, LID_TEXT_DEPTH_MM, LID_TOP_MM } from './lid.ts'
 import type { Manifold, ManifoldToplevel } from 'manifold-3d'
 import { loadManifold } from '../../../csg/manifold.ts'
 import type { Mesh } from '../../../geometry/mesh.ts'
@@ -382,5 +382,35 @@ describe('bins Bambu Studio accepts without a mesh error', () => {
     for (const [part, mesh] of Object.entries(parts)) {
       if (mesh) expect({ part, ...slicerDefects(mesh) }).toEqual({ part, ...clean })
     }
+  })
+})
+
+describe('labels that print legibly', () => {
+  const lidded = { ...DEFAULT_BIN, stackingLip: true, lid: true, lidLabel: true }
+
+  it('puts only the size on the tab, grown to fill it', async () => {
+    expect(tabText({ ...DEFAULT_BIN, labelText: 'M5 x 12 Button' })).toBe('M5x12')
+    expect(tabText({ ...DEFAULT_BIN, labelText: 'M5 Hex nuts' })).toBe('M5')
+    expect(tabText({ ...DEFAULT_BIN, labelText: 'M5 Hex nuts', labelSizeOnly: false })).toBe('M5 Hex nuts')
+    const params = { ...DEFAULT_BIN, gridX: 1, gridY: 1, labelText: 'M5 x 12 Button', labelSeparate: true, textSizeMm: 5 }
+    const big = (await buildBinParts(params, font)).label!
+    const small = (await buildBinParts({ ...params, labelSizeOnly: false }, font)).label!
+    const height = (m: Mesh) => m.bbox[4] - m.bbox[1]
+    // The full label at 5 mm keeps its height; the size alone outgrows it.
+    expect(height(big)).toBeGreaterThan(height(small) * 1.3)
+  })
+
+  it('writes the whole label on the lid, size over description', async () => {
+    const square = await lidTextLayoutFor({ ...lidded, gridX: 1, gridY: 1, labelText: 'M5 x 30 Button' }, font)
+    expect(square).toMatchObject({ lines: ['M5x30', 'Button'], turned: false })
+    expect(square!.scale).toBeGreaterThan(9)
+  })
+
+  it('turns the lid label to run along a long lid', async () => {
+    const tall = await lidTextLayoutFor({ ...lidded, gridX: 1, gridY: 2, labelText: 'M5 Split Washers' }, font)
+    const wide = await lidTextLayoutFor({ ...lidded, gridX: 2, gridY: 1, labelText: 'M5 Split Washers' }, font)
+    expect(tall).toMatchObject({ lines: ['M5', 'Split Washers'], turned: true })
+    expect(wide).toMatchObject({ turned: false })
+    expect(tall!.scale).toBeCloseTo(wide!.scale, 3)
   })
 })
