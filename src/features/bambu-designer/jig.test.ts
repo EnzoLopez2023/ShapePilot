@@ -18,15 +18,19 @@ function expectedVolume(spec: JigSpec): number {
   const X = spec.shelfLengthMm
   const A = 2 * w + C
   const B = 2 * w + S
-  const floor = spec.kind === 'tee' ? A * H + (X - A) * B : X * B + A * (H - B)
+  const floor = spec.kind === 'tee' ? A * H + (X - A) * B
+    : spec.kind === 'cross' ? A * H + (X - A) * B
+      : X * B + A * (H - B)
   // The slots: the side slot full length, the shelf slot from where it leaves it.
-  const slots = spec.kind === 'tee' ? C * H + (X - w - C) * S : C * (H - w) + (X - w - C) * S
+  const slots = spec.kind === 'tee' ? C * H + (X - w - C) * S
+    : spec.kind === 'cross' ? C * H + (X - C) * S
+      : C * (H - w) + (X - w - C) * S
   const holes = spec.holes && jigHolesFit(spec) ? 2 * Math.PI * (JIG_HOLE_MM / 2) ** 2 : 0
   return (floor - holes) * spec.floorMm + (floor - slots) * spec.depthMm
 }
 
-test('T and corner jigs evaluate watertight, to the volume of their floor and walls', async () => {
-  for (const kind of ['tee', 'corner'] as const) {
+test('T, corner and cross jigs evaluate watertight, to the volume of their floor and walls', async () => {
+  for (const kind of ['tee', 'corner', 'cross'] as const) {
     for (const holes of [false, true]) {
       const spec = { ...DEFAULT_JIG_SPEC, kind, holes }
       const report = await evaluate(spec)
@@ -75,4 +79,17 @@ test('holes are left out where the slot floor has no room for them', () => {
 test('the name carries both thicknesses, so a drawer of jigs stays sorted', () => {
   assert.equal(jigName({ ...DEFAULT_JIG_SPEC, shelfMm: 11.6, carcassMm: 18.25 }), 'T jig 11.6 / 18.25 mm')
   assert.equal(jigName({ ...DEFAULT_JIG_SPEC, kind: 'corner' }), 'Corner jig 12 / 18 mm')
+})
+
+test('a cross jig centres both slots, each its own thickness plus clearance', () => {
+  const spec = { ...DEFAULT_JIG_SPEC, kind: 'cross' as const, carcassMm: 18, shelfMm: 12, clearanceMm: 0.1 }
+  const walls = createJig(spec).children[1]
+  assert.ok(walls.type === 'path' && walls.rings.length === 4)
+  const xs = new Set(walls.rings.flat().map(([x]) => +x.toFixed(3)))
+  const ys = new Set(walls.rings.flat().map(([, y]) => +y.toFixed(3)))
+  const dx = (spec.shelfLengthMm - 18.2) / 2
+  const dy = (spec.carcassLengthMm - 12.2) / 2
+  assert.ok(xs.has(+dx.toFixed(3)) && xs.has(+(dx + 18.2).toFixed(3)), 'divider slot')
+  assert.ok(ys.has(+dy.toFixed(3)) && ys.has(+(dy + 12.2).toFixed(3)), 'shelf slot')
+  assert.equal(jigName(spec), '+ jig 12 / 18 mm')
 })

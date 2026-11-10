@@ -69,20 +69,21 @@ function JigForm({ initial, plateMm, onAdd, onClose }: Omit<JigDialogProps, 'ini
           >
             <ToggleButton value="tee">T joint</ToggleButton>
             <ToggleButton value="corner">Corner</ToggleButton>
+            <ToggleButton value="cross">+ cross</ToggleButton>
           </ToggleButtonGroup>
 
           <Typography variant="body2" sx={{ color: 'text.secondary' }}>
             Measure each sheet with calipers: nominal 18 mm stock is often 17.6 to 19.
           </Typography>
           <Stack direction="row" spacing={1.5}>
-            {field('carcassMm', 'Side panel')}
-            {field('shelfMm', kind === 'tee' ? 'Shelf' : 'Top or bottom')}
+            {field('carcassMm', kind === 'cross' ? 'Divider' : 'Side panel')}
+            {field('shelfMm', kind === 'corner' ? 'Top or bottom' : 'Shelf')}
           </Stack>
           {field('clearanceMm', 'Clearance per side', '0 is a press fit on the X2D, 0.1 slides freely.')}
 
           <Stack direction="row" spacing={1.5}>
-            {field('carcassLengthMm', 'Along side panel')}
-            {field('shelfLengthMm', kind === 'tee' ? 'Along shelf' : 'Along top')}
+            {field('carcassLengthMm', kind === 'cross' ? 'Along divider' : 'Along side panel')}
+            {field('shelfLengthMm', kind === 'corner' ? 'Along top' : 'Along shelf')}
           </Stack>
           <Stack direction="row" spacing={1.5}>
             {field('depthMm', 'Slot depth')}

@@ -5,7 +5,8 @@
 // on it, and the gaps between the walls are slots the panel edges drop into.
 // A T jig holds a shelf against the face of a side panel, mid-height; a corner
 // jig holds two panels meeting at a butt corner, its outer walls closed so the
-// joint comes out flush. The slots are open at their ends, because the panels
+// joint comes out flush; a cross jig holds a divider square to the shelves
+// either side of it -- the inside of a cubby unit, where every joint is a +. The slots are open at their ends, because the panels
 // run on past the jig.
 //
 // Each slot has its own thickness. A shelf is often thinner than the carcass,
@@ -17,11 +18,12 @@
 import type { Contour, GroupObject, PathObject, Triple } from '../../model/document.ts'
 import { IDENTITY_TRANSFORM, newId } from '../../model/scene.ts'
 
-export type JigKind = 'tee' | 'corner'
+export type JigKind = 'tee' | 'corner' | 'cross'
 
 export const JIG_LABELS: Readonly<Record<JigKind, string>> = {
   tee: 'T alignment jig',
   corner: 'Corner alignment jig',
+  cross: '+ alignment jig',
 }
 
 export interface JigSpec {
@@ -112,6 +114,29 @@ function outline(spec: JigSpec): Outline {
     }
   }
 
+  if (spec.kind === 'cross') {
+    // The divider slot runs the full length in y, the shelf slot the full
+    // width in x, both centred: four L-shaped walls, one in each quadrant.
+    const xs = (X - C) / 2
+    const ys = (H - S) / 2
+    const a0 = xs - w, a1 = xs + C + w, b0 = ys - w, b1 = ys + S + w
+    /** The front-left wall, then its mirror images, each kept counter-clockwise. */
+    const quadrant: [number, number][] = [[xs - w, 0], [xs, 0], [xs, ys], [0, ys], [0, ys - w], [xs - w, ys - w]]
+    const mirror = (mx: boolean, my: boolean): Contour => {
+      const ring = quadrant.map(([x, y]) => [mx ? X - x : x, my ? H - y : y] as const)
+      return mx !== my ? ring.reverse() : ring
+    }
+    return {
+      floor: [[a0, 0], [a1, 0], [a1, b0], [X, b0], [X, b1], [a1, b1], [a1, H], [a0, H], [a0, b1], [0, b1], [0, b0], [a0, b0]],
+      walls: [mirror(false, false), mirror(true, false), mirror(true, true), mirror(false, true)],
+      // One in the divider slot either side of the shelves.
+      holes: [[xs + C / 2, ys / 2], [xs + C / 2, H - ys / 2]],
+      holeRoom: ys,
+      carcassSlot: C,
+      shelfSlot: S,
+    }
+  }
+
   const B = 2 * w + S
   return {
     floor: [[0, 0], [X, 0], [X, B], [A, B], [A, H], [0, H]],
@@ -132,6 +157,10 @@ export function jigMinimums(spec: JigSpec): { carcassLengthMm: number; shelfLeng
   const w = spec.wallMm
   const C = spec.carcassMm + 2 * spec.clearanceMm
   const S = spec.shelfMm + 2 * spec.clearanceMm
+  if (spec.kind === 'cross') {
+    // A wall either side of each slot, and some of the other slot beyond each.
+    return { carcassLengthMm: S + 4 * w, shelfLengthMm: C + 4 * w }
+  }
   return spec.kind === 'tee'
     // A wall either side of the shelf slot, and some side slot beyond each.
     ? { carcassLengthMm: S + 4 * w, shelfLengthMm: C + 3 * w }
@@ -168,10 +197,12 @@ export const jigHolesFit = (spec: JigSpec): boolean => {
   return Math.min(o.carcassSlot, o.shelfSlot, o.holeRoom) >= JIG_HOLE_MM + 1
 }
 
+const JIG_PREFIX: Record<JigKind, string> = { tee: 'T', corner: 'Corner', cross: '+' }
+
 const fmt = (mm: number) => String(Math.round(mm * 100) / 100)
 
 export const jigName = (spec: JigSpec): string =>
-  `${spec.kind === 'tee' ? 'T' : 'Corner'} jig ${fmt(spec.shelfMm)} / ${fmt(spec.carcassMm)} mm`
+  `${JIG_PREFIX[spec.kind]} jig ${fmt(spec.shelfMm)} / ${fmt(spec.carcassMm)} mm`
 
 /** One jig, flat on the plate with its outside corner at `at`. */
 export function createJig(spec: JigSpec, at: Triple = [0, 0, 0]): GroupObject {

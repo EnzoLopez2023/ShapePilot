@@ -18,6 +18,7 @@ import HexagonOutlinedIcon from '@mui/icons-material/HexagonOutlined'
 import BadgeRoundedIcon from '@mui/icons-material/BadgeRounded'
 import BorderBottomRoundedIcon from '@mui/icons-material/BorderBottomRounded'
 import BorderStyleRoundedIcon from '@mui/icons-material/BorderStyleRounded'
+import AddBoxOutlinedIcon from '@mui/icons-material/AddBoxOutlined'
 import ChangeHistoryRoundedIcon from '@mui/icons-material/ChangeHistoryRounded'
 import FilterHdrRoundedIcon from '@mui/icons-material/FilterHdrRounded'
 import type { SvgIconComponent } from '@mui/icons-material'
@@ -122,6 +123,7 @@ export const LIBRARY: readonly LibraryGroup[] = [
     entries: [
       { kind: 'jig', id: 'jig-tee', label: JIG_LABELS.tee, hint: 'shelf to side panel, any thicknesses', icon: BorderBottomRoundedIcon, jig: 'tee' },
       { kind: 'jig', id: 'jig-corner', label: JIG_LABELS.corner, hint: 'butt corner, any thicknesses', icon: BorderStyleRoundedIcon, jig: 'corner' },
+      { kind: 'jig', id: 'jig-cross', label: JIG_LABELS.cross, hint: 'divider through shelves, cubbies', icon: AddBoxOutlinedIcon, jig: 'cross' },
       { kind: 'clamp-square', id: 'clamp-square', label: 'Clamping squares', hint: 'hold an inside corner at 90°', icon: ChangeHistoryRoundedIcon },
       { kind: 'panel-stand', id: 'panel-stand', label: 'Panel stands', hint: 'hold a panel on edge, labelled', icon: FilterHdrRoundedIcon },
     ],
