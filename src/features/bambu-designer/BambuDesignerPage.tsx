@@ -1176,7 +1176,6 @@ export default function BambuDesignerPage() {
         initial={standDialog}
         plateMm={[machine.buildMm[0], machine.buildMm[1]]}
         ams={ams}
-        colors={ownedColors}
         onAdd={(spec, colours) => void addPanelStands(spec, colours)}
         onClose={() => setStandDialog(null)}
       />

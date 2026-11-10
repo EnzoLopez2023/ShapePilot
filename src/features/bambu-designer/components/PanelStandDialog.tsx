@@ -1,18 +1,17 @@
 // Panel stands, asked as they are added: the panel they hold, how many, and
 // the label raised on the base. The label follows the thickness until it is
 // typed over, so the usual case -- label it with its size -- takes no typing.
+// Each part asks only for its AMS tray; its on-screen colour follows the tray.
 import { useState } from 'react'
 import {
   Alert, Button, Dialog, DialogActions, DialogContent, DialogTitle, FormControlLabel, InputAdornment,
   Stack, Switch, TextField, Typography,
 } from '@mui/material'
 import type { SceneObject } from '../../../model/document.ts'
-import type { OwnedColor } from '../../filaments/useOwnedColors.ts'
 import type { AmsTrayState } from '../useAmsTrays.ts'
 import type { PanelStandSpec, StandPaint } from '../panelStand.ts'
 import { panelLabel, panelStandLayout, panelStandProblem } from '../panelStand.ts'
 import FilamentSlotField from './FilamentSlotField.tsx'
-import FilamentColorField from './FilamentColorField.tsx'
 
 export interface PanelStandColours {
   stand: StandPaint
@@ -25,7 +24,6 @@ export interface PanelStandDialogProps {
   /** The plate, x by y, to warn when the stands will not fit on it. */
   plateMm: readonly [number, number]
   ams: AmsTrayState
-  colors: readonly OwnedColor[]
   onAdd: (spec: PanelStandSpec, colours: PanelStandColours) => void
   onClose: () => void
 }
@@ -43,7 +41,7 @@ const NUMBER_KEYS: NumberKey[] = ['panelMm', 'clearanceMm', 'depthMm', 'raiseMm'
 
 const inches = (mm: number) => `≈ ${(mm / 25.4).toFixed(3).replace(/0+$/, '').replace(/\.$/, '')} in`
 
-function PanelStandForm({ initial, plateMm, ams, colors, onAdd, onClose }:
+function PanelStandForm({ initial, plateMm, ams, onAdd, onClose }:
   Omit<PanelStandDialogProps, 'initial'> & { initial: NonNullable<PanelStandDialogProps['initial']> }) {
   const [text, setText] = useState(() =>
     Object.fromEntries(NUMBER_KEYS.map(k => [k, String(initial.spec[k])])) as Record<NumberKey, string>)
@@ -78,17 +76,17 @@ function PanelStandForm({ initial, plateMm, ams, colors, onAdd, onClose }:
 
   const paintFields = (title: string, key: keyof PanelStandColours) => {
     const value = colours[key]
+    // The tray field sends the tray's colour along with it; a tray that
+    // reports none, or Auto, leaves the part uncoloured rather than stale.
     const onPatch = (change: Partial<SceneObject>) => {
-      const next: StandPaint = { ...value }
-      if ('filamentSlot' in change) next.filamentSlot = change.filamentSlot
-      if ('color' in change) next.color = change.color
+      if (!('filamentSlot' in change)) return
+      const next: StandPaint = { filamentSlot: change.filamentSlot, color: change.color }
       setColours(c => ({ ...c, [key]: next }))
     }
     return (
       <Stack spacing={1} sx={{ flex: 1, minWidth: 0 }}>
         <Typography variant="subtitle2">{title}</Typography>
         <FilamentSlotField object={value} ams={ams} onPatch={onPatch} quiet />
-        <FilamentColorField object={value} colors={colors} trays={ams.trays} onPatch={onPatch} />
       </Stack>
     )
   }
