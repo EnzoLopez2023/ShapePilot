@@ -7,7 +7,7 @@
 // inside the card's margin, which hand-placed text only does by luck.
 //
 // Nothing about the card is stored beyond the objects themselves. `readCards`
-// recognises one by its size, so reopening the template on a saved card picks
+// recognises a Systainer card by its size and a custom one by its name, so reopening the template on a saved card picks
 // up where it left off without a field the document validator would refuse.
 import type { Font } from 'opentype.js'
 import type { AssetRef, GroupObject, PathObject, SceneObject, Triple } from '../../model/document.ts'
@@ -32,6 +32,26 @@ export const CARD_SIZES: Record<CardSizeId, CardSize> = {
   m: { label: 'Systainer³ M', widthMm: 85.72, depthMm: 54, heightMm: 1 },
 }
 
+/** A card of any size, for anything that is not a Systainer slot. */
+export interface CustomCardSize {
+  widthMm: number
+  depthMm: number
+  heightMm: number
+}
+
+/** What the custom template starts from: a luggage-tag sized card. */
+export const DEFAULT_CUSTOM_SIZE: CustomCardSize = { widthMm: 60, depthMm: 30, heightMm: 1 }
+
+/** The limits the custom size fields accept: inside the X2D's bed, and a card
+ *  big enough to keep some room inside its margin. */
+export const CUSTOM_LIMITS = {
+  sideMm: [12, 250] as const,
+  heightMm: [0.4, 10] as const,
+}
+
+/** The box a custom card is, and the name `readCards` finds it by. */
+export const CUSTOM_CARD_NAME = 'Custom ID card'
+
 /** Two and four layers at the X2D's 0.2 mm default. */
 export const RAISE_OPTIONS = [0.4, 0.8] as const
 
@@ -47,7 +67,10 @@ export interface CardPaint {
 }
 
 export interface CardSpec {
-  size: CardSizeId
+  /** A Systainer slot, or 'custom' for the size in `custom`. */
+  size: CardSizeId | 'custom'
+  /** The card's own size when `size` is 'custom'. */
+  custom?: CustomCardSize
   /** One text object per non-blank line, top to bottom. */
   lines: string[]
   /**
@@ -64,6 +87,12 @@ export interface CardSpec {
   card: CardPaint
   /** The text and the logo: everything standing on the card. */
   raised: CardPaint
+}
+
+/** The card's outline and thickness, whichever kind it is. */
+export function cardSize(spec: Pick<CardSpec, 'size' | 'custom'>): CardSize {
+  if (spec.size !== 'custom') return CARD_SIZES[spec.size]
+  return { label: 'Custom', ...(spec.custom ?? DEFAULT_CUSTOM_SIZE) }
 }
 
 /** Clear border between the card's edge and anything raised on it. */
@@ -166,7 +195,7 @@ export function layoutCard(
   logo: { asset: AssetRef; bounds: LogoBounds; name: string } | null = null,
   at: Triple = [0, 0, 0],
 ): CardLayout {
-  const size = CARD_SIZES[spec.size]
+  const size = cardSize(spec)
   const top = at[2] + size.heightMm
   const innerW = size.widthMm - 2 * CARD_MARGIN_MM
   const innerH = size.depthMm - 2 * CARD_MARGIN_MM
@@ -175,7 +204,7 @@ export function layoutCard(
     ...createSolid('box', at, {
       widthMm: size.widthMm, depthMm: size.depthMm, heightMm: size.heightMm, cornerRadiusMm: 0,
     }),
-    name: `${size.label} ID card`,
+    name: spec.size === 'custom' ? CUSTOM_CARD_NAME : `${size.label} ID card`,
     ...paint(spec.card),
   }
   const objects: SceneObject[] = [card]
@@ -376,12 +405,18 @@ export function readCards(objects: readonly SceneObject[], logoFilename: string)
   for (const box of objects) {
     if (box.type !== 'solid' || box.primitive !== 'box' || box.mode !== 'solid') continue
     const { widthMm = 0, depthMm = 0, heightMm = 0 } = box.params
-    const sizeId = (Object.keys(CARD_SIZES) as CardSizeId[]).find(id => {
-      const s = CARD_SIZES[id]
-      return near(widthMm, s.widthMm) && near(depthMm, s.depthMm) && near(heightMm, s.heightMm)
-    })
+    // A custom card is known by its name, since any box could be its size;
+    // a Systainer card by its size, which nothing else on the plate shares.
+    const custom = box.name === CUSTOM_CARD_NAME && widthMm > 0 && depthMm > 0 && heightMm > 0
+    const sizeId: CardSpec['size'] | undefined = custom ? 'custom'
+      : (Object.keys(CARD_SIZES) as CardSizeId[]).find(id => {
+        const s = CARD_SIZES[id]
+        return near(widthMm, s.widthMm) && near(depthMm, s.depthMm) && near(heightMm, s.heightMm)
+      })
     if (!sizeId || box.transform.rotationDeg.some(r => r !== 0)) continue
-    const size = CARD_SIZES[sizeId]
+    const size = custom
+      ? { label: 'Custom', widthMm, depthMm, heightMm }
+      : CARD_SIZES[sizeId as CardSizeId]
     const at = box.transform.position
     const top = at[2] + size.heightMm
 
@@ -420,6 +455,7 @@ export function readCards(objects: readonly SceneObject[], logoFilename: string)
       ids,
       spec: {
         size: sizeId,
+        ...(custom ? { custom: { widthMm, depthMm, heightMm } } : {}),
         lines: texts.length ? texts.map(t => t.text) : [''],
         icon: iconId,
         iconAt,

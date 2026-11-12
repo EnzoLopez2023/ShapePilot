@@ -1,5 +1,5 @@
-// The Systainer ID card template: size, the words on it, how far they stand
-// proud, and the two filaments. Every line is fitted to the card as it is
+// The ID card templates: a Systainer slot or a size typed in, the words on
+// it, how far they stand proud, and the two filaments. Every line is fitted to the card as it is
 // typed, so what the dialog says is the size that will print.
 import { useMemo, useState } from 'react'
 import {
@@ -14,7 +14,9 @@ import type { AmsTrayState } from '../useAmsTrays.ts'
 import type {
   CardPaint, CardSizeId, CardSpec, IconPlacement, LogoBounds, LogoPlacement, MeasureText,
 } from '../idCard.ts'
-import { CARD_SIZES, RAISE_OPTIONS, layoutCard } from '../idCard.ts'
+import {
+  CARD_SIZES, CUSTOM_LIMITS, DEFAULT_CUSTOM_SIZE, RAISE_OPTIONS, layoutCard,
+} from '../idCard.ts'
 import type { CardIconId } from '../cardIcons.ts'
 import { CARD_ICONS, iconSvg } from '../cardIcons.ts'
 import FilamentSlotField from './FilamentSlotField.tsx'
@@ -55,30 +57,57 @@ function IdCardForm({ initial, kit, ams, colors, busy, onApply, onClose }:
   IdCardDialogProps & { initial: NonNullable<IdCardDialogProps['initial']> }) {
   const [spec, setSpec] = useState<CardSpec>(initial.spec)
   const [maxText, setMaxText] = useState(String(initial.spec.maxTextMm))
+  const isCustom = initial.spec.size === 'custom'
+  const startSize = initial.spec.custom ?? DEFAULT_CUSTOM_SIZE
+  // Typed as text so a field can be half-edited without snapping back.
+  const [dims, setDims] = useState({
+    widthMm: String(startSize.widthMm),
+    depthMm: String(startSize.depthMm),
+    heightMm: String(startSize.heightMm),
+  })
   // A line added from the button is where the typing goes next.
-  const [focusLine, setFocusLine] = useState(0)
+  // A new custom card starts in its width field instead.
+  const [focusLine, setFocusLine] = useState(
+    initial.spec.size === 'custom' && !initial.editing ? -1 : 0)
   const patch = (next: Partial<CardSpec>) => setSpec(current => ({ ...current, ...next }))
   // The switch hides its back edges behind faces painted in the paper colour.
   const paper = useTheme().palette.background.paper
 
   const maxValue = Number(maxText)
   const maxValid = Number.isFinite(maxValue) && maxValue >= 1 && maxValue <= 50
+  const inRange = (text: string, [lo, hi]: readonly [number, number]) => {
+    const n = Number(text)
+    return text.trim() !== '' && Number.isFinite(n) && n >= lo && n <= hi
+  }
+  const dimValid = {
+    widthMm: inRange(dims.widthMm, CUSTOM_LIMITS.sideMm),
+    depthMm: inRange(dims.depthMm, CUSTOM_LIMITS.sideMm),
+    heightMm: inRange(dims.heightMm, CUSTOM_LIMITS.heightMm),
+  }
+  const sizeValid = !isCustom || (dimValid.widthMm && dimValid.depthMm && dimValid.heightMm)
+  // The spec as it would be applied: the typed size folded in once it is valid.
+  const live = useMemo<CardSpec>(() => (isCustom && sizeValid
+    ? {
+      ...spec,
+      custom: { widthMm: Number(dims.widthMm), depthMm: Number(dims.depthMm), heightMm: Number(dims.heightMm) },
+    }
+    : spec), [dims, isCustom, sizeValid, spec])
   const hasText = spec.lines.some(line => line.trim())
   const hasLogo = spec.logo !== 'none'
 
   // The same layout the card will be built from, with a stand-in for the logo
   // file: only its shape matters to where the text can go.
   const sizes = useMemo(() => {
-    if (!kit || !maxValid) return null
+    if (!kit || !maxValid || !sizeValid) return null
     const logo = kit.logoBounds
       ? { asset: { hash: '', filename: '', byteLength: 0 }, bounds: kit.logoBounds, name: '' }
       : null
-    const { lineSizesMm } = layoutCard({ ...spec, maxTextMm: maxValue }, kit.measure, logo)
+    const { lineSizesMm } = layoutCard({ ...live, maxTextMm: maxValue }, kit.measure, logo)
     const out: (number | null)[] = []
     let next = 0
-    for (const line of spec.lines) out.push(line.trim() ? lineSizesMm[next++] : null)
+    for (const line of live.lines) out.push(line.trim() ? lineSizesMm[next++] : null)
     return out
-  }, [kit, spec, maxValid, maxValue])
+  }, [kit, live, maxValid, maxValue, sizeValid])
 
   const setLine = (index: number, text: string) =>
     patch({ lines: spec.lines.map((line, i) => (i === index ? text : line)) })
@@ -100,13 +129,34 @@ function IdCardForm({ initial, kit, ams, colors, busy, onApply, onClose }:
     )
   }
 
-  const canApply = Boolean(kit) && maxValid && (hasText || hasLogo || Boolean(spec.icon)) && !busy
+  const canApply = Boolean(kit) && maxValid && sizeValid && (hasText || hasLogo || Boolean(spec.icon)) && !busy
 
   return (
-    <form onSubmit={event => { event.preventDefault(); if (canApply) onApply({ ...spec, maxTextMm: maxValue }) }}>
-      <DialogTitle>Systainer ID card</DialogTitle>
+    <form onSubmit={event => { event.preventDefault(); if (canApply) onApply({ ...live, maxTextMm: maxValue }) }}>
+      <DialogTitle>{isCustom ? 'Custom ID card' : 'Systainer ID card'}</DialogTitle>
       <DialogContent>
         <Stack spacing={2} sx={{ pt: 1 }}>
+          {isCustom ? (
+            <Stack direction="row" spacing={1}>
+              {([
+                ['widthMm', 'Width', CUSTOM_LIMITS.sideMm],
+                ['depthMm', 'Height', CUSTOM_LIMITS.sideMm],
+                ['heightMm', 'Thickness', CUSTOM_LIMITS.heightMm],
+              ] as const).map(([key, label, [lo, hi]]) => (
+                <TextField
+                  key={key} size="small" label={label} value={dims[key]}
+                  autoFocus={key === 'widthMm' && !initial.editing}
+                  onChange={event => setDims(current => ({ ...current, [key]: event.target.value }))}
+                  error={!dimValid[key]}
+                  helperText={dimValid[key] ? ' ' : `${lo}–${hi} mm`}
+                  slotProps={{
+                    htmlInput: { inputMode: 'decimal' },
+                    input: { endAdornment: <InputAdornment position="end">mm</InputAdornment> },
+                  }}
+                />
+              ))}
+            </Stack>
+          ) : (
           <ToggleButtonGroup
             size="small" exclusive fullWidth value={spec.size} aria-label="Card size"
             onChange={(_e, value: CardSizeId | null) => value && patch({ size: value })}
@@ -120,6 +170,7 @@ function IdCardForm({ initial, kit, ams, colors, busy, onApply, onClose }:
               </ToggleButton>
             ))}
           </ToggleButtonGroup>
+          )}
 
           <Stack spacing={0.5}>
             <Typography variant="subtitle2">Icon</Typography>

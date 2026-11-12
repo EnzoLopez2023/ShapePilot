@@ -6,7 +6,7 @@ import type { AssetRef, SceneObject } from '../../model/document.ts'
 import { traceTextPolys } from '../../text/fonts.ts'
 import type { CardSizeId, CardSpec, IconPlacement, LogoBounds } from './idCard.ts'
 import {
-  CARD_MARGIN_MM, CARD_SIZES, DEFAULT_CARD_SPEC, fitLines, layoutCard, measureWith, readCards,
+  CARD_MARGIN_MM, CARD_SIZES, CUSTOM_CARD_NAME, DEFAULT_CARD_SPEC, fitLines, layoutCard, measureWith, readCards,
 } from './idCard.ts'
 
 const font = parse(readFileSync('public/fonts/archivo-medium.ttf').buffer as ArrayBuffer)
@@ -215,5 +215,45 @@ test('a card with text and an icon reads back as the same card', () => {
     assert.equal(found.spec.raiseMm, 0.8)
     assert.deepEqual(found.spec.lines, ['Gateron', 'Azure Dragon V4 60g'])
     assert.equal(found.ids.length, made.length)
+  }
+})
+
+test('a custom card is the size typed in, and its text stays inside the margin', () => {
+  for (const custom of [
+    { widthMm: 60, depthMm: 30, heightMm: 1 },
+    { widthMm: 120, depthMm: 20, heightMm: 1.6 },
+    { widthMm: 25, depthMm: 80, heightMm: 0.6 },
+  ]) {
+    for (const placement of ['none', 'left'] as const) {
+      const lines = ['Router bits', '1/4" shank']
+      const { objects } = layoutCard(spec({ size: 'custom', custom, lines, logo: placement }), measure, logo)
+      const box = objects[0] as Extract<SceneObject, { type: 'solid' }>
+      assert.equal(box.name, CUSTOM_CARD_NAME)
+      assert.deepEqual(
+        [box.params.widthMm, box.params.depthMm, box.params.heightMm],
+        [custom.widthMm, custom.depthMm, custom.heightMm])
+      const halfW = custom.widthMm / 2 - CARD_MARGIN_MM + 1e-6
+      const halfD = custom.depthMm / 2 - CARD_MARGIN_MM + 1e-6
+      for (const { box: [x0, y0, x1, y1], z: [z0] } of footprints(objects)) {
+        const label = `${custom.widthMm}×${custom.depthMm} logo:${placement}`
+        assert.ok(x0 >= -halfW && x1 <= halfW, `${label} spills in x: ${x0}..${x1}`)
+        assert.ok(y0 >= -halfD && y1 <= halfD, `${label} spills in y: ${y0}..${y1}`)
+        assert.ok(Math.abs(z0 - custom.heightMm) < 1e-9, `${label} floats at ${z0}`)
+      }
+    }
+  }
+})
+
+test('a custom card reads back with its size, even one matching a Systainer slot', () => {
+  for (const custom of [{ widthMm: 75, depthMm: 25, heightMm: 1.2 }, { widthMm: 56, depthMm: 36, heightMm: 1 }]) {
+    const made = spec({ size: 'custom', custom, lines: ['Sanding', 'discs'], logo: 'right' })
+    const { objects } = layoutCard(made, measure, logo, [5, -5, 0])
+    const [found, ...rest] = readCards(objects, LOGO_FILE)
+    assert.equal(rest.length, 0)
+    assert.equal(found.spec.size, 'custom')
+    assert.deepEqual(found.spec.custom, custom)
+    assert.deepEqual(found.spec.lines, ['Sanding', 'discs'])
+    assert.equal(found.spec.logo, 'right')
+    assert.equal(found.ids.length, objects.length)
   }
 })

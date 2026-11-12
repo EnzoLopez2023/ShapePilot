@@ -57,7 +57,7 @@ import { EL_LOGO } from './components/libraryEntries.ts'
 import IdCardDialog from './components/IdCardDialog.tsx'
 import type { CardKit } from './components/IdCardDialog.tsx'
 import type { CardSpec, FoundCard } from './idCard.ts'
-import { CARD_SIZES, DEFAULT_CARD_SPEC, layoutCard, measureWith, readCards } from './idCard.ts'
+import { DEFAULT_CARD_SPEC, DEFAULT_CUSTOM_SIZE, cardSize, layoutCard, measureWith, readCards } from './idCard.ts'
 import FastenerDialog from './components/FastenerDialog.tsx'
 import JigDialog from './components/JigDialog.tsx'
 import ClampSquareDialog from './components/ClampSquareDialog.tsx'
@@ -404,9 +404,11 @@ export default function BambuDesignerPage() {
    * filaments, blank text -- because a run of labels differs only in what they
    * say. The very first takes its colours from the trays it defaults to.
    */
-  const openCardTemplate = useCallback((editing: FoundCard | null) => {
+  const openCardTemplate = useCallback((editing: FoundCard | null, custom = false) => {
     const trayColor = (slot?: number) => ams.trays?.find(t => t.slot === slot)?.color || undefined
-    const previous = cards.at(-1)
+    // The last card of the same kind: a custom run carries its own size over,
+    // a Systainer run its slot.
+    const previous = cards.filter(card => (card.spec.size === 'custom') === custom).at(-1)
     const spec: CardSpec = editing
       ? editing.spec
       : previous
@@ -415,6 +417,7 @@ export default function BambuDesignerPage() {
         ? { ...previous.spec, lines: [''] }
         : {
           ...DEFAULT_CARD_SPEC,
+          ...(custom ? { size: 'custom' as const, custom: DEFAULT_CUSTOM_SIZE, maxTextMm: 10 } : {}),
           card: { ...DEFAULT_CARD_SPEC.card, color: trayColor(DEFAULT_CARD_SPEC.card.filamentSlot) },
           raised: { ...DEFAULT_CARD_SPEC.raised, color: trayColor(DEFAULT_CARD_SPEC.raised.filamentSlot) },
         }
@@ -436,7 +439,7 @@ export default function BambuDesignerPage() {
       const editing = cardDialog.editing
       // A new card goes beside everything already on the plate, never on it.
       const overall = combinedBounds([...bounds.values()])
-      const size = CARD_SIZES[spec.size]
+      const size = cardSize(spec)
       const at: Triple = editing
         ? editing.at
         : overall
@@ -476,7 +479,7 @@ export default function BambuDesignerPage() {
     else if (entry.kind === 'jig') setJigDialog({ ...lastJig, kind: entry.jig })
     else if (entry.kind === 'clamp-square') setSquareDialog(lastSquares)
     else if (entry.kind === 'panel-stand') openPanelStands()
-    else if (entry.kind === 'template') openCardTemplate(null)
+    else if (entry.kind === 'template') openCardTemplate(null, entry.template === 'custom-card')
     else void addLibraryFile(entry)
   }, [addLibraryFile, lastJig, lastSquares, openCardTemplate, openPanelStands])
 

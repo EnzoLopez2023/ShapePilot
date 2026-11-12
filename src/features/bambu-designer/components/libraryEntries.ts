@@ -51,7 +51,7 @@ export interface FastenerEntry extends EntryBase {
 
 export interface TemplateEntry extends EntryBase {
   kind: 'template'
-  template: 'id-card'
+  template: 'id-card' | 'custom-card'
 }
 
 export interface JigEntry extends EntryBase {
@@ -115,6 +115,14 @@ export const LIBRARY: readonly LibraryGroup[] = [
         hint: 'S76 or M, raised text and logo',
         icon: BadgeRoundedIcon,
         template: 'id-card',
+      },
+      {
+        kind: 'template',
+        id: 'template-custom-card',
+        label: 'Custom ID card',
+        hint: 'any size, raised text and logo',
+        icon: BadgeRoundedIcon,
+        template: 'custom-card',
       },
     ],
   },
