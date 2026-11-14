@@ -8,7 +8,7 @@ import {
   BIN_LIMITS, GRID_PITCH_MM, HEIGHT_UNIT_MM, type GridfinityBinParams,
 } from '../../../../lib/contracts/gridfinity.ts'
 import { mmToInches } from '../../../units.ts'
-import { BIN_CLEARANCE_MM, LIP_HEIGHT_MM, binDimensions, tabText } from '../geometry/bin.ts'
+import { BIN_CLEARANCE_MM, LIP_HEIGHT_MM, GLUE_LABEL_MM, binDimensions, tabText } from '../geometry/bin.ts'
 import { LID_TOP_MM } from '../geometry/lid.ts'
 import type { LabelList } from '../model/types.ts'
 import { liesFlat, suggestBinSize } from '../model/labelSize.ts'
@@ -255,22 +255,38 @@ export default function BinPanel(
         disabled={!bin.labelTab}
         control={(
           <Switch
+            size="small" checked={!!bin.labelGlued}
+            onChange={e => onBin({ labelGlued: e.target.checked })}
+          />
+        )}
+        label="Blank bin, label printed separately to glue on"
+      />
+      {bin.labelGlued && bin.labelTab && (
+        <Typography variant="body2" color="text.secondary">
+          The tab drops {GLUE_LABEL_MM} mm so the label sits where the tab was. The label prints face
+          down, with its text inlaid flush. Export it from File, or with “Export a bin per label”.
+        </Typography>
+      )}
+      <FormControlLabel
+        disabled={!bin.labelTab}
+        control={(
+          <Switch
             size="small" checked={sizeOnly}
             onChange={e => onBin({ labelSizeOnly: e.target.checked })}
           />
         )}
-        label="Tab shows only the size, as large as it fits"
+        label={`${bin.labelGlued ? 'Label' : 'Tab'} shows only the size, as large as it fits`}
       />
       {sizeOnly && bin.labelTab && hasText && (
         <Typography variant="body2" color="text.secondary">
-          The tab prints “{tabText(bin)}”.{bin.lid && bin.lidLabel ? ' The lid carries the whole label.' : ''}
+          The {bin.labelGlued ? 'label' : 'tab'} prints “{tabText(bin)}”.{bin.lid && bin.lidLabel ? ' The lid carries the whole label.' : ''}
         </Typography>
       )}
       <TextField
         select size="small" label="Text height" value={bin.textSizeMm}
         disabled={!bin.labelTab || sizeOnly}
         onChange={e => onBin({ textSizeMm: Number(e.target.value) })}
-        helperText={sizeOnly ? 'The size alone fills the tab.' : 'Raised 0.6 mm. Long labels shrink to fit the tab.'}
+        helperText={sizeOnly ? 'The size alone fills the tab.' : `${bin.labelGlued ? 'Inlaid' : 'Raised'} 0.6 mm. Long labels shrink to fit the tab.`}
       >
         {range(BIN_LIMITS.minTextMm, BIN_LIMITS.maxTextMm).map(n => (
           <MenuItem key={n} value={n}>{n} mm</MenuItem>
@@ -289,7 +305,7 @@ export default function BinPanel(
       {bin.labelSeparate && bin.labelTab && (
         <Typography variant="body2" color="text.secondary">
           {hasText
-            ? 'The text exports as its own body on the tab: one 3MF with two parts, or a zip of two STLs that line up.'
+            ? `The text exports as its own body ${bin.labelGlued ? 'in the label' : 'on the tab'}: one 3MF with two parts, or a zip of two STLs that line up.`
             : 'Pick some text to get a second body. "Export a bin per label" uses the label colour too.'}
         </Typography>
       )}

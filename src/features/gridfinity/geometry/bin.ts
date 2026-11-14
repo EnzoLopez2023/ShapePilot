@@ -5,7 +5,7 @@
 // Coordinates: x across the bin (gridX), y front-to-back (gridY, the front at
 // y = 0), z up from the underside of the feet. Every dimension is the
 // Gridfinity spec's, so bins drop into any standard baseplate.
-import type { Manifold, ManifoldToplevel, Vec3 } from 'manifold-3d'
+import type { CrossSection, Manifold, ManifoldToplevel, Vec3 } from 'manifold-3d'
 import type { Font } from 'opentype.js'
 import { loadManifold } from '../../../csg/manifold.ts'
 import { toAppMesh } from '../../../csg/evaluate.ts'
@@ -31,6 +31,17 @@ const LIP_INSET_BOTTOM = 2.6
 const LIP_INSET_MID = 0.7
 const LIP_INSET_TOP = 0.4
 export const TEXT_RAISE_MM = 0.6
+/**
+ * A glue-on label: a flat strip, its text inlaid this deep, and the tab's
+ * shelf lowered by the strip's thickness so the label's face lands where the
+ * tab's top was. Six layers: stiff enough to glue flat, thin enough to hide.
+ */
+export const GLUE_LABEL_MM = 1.2
+export const GLUE_LABEL_TEXT_MM = 0.6
+/** Play round the strip on the shelf, so it drops in past the walls. */
+const GLUE_LABEL_PLAY_MM = 0.25
+/** Clear border round the strip's text. */
+const GLUE_LABEL_MARGIN_MM = 1.5
 export const LABEL_TAB_DEPTH_MM = 13
 const TAB_LIP_MM = 1.2
 const MAGNET_DIAMETER_MM = 6.5
@@ -54,8 +65,10 @@ export interface BinDimensions {
   wallTopMm: number
   /** Overall height, lip included. */
   heightMm: number
-  /** The top of the label tab, where the text stands. */
+  /** Where the label's face is: the tab's top, or a glued strip's. */
   tabTopMm: number
+  /** The shelf itself: the tab's top, lowered by the strip when the label is glued on. */
+  shelfTopMm: number
   tabDepthMm: number
   scoopRadiusMm: number
 }
@@ -68,11 +81,12 @@ export function binDimensions(p: GridfinityBinParams): BinDimensions {
   // Below where the lip starts to overhang, and low enough that a bin stacked
   // on this one never lands its feet on the text.
   const tabTopMm = wallTopMm - (p.stackingLip ? LIP_INSET_BOTTOM - WALL_MM : 0.8)
+  const shelfTopMm = tabTopMm - (p.labelGlued ? GLUE_LABEL_MM : 0)
   const innerDepth = depthMm - 2 * WALL_MM
   const tabDepthMm = Math.min(LABEL_TAB_DEPTH_MM, innerDepth * 0.45)
   const cavity = tabTopMm - FLOOR_TOP_MM
   const scoopRadiusMm = Math.max(0, Math.min(20, cavity - 4, innerDepth * 0.4))
-  return { widthMm, depthMm, wallTopMm, heightMm, tabTopMm, tabDepthMm, scoopRadiusMm }
+  return { widthMm, depthMm, wallTopMm, heightMm, tabTopMm, shelfTopMm, tabDepthMm, scoopRadiusMm }
 }
 
 /** Per-cell foot: 45° chamfer, short vertical, 45° chamfer out to the body. */
@@ -126,7 +140,7 @@ function scoop(wasm: ManifoldToplevel, d: BinDimensions): Manifold | null {
 function labelTab(wasm: ManifoldToplevel, d: BinDimensions): Manifold {
   const back = d.depthMm - WALL_MM + 0.5
   const front = d.depthMm - WALL_MM - d.tabDepthMm
-  const top = d.tabTopMm
+  const top = d.shelfTopMm
   const lipBottom = top - TAB_LIP_MM
   const wallFoot = Math.max(FLOOR_TOP_MM, lipBottom - (back - front))
   const pts: Vec3[] = []
@@ -136,7 +150,7 @@ function labelTab(wasm: ManifoldToplevel, d: BinDimensions): Manifold {
   return wasm.Manifold.hull(pts)
 }
 
-/** What the tab prints: the size alone unless the bin asks for the whole label. */
+/** What the tab or its glued strip prints: the size alone unless the bin asks for the whole label. */
 export const tabText = (p: GridfinityBinParams): string =>
   p.labelSizeOnly === false ? p.labelText.trim() : shortLabel(p.labelText)
 
@@ -146,9 +160,9 @@ export const tabText = (p: GridfinityBinParams): string =>
  * worse. The whole label keeps its chosen height, shrunk only if it must be
  * to fit the tab with a margin all round.
  */
-function labelText(
-  wasm: ManifoldToplevel, font: Font, p: GridfinityBinParams, d: BinDimensions, separate: boolean,
-): Manifold | null {
+function tabOutline(
+  wasm: ManifoldToplevel, font: Font, p: GridfinityBinParams, room: { widthMm: number; depthMm: number },
+): CrossSection | null {
   const text = tabText(p)
   if (!text) return null
   const polys = traceTextPolys(font, text, p.textSizeMm)
@@ -158,12 +172,18 @@ function labelText(
     minX = Math.min(minX, x); maxX = Math.max(maxX, x)
     minY = Math.min(minY, y); maxY = Math.max(maxY, y)
   }
-  const room = labelRoom(d)
   const fit = Math.min(room.widthMm / (maxX - minX), room.depthMm / (maxY - minY))
   const scale = p.labelSizeOnly === false ? Math.min(1, fit) : fit
   const sections = polys.map(poly => new wasm.CrossSection(
     poly.map(r => r.map(([x, y]) => [x * scale, y * scale] as [number, number])), 'EvenOdd'))
-  const outline = wasm.CrossSection.union(sections)
+  return wasm.CrossSection.union(sections)
+}
+
+function labelText(
+  wasm: ManifoldToplevel, font: Font, p: GridfinityBinParams, d: BinDimensions, separate: boolean,
+): Manifold | null {
+  const outline = tabOutline(wasm, font, p, labelRoom(d))
+  if (!outline) return null
   const cx = d.widthMm / 2
   const cy = d.depthMm - WALL_MM - d.tabDepthMm / 2
   // Merged, it sinks a hair into the tab so the union welds. Separate, it sits
@@ -194,7 +214,8 @@ export function dividerLayout(p: GridfinityBinParams, d: BinDimensions): {
   return {
     xs: split(p.compartmentsX, d.widthMm),
     ys: split(p.compartmentsY, d.depthMm),
-    topMm: d.tabTopMm - 0.6,
+    // Under a glued strip the shelf is lower still, and a wall must not poke up through it.
+    topMm: Math.min(d.tabTopMm - 0.6, d.shelfTopMm),
   }
 }
 
@@ -243,7 +264,7 @@ export interface BinParts {
  */
 export async function buildBinParts(p: GridfinityBinParams, withFont?: Font): Promise<BinParts> {
   const wasm = await loadManifold()
-  const wantsText = p.labelTab && p.labelText.trim() !== ''
+  const wantsText = p.labelTab && !p.labelGlued && p.labelText.trim() !== ''
   const font = wantsText ? withFont ?? await loadFont(DEFAULT_FONT_ID) : null
   const separate = !!p.labelSeparate
   const d = binDimensions(p)
@@ -287,4 +308,61 @@ export async function buildBinParts(p: GridfinityBinParams, withFont?: Font): Pr
 /** The bin as one mesh -- the label merged in whatever `labelSeparate` says. */
 export async function buildBin(p: GridfinityBinParams, withFont?: Font): Promise<Mesh> {
   return (await buildBinParts({ ...p, labelSeparate: false }, withFont)).body
+}
+
+/** The glued strip's outline: the shelf's top, less play against the walls. */
+export function glueLabelSize(d: BinDimensions): { widthMm: number; depthMm: number; cornerMm: number } {
+  return {
+    widthMm: d.widthMm - 2 * WALL_MM - 2 * GLUE_LABEL_PLAY_MM,
+    depthMm: d.tabDepthMm - GLUE_LABEL_PLAY_MM,
+    // The cavity's corners are rounded to the wall's inner radius; the strip's
+    // back corners must clear them.
+    cornerMm: OUTER_RADIUS_MM - WALL_MM,
+  }
+}
+
+export interface GlueLabelParts {
+  /** Lying on the bin's shelf, in the bin's frame: for the preview. */
+  seated: Mesh
+  /** Face down on the bed, for export: the face prints smooth and the text crisp. */
+  print: Mesh
+  /** The inlaid text when it prints in a second colour, in step with the strip. */
+  label: { seated: Mesh; print: Mesh } | null
+}
+
+/**
+ * The label to glue onto a bin's tab, or null when the bin has none. A blank
+ * bin can take any label later -- or a new one when it is reused for
+ * something else. Its text is inlaid flush, in a second colour when the bin
+ * asks for one, engraved otherwise.
+ */
+export async function buildGlueLabel(p: GridfinityBinParams, withFont?: Font): Promise<GlueLabelParts | null> {
+  if (!p.labelTab || !p.labelGlued || !p.labelText.trim()) return null
+  const wasm = await loadManifold()
+  const font = withFont ?? await loadFont(DEFAULT_FONT_ID)
+  const d = binDimensions(p)
+  const size = glueLabelSize(d)
+  const r = size.cornerMm
+  const outline = wasm.CrossSection.square([size.widthMm - 2 * r, size.depthMm - 2 * r], true).offset(r, 'Round', 2, 48)
+  // Centred where it lies: across the bin, and back against the wall.
+  const cx = d.widthMm / 2
+  const cy = d.depthMm - WALL_MM - GLUE_LABEL_PLAY_MM - size.depthMm / 2
+  let strip = outline.extrude(GLUE_LABEL_MM).translate([cx, cy, d.shelfTopMm])
+  const text = tabOutline(wasm, font, p, {
+    widthMm: size.widthMm - 2 * GLUE_LABEL_MARGIN_MM,
+    depthMm: size.depthMm - 2 * GLUE_LABEL_MARGIN_MM,
+  })
+  const inlay = text
+    ? text.extrude(GLUE_LABEL_TEXT_MM).translate([cx, cy, d.tabTopMm - GLUE_LABEL_TEXT_MM])
+    : null
+  if (inlay) strip = strip.subtract(inlay)
+  // Turned over about the strip's own centre line, face on the bed.
+  const turn = (m: Manifold) => m.rotate([180, 0, 0]).translate([0, 2 * cy, d.tabTopMm])
+  const stripDone = finish(strip, 'The label')
+  const inlayDone = inlay && p.labelSeparate ? finish(inlay, 'The label text') : null
+  return {
+    seated: toAppMesh(stripDone),
+    print: toAppMesh(finish(turn(stripDone), 'The label')),
+    label: inlayDone ? { seated: toAppMesh(inlayDone), print: toAppMesh(turn(inlayDone)) } : null,
+  }
 }

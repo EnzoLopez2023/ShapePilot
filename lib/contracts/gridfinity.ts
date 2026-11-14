@@ -44,6 +44,12 @@ export interface GridfinityBinParams {
    * label. Absent counts as on: small full-length text proved unreadable in print.
    */
   labelSizeOnly?: boolean
+  /**
+   * Print the bin blank and its label as a separate strip to glue on, so a bin
+   * can be relabelled or reused. The tab's shelf drops by the strip's
+   * thickness. Absent on bins saved before this: the text is on the tab.
+   */
+  labelGlued?: boolean
   /** Compartments across the bin (x) and front to back (y), split by thin walls. Absent: 1. */
   compartmentsX?: number
   compartmentsY?: number

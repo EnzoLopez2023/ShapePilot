@@ -17,7 +17,7 @@ import { GRID_PITCH_MM } from '../../../lib/contracts/gridfinity.ts'
 import { useConfirm } from '../../components/ConfirmDialogProvider.tsx'
 import { EmptyState, ErrorState, LoadingState } from '../../components/LoadingState.tsx'
 import { formatUpdated } from '../keycap-projects/model/formatUpdated.ts'
-import { buildBinParts, type BinParts } from './geometry/bin.ts'
+import { buildBinParts, buildGlueLabel, type BinParts, type GlueLabelParts } from './geometry/bin.ts'
 import { buildLid, lidHasText, type LidParts } from './geometry/lid.ts'
 import { useOwnedColors } from '../filaments/useOwnedColors.ts'
 import { useAmsTrays } from '../bambu-designer/useAmsTrays.ts'
@@ -35,7 +35,7 @@ import * as api from './service.ts'
 import BinPanel from './components/BinPanel.tsx'
 import BaseplatePanel from './components/BaseplatePanel.tsx'
 import BaseplatePlanView from './components/BaseplatePlanView.tsx'
-import BatchBinOptions from './components/BatchBinOptions.tsx'
+import BatchBinOptions, { type BatchPrint } from './components/BatchBinOptions.tsx'
 import LabelListsPanel, { type BatchOptions } from './components/LabelListsPanel.tsx'
 import { suggestBinSize } from './model/labelSize.ts'
 import { densityOf, formatGrams, formatMinutes, printMinutes, printedGrams } from '../bambu-designer/estimate.ts'
@@ -57,6 +57,10 @@ const LID_LIFT_MM = 15
 const LID_SIDE_GAP_MM = 10
 /** The label's preview colour when no owned filament is picked, so it still reads as its own body. */
 const LABEL_FALLBACK = '#e8b04a'
+/** How far a glue-on label floats over its shelf in the preview, so the lowered tab shows. */
+const GLUE_LABEL_LIFT_MM = 8
+
+type BuiltBin = BinParts & { lid: LidParts | null; glue: GlueLabelParts | null }
 
 /** STL carries no colour, so a two-colour bin is two files aligned by their shared origin. */
 function binFiles(parts: BinParts, stem: string, title: string): Record<string, Uint8Array> {
@@ -68,8 +72,8 @@ function binFiles(parts: BinParts, stem: string, title: string): Record<string, 
     : { [`${stem}.stl`]: new Uint8Array(writeBinaryStl(parts.body, title)) }
 }
 
-/** A lid's STL files: one, or the lid and its inlaid label, aligned by their shared origin. */
-function lidFiles(lid: LidParts, stem: string, title: string): Record<string, Uint8Array> {
+/** A lid's (or glue-on label's) STL files: one, or the part and its inlay, aligned by their shared origin. */
+function lidFiles(lid: LidParts | GlueLabelParts, stem: string, title: string): Record<string, Uint8Array> {
   return lid.label
     ? {
         [`${stem}.stl`]: new Uint8Array(writeBinaryStl(lid.print, title)),
@@ -100,6 +104,7 @@ export default function GridfinityPage() {
   const [toast, setToast] = useState<string | null>(null)
   const [openDialog, setOpenDialog] = useState(false)
   const [lidView, setLidView] = useState<'seated' | 'print'>('seated')
+  const [batchPrint, setBatchPrint] = useState<BatchPrint>({ bins: true, labels: true, lids: true })
 
   const loadGeneration = useRef(0)
   const answeredForUrl = useRef<string | null>(null)
@@ -112,18 +117,18 @@ export default function GridfinityPage() {
 
   // ---- Geometry. Both are built off the main render, newest request wins. ----
 
-  const [bin, setBin] = useState<Built<BinParts & { lid: LidParts | null }>>({ status: 'idle' })
-  const [lastBin, setLastBin] = useState<(BinParts & { lid: LidParts | null }) | null>(null)
+  const [bin, setBin] = useState<Built<BuiltBin>>({ status: 'idle' })
+  const [lastBin, setLastBin] = useState<BuiltBin | null>(null)
   const binParams = design.bin
   useEffect(() => {
     if (!isBin) return
     let cancelled = false
     setBin({ status: 'building' })
     const timer = setTimeout(() => {
-      Promise.all([buildBinParts(binParams), buildLid(binParams)])
-        .then(([parts, lid]) => {
+      Promise.all([buildBinParts(binParams), buildLid(binParams), buildGlueLabel(binParams)])
+        .then(([parts, lid, glue]) => {
           if (cancelled) return
-          const value = { ...parts, lid }
+          const value = { ...parts, lid, glue }
           setBin({ status: 'ready', value })
           setLastBin(value)
         })
@@ -221,6 +226,8 @@ export default function GridfinityPage() {
         Object.assign(files, binFiles(await buildBinParts(bin.params), stem, bin.name))
         const lid = await buildLid(bin.params)
         if (lid) Object.assign(files, lidFiles(lid, `${stem}_lid`, `${bin.name} lid`))
+        const glue = await buildGlueLabel(bin.params)
+        if (glue) Object.assign(files, lidFiles(glue, `${stem}_glue-on_label`, `${bin.name} label`))
       }
       triggerDownload(zipParts(files), `${baseName}_bins.zip`, 'application/zip')
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
@@ -296,8 +303,21 @@ export default function GridfinityPage() {
     else triggerDownload(lidThreeMf(lid, title), `${baseName}_lid.3mf`, 'model/3mf')
   }
 
-  /** The lid as a 3MF, its inlaid label a second part on the label's filament. */
-  const lidThreeMf = (lid: LidParts, title: string): ArrayBuffer => {
+  const downloadGlueLabel = (format: 'stl' | '3mf' | 'studio') => {
+    const glue = bin.status === 'ready' ? bin.value.glue : null
+    if (!glue) return
+    const title = `${design.name} label`
+    if (format === 'stl') {
+      if (glue.label) triggerDownload(zipParts(lidFiles(glue, `${baseName}_label`, title)), `${baseName}_label_2-colour.zip`, 'application/zip')
+      else triggerDownload(writeBinaryStl(glue.print, title), `${baseName}_label.stl`, 'model/stl')
+      return
+    }
+    if (format === 'studio') void openInBambuStudio(lidThreeMf(glue, title), title)
+    else triggerDownload(lidThreeMf(glue, title), `${baseName}_label.3mf`, 'model/3mf')
+  }
+
+  /** The lid (or glue-on label) as a 3MF, its inlay a second part on the label's filament. */
+  const lidThreeMf = (lid: LidParts | GlueLabelParts, title: string): ArrayBuffer => {
     if (!lid.label) return writeThreeMf(lid.print, title)
     const [lidSlot, labelSlot] = assignExtruders(
       [{ filamentSlot: slotOf(colors.bin) }, { filamentSlot: slotOf(colors.label) }], maxSlot)
@@ -369,7 +389,13 @@ export default function GridfinityPage() {
     const files: Record<string, Uint8Array> = {}
     /** Plain lids are alike for a size, so the STL zip carries one per size. */
     const plainLidSizes = new Map<string, GridfinityBinParams>()
-    let withLids = false
+    const glued = !!design.bin.labelGlued
+    const want = {
+      bins: batchPrint.bins,
+      labels: batchPrint.labels && glued,
+      lids: batchPrint.lids && !!design.bin.lid && design.bin.stackingLip,
+    }
+    if (!want.bins && !want.labels && !want.lids) { setToast('Pick something to print'); return }
     const [bodySlot, labelSlot] = assignExtruders(
       [{ filamentSlot: slotOf(colors.bin) }, { filamentSlot: slotOf(colors.label) }], maxSlot)
     const withLabel = (main: ThreeMfPart, label: Mesh | null | undefined, name: string): ThreeMfPart[] =>
@@ -384,20 +410,27 @@ export default function GridfinityPage() {
         ...(fit ? { gridX: fit.gridX, gridY: fit.gridY } : {}),
       }
       const size = sizeOf(item)
-      const parts = await buildBinParts(item)
-      const lid = await buildLid(item)
-      if (lid) withLids = true
+      const parts = want.bins ? await buildBinParts(item) : null
+      const lid = want.lids ? await buildLid(item) : null
+      const glue = want.labels ? await buildGlueLabel(item) : null
       if (options.format === 'zip') {
         let stem = `${String(i + 1).padStart(2, '0')}_${safeFilename(text)}_${size}`
         while (used.has(stem)) stem = `_${stem}`
         used.add(stem)
-        Object.assign(files, binFiles(parts, stem, text))
+        if (parts) Object.assign(files, binFiles(parts, stem, text))
+        if (glue) Object.assign(files, lidFiles(glue, `${stem}_glue-on_label`, `${text} label`))
         // A labelled lid is one per bin; a plain one is shared, below.
         if (lid && lidHasText(item)) Object.assign(files, lidFiles(lid, `${stem}_lid`, `${text} lid`))
         else if (lid) plainLidSizes.set(size, item)
       } else {
         // On a plate every bin gets its own lid: they are printed, not shared.
-        objects.push({ name: text, parts: withLabel({ mesh: parts.body, name: text, extruder: bodySlot }, parts.label, text) })
+        if (parts) objects.push({ name: text, parts: withLabel({ mesh: parts.body, name: text, extruder: bodySlot }, parts.label, text) })
+        if (glue) {
+          objects.push({
+            name: `${text} label`,
+            parts: withLabel({ mesh: glue.print, name: `${text} label`, extruder: bodySlot }, glue.label?.print, `${text} label`),
+          })
+        }
         if (lid) {
           objects.push({
             name: `${text} lid`,
@@ -410,14 +443,15 @@ export default function GridfinityPage() {
     }
     progress(list.items.length, list.items.length)
     // Every bin shares the design's height (size-to-label changes only the footprint).
-    const stem = `${safeFilename(list.name)}_${design.bin.heightUnits}u${withLids ? '_with_lids' : ''}`
+    const what = (['bins', 'labels', 'lids'] as const).filter(k => want[k])
+    const stem = `${safeFilename(list.name)}_${design.bin.heightUnits}u_${what.join('_')}`
     if (options.format === 'zip') {
       for (const [size, item] of plainLidSizes) {
         const lid = await buildLid(item)
         if (lid) files[`lid_${size}.stl`] = new Uint8Array(writeBinaryStl(lid.print, `${size} lid`))
       }
       triggerDownload(zipParts(files), `${stem}.zip`, 'application/zip')
-      setToast(`Exported ${list.items.length} bins`)
+      setToast(`Exported ${what.join(', ')} for ${list.items.length} labels`)
       return
     }
     const { placed, plates } = fillPlates(objects, bedMm)
@@ -425,7 +459,7 @@ export default function GridfinityPage() {
     if (options.format === 'studio') void openInBambuStudio(bytes, stem)
     else triggerDownload(bytes, `${stem}.3mf`, 'model/3mf')
     setToast(`${objects.length} parts on ${plates} ${plates === 1 ? 'plate' : 'plates'}`)
-  }, [design.bin, slotOf, colors.bin, colors.label, maxSlot, bedMm])
+  }, [design.bin, batchPrint, slotOf, colors.bin, colors.label, maxSlot, bedMm])
 
   // ---- Saved designs ----
 
@@ -541,6 +575,23 @@ export default function GridfinityPage() {
         })
       }
     }
+    const glue = binParts?.glue
+    if (glue && binParts) {
+      // On the bin: lifted off its shelf so the lowered tab shows. As printed:
+      // in front of the bin, face down.
+      const asPrinted = lidView === 'print'
+      const place = (mesh: Mesh, ofPart: Mesh) => (asPrinted
+        ? translateMesh(mesh, 0, binParts.body.bbox[1] - LID_SIDE_GAP_MM - ofPart.bbox[4], 0)
+        : translateMesh(mesh, 0, 0, GLUE_LABEL_LIFT_MM))
+      const strip = asPrinted ? glue.print : glue.seated
+      extras.push({ mesh: place(strip, glue.print), color: hexOf(colors.bin) })
+      if (glue.label) {
+        extras.push({
+          mesh: place(asPrinted ? glue.label.print : glue.label.seated, glue.print),
+          color: hexOf(colors.label) ?? LABEL_FALLBACK,
+        })
+      }
+    }
     return extras.length ? extras : undefined
   }, [binParts, hexOf, colors.label, colors.bin, lidView])
 
@@ -558,6 +609,7 @@ export default function GridfinityPage() {
     return {
       bin: of([binParts.body, binParts.label]),
       lid: binParts.lid ? of([binParts.lid.print, binParts.lid.label?.print]) : null,
+      glue: binParts.glue ? of([binParts.glue.print, binParts.glue.label?.print]) : null,
     }
   }, [binParts, colors.bin])
   const exportReady = isBin ? bin.status === 'ready' : !plan.problem
@@ -599,6 +651,7 @@ export default function GridfinityPage() {
         ? [
             `Bin ≈ ${formatGrams(estimate.bin.grams)}, ${formatMinutes(estimate.bin.minutes)}`,
             estimate.lid ? `lid ≈ ${formatGrams(estimate.lid.grams)}, ${formatMinutes(estimate.lid.minutes)}` : '',
+            estimate.glue ? `label ≈ ${formatGrams(estimate.glue.grams)}, ${formatMinutes(estimate.glue.minutes)}` : '',
           ].filter(Boolean).join(' · ')
         : '')
     : plan.problem ? '' : `${plan.cellsX} × ${plan.cellsY} cells · ${plan.tiles.length} ${plan.tiles.length === 1 ? 'tile' : 'tiles'}`
@@ -618,6 +671,13 @@ export default function GridfinityPage() {
                 { label: 'Export lid STL', onClick: () => downloadLid('stl'), disabled: !exportReady },
                 { label: 'Export lid 3MF', onClick: () => downloadLid('3mf'), disabled: !exportReady },
                 { label: 'Open lid in Bambu Studio', onClick: () => downloadLid('studio'), disabled: !exportReady },
+              ]
+            : []),
+          ...(design.bin.labelGlued && design.bin.labelTab && design.bin.labelText.trim()
+            ? [
+                { label: 'Export glue-on label STL', onClick: () => downloadGlueLabel('stl'), disabled: !exportReady },
+                { label: 'Export glue-on label 3MF', onClick: () => downloadGlueLabel('3mf'), disabled: !exportReady },
+                { label: 'Open glue-on label in Bambu Studio', onClick: () => downloadGlueLabel('studio'), disabled: !exportReady },
               ]
             : []),
         ]
@@ -668,13 +728,13 @@ export default function GridfinityPage() {
             <ToggleButton value="baseplate">Drawer baseplate</ToggleButton>
           </ToggleButtonGroup>
 
-          {isBin && design.bin.lid && design.bin.stackingLip && (
+          {isBin && (binParts?.lid || binParts?.glue) && (
             <ToggleButtonGroup
-              exclusive size="small" value={lidView} aria-label="How the lid is shown"
+              exclusive size="small" value={lidView} aria-label="How the lid and label are shown"
               onChange={(_e, v: 'seated' | 'print' | null) => v && setLidView(v)}
             >
-              <ToggleButton value="seated">Lid on the bin</ToggleButton>
-              <ToggleButton value="print">Lid as printed</ToggleButton>
+              <ToggleButton value="seated">On the bin</ToggleButton>
+              <ToggleButton value="print">As printed</ToggleButton>
             </ToggleButtonGroup>
           )}
 
@@ -737,7 +797,7 @@ export default function GridfinityPage() {
               onToast={setToast} onError={setError} onExportAll={exportPerLabel}
               batchOptions={(
                 <BatchBinOptions
-                  bin={design.bin} onBin={d.setBin}
+                  bin={design.bin} onBin={d.setBin} print={batchPrint} onPrint={setBatchPrint}
                   ownedColors={colorsByTray} colors={colors} onColors={next => view({ colors: next })}
                   amsNote={key => { const tray = amsTrayFor(key); return tray ? `in ${tray.label}` : null }}
                 />

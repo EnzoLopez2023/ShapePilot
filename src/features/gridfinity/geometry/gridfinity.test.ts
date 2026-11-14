@@ -3,7 +3,10 @@ import { parse } from 'opentype.js'
 import { describe, expect, it } from 'vitest'
 import { checkManifold } from '../../../geometry/mesh.ts'
 import { DEFAULT_BASEPLATE, DEFAULT_BIN, parseLabelFile } from '../../../../lib/contracts/gridfinity.ts'
-import { buildBin, buildBinParts, binDimensions, tabText, dividerLayout, LIP_HEIGHT_MM, TEXT_RAISE_MM } from './bin.ts'
+import {
+  buildBin, buildBinParts, buildGlueLabel, binDimensions, glueLabelSize, tabText, dividerLayout,
+  GLUE_LABEL_MM, GLUE_LABEL_TEXT_MM, LIP_HEIGHT_MM, TEXT_RAISE_MM,
+} from './bin.ts'
 import { buildBaseplate, planBaseplate, splitAxis, BASEPLATE_HEIGHT_MM, GUTTER_GAP_MM, PLATE_BACK_RIM_MM } from './baseplate.ts'
 import { buildGutter, gutterHeightMm } from './gutter.ts'
 import { buildLid, lidDimensions, lidSolid, lidTextLayoutFor, LID_TEXT_DEPTH_MM, LID_TOP_MM } from './lid.ts'
@@ -375,8 +378,13 @@ describe('bins Bambu Studio accepts without a mesh error', () => {
     const separate = await buildBinParts({ ...params, labelSeparate: true }, font)
     const lid = await buildLid({ ...params, lid: true, lidLabel: true }, font)
     const lidInlay = await buildLid({ ...params, lid: true, lidLabel: true, labelSeparate: true }, font)
+    const glued = await buildBinParts({ ...params, labelGlued: true }, font)
+    const strip = await buildGlueLabel({ ...params, labelGlued: true }, font)
+    const stripInlay = await buildGlueLabel({ ...params, labelGlued: true, labelSeparate: true }, font)
     const parts: Record<string, Mesh | null | undefined> = {
       bin: body, 'bin, label apart': separate.body, label: separate.label,
+      'blank bin': glued.body, 'glue-on label': strip?.print,
+      'glue-on label, inlay apart': stripInlay?.print, 'glue-on inlay': stripInlay?.label?.print,
       lid: lid?.print, 'lid, inlay apart': lidInlay?.print, inlay: lidInlay?.label?.print,
     }
     for (const [part, mesh] of Object.entries(parts)) {
@@ -412,5 +420,56 @@ describe('labels that print legibly', () => {
     expect(tall).toMatchObject({ lines: ['M5', 'Split Washers'], turned: true })
     expect(wide).toMatchObject({ turned: false })
     expect(tall!.scale).toBeCloseTo(wide!.scale, 3)
+  })
+})
+
+describe('blank bins with a glue-on label', () => {
+  const params = { ...DEFAULT_BIN, gridX: 1, gridY: 1, heightUnits: 3, stackingLip: true, labelTab: true, labelText: 'M5 x 12 Button' }
+
+  it('drops the shelf by the label, leaves the bin blank, and the label lands where the tab was', async () => {
+    const glued = { ...params, labelGlued: true }
+    const d = binDimensions(params)
+    const g = binDimensions(glued)
+    expect(g.tabTopMm).toBe(d.tabTopMm)
+    expect(g.shelfTopMm).toBeCloseTo(d.tabTopMm - GLUE_LABEL_MM, 6)
+    const parts = await buildBinParts({ ...glued, labelSeparate: true }, font)
+    expect(parts.label).toBeNull()
+    expect(checkManifold(parts.body).ok).toBe(true)
+    // Nothing of the bin stands above the lowered shelf over the tab.
+    const strip = await buildGlueLabel({ ...glued, labelSeparate: true }, font)
+    expect(strip).not.toBeNull()
+    const [sx0, sy0, sz0, sx1, sy1, sz1] = strip!.seated.bbox
+    expect(sz0).toBeCloseTo(g.shelfTopMm, 4)
+    expect(sz1).toBeCloseTo(d.tabTopMm, 4)
+    const wasm = await loadManifold()
+    const overlap = solidOf(wasm, parts.body).intersect(solidOf(wasm, strip!.seated))
+    expect(overlap.volume()).toBeLessThan(0.01)
+    // Inside the walls, against the back wall's inner face.
+    const size = glueLabelSize(g)
+    expect(sx1 - sx0).toBeCloseTo(size.widthMm, 2)
+    expect(sy1 - sy0).toBeCloseTo(size.depthMm, 2)
+    expect(sy1).toBeLessThan(g.depthMm - 1.2)
+  })
+
+  it('prints face down, inlay flush with the face, both watertight', async () => {
+    const strip = await buildGlueLabel({ ...params, labelGlued: true, labelSeparate: true }, font)
+    const [, , z0, , , z1] = strip!.print.bbox
+    expect(z0).toBeCloseTo(0, 4)
+    expect(z1).toBeCloseTo(GLUE_LABEL_MM, 4)
+    const inlay = strip!.label!.print.bbox
+    expect(inlay[2]).toBeCloseTo(0, 4)
+    expect(inlay[5]).toBeCloseTo(GLUE_LABEL_TEXT_MM, 4)
+    expect(checkManifold(strip!.print).ok).toBe(true)
+    expect(checkManifold(strip!.label!.print).ok).toBe(true)
+  })
+
+  it('makes no label for a bin without text or without the option', async () => {
+    expect(await buildGlueLabel({ ...params, labelGlued: true, labelText: ' ' }, font)).toBeNull()
+    expect(await buildGlueLabel(params, font)).toBeNull()
+  })
+
+  it('keeps dividers under the strip', () => {
+    const glued = { ...params, gridX: 2, compartmentsX: 2, labelGlued: true }
+    expect(dividerLayout(glued, binDimensions(glued)).topMm).toBeLessThanOrEqual(binDimensions(glued).shelfTopMm)
   })
 })

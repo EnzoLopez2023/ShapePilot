@@ -2,7 +2,9 @@
 // "A bin per label" dialog so they can be set without leaving it. They edit the
 // bin being designed -- the batch is that bin with each label in turn -- so the
 // panel on the left always agrees with what gets exported.
-import { FormControlLabel, MenuItem, Stack, Switch, TextField, Typography } from '@mui/material'
+import {
+  Checkbox, FormControlLabel, FormGroup, FormLabel, MenuItem, Stack, Switch, TextField, Typography,
+} from '@mui/material'
 import { BIN_LIMITS, HEIGHT_UNIT_MM, type GridfinityBinParams } from '../../../../lib/contracts/gridfinity.ts'
 import { binDimensions } from '../geometry/bin.ts'
 import { LID_TOP_MM } from '../geometry/lid.ts'
@@ -10,9 +12,21 @@ import type { BinColors } from '../state/viewSettings.ts'
 import OwnedColorSelect from '../../filaments/components/OwnedColorSelect.tsx'
 import type { OwnedColor } from '../../filaments/useOwnedColors.ts'
 
+/**
+ * Which parts of the run to print. Kept apart from the bin: bins already on
+ * the shelf may need only their lids, or new labels.
+ */
+export interface BatchPrint {
+  bins: boolean
+  labels: boolean
+  lids: boolean
+}
+
 export interface BatchBinOptionsProps {
   bin: GridfinityBinParams
   onBin: (patch: Partial<GridfinityBinParams>) => void
+  print: BatchPrint
+  onPrint: (print: BatchPrint) => void
   ownedColors: readonly OwnedColor[]
   colors: BinColors
   onColors: (colors: BinColors) => void
@@ -22,9 +36,16 @@ export interface BatchBinOptionsProps {
 const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i)
 
 export default function BatchBinOptions(
-  { bin, onBin, ownedColors, colors, onColors, amsNote }: BatchBinOptionsProps,
+  { bin, onBin, print, onPrint, ownedColors, colors, onColors, amsNote }: BatchBinOptionsProps,
 ) {
   const lid = !!bin.lid && bin.stackingLip
+  const glued = !!bin.labelGlued
+  const choices = [
+    { key: 'bins' as const, label: glued ? 'Bins (blank)' : 'Bins', shown: true },
+    { key: 'labels' as const, label: 'Glue-on labels', shown: glued },
+    { key: 'lids' as const, label: 'Lids', shown: lid },
+  ].filter(c => c.shown)
+  const nothing = !choices.some(c => print[c.key])
   const { heightMm } = binDimensions(bin)
   const colorField = (part: keyof BinColors, label: string) => (
     <OwnedColorSelect
@@ -63,13 +84,17 @@ export default function BatchBinOptions(
           />
         )}
         <FormControlLabel
+          control={<Switch checked={glued} onChange={e => onBin({ labelGlued: e.target.checked })} />}
+          label="Blank bins, with labels printed separately to glue on"
+        />
+        <FormControlLabel
           control={(
             <Switch
               checked={bin.labelSizeOnly !== false}
               onChange={e => onBin({ labelSizeOnly: e.target.checked })}
             />
           )}
-          label="Tabs show only the size (M5x12, M5), as large as they fit"
+          label={`${glued ? 'Labels' : 'Tabs'} show only the size (M5x12, M5), as large as they fit`}
         />
         <FormControlLabel
           control={(
@@ -80,6 +105,18 @@ export default function BatchBinOptions(
           )}
           label="Label text in a second colour"
         />
+      </Stack>
+      <Stack>
+        <FormLabel sx={{ typography: 'body2' }}>Print</FormLabel>
+        <FormGroup row>
+          {choices.map(c => (
+            <FormControlLabel
+              key={c.key} label={c.label}
+              control={<Checkbox size="small" checked={print[c.key]} onChange={e => onPrint({ ...print, [c.key]: e.target.checked })} />}
+            />
+          ))}
+        </FormGroup>
+        {nothing && <Typography variant="body2" color="error">Pick at least one to print.</Typography>}
       </Stack>
       {ownedColors.length > 0 ? (
         <Stack spacing={1.5}>
