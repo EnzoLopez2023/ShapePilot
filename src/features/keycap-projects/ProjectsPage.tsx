@@ -11,8 +11,7 @@ import {
 } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import * as api from './service.ts'
-import * as trays from '../keycap-tray/service.ts'
-import { emptyDesign } from '../keycap-tray/model/presets.ts'
+import { createProjectWithTrays } from './createProject.ts'
 import type { ProjectSummary } from './model/types.ts'
 import { errorMessage } from '../../services/errors.ts'
 import { EmptyState, ErrorState, LoadingState } from '../../components/LoadingState.tsx'
@@ -47,14 +46,10 @@ export default function ProjectsPage() {
     if (!trimmed) return
     setBusy(true)
     try {
-      const { id } = await api.createProject({ name: trimmed })
-      // A project is never tray-less: its first tray is cut with it, the same
+      // A project is never tray-less: it opens with the sample stack, the same
       // as when a project is started from the designer's gate.
-      try {
-        await trays.createDesign({ ...emptyDesign(), name: 'Tray 1' }, id)
-      } catch {
-        setToast('Project created — add a tray from the project page')
-      }
+      const { id, warning } = await createProjectWithTrays(trimmed)
+      if (warning) setToast(warning)
       setCreating(false)
       setName('')
       // Straight into the project: the next thing anyone wants is to describe

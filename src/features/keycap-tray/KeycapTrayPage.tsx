@@ -30,6 +30,7 @@ import { emptyDesign } from './model/presets.ts'
 import { useTrayDesign } from './state/useTrayDesign.ts'
 import * as api from './service.ts'
 import * as projects from '../keycap-projects/service.ts'
+import { createProjectWithTrays } from '../keycap-projects/createProject.ts'
 import type { KeycapProject, ProjectSummary } from '../keycap-projects/model/types.ts'
 import TrayCanvas from './components/TrayCanvas.tsx'
 import PocketPalette from './components/PocketPalette.tsx'
@@ -399,20 +400,15 @@ export default function KeycapTrayPage() {
   }, [designs, navigate])
 
   // A tray only exists inside a project, so a new project is created with its
-  // first tray already cut. The project page is where the set gets described,
+  // trays already cut: copies of the sample stack, named after the project. The project page is where the set gets described,
   // so that is where this lands.
   const createProjectWithTray = useCallback(async () => {
     const trimmed = newProjectName.trim()
     if (!trimmed) return
     setBusy(true)
     try {
-      const { id } = await projects.createProject({ name: trimmed })
-      try {
-        await api.createDesign({ ...emptyDesign(), name: 'Tray 1' }, id)
-      } catch {
-        // The project exists; its tray can be added from the project page.
-        setToast('Project created — add a tray from the project page')
-      }
+      const { id, warning } = await createProjectWithTrays(trimmed)
+      if (warning) setToast(warning)
       setNewProjectOpen(false)
       setNewProjectName('')
       setProjectMenu(null)
