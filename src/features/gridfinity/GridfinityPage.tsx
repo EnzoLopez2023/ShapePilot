@@ -35,6 +35,7 @@ import * as api from './service.ts'
 import BinPanel from './components/BinPanel.tsx'
 import BaseplatePanel from './components/BaseplatePanel.tsx'
 import BaseplatePlanView from './components/BaseplatePlanView.tsx'
+import { batchNames } from './model/batchName.ts'
 import BatchBinOptions, { type BatchPrint } from './components/BatchBinOptions.tsx'
 import LabelListsPanel, { type BatchOptions } from './components/LabelListsPanel.tsx'
 import { suggestBinSize } from './model/labelSize.ts'
@@ -389,6 +390,7 @@ export default function GridfinityPage() {
     const files: Record<string, Uint8Array> = {}
     /** Plain lids are alike for a size, so the STL zip carries one per size. */
     const plainLidSizes = new Map<string, GridfinityBinParams>()
+    const footprints: { gridX: number; gridY: number }[] = []
     const glued = !!design.bin.labelGlued
     const want = {
       bins: batchPrint.bins,
@@ -410,6 +412,7 @@ export default function GridfinityPage() {
         ...(fit ? { gridX: fit.gridX, gridY: fit.gridY } : {}),
       }
       const size = sizeOf(item)
+      footprints.push({ gridX: item.gridX, gridY: item.gridY })
       const parts = want.bins ? await buildBinParts(item) : null
       const lid = want.lids ? await buildLid(item) : null
       const glue = want.labels ? await buildGlueLabel(item) : null
@@ -444,7 +447,11 @@ export default function GridfinityPage() {
     progress(list.items.length, list.items.length)
     // Every bin shares the design's height (size-to-label changes only the footprint).
     const what = (['bins', 'labels', 'lids'] as const).filter(k => want[k])
-    const stem = `${safeFilename(list.name)}_${design.bin.heightUnits}u_${what.join('_')}`
+    // The title is what the Library shows; both say what the run holds, so
+    // lids for one size and lids for another never share a name.
+    const { title, stem } = batchNames({
+      listName: list.name, heightUnits: design.bin.heightUnits, want, blank: glued, footprints,
+    })
     if (options.format === 'zip') {
       for (const [size, item] of plainLidSizes) {
         const lid = await buildLid(item)
@@ -455,7 +462,7 @@ export default function GridfinityPage() {
       return
     }
     const { placed, plates } = fillPlates(objects, bedMm)
-    const bytes = writeThreeMfPlates(placed, list.name, bedMm)
+    const bytes = writeThreeMfPlates(placed, title, bedMm)
     if (options.format === 'studio') void openInBambuStudio(bytes, stem)
     else triggerDownload(bytes, `${stem}.3mf`, 'model/3mf')
     setToast(`${objects.length} parts on ${plates} ${plates === 1 ? 'plate' : 'plates'}`)
