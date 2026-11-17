@@ -21,7 +21,12 @@ export type Pt = [number, number]
 
 export const BASEPLATE_HEIGHT_MM = 4.65
 const POCKET_RADIUS_MM = 4
-/** Leaves a hairline ridge between pockets rather than a knife edge. */
+/**
+ * Leaves a hairline ridge between pockets rather than a knife edge. Only the
+ * tip is cut off: the chamfer below keeps the spec's line. (Shifting the whole
+ * profile in by this, as it once did, left a foot 0.15 mm a side where the spec
+ * gives 0.25 -- 1x1 bins went in tight and 2x3s, six feet at once, not at all.)
+ */
 const POCKET_TOP_INSET = 0.1
 const PLATE_CORNER_RADIUS_MM = 2
 
@@ -323,14 +328,28 @@ export function planBaseplate(p: GridfinityBaseplateParams): BaseplatePlan {
   return { ...empty, columns, rows, tiles }
 }
 
-/** One pocket, inverse of a bin foot, open right through the plate. */
-function pocket(wasm: ManifoldToplevel, x: number, y: number): Manifold {
+/**
+ * The spec's pocket, by inset from the 42 mm cell: 0.7 mm at 45°, 1.8 mm
+ * straight, 2.15 mm at 45° to the top. Against a bin foot that leaves 0.25 mm
+ * a side on the straight and 0.35 mm on the chamfer.
+ */
+export const POCKET_STATIONS: readonly (readonly [inset: number, z: number])[] = [
+  [2.85, 0], [2.15, 0.7], [2.15, 2.5],
+  [POCKET_TOP_INSET, BASEPLATE_HEIGHT_MM - (2.15 - POCKET_TOP_INSET)],
+]
+
+/**
+ * One pocket, inverse of a bin foot, for the 42 mm cell at (x, y) with its
+ * floor at z. Open right through below unless `floored`, when it stops there.
+ */
+export function pocket(wasm: ManifoldToplevel, x: number, y: number, z = 0, floored = false): Manifold {
   const cell: Outline = { x, y, w: GRID_PITCH_MM, d: GRID_PITCH_MM, r: POCKET_RADIUS_MM }
-  const top = BASEPLATE_HEIGHT_MM
-  const t = POCKET_TOP_INSET
-  return profile(wasm, cell, [
-    [t + 2.85, -1], [t + 2.85, 0], [t + 2.15, 0.7], [t + 2.15, 2.5], [t, top], [t, top + 1],
-  ])
+  const stations = [
+    ...(floored ? [] : [[POCKET_STATIONS[0][0], -1] as const]),
+    ...POCKET_STATIONS,
+    [POCKET_TOP_INSET, BASEPLATE_HEIGHT_MM + 1] as const,
+  ]
+  return profile(wasm, cell, stations.map(([inset, h]) => [inset, z + h] as const))
 }
 
 /**

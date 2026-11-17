@@ -36,6 +36,12 @@ export interface GridfinityBinParams {
    * meaningful with `stackingLip`. Absent on bins saved before this: no lid.
    */
   lid?: boolean
+  /**
+   * The lid's top is a little baseplate: one Gridfinity pocket per cell, so
+   * smaller bins lock onto it. It then prints plug down, without the click-in
+   * barbs, and carries no text. Absent: a flat lid.
+   */
+  lidPockets?: boolean
   /** Engrave the label text into the lid's top as well. Absent: a plain lid. */
   lidLabel?: boolean
   /**
@@ -154,6 +160,7 @@ export const DEFAULT_BIN: GridfinityBinParams = {
   labelSeparate: false,
   lid: false,
   lidLabel: false,
+  lidPockets: false,
   labelSizeOnly: true,
   compartmentsX: 1,
   compartmentsY: 1,

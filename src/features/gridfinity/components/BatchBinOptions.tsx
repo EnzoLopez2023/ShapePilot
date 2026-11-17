@@ -7,7 +7,7 @@ import {
 } from '@mui/material'
 import { BIN_LIMITS, HEIGHT_UNIT_MM, type GridfinityBinParams } from '../../../../lib/contracts/gridfinity.ts'
 import { binDimensions } from '../geometry/bin.ts'
-import { LID_TOP_MM } from '../geometry/lid.ts'
+import { lidTopMm } from '../geometry/lid.ts'
 import type { BinColors } from '../state/viewSettings.ts'
 import OwnedColorSelect from '../../filaments/components/OwnedColorSelect.tsx'
 import type { OwnedColor } from '../../filaments/useOwnedColors.ts'
@@ -59,7 +59,7 @@ export default function BatchBinOptions(
       <TextField
         select size="small" label="Height" value={bin.heightUnits}
         onChange={e => onBin({ heightUnits: Number(e.target.value) })}
-        helperText={`${+(heightMm + (lid ? LID_TOP_MM : 0)).toFixed(1)} mm overall${lid ? ' with its lid' : bin.stackingLip ? ', stacking lip included' : ''}`}
+        helperText={`${+(heightMm + (lid ? lidTopMm(bin) : 0)).toFixed(1)} mm overall${lid ? ' with its lid' : bin.stackingLip ? ', stacking lip included' : ''}`}
       >
         {range(BIN_LIMITS.minHeightUnits, BIN_LIMITS.maxHeightUnits).map(n => (
           <MenuItem key={n} value={n}>{n}u · {n * HEIGHT_UNIT_MM} mm to the wall top</MenuItem>
@@ -77,6 +77,13 @@ export default function BatchBinOptions(
           label="A lid for every bin"
         />
         {lid && (
+          <FormControlLabel
+            sx={{ pl: 4 }}
+            control={<Switch size="small" checked={!!bin.lidPockets} onChange={e => onBin({ lidPockets: e.target.checked })} />}
+            label="Pockets on top of each lid, for smaller bins"
+          />
+        )}
+        {lid && !bin.lidPockets && (
           <FormControlLabel
             sx={{ pl: 4 }}
             control={<Switch size="small" checked={!!bin.lidLabel} onChange={e => onBin({ lidLabel: e.target.checked })} />}

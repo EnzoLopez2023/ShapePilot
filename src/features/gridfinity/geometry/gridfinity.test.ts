@@ -7,7 +7,7 @@ import {
   buildBin, buildBinParts, buildGlueLabel, binDimensions, glueLabelSize, tabText, dividerLayout,
   GLUE_LABEL_MM, GLUE_LABEL_TEXT_MM, LIP_HEIGHT_MM, TEXT_RAISE_MM,
 } from './bin.ts'
-import { buildBaseplate, planBaseplate, splitAxis, BASEPLATE_HEIGHT_MM, GUTTER_GAP_MM, PLATE_BACK_RIM_MM } from './baseplate.ts'
+import { buildBaseplate, planBaseplate, splitAxis, BASEPLATE_HEIGHT_MM, POCKET_STATIONS, GUTTER_GAP_MM, PLATE_BACK_RIM_MM } from './baseplate.ts'
 import { buildGutter, gutterHeightMm } from './gutter.ts'
 import { buildLid, lidDimensions, lidSolid, lidTextLayoutFor, LID_TEXT_DEPTH_MM, LID_TOP_MM } from './lid.ts'
 import type { Manifold, ManifoldToplevel } from 'manifold-3d'
@@ -178,6 +178,39 @@ describe('gridfinity lid', () => {
     expect(label.print.bbox[2]).toBeCloseTo(0, 3)
   })
 
+  it('with pockets, seats in the lip and takes a smaller bin in any cell', async () => {
+    const wasm = await loadManifold()
+    const params = { ...DEFAULT_BIN, gridX: 2, gridY: 3, heightUnits: 3, lid: true, lidPockets: true }
+    const bin = solidOf(wasm, await buildBin(params))
+    const lid = lidSolid(wasm, params)
+    expect(bin.intersect(lid).volume(), 'seated').toBeCloseTo(0, 3)
+    expect(bin.intersect(lid.translate([0, 0, -0.05])).volume(), 'lowered').toBeGreaterThan(1)
+    const { plateBottomMm, topMm, fingerYs } = lidDimensions(params)
+    expect(fingerYs).toEqual([])
+    expect(topMm - plateBottomMm).toBeCloseTo(BASEPLATE_HEIGHT_MM, 6)
+    // A 1x1 on the pocket floors, in each cell: clear of the lid, and held --
+    // shifted 0.5 mm any way it runs into a pocket wall.
+    const small = solidOf(wasm, await buildBin({ ...DEFAULT_BIN, gridX: 1, gridY: 1, heightUnits: 2 }))
+    for (const [i, j] of [[0, 0], [1, 2]]) {
+      const at = (dx: number, dy: number) =>
+        small.translate([42 * i + dx, 42 * j + dy, plateBottomMm]).intersect(lid).volume()
+      expect(at(0, 0), `cell ${i},${j}`).toBeCloseTo(0, 3)
+      expect(at(0.5, 0)).toBeGreaterThan(0.1)
+      expect(at(0, -0.5)).toBeGreaterThan(0.1)
+    }
+  })
+
+  it('with pockets, prints on its plug and carries no text', async () => {
+    const params = { ...DEFAULT_BIN, gridX: 2, gridY: 1, labelText: 'M3 x 8', lid: true, lidLabel: true, lidPockets: true }
+    const lid = (await buildLid(params, font))!
+    for (const mesh of [lid.seated, lid.print]) expect(checkManifold(mesh).ok).toBe(true)
+    expect(lid.label).toBeNull()
+    expect(lid.print.bbox[2]).toBeCloseTo(0, 3)
+    // The right way up: just lowered onto the bed.
+    expect(lid.print.bbox[5]).toBeCloseTo(lid.seated.bbox[5] - lid.seated.bbox[2], 3)
+    expect(lid.seated.bbox[5]).toBeCloseTo(binDimensions(params).heightMm + BASEPLATE_HEIGHT_MM, 2)
+  })
+
   it('builds for every size without errors', async () => {
     for (const [gridX, gridY] of [[1, 1], [3, 2], [1, 4]]) {
       for (const labelTab of [true, false]) {
@@ -212,6 +245,25 @@ describe('gridfinity baseplate', () => {
 
   it('reports a drawer too small for one cell', () => {
     expect(planBaseplate({ ...DEFAULT_BASEPLATE, drawerWidthMm: 42, clearanceMm: 1 }).problem).toBeTruthy()
+  })
+
+  it('leaves a bin foot the spec\'s play in every pocket', async () => {
+    // The foot, by inset from its 42 mm cell at height z: 0.25 for the 0.5 mm
+    // grid clearance, then 45° in to 2.4 at z 2.6, straight to 0.8, 45° to 3.2.
+    const footInset = (z: number) =>
+      z >= 2.6 ? 0.25 + (4.75 - z) : z >= 0.8 ? 2.4 : 2.4 + (0.8 - z)
+    const pocketInset = (z: number) => {
+      for (let i = 1; i < POCKET_STATIONS.length; i++) {
+        const [i0, z0] = POCKET_STATIONS[i - 1]
+        const [i1, z1] = POCKET_STATIONS[i]
+        if (z <= z1) return i0 + ((z - z0) / (z1 - z0)) * (i1 - i0)
+      }
+      return POCKET_STATIONS[POCKET_STATIONS.length - 1][0]
+    }
+    for (let z = 0; z <= BASEPLATE_HEIGHT_MM; z += 0.05) {
+      expect(footInset(z) - pocketInset(z)).toBeGreaterThanOrEqual(0.25 - 1e-6)
+    }
+    expect(footInset(1.5) - pocketInset(1.5)).toBeCloseTo(0.25, 6)
   })
 
   it('builds watertight tiles', async () => {
@@ -378,6 +430,7 @@ describe('bins Bambu Studio accepts without a mesh error', () => {
     const separate = await buildBinParts({ ...params, labelSeparate: true }, font)
     const lid = await buildLid({ ...params, lid: true, lidLabel: true }, font)
     const lidInlay = await buildLid({ ...params, lid: true, lidLabel: true, labelSeparate: true }, font)
+    const pocketed = await buildLid({ ...params, lid: true, lidPockets: true }, font)
     const glued = await buildBinParts({ ...params, labelGlued: true }, font)
     const strip = await buildGlueLabel({ ...params, labelGlued: true }, font)
     const stripInlay = await buildGlueLabel({ ...params, labelGlued: true, labelSeparate: true }, font)
@@ -386,6 +439,7 @@ describe('bins Bambu Studio accepts without a mesh error', () => {
       'blank bin': glued.body, 'glue-on label': strip?.print,
       'glue-on label, inlay apart': stripInlay?.print, 'glue-on inlay': stripInlay?.label?.print,
       lid: lid?.print, 'lid, inlay apart': lidInlay?.print, inlay: lidInlay?.label?.print,
+      'pocketed lid': pocketed?.print,
     }
     for (const [part, mesh] of Object.entries(parts)) {
       if (mesh) expect({ part, ...slicerDefects(mesh) }).toEqual({ part, ...clean })

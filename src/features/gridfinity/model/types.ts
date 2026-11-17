@@ -62,7 +62,7 @@ export function describe(kind: GridfinityKind, params: Record<string, unknown>):
   if (kind === 'bin') {
     const p = params as Partial<GridfinityBinParams>
     const label = p.labelText ? ` · ${p.labelText}` : ''
-    const lid = p.lid && p.stackingLip ? ' + lid' : ''
+    const lid = p.lid && p.stackingLip ? (p.lidPockets ? ' + pocketed lid' : ' + lid') : ''
     return `${p.gridX ?? '?'}×${p.gridY ?? '?'} bin, ${p.heightUnits ?? '?'}u${lid}${label}`
   }
   const p = params as Partial<GridfinityBaseplateParams>

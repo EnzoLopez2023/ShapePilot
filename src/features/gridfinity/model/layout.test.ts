@@ -15,6 +15,9 @@ describe('case layout', () => {
     expect(stackHeight([three, { ...two, stackingLip: false }])).toBeCloseTo(35, 6)
     expect(stackHeight([three, two])).toBeCloseTo(39.4, 6)
     expect(stackHeight([three, { ...two, lid: true }])).toBeCloseTo(41.4, 6)
+    // Pocketed, the lid is a baseplate's height, and a bin on it stands on the lip's top.
+    expect(stackHeight([three, { ...two, lid: true, lidPockets: true }])).toBeCloseTo(44.05, 6)
+    expect(stackHeight([{ ...three, lid: true, lidPockets: true }, two])).toBeCloseTo(25.4 + 18.4, 6)
     expect(stackHeight([])).toBe(0)
   })
 
@@ -50,6 +53,20 @@ describe('case layout', () => {
     expect(stacks[4].problems).toEqual([])
     expect(said(5, 'deleted')).toBe(true)
     expect(said(5, 'Overlaps')).toBe(true)
+  })
+
+  it('lets a smaller bin stand only on a pocketed lid', () => {
+    const bins = new Map([
+      bin('big', { gridX: 2, gridY: 2, heightUnits: 2 }),
+      bin('pocketed', { gridX: 2, gridY: 2, heightUnits: 2, lid: true, lidPockets: true }),
+      bin('small', { gridX: 1, gridY: 1, heightUnits: 2 }),
+    ].map(b => [b.id, b]))
+    const stacks = resolveLayout({
+      ...S76,
+      layout: [{ col: 0, row: 0, stack: ['big', 'small'] }, { col: 2, row: 0, stack: ['pocketed', 'small'] }],
+    }, grid, bins)
+    expect(stacks[0].problems.some(p => p.includes('pocketed lid'))).toBe(true)
+    expect(stacks[1].problems).toEqual([])
   })
 
   it('finds free room and the stack on a cell', () => {

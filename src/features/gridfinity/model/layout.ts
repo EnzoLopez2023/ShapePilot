@@ -12,7 +12,7 @@ import {
   type GridfinityPlacement,
 } from '../../../../lib/contracts/gridfinity.ts'
 import { binDimensions } from '../geometry/bin.ts'
-import { LID_TOP_MM } from '../geometry/lid.ts'
+import { lidHasPockets, lidTopMm } from '../geometry/lid.ts'
 
 /** A saved bin, as much as a layout needs of it. */
 export interface LayoutBin {
@@ -40,12 +40,19 @@ export function heightLimit(p: GridfinityBaseplateParams): number | null {
   return p.container && p.container !== 'drawer' ? S76_BASE_DEPTH_MM : null
 }
 
-/** How tall a stack stands, bottom first. */
+/**
+ * How tall a stack stands, bottom first. A bin's feet drop into the lip below
+ * it, so each lower bin adds its walls -- or, under a pocketed lid, whose
+ * pocket floors are the lip's top, its full height.
+ */
 export function stackHeight(bins: readonly GridfinityBinParams[]): number {
   if (!bins.length) return 0
   const top = bins[bins.length - 1]
-  const below = bins.slice(0, -1).reduce((mm, p) => mm + binDimensions(p).wallTopMm, 0)
-  const lid = top.lid && top.stackingLip ? LID_TOP_MM : 0
+  const below = bins.slice(0, -1).reduce((mm, p) => {
+    const d = binDimensions(p)
+    return mm + (lidHasPockets(p) ? d.heightMm : d.wallTopMm)
+  }, 0)
+  const lid = top.lid && top.stackingLip ? lidTopMm(top) : 0
   return below + binDimensions(top).heightMm + lid
 }
 
@@ -70,11 +77,14 @@ export function resolveLayout(
     stack.forEach((bin, k) => {
       if (k === stack.length - 1) return
       if (!bin.params.stackingLip) problems.push(`${bin.name} has no stacking lip to hold the bin on it.`)
-      else if (bin.params.lid) problems.push(`${bin.name} has a lid, but another bin sits on it.`)
+      else if (bin.params.lid && !bin.params.lidPockets) problems.push(`${bin.name} has a lid, but another bin sits on it.`)
       const above = footprint(stack[k + 1].params, item.rotated)
       const here = footprint(bin.params, item.rotated)
       if (above.cellsX > here.cellsX || above.cellsY > here.cellsY) {
         problems.push(`${stack[k + 1].name} overhangs the bin under it.`)
+      } else if ((above.cellsX < here.cellsX || above.cellsY < here.cellsY) && !lidHasPockets(bin.params)) {
+        // The lip holds only a bin of its own footprint; a smaller one slides along it.
+        problems.push(`${stack[k + 1].name} is smaller than ${bin.name} and won't lock in its lip: give ${bin.name} a pocketed lid.`)
       }
     })
     const heightMm = stackHeight(stack.map(b => b.params))

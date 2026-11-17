@@ -16,8 +16,16 @@
 // again to come off. Fingers sit on the side walls only, clear of the label
 // tab and its text at the back.
 //
+// A pocketed lid (`lidPockets`) swaps the flat plate for a little baseplate:
+// one spec pocket per cell, so a smaller bin locks onto a bigger one. Pockets
+// on top rule out printing it plate down -- the bed would get only the ridges
+// between them -- so it prints plug down instead. That needs a flat underside,
+// so its plug is solid (infill does the work) and it has no barbs: they hang
+// below the plug, and bend into a hollow it no longer has. It is held in the
+// lip as a stacked bin is, by the funnel and its own weight.
+//
 // Coordinates are the bin's (see bin.ts), with the lid seated, so the preview
-// can draw both in one frame. `printLid` turns it over, plate on the bed.
+// can draw both in one frame. `printLid` lays it on the bed.
 import type { CrossSection, Manifold, ManifoldToplevel } from 'manifold-3d'
 import { loadManifold } from '../../../csg/manifold.ts'
 import { toAppMesh } from '../../../csg/evaluate.ts'
@@ -29,10 +37,22 @@ import {
 } from '../../../../lib/contracts/gridfinity.ts'
 import { FOOT_HEIGHT_MM, LIP_HEIGHT_MM, OUTER_RADIUS_MM, WALL_MM, binDimensions } from './bin.ts'
 import { finish, profile, ring, type Outline } from './shapes.ts'
+import { BASEPLATE_HEIGHT_MM, pocket } from './baseplate.ts'
 import { lidLines } from '../model/labelSize.ts'
 
 /** The plate on top, mm. */
 export const LID_TOP_MM = 2
+
+/** Whether this bin's lid has pockets on top. */
+export const lidHasPockets = (p: GridfinityBinParams): boolean => !!p.lid && p.stackingLip && !!p.lidPockets
+
+/**
+ * How far the lid stands above the lip. A pocketed one is a baseplate's
+ * height: its pocket floors are the lip's top, so a bin in them sits where a
+ * bin stacked on a lidless one would have its feet.
+ */
+export const lidTopMm = (p: GridfinityBinParams): number =>
+  lidHasPockets(p) ? BASEPLATE_HEIGHT_MM : LID_TOP_MM
 /** How far a seated lid sits below where a foot's profile would start. */
 const SEAT_DROP_MM = FOOT_HEIGHT_MM - LIP_HEIGHT_MM
 /** Wall of the hollow plug, measured across. */
@@ -88,12 +108,12 @@ export function lidDimensions(p: GridfinityBinParams): LidDimensions {
   const half = FINGER_WIDTH_MM / 2 + SLOT_MM
   const last = p.labelTab ? d.depthMm - WALL_MM - d.tabDepthMm - 2 - half : Infinity
   const fingerYs: number[] = []
-  for (let j = 0; j < p.gridY; j++) {
+  for (let j = 0; j < (lidHasPockets(p) ? 0 : p.gridY); j++) {
     const y = Math.min(GRID_PITCH_MM / 2 - 0.25 + GRID_PITCH_MM * j, last)
     const previous = fingerYs.at(-1) ?? -Infinity
     if (y - half >= OUTER_RADIUS_MM + 4 && y - previous >= 2 * half + 4) fingerYs.push(y)
   }
-  return { plugBottomMm, plateBottomMm, topMm: plateBottomMm + LID_TOP_MM, fingerYs }
+  return { plugBottomMm, plateBottomMm, topMm: plateBottomMm + lidTopMm(p), fingerYs }
 }
 
 /** How far a catch stays off surfaces it would otherwise lie flush with. */
@@ -156,6 +176,15 @@ export function lidSolid(wasm: ManifoldToplevel, p: GridfinityBinParams): Manifo
     profile(wasm, body, PLUG_STATIONS.map(([inset, z]) => [inset, z0 + z] as const)),
     wasm.Manifold.hull([...ring(body, 0, L.plateBottomMm), ...ring(body, 0, L.topMm)]),
   ])
+  if (lidHasPockets(p)) {
+    // The bin's cells are on the 42 mm grid with its edge 0.25 mm in.
+    const edge = -(GRID_PITCH_MM * p.gridX - d.widthMm) / 2
+    const pockets: Manifold[] = []
+    for (let i = 0; i < p.gridX; i++) for (let j = 0; j < p.gridY; j++) {
+      pockets.push(pocket(wasm, edge + GRID_PITCH_MM * i, edge + GRID_PITCH_MM * j, L.plateBottomMm, true))
+    }
+    return finish(outer.subtract(wasm.Manifold.union(pockets)), 'The lid')
+  }
   const hollow = profile(wasm, body, [
     [PLUG_STATIONS[0][0] + PLUG_WALL_MM, z0 - 1],
     ...PLUG_STATIONS.map(([inset, z]) => [inset + PLUG_WALL_MM, z0 + z] as const),
@@ -185,7 +214,7 @@ export function lidSolid(wasm: ManifoldToplevel, p: GridfinityBinParams): Manifo
 
 /** Whether this bin's lid carries text. */
 export const lidHasText = (p: GridfinityBinParams): boolean =>
-  !!p.lid && !!p.lidLabel && p.stackingLip && p.labelText.trim() !== ''
+  !!p.lid && !!p.lidLabel && p.stackingLip && !p.lidPockets && p.labelText.trim() !== ''
 
 /** Gap between the lid's two lines, as a share of the type size. */
 const LINE_GAP = 0.3
@@ -283,10 +312,14 @@ export function lidTextSolid(wasm: ManifoldToplevel, font: Font, p: GridfinityBi
     .translate([d.widthMm / 2, d.depthMm / 2, topMm - LID_TEXT_DEPTH_MM])
 }
 
-/** The lid turned over to print: plate flat on the bed, fingers up, same footprint. */
+/**
+ * The lid as it prints, same footprint: turned over, plate flat on the bed and
+ * fingers up -- or, pocketed, the right way up on its solid plug.
+ */
 export function printLid(lid: Manifold, p: GridfinityBinParams): Manifold {
   const d = binDimensions(p)
-  const { topMm } = lidDimensions(p)
+  const { topMm, plugBottomMm } = lidDimensions(p)
+  if (lidHasPockets(p)) return lid.translate([0, 0, -plugBottomMm])
   return lid.rotate([180, 0, 0]).translate([0, d.depthMm, topMm])
 }
 

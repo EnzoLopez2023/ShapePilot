@@ -9,7 +9,7 @@ import {
 } from '../../../../lib/contracts/gridfinity.ts'
 import { mmToInches } from '../../../units.ts'
 import { BIN_CLEARANCE_MM, LIP_HEIGHT_MM, GLUE_LABEL_MM, binDimensions, tabText } from '../geometry/bin.ts'
-import { LID_TOP_MM } from '../geometry/lid.ts'
+import { lidTopMm } from '../geometry/lid.ts'
 import type { LabelList } from '../model/types.ts'
 import { liesFlat, suggestBinSize } from '../model/labelSize.ts'
 import type { BinColors } from '../state/viewSettings.ts'
@@ -147,16 +147,29 @@ export default function BinPanel(
         <FormControlLabel
           disabled={!bin.stackingLip}
           control={<Switch checked={!!bin.lid && bin.stackingLip} onChange={e => onBin({ lid: e.target.checked })} />}
-          label="Lid that clicks in"
+          label="Lid"
         />
         {bin.lid && bin.stackingLip && (
           <Typography variant="body2" color="text.secondary" sx={{ pl: 6, pb: 1 }}>
-            Sits in the stacking lip, adding {LID_TOP_MM} mm ({both(dims.heightMm + LID_TOP_MM)} overall).
-            {' '}Barbs on the side walls click in under the lip, and a notch in the front of the lip
-            {' '}lets a fingernail under it. It exports on its own, plate down.
+            Sits in the stacking lip, adding {lidTopMm(bin)} mm ({both(dims.heightMm + lidTopMm(bin))} overall).
+            {bin.lidPockets
+              ? ' Its top is a little baseplate, so smaller bins lock onto it. It sits in the lip like a stacked bin, with no barbs, and prints the right way up.'
+              : ' Barbs on the side walls click in under the lip, and a notch in the front of the lip lets a fingernail under it. It exports on its own, plate down.'}
           </Typography>
         )}
         {bin.lid && bin.stackingLip && (
+          <FormControlLabel
+            sx={{ pl: 4 }}
+            control={(
+              <Switch
+                size="small" checked={!!bin.lidPockets}
+                onChange={e => onBin({ lidPockets: e.target.checked })}
+              />
+            )}
+            label="Pockets on top for smaller bins"
+          />
+        )}
+        {bin.lid && bin.stackingLip && !bin.lidPockets && (
           <FormControlLabel
             sx={{ pl: 4 }}
             control={(
@@ -279,7 +292,7 @@ export default function BinPanel(
       />
       {sizeOnly && bin.labelTab && hasText && (
         <Typography variant="body2" color="text.secondary">
-          The {bin.labelGlued ? 'label' : 'tab'} prints “{tabText(bin)}”.{bin.lid && bin.lidLabel ? ' The lid carries the whole label.' : ''}
+          The {bin.labelGlued ? 'label' : 'tab'} prints “{tabText(bin)}”.{bin.lid && bin.lidLabel && !bin.lidPockets ? ' The lid carries the whole label.' : ''}
         </Typography>
       )}
       <TextField
